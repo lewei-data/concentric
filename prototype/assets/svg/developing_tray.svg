@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+<path d="M40 200 Q40 170 80 170 H320 Q360 170 360 200 V280 Q360 330 310 330 H90 Q40 330 40 280 Z" fill="{{PAPER}}" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M70 215 H330" stroke="{{MUTED}}" stroke-width="22" opacity=".65"/>
+<path d="M85 255 q35 -18 70 0 t70 0 t70 0 t70 0" fill="none" stroke="{{PRIMARY}}" stroke-width="9"/>
+<rect x="140" y="115" width="120" height="155" rx="8" fill="{{PAPER}}" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" transform="rotate(8 200 192)"/>
+<circle cx="200" cy="192" r="28" fill="{{ACCENT}}" opacity=".35"/>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+<path d="M50 90 H280 Q320 90 320 130 V220 Q320 260 280 260 H150 L90 310 V260 H50 Q30 260 30 230 V130 Q30 90 50 90 Z" fill="{{PAPER}}" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M180 90 H340 Q370 90 370 120 V200 Q370 230 340 230 H310 V270 L260 230 H180 Q160 230 160 210 V120 Q160 90 180 90 Z" fill="{{PRIMARY}}" opacity=".18" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="100" cy="175" r="11" fill="{{PRIMARY}}"/><circle cx="160" cy="175" r="11" fill="{{PRIMARY}}"/><circle cx="220" cy="175" r="11" fill="{{PRIMARY}}"/>
+<path d="M250 160 H320 M250 190 H300" stroke="{{INK}}" stroke-width="8"/>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+<rect x="110" y="110" width="180" height="180" rx="20" fill="{{PAPER}}" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="150" y="150" width="100" height="100" rx="10" fill="{{PRIMARY}}" opacity=".25" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M160 70 V110 M200 70 V110 M240 70 V110 M160 290 V330 M200 290 V330 M240 290 V330 M70 160 H110 M70 200 H110 M70 240 H110 M290 160 H330 M290 200 H330 M290 240 H330" stroke="{{ACCENT}}" stroke-width="10"/>
+<circle cx="200" cy="200" r="14" fill="{{ACCENT}}"/>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+<path d="M90 40 H270 L330 100 V360 H90 Z" fill="{{PAPER}}" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M270 40 V100 H330" fill="none" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M130 150 H290 M130 190 H290 M130 230 H250" stroke="{{MUTED}}" stroke-width="12" stroke-linecap="round"/>
+<circle cx="250" cy="300" r="42" fill="none" stroke="{{ACCENT}}" stroke-width="8"/>
+<path d="M228 300 l16 16 l30 -34" fill="none" stroke="{{ACCENT}}" stroke-width="10"/>
+</svg>

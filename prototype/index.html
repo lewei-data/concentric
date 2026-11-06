@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>同心圆 · AI 工作台</title>
+<style>
+  :root{
+    --bg:#F7F8FC; --card:#FFFFFF; --ink:#111827; --muted:#6B7280; --line:#E5E7EB;
+    --primary:#4F46E5; --primary-weak:#EEF2FF;
+    --wenren:#2563EB; --gou:#EA580C; --tong:#7C3AED; --mid:#0D9488; --review:#DC2626;
+    --ok:#059669; --warn:#D97706;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  .top{display:flex;align-items:center;gap:14px;padding:12px 18px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap;row-gap:10px}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.5px;flex:none;white-space:nowrap}
+  .logo .dot{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#4F46E5,#7C3AED);display:grid;place-items:center;color:#fff;font-size:13px}
+  .logo .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#4F46E5,#7C3AED);display:grid;place-items:center;box-shadow:0 2px 6px rgba(79,70,229,.28)}
+  .logo .mark svg{width:21px;height:21px;display:block}
+  .brand{display:flex;flex-direction:column;line-height:1.15}
+  .brand b{font-size:15px;letter-spacing:1px}
+  .brand i{font-style:normal;font-size:10.5px;color:var(--muted);letter-spacing:1.4px}
+  .go3d{flex:none;margin-left:4px;text-decoration:none;font-size:12px;font-weight:700;color:#3730A3;background:var(--primary-weak);border:1px solid #C7D2FE;border-radius:999px;padding:5px 11px;white-space:nowrap}
+  .go3d:hover{background:#E0E7FF;border-color:#A5B4FC}
+  .pill{padding:3px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);color:var(--muted);background:#fff}
+  .pill.live{color:#065F46;border-color:#A7F3D0;background:#ECFDF5;font-weight:600}
+  .pill.demo{color:#92400E;border-color:#FDE68A;background:#FFFBEB;font-weight:600}
+  .kpis{display:flex;gap:10px;margin-left:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .kpi{display:flex;flex-direction:column;gap:2px;padding:5px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;min-width:92px}
+  .kpi .k{font-size:11px;color:var(--muted);white-space:nowrap}
+  .kpi .v{font-size:14px;font-weight:700}
+  .bossme{flex:none;display:flex;align-items:center;gap:8px;padding:4px 10px 4px 5px;margin-left:8px;
+    border:1px solid var(--line);border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(17,24,39,.05)}
+  .bossme img{width:28px;height:28px;border-radius:50%;object-fit:cover;background:#E5E7EB}
+  .bossme .ava-init{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none;
+    background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#fff;font-size:12px;font-weight:800}
+  .bossme .bn{display:flex;flex-direction:column;line-height:1.15}
+  .bossme .bn b{font-size:12px;letter-spacing:.3px;white-space:nowrap}
+  .bossme .bn i{font-style:normal;font-size:10px;color:var(--muted);white-space:nowrap}
+  .bossme .quit{font-size:10.5px;color:#9CA3AF;text-decoration:none;margin-left:6px;padding-left:8px;border-left:1px solid var(--line);white-space:nowrap}
+  .bossme .quit:hover{color:#DC2626}
+  .clock{flex:none;font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
+  .pill{flex:none;white-space:nowrap}
+  .cmd{display:flex;gap:6px;align-items:center;flex:1 1 320px;min-width:0}
+  .cmd input{flex:1 1 auto;min-width:0;width:330px;max-width:34vw;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;outline:none;background:#FBFCFE}
+  .cmd input:focus{border-color:#C7D2FE;box-shadow:0 0 0 3px rgba(79,70,229,.10)}
+  .cmd button{flex:none;white-space:nowrap;cursor:pointer;border:0;border-radius:8px;padding:6px 12px;background:var(--primary);color:#fff;font-size:12px;font-weight:600}
+  /* 指令框移到组织地图下方（中台支撑区之下） */
+  .cmdbar{display:flex;gap:10px;align-items:center;padding:0 12px 14px}
+  .cmdbar .cmd{flex:1 1 auto}
+  .cmdbar .cmd input{width:auto;max-width:none}
+  .cmdbar #askHint{flex:none;max-width:46%;font-size:11.5px;color:var(--muted);text-align:right;line-height:1.5}
+  .main{display:grid;grid-template-columns:minmax(0,2fr) minmax(320px,1fr);gap:14px;padding:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(17,24,39,.04)}
+  .card-h{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--line);font-size:13px;font-weight:700}
+  .card-h .sub{font-weight:500;color:var(--muted);font-size:12px}
+  .mapwrap{position:relative;padding:6px}
+  svg#map{width:100%;height:auto;display:block}
+  .zone{fill:#fff;stroke:#E9EDF5;stroke-width:2;rx:12}
+  .zone-label{font-size:11px;fill:#9CA3AF}
+  .seat circle.core{stroke-width:2.5}
+  .seat .nm{font-size:12px;font-weight:700;fill:#111827}
+  .seat .rl{font-size:10px;fill:#6B7280}
+  .seat .st{font-size:9px}
+  .seat{cursor:pointer}
+  .seat.active circle.core{filter:drop-shadow(0 0 6px rgba(79,70,229,.55))}
+  .seat.mgmt .mgmt-card{fill:#fff;stroke:#E2E8F0;stroke-width:1.2}
+  .seat.mgmt.active .mgmt-card{stroke:#C7D2FE;fill:#F8FAFF}
+  .seat.mgmt:hover .mgmt-card{stroke:#C7D2FE;fill:#FBFCFE}
+  .seat.mgmt .mgmt-badge{font-size:9.5px;fill:#6B7280;font-weight:600}
+  .seat.mgmt .nm{font-size:13px}
+  .seat.mgmt .rl{font-size:10px}
+  .meetingbox{position:absolute;right:14px;bottom:12px;width:300px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:0 8px 24px rgba(17,24,39,.08)}
+  .meetingbox h4{margin:0 0 6px;font-size:12px;color:var(--primary)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--primary-weak);color:#3730A3}
+  .agenda{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6}
+  .reportbox{position:absolute;right:14px;bottom:12px;width:320px;background:#F8FAFC;border:1px solid var(--line);border-radius:12px;padding:10px}
+  .reportbox h4{margin:0 0 4px;font-size:12px}
+  .reportbox p{margin:0;font-size:11px;color:var(--muted);line-height:1.6}
+  .side{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .feed{height:300px;overflow:auto;padding:8px 12px;display:flex;flex-direction:column;gap:7px}
+  .ev{border-left:3px solid var(--line);padding:4px 8px;font-size:12px;line-height:1.5}
+  .ev .meta{color:var(--muted);font-size:10.5px}
+  .ev.type-delegation{border-color:#6366F1}
+  .ev.type-result{border-color:var(--ok)}
+  .ev.type-conflict{border-color:var(--review)}
+  .ev.type-vote{border-color:var(--warn)}
+  .ev.type-decision{border-color:#0EA5E9}
+  .ev.type-approval{border-color:#111827}
+  .ev.biz{border-color:#0D9488}
+  .agentbox{padding:12px 14px;min-height:150px}
+  .agentbox .hd{display:flex;gap:10px;align-items:center}
+  .avatar{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;overflow:hidden;flex:none}
+  .avatar img{width:100%;height:100%;object-fit:cover;display:block}
+  .agentbox .meta{font-size:12px;color:var(--muted);line-height:1.7}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+  .tag{font-size:10.5px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:#374151;background:#F9FAFB}
+  .approval{padding:12px 14px}
+  .appr-empty{color:var(--muted);font-size:12px}
+  .appr-card{border:1px solid #FECACA;background:#FFF7F7;border-radius:10px;padding:10px}
+  .appr-card h5{margin:0 0 4px;font-size:12px;color:#991B1B}
+  .appr-card .line{font-size:11px;color:#7F1D1D;line-height:1.6}
+  .btns{display:flex;gap:8px;margin-top:9px}
+  .btn{cursor:pointer;border:0;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600}
+  .btn.ok{background:#059669;color:#fff}
+  .btn.no{background:#fff;color:#991B1B;border:1px solid #FCA5A5}
+  .pipeline{padding:12px 14px;overflow:auto}
+  .pipe-row{display:grid;grid-template-columns:120px repeat(7,minmax(72px,1fr));gap:6px;align-items:center;margin-bottom:6px}
+  .pipe-name{font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
+  .pipe-name .sw{width:8px;height:8px;border-radius:3px}
+  .stage{font-size:10.5px;text-align:center;padding:5px 4px;border-radius:7px;border:1px dashed #D1D5DB;color:#9CA3AF;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stage.on{background:var(--primary-weak);border:1px solid #C7D2FE;color:#3730A3;font-weight:700}
+  .stage.done{background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46}
+  .tabs{margin:0 14px 14px}
+  .tabbar{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tab{cursor:pointer;font-size:12px;padding:6px 12px;border-radius:8px;color:var(--muted)}
+  .tab.on{background:var(--primary);color:#fff;font-weight:700}
+  .tabbody{padding:12px 14px;max-height:230px;overflow:auto;font-size:12px;line-height:1.8;color:#374151}
+  .tabbody h5{margin:0 0 4px;font-size:12.5px}
+  .tabbody .muted{color:var(--muted)}
+  .empty{color:#9CA3AF;font-size:12px}
+  /* 交付成果清单 */
+  .dl-wrap{padding:4px 14px 14px;overflow:auto}
+  .dl-head{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 9px;font-size:11.5px;color:var(--muted)}
+  .dl-pill{padding:2px 9px;border-radius:999px;background:#F8FAFC;border:1px solid var(--line)}
+  .dl-pill.bad{background:#FFF7ED;border-color:#FDBA74;color:#9A3412}
+  .dl-table{width:100%;border-collapse:collapse;font-size:12px}
+  .dl-table th{text-align:left;font-size:11px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .dl-table td{padding:7px 8px;border-bottom:1px solid #F1F5F9;vertical-align:top}
+  .dl-proj{display:flex;align-items:center;gap:6px;font-weight:700;white-space:nowrap}
+  .dl-proj .sw{width:8px;height:8px;border-radius:3px;flex:none}
+  .dl-title{min-width:150px}
+  .dl-title b{font-weight:700}
+  .dl-title .meta{color:var(--muted);font-size:10.5px}
+  .dl-cell{cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;color:#374151;white-space:nowrap;font-size:11.5px}
+  .dl-cell:hover{border-color:#C7D2FE;background:#EEF2FF;color:#3730A3}
+  .dl-cell.ok{background:#ECFDF5;border-color:#A7F3D0;color:#065F46}
+  .dl-cell.miss{background:#FFF7ED;border-color:#FDBA74;color:#9A3412}
+  .dl-cell.warn{background:#FFFBEB;border-color:#FDE68A;color:#92400E}
+  .dl-links{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}
+  .dl-links a{font-size:10.5px;color:#4338CA;text-decoration:none;background:#EEF2FF;
+    border:1px solid #C7D2FE;border-radius:6px;padding:1px 6px;white-space:nowrap}
+  .dl-links a:hover{background:#E0E7FF;border-color:#A5B4FC}
+  .dl-files{display:flex;flex-direction:column;gap:6px;margin:2px 0 6px}
+  .dl-file{display:block;font-size:11.5px;color:#3730A3;text-decoration:none;background:#F8FAFF;
+    border:1px solid #C7D2FE;border-radius:8px;padding:7px 10px;word-break:break-all}
+  .dl-file:hover{background:#EEF2FF}
+  .dl-cell .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.65}
+  .dl-issue{font-size:11px;color:#9A3412;line-height:1.55;max-width:210px}
+  .dl-issue .none{color:#059669}
+  .dl-empty{padding:10px 0 14px;color:#9CA3AF;font-size:12px}
+  .dl-mask{position:fixed;inset:0;background:rgba(17,24,39,.45);display:none;place-items:center;z-index:30}
+  .dl-mask.on{display:grid}
+  .dl-modal{width:min(760px,92vw);max-height:86vh;overflow:auto;background:#fff;border-radius:16px;
+    box-shadow:0 24px 70px rgba(17,24,39,.3)}
+  .dl-mh{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);
+    font-size:13px;font-weight:700;position:sticky;top:0;background:#fff;z-index:1}
+  .dl-x{cursor:pointer;color:#9CA3AF;font-size:18px;line-height:1}
+  .dl-body{padding:14px 16px 18px;font-size:12.5px;line-height:1.8;color:#374151}
+  .dl-body h4{margin:13px 0 5px;font-size:12.5px;color:#111827}
+  .dl-body h4:first-child{margin-top:0}
+  .dl-kv{display:grid;grid-template-columns:72px 1fr;gap:3px 10px;font-size:12px}
+  .dl-kv .k{color:var(--muted)}
+  .dl-quote{background:#F8FAFC;border:1px solid var(--line);border-radius:10px;padding:10px 12px;white-space:pre-wrap}
+  .dl-chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#F1F5F9;
+    border:1px solid #E2E8F0;margin:2px 4px 2px 0;color:#475569}
+  footer{padding:0 16px 18px;color:#9CA3AF;font-size:11px}
+  @media (max-width:1480px){.kpis{display:none}}
+  @media (max-width:1100px){.main{grid-template-columns:1fr}.feed{height:220px}.cmdbar{flex-wrap:wrap}.cmdbar #askHint{max-width:none;text-align:left}}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="logo">
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="12" stroke="#fff" stroke-width="2.4" opacity=".95"/>
+        <circle cx="16" cy="16" r="7" stroke="#fff" stroke-width="2.2" opacity=".75"/>
+        <circle cx="16" cy="16" r="2.4" fill="#fff"/>
+        <circle cx="28" cy="16" r="1.8" fill="#fff"/>
+      </svg>
+    </span>
+    <span class="brand"><b>同心圆</b><i>AI 工作台</i></span>
+  </div>
+  <span id="mode" class="pill demo">DEMO</span>
+  <span class="clock" id="clock">--:--:--</span>
+  <a class="go3d" href="/office3d" target="_blank" rel="noopener">3D 办公区 ↗</a>
+  <div class="kpis" id="kpis"></div>
+  <div class="bossme" id="bossMe" style="display:none" title="当前登录身份">
+    <img src="/avatars/boss.png" alt="老板头像" />
+    <span class="bn"><b id="bossName">老板</b><i id="bossRole">老板 · 已登录</i></span>
+    <a class="quit" href="#" id="quitBtn">退出</a>
+  </div>
+</div>
+
+<div class="main">
+  <div class="card">
+    <div class="card-h"><span>组织地图 · 16 工位（登录身份见右上角）</span><span class="sub" id="sceneLabel">WORK</span></div>
+    <div class="mapwrap">
+      <svg id="map" viewBox="0 0 900 520" aria-label="16 人组织地图（登录身份见右上角）"></svg>
+      <div class="meetingbox" id="meetingBox" style="display:none"></div>
+      <div class="reportbox" id="reportBox" style="display:none"></div>
+    </div>
+    <div class="cmdbar">
+      <div class="cmd">
+        <input id="cmd" placeholder="点击员工即可 @他 下指令：@陆清安 今天哪个项目卡住了" />
+        <button id="sendBtn" onclick="sendCmd()">发送</button>
+      </div>
+      <div id="askHint" class="meta"></div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <div class="card-h"><span>Conring 事件流</span><span class="sub" id="evCount">0</span></div>
+      <div class="feed" id="feed"><div class="empty">等待事件…</div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><span>员工详情</span><span class="sub">点击工位查看证据</span></div>
+      <div class="agentbox" id="agentBox"><div class="empty">点击任意员工查看任务、工具与证据</div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><span>ApprovalGate · 老板审批门</span><span class="sub">对外动作不可跳</span></div>
+      <div class="approval" id="approval"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin:0 14px 14px">
+  <div class="card-h"><span>内容流水线看板</span><span class="sub">热点 → 选题 → 文案 → 视频 → 审核 → 发布 → 归档</span></div>
+  <div class="pipeline" id="pipeline"></div>
+</div>
+
+<div class="card" style="margin:0 14px 14px">
+  <div class="card-h"><span>交付成果清单 · 选题 / 文案 / 分镜剧本 / 最后样片</span><span class="sub" id="dlSummary">—</span></div>
+  <div class="dl-wrap" id="deliverables"></div>
+</div>
+
+<div class="card tabs">
+  <div class="tabbar" id="tabbar">
+    <div class="tab on" data-tab="meeting">会议纪要</div>
+    <div class="tab" data-tab="daily">CEO 日报</div>
+    <div class="tab" data-tab="weekly">项目周报</div>
+    <div class="tab" data-tab="risk">风险单</div>
+    <div class="tab" data-tab="kb">热点与知识库</div>
+  </div>
+  <div class="tabbody" id="tabbody"></div>
+</div>
+<footer>原型：零依赖 Conring 内核 · 规则版 17 员工 · 数据源 DEMO/LIVE 同构（同一 envelope）</footer>
+
+<div class="dl-mask" id="dlMask" onclick="if(event.target===this)closeDeliverable()">
+  <div class="dl-modal">
+    <div class="dl-mh"><span id="dlModalTitle">交付详情</span><span class="dl-x" onclick="closeDeliverable()">×</span></div>
+    <div class="dl-body" id="dlModalBody"></div>
+  </div>
+</div>
+
+<script>
+/* ============ 常量 ============ */
+const PROJECTS = {
+  wenren:{name:'文人莫克',color:'#2563EB',kind:'自媒体'},
+  gou:{name:'狗大人',color:'#EA580C',kind:'自媒体'},
+  tongxinyuan:{name:'同心圆',color:'#7C3AED',kind:'数字分身服务'}
+};
+const TONE={wenren:'克制·书卷气',gou:'幽默·松弛',tongxinyuan:'专业·可信'};
+const STAGES=[['topic','选题'],['copy','文案'],['video','视频'],['review','审核'],['approved','待发布'],['published','已发布'],['archived','已归档']];
+const MGMT={ceo:250,cco:450,cto:650};   /* 管理层三张岗位卡的中心 x */
+const SEATS={
+  ceo:[250,80],cco:[450,80],cto:[650,80],
+  pm_wenren:[82,196],cw_wenren:[82,262],vd_wenren:[82,328],
+  pm_gou:[352,196],cw_gou:[352,262],vd_gou:[352,328],
+  pm_tongxinyuan:[628,196],cw_tongxinyuan:[628,262],vd_tongxinyuan:[628,328],
+  scout:[132,452],reviewer:[332,452],release_ops:[532,452],kb_manager:[732,452]
+};
+const AGENTS=[
+  ['boss','蒿色莫','老板','all','#B45309'],['ceo','陆清安','CEO','all','#0EA5E9'],
+  ['cco','沈青禾','首席创意官','all','#DB2777'],['cto','扶频','CTO','all','#6366F1'],
+  ['pm_wenren','贺平生','产品经理','wenren'],['cw_wenren','陆川','文案编写','wenren'],['vd_wenren','陆离','视频制作','wenren'],
+  ['pm_gou','米珂','产品经理','gou'],['cw_gou','叶秋','文案编写','gou'],['vd_gou','萧执','视频制作','gou'],
+  ['pm_tongxinyuan','姜月初','产品经理','tongxinyuan'],['cw_tongxinyuan','江佑泽','文案编写','tongxinyuan'],['vd_tongxinyuan','崔聿棠','视频制作','tongxinyuan'],
+  ['scout','苏寒','热点采集','all','#0D9488'],['reviewer','顾凛川','审核','all','#DC2626'],
+  ['release_ops','顾景琛','发布与监控','all','#0D9488'],['kb_manager','祁南','知识库管理','all','#0D9488']
+].map(([id,name,role,pid,color])=>({id,name,role,projectId:pid,
+  color:color||PROJECTS[pid].color,status:'idle',task:'',tools:[],tone:TONE[pid]||'跨项目中台'}));
+
+const S={
+  mode:'DEMO', scene:'WORK', agents:{}, projects:{}, contents:[], hotspots:[],
+  reports:[], approvals:[], knowledge:{count:0,latest:[]}, meeting:{active:false},
+  meetingHistory:[], stats:{approvalSecondsAvg:0,published:0,events:0}, events:[], selected:null, tab:'meeting'
+};
+AGENTS.forEach(a=>S.agents[a.id]=a);
+
+/* ============ 顶栏 ============ */
+function clock(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false});}
+setInterval(clock,1000);clock();
+
+/* ============ 登录身份（老板，右上角） ============ */
+(function initSession(){
+  fetch('/api/session').then(r=>{
+    if(r.status===401){
+      location.replace('/login?next='+encodeURIComponent(location.pathname+location.search));
+      return null;
+    }
+    return r.json();
+  }).then(d=>{
+    if(!d||!d.ok||!d.user) return;
+    document.getElementById('bossName').textContent=d.user.name||'成员';
+    document.getElementById('bossRole').textContent=(d.user.role||'成员')+' · 已登录';
+    const av=document.querySelector('.bossme img');
+    if(d.user.avatar){
+      av.src=d.user.avatar;
+    }else{
+      // 没配头像时用姓名首字兜底，避免显示破图
+      av.style.display='none';
+      const ini=document.createElement('span');
+      ini.className='ava-init';
+      ini.textContent=(d.user.name||'我').slice(0,1);
+      av.parentNode.insertBefore(ini,av);
+    }
+    document.getElementById('bossMe').style.display='flex';
+  }).catch(()=>{});
+  document.getElementById('quitBtn').onclick=async e=>{
+    e.preventDefault();
+    try{ await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); }catch(_){}
+    location.replace('/login');
+  };
+})();
+
+function renderKPIs(){
+  const p=S.projects;
+  const items=[
+    {k:'文人莫克 播放',v:fmtK(p.wenren?.kpi?.views)},
+    {k:'狗大人 粉丝',v:fmtK(p.gou?.kpi?.fans)},
+    {k:'同心圆 可用性',v:(p.tongxinyuan?.kpi?.uptime??0)+'%'},
+    {k:'待审核',v:countStage(['review','approved'])},
+    {k:'待老板审批',v:S.approvals.filter(a=>a.status==='pending').length},
+    {k:'今日审批耗时',v:(S.stats.approvalSecondsAvg||0)+'s'}
+  ];
+  document.getElementById('kpis').innerHTML=items.map(i=>
+    `<div class="kpi"><span class="k">${i.k}</span><span class="v">${i.v}</span></div>`).join('');
+}
+function fmtK(n){n=n||0;return n>=10000?(n/10000).toFixed(1)+'w':String(n);}
+function countStage(st){return S.contents.filter(c=>st.includes(c.stage)).length;}
+
+/* ============ 组织地图 ============ */
+/* 在场状态：会议期间参会人以 meeting.participants 为准（模型调用会把 agent.status 改成 working/done） */
+function statusOf(a){
+  if(!a) return 'idle';
+  if(S.meeting&&S.meeting.active&&(S.meeting.participants||[]).includes(a.id)) return 'meeting';
+  const st=S.agents[a.id]||a;
+  return st.status||'idle';
+}
+function seatColor(a){
+  if(!a) return '#94A3B8';
+  const s=statusOf(a);
+  if(s==='meeting') return '#4F46E5';
+  if(s==='working') return '#0EA5E9';
+  if(s==='done') return '#059669';
+  return a.color;
+}
+function renderMap(){
+  const zone=(x,y,w,h,label,color)=>`<rect class="zone" x="${x}" y="${y}" width="${w}" height="${h}" rx="12"/>
+    <text class="zone-label" x="${x+10}" y="${y+16}" fill="${color}">${label}</text>`;
+  const pj=(pid,f)=>S.projects[pid]||{};
+  const pname=(pid,f)=>(pj(pid).name)||f;
+  const pcolor=(pid,f)=>(pj(pid).color)||f;
+  let html='';
+  html+=zone(16,28,868,84,'管理层','#111827');
+  html+=zone(20,138,290,224,`${pname('wenren','文人莫克')} · 项目区`,pcolor('wenren','#2563EB'));
+  html+=zone(320,138,290,224,`${pname('gou','狗大人')} · 项目区`,pcolor('gou','#EA580C'));
+  html+=zone(620,138,264,224,`${pname('tongxinyuan','同心圆')} · 项目区`,pcolor('tongxinyuan','#7C3AED'));
+  html+=zone(20,394,856,110,'中台支撑区','#0D9488');
+  AGENTS.forEach(a=>{
+    if(a.id==='boss') return;   // 老板不占管理层工位：身份显示在右上角（登录后可见）
+    const [x,y]=SEATS[a.id]||[450,450];
+    const st=S.agents[a.id]||a;
+    const s=statusOf(a);
+    const c=seatColor(st);
+    const badge=s==='working'?'执行中':s==='meeting'?'会议中':s==='done'?'已交付':'待命';
+    if(MGMT[a.id]){
+      /* 管理层三个岗位：等距排成三张岗位卡（头像 + 姓名 / 岗位 + 状态） */
+      const cx=MGMT[a.id];
+      html+=`<g class="seat mgmt ${s==='working'||s==='meeting'?'active':''}" data-id="${a.id}">
+        <rect class="mgmt-card" x="${cx-95}" y="56" width="190" height="48" rx="12"/>
+        <defs><clipPath id="cp-${a.id}"><circle cx="${cx-70}" cy="80" r="16"/></clipPath></defs>
+        <circle cx="${cx-70}" cy="80" r="16" fill="${c}"/>
+        <image href="/avatars/${a.id}.png" x="${cx-86}" y="64" width="32" height="32"
+               clip-path="url(#cp-${a.id})" preserveAspectRatio="xMidYMid slice"/>
+        <circle cx="${cx-70}" cy="80" r="19" fill="none" stroke="${c}" stroke-opacity=".18" stroke-width="2"/>
+        <text class="nm" x="${cx-46}" y="76">${st.name||a.name}</text>
+        <text class="rl" x="${cx-46}" y="91">${st.role||a.role}</text>
+        <circle cx="${cx+72}" cy="74" r="3.5" fill="${c}"/>
+        <text class="mgmt-badge" x="${cx+72}" y="91" text-anchor="middle">${badge}</text>
+      </g>`;
+      return;
+    }
+    html+=`<g class="seat ${s==='working'||s==='meeting'?'active':''}" data-id="${a.id}">
+      <defs><clipPath id="cp-${a.id}"><circle cx="${x}" cy="${y}" r="17.5"/></clipPath></defs>
+      <circle class="core" cx="${x}" cy="${y}" r="17" fill="${c}" stroke="#fff" stroke-width="2.5"/>
+      <image href="/avatars/${a.id}.png" x="${x-17}" y="${y-17}" width="34" height="34"
+             clip-path="url(#cp-${a.id})" preserveAspectRatio="xMidYMid slice"/>
+      <circle cx="${x}" cy="${y}" r="21" fill="none" stroke="${c}" stroke-opacity=".18" stroke-width="2"/>
+      <text class="nm" x="${x+25}" y="${y-2}">${st.name||a.name}</text>
+      <text class="rl" x="${x+25}" y="${y+11}">${st.role||a.role} · ${badge}</text>
+    </g>`;
+  });
+  document.getElementById('map').innerHTML=html;
+  document.querySelectorAll('.seat').forEach(el=>el.onclick=()=>selectAgent(el.dataset.id));
+  document.getElementById('sceneLabel').textContent=S.scene;
+}
+
+/* ============ 事件流 ============ */
+const TYPE_LABEL={delegation:'委派',result:'交付',conflict:'冲突',vote:'投票',decision:'决议',
+  approval:'审批',escalation:'升级','biz.event':'业务事件','scene.change':'场景','report.ready':'汇报',heartbeat:'心跳','config-reload':'配置热加载'};
+function nameOf(id){return (S.agents[id]||{}).name||id||'系统';}
+function pushEvent(env){
+  S.events.unshift(env); if(S.events.length>200)S.events.pop();
+  S.stats.events++;
+  renderFeed();
+}
+function renderFeed(){
+  const feed=document.getElementById('feed');
+  feed.innerHTML=S.events.slice(0,60).map(ev=>{
+    const d=ev.data||{}; let line='';
+    if(ev.kind==='message'){
+      line=`${nameOf(d.sender)} → ${nameOf(d.recipient)} · <b>${TYPE_LABEL[d.type]||d.type}</b> ${textOf(d)}`;
+    }else if(ev.kind==='hotspot'){
+      line=`热点：${d.title}（热度 ${d.score}）`;
+    }else if(ev.kind==='scene'){
+      line=`场景切换 → ${d.scene}${d.title?' · '+d.title:''}`;
+    }else if(ev.kind==='pipeline'){
+      line=`流水线：${PROJECTS[d.projectId]?.name||''} 《${d.title}》 → ${stageName(d.stage)}`;
+    }else if(ev.kind==='approval'){
+      line=`审批门：${d.title||d.action} · ${d.status}`;
+    }else if(ev.kind==='report'){
+      line=`${d.title} · ${d.conclusion}`;
+    }else if(ev.kind==='agent'){
+      line=`${nameOf(d.id)} ${statusName(d.status)} ${d.task||''}`;
+    }else if(ev.kind==='heartbeat'){return '';}
+    else {line=ev.kind;}
+    const cls=ev.kind==='message'?`type-${d.type}`:(ev.kind==='hotspot'?'biz':'');
+    return `<div class="ev ${cls}"><div class="meta">${timeOf(ev.at)} · ${ev.traceId||'-'}</div>${line}</div>`;
+  }).join('')||'<div class="empty">等待事件…</div>';
+  document.getElementById('evCount').textContent=S.events.length+' 条';
+}
+function textOf(d){
+  const p=d.payload||{}; const r=p.result||{};
+  return r.summary||p.text||(p.verdict?`审核${p.verdict.pass?'通过':'驳回'}`:'')
+    ||(p.task?p.task:'')||(p.verdict?p.verdict.reasons.join('；'):'');
+}
+function timeOf(at){try{return new Date(at).toLocaleTimeString('zh-CN',{hour12:false})}catch(e){return''}}
+function stageName(s){return (STAGES.find(x=>x[0]===s)||[s,s])[1];}
+function statusName(s){return ({idle:'待命',working:'执行中',meeting:'会议中',done:'已交付'})[s]||s;}
+
+/* ============ 员工详情 ============ */
+function selectAgent(id){
+  S.selected=id; const a=S.agents[id]; if(!a)return;
+  const last=[...S.events].reverse().find(e=>e.kind==='message'&&(e.data.sender===id||e.data.recipient===id));
+  const ev=last?evOf(last):null;
+  document.getElementById('agentBox').innerHTML=`
+    <div class="hd"><div class="avatar" style="background:${a.color}"><img src="${a.avatar||('/avatars/'+a.id+'.png')}" alt="${a.name}" onerror="this.parentNode.textContent='${a.name.slice(0,1)}'"></div>
+      <div><div style="font-weight:700">${a.name} · ${a.role}</div>
+      <div class="meta">${PROJECTS[a.projectId]?.name||'全公司'} · ${a.tone}</div></div></div>
+    <div class="meta" style="margin-top:8px">状态：${statusName(a.status)} ${a.task?'· '+a.task:''}</div>
+    <div class="tags">${(a.tools&&a.tools.length?a.tools:toolOf(id)).map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+    <div class="meta" style="margin-top:8px">最近证据：${ev?ev:'暂无（等待下一轮事件）'}</div>`;
+  renderMap();
+  const cmd=document.getElementById('cmd');
+  cmd.value='@'+a.name+' ';
+  cmd.focus();
+}
+function toolOf(id){
+  const m={ceo:['project.read','report.render'],cto:['arch.review','kb.write'],scout:['hotspot.fetch','asset.tag'],
+    reviewer:['review.check','compliance.check'],release_ops:['publish.execute(需审批)','metric.read'],kb_manager:['kb.write','kb.index']};
+  if(m[id])return m[id];
+  if(id.startsWith('pm_'))return['hotspot.read','backlog.write'];
+  if(id.startsWith('cw_'))return['style.guide','copy.draft'];
+  return['asset.read','video.render'];
+}
+function evOf(env){const d=env.data;return `${nameOf(d.sender)} → ${nameOf(d.recipient)} ${TYPE_LABEL[d.type]||d.type}：${textOf(d)}`;}
+
+/* ============ 会议 / 汇报 ============ */
+function renderMeeting(){
+  const box=document.getElementById('meetingBox');
+  if(S.meeting.active){
+    box.style.display='block';
+    box.innerHTML=`<h4>会议室 · ${S.meeting.title||'选题会'}</h4>
+      <div class="chips">${(S.meeting.participants||[]).map(id=>`<span class="chip">${nameOf(id)}</span>`).join('')}</div>
+      <div class="agenda">${(S.meeting.agenda||[]).map(x=>'· '+x).join('<br>')}</div>`;
+  }else box.style.display='none';
+  const rb=document.getElementById('reportBox');
+  const rep=[...S.reports].reverse()[0];
+  if(S.scene==='REPORT'&&rep){
+    rb.style.display='block';
+    rb.innerHTML=`<h4>汇报台 · ${rep.title}</h4><p>${rep.conclusion||''}</p>`;
+  }else rb.style.display='none';
+}
+
+/* ============ 流水线 ============ */
+function renderPipeline(){
+  const rows=['wenren','gou','tongxinyuan'].map(pid=>{
+    const items=S.contents.filter(c=>c.projectId===pid).slice(-1)[0];
+    const stage=items?items.stage:null;
+    const idx=stage?STAGES.findIndex(s=>s[0]===stage):-1;
+    const cells=STAGES.map(([k,label],i)=>{
+      const cls=i===idx?'on':(idx>i?'done':'');
+      return `<div class="stage ${cls}" title="${items?items.title:''}">${label}${i===idx&&items?' · '+items.title.slice(0,10):''}</div>`;
+    }).join('');
+    return `<div class="pipe-row"><div class="pipe-name"><span class="sw" style="background:${PROJECTS[pid].color}"></span>${PROJECTS[pid].name}</div>${cells}</div>`;
+  });
+  document.getElementById('pipeline').innerHTML=rows.join('');
+}
+
+/* ============ 交付成果清单（选题 / 文案 / 分镜剧本 / 最后样片） ============ */
+const DL_ITEMS={};
+function escHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function storyboardOf(c){
+  const raw=c.storyboard||(c.video&&c.video.storyboard)||'';
+  if(!raw) return '';
+  if(typeof raw==='string') return raw;
+  if(Array.isArray(raw)){
+    // 模型给的分镜有三种形态：纯字符串、中文字段对象、英文字段对象，统一成逐镜文本
+    return raw.map((s,i)=>{
+      if(typeof s==='string') return s.trim();
+      if(!s||typeof s!=='object') return String(s);
+      const pick=(...ks)=>{for(const k of ks){if(s[k]!=null&&s[k]!=='')return String(s[k]);}return '';};
+      const no=pick('镜','shot','shotNo','no','序号')||String(i+1);
+      const dur=pick('时长','duration','time','sec');
+      const pic=pick('画面','visual','picture','image','scene');
+      const line=pick('台词','line','dialogue','voiceover','audio');
+      return `镜${no}${dur?'｜'+dur:''}｜画面：${pic||'—'}${line?'；台词：'+line:''}`;
+    }).filter(Boolean).join('\n');
+  }
+  return JSON.stringify(raw,null,2);
+}
+function coverOf(c){return c.cover||(c.video&&c.video.cover)||'';}
+function shotsOf(c){
+  let n=c.shots??(c.video&&c.video.shots);
+  if(n==null||n===''){
+    const raw=c.storyboard||(c.video&&c.video.storyboard);
+    if(Array.isArray(raw)) n=raw.length;
+  }
+  return n;
+}
+function issuesOf(c){
+  const out=[];
+  if(!c.title) out.push('缺选题');
+  if(!c.copy) out.push('缺文案');
+  if(!storyboardOf(c)) out.push(shotsOf(c)?'分镜只记录了数量、没有剧本':'缺分镜剧本');
+  const assets=c.assets||[];
+  if(!assets.length) out.push('缺最后样片');
+  else if(assets.every(a=>String(a).startsWith('asset://')))
+    out.push((c.files&&c.files.video)?'样片还在后台渲染（占位未替换），稍后刷新':'样片是 asset:// 占位，没有实际 mp4 文件');
+  if(!coverOf(c)&&!(c.files&&c.files.cover)) out.push('缺封面');
+  if((c.reviewNote||'').includes('驳回')) out.push('审核有驳回记录');
+  return out;
+}
+function dlCell(c,kind,label,state){
+  const txt=state==='ok'?'可查看':(state==='warn'?'仅占位':'缺失');
+  return `<span class="dl-cell ${state}" onclick="openDeliverable('${escHtml(c.id)}','${kind}')">
+    <i class="dot"></i>${label} · ${txt}</span>`;
+}
+function fileList(c){
+  const f=c.files||{};
+  return [['选题',f.topic],['文案',f.copy],['分镜剧本',f.story],['封面',f.cover],['样片',f.video]]
+    .filter(x=>x[1]);
+}
+function linksOf(c){
+  const list=fileList(c).filter(x=>x[0]!=='封面');
+  if(!list.length) return '';
+  return `<div class="dl-links">${list.map(([k,u])=>
+    `<a href="${escHtml(u)}" target="_blank" rel="noopener" title="在浏览器新窗口打开">${k} ↗</a>`).join('')}</div>`;
+}
+function renderDeliverables(){
+  const el=document.getElementById('deliverables');
+  if(!el) return;
+  const list=[...S.contents].reverse();
+  if(!list.length){
+    el.innerHTML='<div class="dl-empty">当前 0 条交付物。跑一轮流水线后，选题 / 文案 / 分镜剧本 / 最后样片会按条列在这里，并且每一格都可以点击查看原文。</div>';
+    document.getElementById('dlSummary').textContent='0 条';
+    return;
+  }
+  const allIssues=list.map(issuesOf);
+  const bad=allIssues.filter(x=>x.length).length;
+  document.getElementById('dlSummary').textContent=`${list.length} 条 · ${bad} 条有待处理问题`;
+  const rows=list.map((c,i)=>{
+    const p=(S.projects&&S.projects[c.projectId])||{name:c.projectId,color:'#64748B'};
+    const sb=storyboardOf(c), shots=shotsOf(c), as=c.assets||[];
+    DL_ITEMS[c.id]=c;
+    const iss=allIssues[i];
+    const vState=!as.length?'miss':(as.some(a=>/^(https?:|\/)/.test(String(a)))?'ok':'warn');
+    return `<tr>
+      <td><span class="dl-proj"><i class="sw" style="background:${p.color}"></i>${escHtml(p.name)}</span></td>
+      <td class="dl-title"><b>${escHtml(c.title||'未命名')}</b><div class="meta">${escHtml(stageName(c.stage))}${c.traceId?' · '+escHtml(c.traceId):''}</div>
+        ${linksOf(c)}</td>
+      <td>${dlCell(c,'topic','选题',c.title?'ok':'miss')}</td>
+      <td>${dlCell(c,'copy','文案',c.copy?'ok':'miss')}</td>
+      <td>${dlCell(c,'story','分镜剧本',sb?'ok':'miss')}</td>
+      <td>${dlCell(c,'video','最后样片',vState)}</td>
+      <td class="dl-issue">${iss.length?iss.map(escHtml).join('；'):'<span class="none">未发现问题</span>'}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=`<div class="dl-head">
+    <span class="dl-pill">交付 ${list.length} 条</span>
+    <span class="dl-pill ${bad?'bad':''}">体检异常 ${bad} 条</span>
+    <span class="dl-pill">点击任一阶段格查看原文 / 样片方案</span>
+  </div>
+  <table class="dl-table"><thead><tr>
+    <th>项目</th><th>选题 / 阶段</th><th>选题</th><th>文案</th><th>分镜剧本</th><th>最后样片</th><th>体检</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+function openDeliverable(id,kind){
+  const c=DL_ITEMS[id];
+  if(!c) return;
+  const p=(S.projects&&S.projects[c.projectId])||{name:c.projectId};
+  const sb=storyboardOf(c), cover=coverOf(c), shots=shotsOf(c);
+  const v=c.video||{};
+  const base=`<div class="dl-kv">
+      <span class="k">项目</span><span>${escHtml(p.name)}</span>
+      <span class="k">阶段</span><span>${escHtml(stageName(c.stage))}</span>
+      <span class="k">负责人</span><span>${escHtml(c.owner||'—')}</span>
+      <span class="k">trace</span><span>${escHtml(c.traceId||'—')}</span>
+    </div>`;
+  const fl=fileList(c);
+  const ext=fl.length
+    ? `<h4>外部打开（浏览器新窗口 · 文件在 Obsidian 交付物目录）</h4><div class="dl-files">${
+        fl.map(([k,u])=>`<a class="dl-file" href="${escHtml(u)}" target="_blank" rel="noopener">${k} · ${escHtml(u.replace('/vault/OPC/交付物/',''))}</a>`).join('')}</div>`
+    : `<h4>外部打开</h4><div class="dl-issue">该条目还没有文件地址（尚未写入 Obsidian 交付物目录）</div>`;
+  let title='', body='';
+  if(kind==='topic'){
+    title='选题';
+    body=`${base}${ext}<h4>选题标题</h4><div class="dl-quote">${escHtml(c.title||'尚未生成')}</div>
+      <h4>风格</h4><div>${escHtml(c.toneProfile||TONE[c.projectId]||'—')}</div>`;
+  }else if(kind==='copy'){
+    title='文案';
+    body=`${base}${ext}<h4>成稿文案</h4><div class="dl-quote">${escHtml(c.copy||'尚未生成')}</div>
+      ${c.reviewNote?`<h4>审核意见</h4><div class="dl-quote">${escHtml(c.reviewNote)}</div>`:''}`;
+  }else if(kind==='story'){
+    title='分镜剧本';
+    body=`${base}${ext}<h4>分镜数量</h4><div>${escHtml(String(shots??'—'))} 镜</div>
+      <h4>逐镜剧本</h4><div class="dl-quote">${escHtml(sb||'尚未生成（旧数据只有分镜数量，没有逐镜剧本）')}</div>
+      ${cover?`<h4>封面文案</h4><div class="dl-quote">${escHtml(cover)}</div>`:''}
+      ${v.summary?`<h4>成片方案</h4><div class="dl-quote">${escHtml(v.summary)}</div>`:''}`;
+  }else{
+    title='最后样片';
+    const assets=c.assets||[];
+    const real=assets.find(a=>/^(https?:|\/)/.test(String(a)))||((c.files&&c.files.video)||'');
+    body=`${base}${ext}<h4>样片资产</h4>
+      ${assets.length?assets.map(a=>`<span class="dl-chip">${escHtml(a)}</span>`).join(''):'<div class="dl-quote">尚未生成样片</div>'}
+      ${real?`<h4>播放（H.264 · 竖屏 1080×1920）</h4><video controls preload="metadata" src="${escHtml(real)}" style="width:100%;border-radius:10px;background:#000"></video>
+        <div class="dl-issue">片源：<a href="${escHtml(real)}" target="_blank" rel="noopener" style="color:#4338CA">在浏览器新窗口直接打开 ↗</a></div>`:''}
+      ${!real?'<div class="dl-quote">样片还没生成：后台正在按分镜渲染预览片，稍后刷新本页即可播放。</div>':''}
+      ${v.summary?`<h4>成片方案</h4><div class="dl-quote">${escHtml(v.summary)}</div>`:''}
+      ${v.evidence&&v.evidence.length?`<h4>证据</h4><div>${v.evidence.map(e=>`<span class="dl-chip">${escHtml(e)}</span>`).join('')}</div>`:''}`;
+  }
+  const iss=issuesOf(c);
+  body+=`<h4>交付体检</h4>${iss.length?`<div class="dl-issue">${iss.map(escHtml).join('；')}</div>`:'<div class="dl-issue"><span class="none">未发现问题</span></div>'}`;
+  document.getElementById('dlModalTitle').textContent=`${p.name} · ${title}`;
+  document.getElementById('dlModalBody').innerHTML=body;
+  document.getElementById('dlMask').classList.add('on');
+}
+function closeDeliverable(){document.getElementById('dlMask').classList.remove('on');}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDeliverable();});
+
+/* ============ 审批门 ============ */
+function renderApproval(){
+  const pending=S.approvals.filter(a=>a.status==='pending');
+  const el=document.getElementById('approval');
+  if(!pending.length){
+    const last=[...S.approvals].reverse()[0];
+    el.innerHTML=`<div class="appr-empty">${last?`最近审批：${last.title||last.action} · ${last.status==='approved'?'已通过':last.status}`:'暂无待审批。AI 不得自行开工/发布/上线/对外承诺。'}</div>`;
+    return;
+  }
+  const a=pending[pending.length-1];
+  const c=a.checks||{}, cost=c.cost, mat=c.materials, comp=c.compliance;
+  const lines=[
+    `风险：${a.risk} · 动作：${a.action} · 内容 ${(a.items||[]).length} 条`,
+    (a.titles&&a.titles.length)?`选题：${a.titles.slice(0,3).join('、')}${a.titles.length>3?'…':''}`:'',
+    cost?`模型调用约 ${cost.modelCallsTypical}${cost.modelCallsWorst?`–${cost.modelCallsWorst}`:''} 次 · 渲染 ${cost.renders} 条 · 现金：${(cost.cashUsd===null||cost.cashUsd===undefined)?'未核算':cost.cashUsd+' 元'}`:'',
+    mat?`素材：${mat.source||((mat.assets||0)+' 个资产')} · 外部素材 ${mat.externalAssets==null?0:mat.externalAssets} 个`:'',
+    comp?`合规：调性隔离 ${comp.toneIsolation?'是':'否'} · 终审门：${comp.reviewerGate||'—'}`:'',
+    `trace：${a.traceId}`
+  ].filter(Boolean);
+  const okText=a.action==='publish.execute'?'通过并发布':'通过并开工';
+  el.innerHTML=`<div class="appr-card">
+      <h5>${a.title||a.action}</h5>
+      ${lines.map(x=>`<div class="line">${x}</div>`).join('')}
+      <div class="btns"><button class="btn ok" onclick="decide('${a.id}','approve')">${okText}</button>
+      <button class="btn no" onclick="decide('${a.id}','reject')">驳回</button></div></div>`;
+}
+async function decide(id,decision){
+  if(S.mode==='LIVE'){
+    try{const r=await fetch('/api/approvals/'+id,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({decision})});const j=await r.json();if(j.approval)applyApproval(j.approval);}catch(e){}
+  }else{ // DEMO：本地推进
+    const a=S.approvals.find(x=>x.id===id); if(!a)return;
+    a.status=decision==='approve'?'approved':'rejected';a.decidedAt=new Date().toISOString();
+    applyApproval(a);
+    if(decision==='approve' && a.action==='publish.execute'){
+      S.contents.forEach(c=>{if(['approved','review'].includes(c.stage))c.stage='published';});
+      renderPipeline();renderKPIs();
+      pushEvent({kind:'report',traceId:a.traceId,at:new Date().toISOString(),
+        data:{title:'CEO 日报',conclusion:'审批通过，发布完成，知识已归档（DEMO）。'}});
+    }
+  }
+}
+function applyApproval(a){
+  const i=S.approvals.findIndex(x=>x.id===a.id);
+  if(i>=0)S.approvals[i]=a;else S.approvals.push(a);
+  renderApproval();
+}
+
+/* ============ 汇报 Tabs ============ */
+document.getElementById('tabbar').onclick=(e)=>{
+  const t=e.target.closest('.tab'); if(!t)return;
+  S.tab=t.dataset.tab;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+  renderTab();
+};
+function renderTab(){
+  const body=document.getElementById('tabbody');
+  const rep=S.reports;
+  if(S.tab==='meeting'){
+    const mh=S.meetingHistory||[];
+    const msgs=S.events.filter(e=>e.kind==='message'&&['delegation','vote','decision','conflict'].includes(e.data.type)).slice(0,12);
+    if(mh.length){
+      body.innerHTML=`<div class="muted" style="margin-bottom:6px">会议纪要 · Obsidian 归档
+        <a class="dl-file" style="display:inline-block;margin-left:8px;padding:2px 8px" href="/meeting3d" target="_blank" rel="noopener">打开 3D 会议室 ↗</a></div>`+
+        mh.slice(0,20).map(r=>{
+          const when=r.endedAt||r.startedAt||'';
+          const ts=when?new Date(when).toLocaleString('zh-CN',{hour12:false}):'—';
+          const ppl=(r.participants||[]).length;
+          const sp=r.speechCount!=null?r.speechCount:0;
+          return `<div class="ev" style="border-color:#7C3AED">
+            <div class="meta">${escHtml(ts)} · ${ppl} 人参会 · ${sp} 条发言</div>
+            <b>${escHtml(r.title||'会议')}</b>
+            <div class="muted">${escHtml(r.conclusion||'—')}</div>
+            ${r.transcriptUrl?`<a class="dl-file" href="${escHtml(r.transcriptUrl)}" target="_blank" rel="noopener">原始记录 ↗</a>`:''}
+          </div>`;
+        }).join('');
+    }else{
+      body.innerHTML=msgs.length?msgs.map(e=>`<div><span class="muted">${timeOf(e.at)}</span> ${nameOf(e.data.sender)} → ${nameOf(e.data.recipient)} · ${TYPE_LABEL[e.data.type]}：${textOf(e.data)}</div>`).join('')
+        :'<div class="empty">暂无会议记录，点「注入热点」发起选题会。</div>';
+    }
+  }else if(S.tab==='daily'){
+    const d=rep.filter(r=>r.kind==='daily').slice(-3);
+    body.innerHTML=d.length?d.map(r=>`<h5>${r.title} <span class="muted">${r.traceId}</span></h5><div>${r.conclusion}</div>
+      <div class="muted">${(r.evidence||[]).join(' · ')}</div>`).join(''):'<div class="empty">暂无日报。历史日报只保存在旧进程内存中，未落盘；新一轮起会自动保存。</div>';
+  }else if(S.tab==='weekly'){
+    const w=rep.filter(r=>r.kind==='weekly'||r.kind==='tech').slice(-6);
+    body.innerHTML=w.length?w.map(r=>`<h5>${r.title}</h5><div>${r.conclusion}</div>`).join(''):'<div class="empty">暂无周报。历史周报只保存在旧进程内存中，未落盘；新一轮起会自动保存。</div>';
+  }else if(S.tab==='risk'){
+    const k=rep.filter(r=>r.kind==='incident').slice(-5);
+    body.innerHTML=k.length?k.map(r=>`<h5 style="color:#991B1B">${r.title}</h5><div>${r.conclusion}</div>
+      <div class="muted">${(r.evidence||[]).join(' · ')}</div>`).join(''):'<div class="empty">暂无风险单。历史风险单只保存在旧进程内存中，未落盘；新一轮起会自动保存。</div>';
+  }else{
+    body.innerHTML=`<h5>热点</h5>${S.hotspots.slice(-5).map(h=>`<div>· ${h.title} <span class="muted">热度 ${h.score}</span></div>`).join('')||'<div class="empty">暂无热点</div>'}
+      <h5 style="margin-top:8px">知识库（${S.knowledge.count||0} 条）</h5>
+      ${(S.knowledge.latest||[]).map(k=>`<div>· ${k.title} <span class="muted">${k.projectId}</span></div>`).join('')||'<div class="empty">暂无归档</div>'}`;
+  }
+}
+
+/* ============ envelope 分发 ============ */
+function handle(env){
+  pushEvent(env);
+  const d=env.data||{};
+  switch(env.kind){
+    case 'state': applyState(env.data); break;
+    case 'hotspot':
+      S.hotspots.push(d); break;
+    case 'scene':
+      S.scene=d.scene;
+      S.meeting=d.scene==='MEETING'
+        ? {active:true,title:d.title||'选题会',participants:d.participants||[],agenda:d.agenda||[]}
+        : Object.assign(S.meeting,{active:false});
+      break;
+    case 'meeting':
+      S.meeting=Object.assign({},S.meeting,d); break;
+    case 'agent':
+      if(S.agents[d.id]){S.agents[d.id].status=d.status;S.agents[d.id].task=d.task||'';}
+      break;
+    case 'pipeline':
+      S.contents=S.contents.filter(c=>c.id!==d.id); S.contents.push(d); break;
+    case 'approval':
+      applyApproval(d); break;
+    case 'report':
+      S.reports.push(d); break;
+    case 'metrics':
+      Object.keys(d).forEach(pid=>{if(S.projects[pid])S.projects[pid].kpi=d[pid];}); break;
+    case 'message':
+      if(d.type==='approval'&&d.payload&&d.payload.approval) applyApproval(d.payload.approval);
+      if(S.ask&&d.type==='result'&&d.sender===S.ask.id) S.ask.seen=true;
+      break;
+    case 'config-reload':
+      refreshState(); break;
+  }
+  renderAll();
+}
+function applyState(st){
+  if(!st)return;
+  S.scene=st.scene; S.projects={}; (st.projects||[]).forEach(p=>S.projects[p.id]=p);
+  (st.agents||[]).forEach(a=>{S.agents[a.id]=Object.assign(S.agents[a.id]||{},a);});
+  S.contents=st.pipeline||[]; S.hotspots=st.hotspots||[]; S.reports=st.reports||[];
+  S.approvals=st.approvals||[]; S.knowledge=st.knowledge||{count:0,latest:[]};
+  S.meeting=st.meeting||S.meeting; S.stats=Object.assign(S.stats,st.stats||{});
+  S.meetingHistory=st.meetingHistory||S.meetingHistory;
+  if(st.stats&&st.stats.events)S.stats.events=st.stats.events;
+  /* 刷新/重启后：用服务端恢复的历史消息回填事件流与会议纪要，避免页面一片空白 */
+  if(!S.events.length&&Array.isArray(st.eventsList)&&st.eventsList.length){
+    S.events=st.eventsList.map(m=>({kind:'message',traceId:m.traceId,at:m.at,data:m})).reverse();
+    if(!S.stats.events)S.stats.events=S.events.length;
+    renderFeed();
+  }
+}
+function renderAll(){renderMap();renderKPIs();renderPipeline();renderDeliverables();renderApproval();renderMeeting();renderTab();/*事件流单独*/}
+
+/* config-reload：重新拉全量状态，整体替换员工/项目后重绘组织地图 */
+async function refreshState(){
+  try{
+    const r=await fetch('/api/state',{cache:'no-store'});
+    const st=await r.json();
+    S.agents={}; S.projects={};
+    applyState(st);
+    if(S.selected&&!S.agents[S.selected]){S.selected=null;document.getElementById('agentBox').innerHTML='';}
+    renderAll();
+  }catch(e){console.warn('config-reload 刷新失败',e);}
+}
+
+/* ============ DEMO Mock 引擎 ============ */
+function mockRun(){
+  const tr='tr_demo_'+Math.random().toString(16).slice(2,8);
+  let t=0; const step=(ms,fn)=>{t+=ms;setTimeout(fn,t);};
+  const msg=(type,sender,recipient,p,project)=>({kind:'message',traceId:tr,at:new Date().toISOString(),
+    data:{type,sender,recipient,payload:p,projectId:project}});
+  step(300,()=>handle({kind:'hotspot',traceId:tr,at:new Date().toISOString(),
+    data:{id:'hs_demo',title:'AI 复活老照片引发版权争议',score:0.86,tags:['科技','版权']}}));
+  step(500,()=>handle({kind:'message',traceId:tr,at:new Date().toISOString(),
+    data:{type:'biz.event',sender:'scout',recipient:'ceo',payload:{text:'热点上报，素材包已归档'}}}));
+  step(700,()=>{
+    handle({kind:'scene',traceId:tr,at:new Date().toISOString(),
+      data:{scene:'MEETING',title:'每日选题会',participants:['ceo','pm_wenren','pm_gou','pm_tongxinyuan','scout','kb_manager'],
+        agenda:['三项目选题分配','排期确认']}});
+    ['pm_wenren','pm_gou','pm_tongxinyuan','scout','kb_manager'].forEach(a=>handle({kind:'agent',traceId:tr,data:{id:a,status:'meeting',task:'选题会'}}));
+  });
+  step(900,()=>{['pm_wenren','pm_gou','pm_tongxinyuan'].forEach(pm=>handle(msg('delegation','ceo',pm,{task:'评估热点匹配度，出选题卡'},'all')));});
+  step(900,()=>{
+    handle(msg('result','pm_wenren','ceo',{result:{summary:'文人莫克：文化史与版权伦理切入',confidence:.88}},'wenren'));
+    handle(msg('result','pm_gou','ceo',{result:{summary:'狗大人：段子讲避坑，轻松叙事',confidence:.71}},'gou'));
+    handle(msg('result','pm_tongxinyuan','ceo',{result:{summary:'同心圆：数字分身合规边界',confidence:.42}},'tongxinyuan'));
+  });
+  step(700,()=>handle(msg('conflict','pm_gou','ceo',{text:'两个公众号抢同一热点，人设与排期冲突'},'all')));
+  step(600,()=>{
+    handle(msg('vote','pm_wenren','ceo',{vote:{stance:'agree',confidence:.88}},'all'));
+    handle(msg('vote','pm_gou','ceo',{vote:{stance:'oppose',confidence:.71}},'all'));
+    handle(msg('vote','pm_tongxinyuan','ceo',{vote:{stance:'abstain',confidence:.42}},'all'));
+  });
+  step(700,()=>handle(msg('decision','ceo','all',{text:'决议：文人莫克拿主选题，其余并行副选题'},'all')));
+  step(400,()=>{
+    handle({kind:'scene',traceId:tr,data:{scene:'WORK',title:'决议派发，并行生产'}});
+    ['wenren','gou','tongxinyuan'].forEach(pid=>{
+      const titles={wenren:'AI 复活老照片：当记忆变成商品',gou:'反向消费：不买立省 100%？',tongxinyuan:'数字分身进客服：合规边界在哪'};
+      handle({kind:'pipeline',traceId:tr,data:{id:'c_'+pid,projectId:pid,traceId:tr,stage:'topic',title:titles[pid],toneProfile:TONE[pid]}});
+    });
+  });
+  step(900,()=>{['wenren','gou','tongxinyuan'].forEach(pid=>{
+    handle({kind:'pipeline',traceId:tr,data:Object.assign({},S.contents.find(c=>c.projectId===pid),{stage:'copy',copy:'（DEMO）稿件'})});
+    handle({kind:'pipeline',traceId:tr,data:Object.assign({},S.contents.find(c=>c.projectId===pid),{stage:'video',assets:['asset://'+pid+'/master.mp4']})});
+    handle(msg('result','cw_'+pid,'ceo',{result:{summary:'稿件已交付',confidence:.83}},''+pid));
+  });});
+  step(900,()=>{
+    ['wenren','gou','tongxinyuan'].forEach(pid=>{
+      handle({kind:'pipeline',traceId:tr,data:Object.assign({},S.contents.find(c=>c.projectId===pid),{stage:'review',reviewNote:'通过'})});
+      handle(msg('result','reviewer','ceo',{verdict:{pass:true,reasons:['人设一致','合规通过']},result:{summary:'审核通过'}},pid));
+      handle({kind:'pipeline',traceId:tr,data:Object.assign({},S.contents.find(c=>c.projectId===pid),{stage:'approved'})});
+    });
+  });
+  step(800,()=>{
+    const a={id:'ap_demo',traceId:tr,action:'publish.execute',risk:'high',status:'pending',approver:'老板',
+      title:'三项目内容发布审批（含同心圆对外承诺）',items:['c_wenren','c_gou','c_tongxinyuan'],createdAt:new Date().toISOString()};
+    applyApproval(a); renderApproval();
+    handle({kind:'agent',traceId:tr,data:{id:'reviewer',status:'done',task:'审核完成'}});
+  });
+  setTimeout(()=>{
+    S.contents.forEach(c=>{
+      if(c.stage==='approved'&&S.approvals.some(a=>a.status==='approved')){
+        c.stage='published';
+      }
+    });
+  },1200);
+}
+
+/* ============ 指令输入（方案第 8 节） ============ */
+document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd();});
+async function sendCmd(){
+  const input=document.getElementById('cmd');
+  const text=(input.value||'').trim(); if(!text)return;
+  input.value='';
+  const at=text.match(/^@(\S+)\s*([\s\S]*)$/);
+  const target=at?(Object.values(S.agents).find(a=>a.id===at[1]||a.name===at[1])||null):null;
+  const body=at?[at[2]||'请汇报当前进展']:'';
+  const btn=document.getElementById('sendBtn'), hint=document.getElementById('askHint');
+  if(S.mode==='DEMO'){
+    if(target){
+      handle({kind:'message',traceId:'tr_demo',at:new Date().toISOString(),
+        data:{type:'delegation',sender:'owner',recipient:target.id,payload:{text:body[0]}}});
+      handle({kind:'message',traceId:'tr_demo',at:new Date().toISOString(),
+        data:{type:'result',sender:target.id,recipient:'owner',
+          payload:{result:{summary:`${target.name}（DEMO）：已收到「${body[0]}」，当前进展正常。`,confidence:.8}}}});
+    }else if(text.includes('串味')){
+      handle({kind:'report',traceId:'tr_demo',at:new Date().toISOString(),
+        data:{id:'rp_x',kind:'incident',title:'风险单：跨项目人设串味',
+          conclusion:'狗大人稿件使用文人莫克人设，reviewer 已驳回返工',
+          evidence:['人设串味：标注「克制·书卷气」，要求「幽默·松弛」']}});
+    }else if(text.includes('注入')||text.includes('热点')){
+      mockRun();
+    }else{
+      handle({kind:'message',traceId:'tr_demo',at:new Date().toISOString(),
+        data:{type:'result',sender:'ceo',recipient:'owner',
+          payload:{result:{summary:'当前卡点：3 条内容待审，1 个审批待拍板',confidence:.9}}}});
+    }
+    renderAll(); return;
+  }
+  if(target){S.ask={id:target.id,seen:false}; if(btn)btn.disabled=true;
+    hint.textContent=`${target.name} 正在处理「${body[0]}」…（单次模型调用约 20–60s）`;}
+  else if(btn)btn.disabled=true;
+  try{
+    const r=await fetch('/api/commands',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text})});
+    const j=await r.json();
+    if(j.ok&&j.agentId){
+      if(!S.ask||!S.ask.seen){
+        pushEvent({kind:'message',traceId:'tr_ask',at:new Date().toISOString(),
+          data:{type:'result',sender:j.agentId,recipient:'owner',payload:{result:j.answer||{summary:''}}}});
+        renderAll();
+      }
+      hint.textContent=`${j.agent} 已回复 · ${j.latencyMs||0}ms`;
+    }else if(j.ok){
+      hint.textContent='已执行';
+    }else{
+      hint.textContent='未执行：'+(j.error||'未知错误');
+    }
+  }catch(e){ hint.textContent='请求失败：'+e.message; }
+  if(btn)btn.disabled=false;
+  S.ask=null;
+  setTimeout(()=>{const h=document.getElementById('askHint');if(h&&!h.textContent.startsWith('请求失败'))h.textContent='';},5000);
+}
+
+/* ============ 启动：LIVE 优先，失败回落 DEMO ============ */
+async function boot(){
+  let live=false;
+  try{
+    const r=await fetch('/api/state',{cache:'no-store'});
+    if(r.ok){const st=await r.json();live=true;applyState(st);}
+  }catch(e){}
+  if(live){
+    S.mode='LIVE';
+    const p=document.getElementById('mode');p.textContent='LIVE';p.className='pill live';
+    const es=new EventSource('/api/events');
+    es.onmessage=(m)=>{try{handle(JSON.parse(m.data));}catch(e){}};
+    es.onerror=()=>{};
+  }else{
+    S.mode='DEMO';
+    const p=document.getElementById('mode');p.textContent='DEMO';p.className='pill demo';
+    S.projects={wenren:{id:'wenren',...PROJECTS.wenren,kpi:{views:0,fans:0}},gou:{id:'gou',...PROJECTS.gou,kpi:{views:0,fans:0}},
+      tongxinyuan:{id:'tongxinyuan',...PROJECTS.tongxinyuan,kpi:{uptime:99.95}}};
+    mockRun();
+  }
+  renderAll();
+  pushEvent({kind:'heartbeat',traceId:'',at:new Date().toISOString(),data:{}});
+  setInterval(()=>{if(S.scene==='REPORT')renderMeeting();},1000);
+}
+boot();
+</script>
+</body>
+</html>
