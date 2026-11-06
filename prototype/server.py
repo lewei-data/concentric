@@ -23,11 +23,16 @@ import queue
 import re
 import secrets
 import shutil
+import smtplib
+import ssl
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+from email.utils import formataddr, formatdate, make_msgid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
@@ -39,6 +44,11 @@ TIMEOUT = int(os.environ.get("OPC_HERMES_TIMEOUT", "300"))
 WORKERS = int(os.environ.get("OPC_HERMES_WORKERS", "6"))
 APPROVAL_TIMEOUT = int(os.environ.get("OPC_APPROVAL_TIMEOUT", "600"))
 MODEL = os.environ.get("OPC_HERMES_MODEL", "deepseek-v4.1-flash")
+# CTO 成本护栏：单轮 trace 累计 / 单次调用 token 上限；金额阈值默认关闭（0=不启用）
+# 标定依据（hermes --usage-file 实测）：空载单次调用约 7.7k tokens；一轮完整编排约 1.0–1.6M。
+TOKEN_LIMIT = int(os.environ.get("OPC_TOKEN_LIMIT", "3000000"))
+CALL_TOKEN_LIMIT = int(os.environ.get("OPC_CALL_TOKEN_LIMIT", "150000"))
+COST_LIMIT_USD = float(os.environ.get("OPC_COST_LIMIT_USD", "0"))
 AUTH_USER = os.environ.get("OPC_BASIC_USER", "")
 AUTH_PASS = os.environ.get("OPC_BASIC_PASS", "")
 LOOPBACK = ("127.0.0.1", "::1")
@@ -138,6 +148,77 @@ def find_user(account):
             if v and v == acc:
                 return u
     return None
+
+
+# ---------------------------------------------------------------- 内部邮件
+MAIL_DOMAIN = os.environ.get("OPC_MAIL_DOMAIN", "mail.conring.cn")
+MAIL_HOST = os.environ.get("OPC_MAIL_HOST", "127.0.0.1")
+MAIL_SMTP_PORT = int(os.environ.get("OPC_MAIL_SMTP_PORT", "587"))
+MAIL_CRED_FILE = os.environ.get("OPC_MAIL_CRED", os.path.join(VAULT, "公司", ".邮箱凭据.md"))
+MAIL_AUDIT = os.environ.get("OPC_MAIL_AUDIT", "/opt/sefs/mcp-mail/logs/mail-audit.jsonl")
+BOSS_MAIL = os.environ.get("OPC_BOSS_MAIL", f"boss@{MAIL_DOMAIN}")
+
+
+def load_mail_accounts():
+    """解析 .邮箱凭据.md：| 邮箱 | 姓名 | 密码 | → {邮箱: (姓名, 密码)}"""
+    accounts = {}
+    try:
+        with open(MAIL_CRED_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line.startswith("|"):
+                    continue
+                cells = [c.strip().strip("`") for c in line.strip().strip("|").split("|")]
+                if len(cells) < 3 or "@" not in cells[0]:
+                    continue
+                accounts[cells[0].lower()] = (cells[1], cells[2])
+    except OSError as e:
+        print(f"[mail] 读取邮箱凭据失败：{e}", flush=True)
+    return accounts
+
+
+def send_internal_mail(agent_id, to, subject, body, cc=None):
+    """以员工本人邮箱发内部邮件（仅限 @mail.conring.cn）；失败直接抛异常由调用方兜底。"""
+    def _addr(x):
+        x = str(x).strip()
+        return x if "@" in x else f"{x}@{MAIL_DOMAIN}"
+
+    to = [_addr(x) for x in ([to] if isinstance(to, str) else list(to or []))]
+    cc = [_addr(x) for x in (cc or [])]
+    for addr in to + cc:
+        if not addr.lower().endswith("@" + MAIL_DOMAIN):
+            raise ValueError(f"仅允许内部域发信：{addr}")
+    if not to:
+        raise ValueError("收件人不能为空")
+    accounts = load_mail_accounts()
+    address = f"{agent_id}@{MAIL_DOMAIN}"
+    if address.lower() not in accounts:
+        raise RuntimeError(f"凭据文件中没有 {address}")
+    name, password = accounts[address.lower()]
+    msg = EmailMessage()
+    msg["From"] = formataddr((name, address))
+    msg["To"] = ", ".join(to)
+    if cc:
+        msg["Cc"] = ", ".join(cc)
+    msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=MAIL_DOMAIN)
+    msg.set_content(body.strip())
+    with smtplib.SMTP(MAIL_HOST, MAIL_SMTP_PORT, timeout=30) as s:
+        s.ehlo()
+        s.starttls(context=ssl._create_unverified_context())   # 内部邮件服务自签证书
+        s.login(address, password)
+        s.send_message(msg, from_addr=address, to_addrs=to + cc)
+    try:
+        os.makedirs(os.path.dirname(MAIL_AUDIT), exist_ok=True)
+        with open(MAIL_AUDIT, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": iso_now(), "action": "send", "agent": agent_id,
+                                "from": address, "to": to, "cc": cc, "subject": subject,
+                                "chars": len(body), "ok": True, "source": "opc"},
+                               ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    return {"ok": True, "from": address, "to": to, "cc": cc, "subject": subject}
 
 
 # 交付物落盘模块（选题/文案/分镜/封面/样片全部写进 Obsidian，不落临时目录）
@@ -345,18 +426,22 @@ class HermesAdapter:
 
     def ask(self, agent, task, context="", extra="", schema=None):
         if not self.available():
-            return None, {"engine": "rule", "latencyMs": 0, "profile": agent["id"]}
+            return None, {"engine": "rule", "latencyMs": 0, "profile": agent["id"], "usage": {}}
         p = self.prompt(agent, task, context, extra, schema)
         t0 = time.time()
         reason = ""
         for attempt in (1, 2):
             q = p if attempt == 1 else p + "\n上一次输出不是合法 JSON，这次只输出 JSON 对象本身，不要任何多余文字。"
+            usage_path = ""
             try:
+                fd, usage_path = tempfile.mkstemp(prefix="opc-usage-", suffix=".json")
+                os.close(fd)
                 env = dict(os.environ)
                 env["HERMES_PROFILE"] = agent["id"]   # 每人一个独立 profile（配置/技能/记忆隔离）
-                proc = subprocess.run([CLI, "-z", q], capture_output=True, text=True,
-                                      timeout=TIMEOUT, env=env)
+                proc = subprocess.run([CLI, "-z", q, "--usage-file", usage_path],
+                                      capture_output=True, text=True, timeout=TIMEOUT, env=env)
                 raw = (proc.stdout or "").strip()
+                usage = self._read_usage(usage_path)
                 data = self._extract(raw)
                 ms = int((time.time() - t0) * 1000)
                 with self.lock:
@@ -365,7 +450,7 @@ class HermesAdapter:
                     with self.lock:
                         self.latencies.append(ms)
                     return data, {"engine": "hermes", "model": MODEL, "latencyMs": ms,
-                                  "attempts": attempt, "profile": agent["id"]}
+                                  "attempts": attempt, "profile": agent["id"], "usage": usage}
                 reason = f"非 JSON 输出：{raw[:120]}"
             except Exception as exc:
                 with self.lock:
@@ -373,11 +458,47 @@ class HermesAdapter:
                 reason = str(exc)[:160]
                 if isinstance(exc, subprocess.TimeoutExpired):
                     break
+            finally:
+                if usage_path:
+                    try:
+                        os.unlink(usage_path)
+                    except OSError:
+                        pass
         with self.lock:
             self.failures += 1
         print(f"[hermes] {agent['id']} 两次尝试均失败：{reason}", flush=True)
         return None, {"engine": "degraded", "reason": reason, "profile": agent["id"],
-                      "latencyMs": int((time.time() - t0) * 1000)}
+                      "latencyMs": int((time.time() - t0) * 1000), "usage": {}}
+
+    @staticmethod
+    def _read_usage(path):
+        """解析 hermes --usage-file 的用量账本；缺失/损坏时返回 {}（不阻断业务）。"""
+        try:
+            with open(path, encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception:
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        merged = raw.get("total_including_auxiliary")
+        if isinstance(merged, dict):
+            total = _to_int(merged.get("total_tokens"), 0)
+            cost = merged.get("estimated_cost_usd")
+            calls = _to_int(merged.get("api_calls"), 0)
+        else:
+            total = _to_int(raw.get("total_tokens"), 0)
+            cost = raw.get("estimated_cost_usd")
+            calls = _to_int(raw.get("api_calls"), 0)
+        return {"totalTokens": total,
+                "inputTokens": _to_int(raw.get("input_tokens"), 0),
+                "outputTokens": _to_int(raw.get("output_tokens"), 0),
+                "costUsd": round(float(cost or 0), 6),
+                "apiCalls": calls,
+                "model": raw.get("model") or MODEL,
+                "provider": raw.get("provider") or "",
+                "completed": raw.get("completed"),
+                "costStatus": raw.get("cost_status") or "",
+                "failed": bool(raw.get("failed"))}
 
     @staticmethod
     def _extract(raw):
@@ -408,6 +529,10 @@ HERMES = HermesAdapter()
 KERNEL = None  # 延迟绑定，见下方 Kernel
 
 
+class BudgetAbort(Exception):
+    """CTO 判定成本/额度超限，在阶段边界终止本轮任务。"""
+
+
 class Kernel:
     def __init__(self):
         self.lock = threading.RLock()
@@ -435,6 +560,11 @@ class Kernel:
         self.hotspots, self.contents, self.reports, self.approvals, self.knowledge = [], [], [], [], []
         self.subscribers, self.approval_events, self.traces = [], {}, {}
         self.stats = {"approvalSeconds": [], "published": 0, "blockedPublish": 0, "traces": 0}
+        # 成本护栏：按 trace 聚合 token/花费，阈值/异常由 CTO 处置
+        self.token_usage = {}
+        self.token_alerts = {}
+        self.aborts = {}
+        self.active_trace = ""
         self.last_hotspot = None
         self.startedAt = iso_now()          # 本次进程启动时间：快照用它区分“内存态归零”
         self.journal_file = os.path.join(VAULT, "动态", "runtime.json")
@@ -682,8 +812,101 @@ class Kernel:
         a = self.agents[aid]
         self.set_agent(aid, "working", task[:40])
         data, meta = HERMES.ask(a, task, context, extra, schema)
+        self.record_usage(aid, meta)
         self.set_agent(aid, "done", "已交付" if data else "降级交付")
         return data, meta
+
+    # ---------- 成本护栏（CTO 监控） ----------
+    def record_usage(self, agent_id, meta, trace=""):
+        """把单次调用的 token/花费记到当前 trace，并交给 CTO 阈值监控。"""
+        usage = (meta or {}).get("usage") or {}
+        trace = trace or self.active_trace or ""
+        with self.lock:
+            bucket = self.token_usage.get(trace)
+            if not bucket:
+                bucket = {"totalTokens": 0, "inputTokens": 0, "outputTokens": 0,
+                          "costUsd": 0.0, "calls": 0, "byAgent": {}, "startedAt": iso_now()}
+                self.token_usage[trace] = bucket
+            tokens = _to_int(usage.get("totalTokens"), 0)
+            cost = float(usage.get("costUsd") or 0)
+            bucket["calls"] += 1
+            bucket["totalTokens"] += tokens
+            bucket["inputTokens"] += _to_int(usage.get("inputTokens"), 0)
+            bucket["outputTokens"] += _to_int(usage.get("outputTokens"), 0)
+            bucket["costUsd"] = round(bucket["costUsd"] + cost, 6)
+            one = bucket["byAgent"].setdefault(agent_id, {"tokens": 0, "costUsd": 0.0, "calls": 0})
+            one["tokens"] += tokens
+            one["costUsd"] = round(one["costUsd"] + cost, 6)
+            one["calls"] += 1
+            snapshot = json.loads(json.dumps(bucket, ensure_ascii=False))
+            alerts = self.token_alerts.setdefault(trace, set())
+            trace_hit = snapshot["totalTokens"] >= TOKEN_LIMIT and "trace" not in alerts
+            cost_hit = (COST_LIMIT_USD and snapshot["costUsd"] >= COST_LIMIT_USD
+                        and "cost" not in alerts)
+            call_hit = bool(usage) and tokens >= CALL_TOKEN_LIMIT and "call" not in alerts
+            missing = ((meta or {}).get("engine") == "hermes" and not usage
+                       and "missing" not in alerts)
+            if trace_hit:
+                alerts.add("trace")
+                self.aborts[trace] = f"累计 {snapshot['totalTokens']} tokens 超阈值 {TOKEN_LIMIT}"
+            if cost_hit:
+                alerts.add("cost")
+                self.aborts[trace] = f"累计 ${snapshot['costUsd']} 超金额阈值 ${COST_LIMIT_USD}"
+            if call_hit:
+                alerts.add("call")
+            if missing:
+                alerts.add("missing")
+        if trace_hit or cost_hit:
+            self._cto_alert(
+                f"成本熔断：trace {trace or '—'} 累计 {snapshot['totalTokens']} tokens / "
+                f"${snapshot['costUsd']}，已超阈值（{TOKEN_LIMIT} tokens"
+                + (f" / ${COST_LIMIT_USD}" if COST_LIMIT_USD else "") +
+                f"）。CTO 决定停止本轮任务，在下一个阶段边界生效。",
+                trace, snapshot, stop=True)
+        elif call_hit:
+            self._cto_alert(
+                f"成本异常：{agent_id} 单次调用 {tokens} tokens，超过单次阈值 {CALL_TOKEN_LIMIT}；"
+                "已记录并持续观察，暂不停止任务。", trace, snapshot, stop=False)
+        elif missing:
+            self._cto_alert(
+                f"成本异常：{agent_id} 本次调用未返回用量账本（--usage-file 缺失或损坏），"
+                "本轮 token 统计偏低，请 CTO 复核。", trace, snapshot, stop=False)
+        return snapshot
+
+    def _cto_alert(self, text, trace, bucket, stop=False):
+        """在线升级 + 邮件同时汇报老板（CTO 身份）。"""
+        payload = {"text": text, "stop": bool(stop), "usage": bucket, "by": "cto"}
+        self.send("escalation", "cto", "owner", trace, payload, priority=2)
+        self.emit("cost-alert", trace, payload)
+        subject = ("[OPC 成本熔断] 任务已停止" if stop else "[OPC 成本告警] 需 CTO 复核") + \
+                  f" · {trace or '实时'}"
+        body = (text + "\n\n## 本轮用量\n"
+                + json.dumps(bucket, ensure_ascii=False, indent=2)
+                + f"\n\n阈值：单轮 {TOKEN_LIMIT} tokens / 单次 {CALL_TOKEN_LIMIT} tokens"
+                + (f" / 金额 ${COST_LIMIT_USD}" if COST_LIMIT_USD else "")
+                + "\n处置：超阈值由 CTO 决定停止当前任务；异常仅汇报。")
+        threading.Thread(target=self.mail_boss, args=(subject, body, "cto"), daemon=True).start()
+
+    def guard_budget(self, trace):
+        """阶段边界检查：CTO 已判定停止则中断本轮编排。"""
+        with self.lock:
+            reason = self.aborts.get(trace)
+        if reason:
+            raise BudgetAbort(reason)
+
+    def mail_boss(self, subject, body, agent_id="cto", cc=None):
+        """以员工本人邮箱给老板发内部邮件；失败只告警，不阻断主流程。"""
+        try:
+            res = send_internal_mail(agent_id, [BOSS_MAIL], subject, body, cc=cc or [])
+        except Exception as exc:
+            print(f"[mail] {agent_id} 发信失败：{type(exc).__name__}: {exc}", flush=True)
+            self.send("escalation", agent_id, "owner", "", 
+                      {"text": f"邮件发送失败（{subject}）：{exc}"}, priority=2)
+            return {"ok": False, "error": str(exc)}
+        self.send("biz.event", agent_id, "owner", "",
+                  {"text": f"邮件已发：{subject}", "mail": res}, priority=1)
+        return res
+
 
     def ask_agent(self, aid, text):
         """老板 @某员工 下指令：走该员工独立的 Hermes profile，结果实时推回事件流"""
@@ -823,14 +1046,30 @@ class Kernel:
         return trace, hotspot
 
     def run_pipeline(self, trace, hotspot):
+        self.active_trace = trace
         try:
             self._pipeline(trace, hotspot)
+        except BudgetAbort as exc:
+            # CTO 已判定超阈值并通知老板：这里只负责按“停止”收口
+            with self.lock:
+                self.traces[trace]["status"] = "aborted"
+                self.traces[trace]["closedAt"] = iso_now()
+                self.traces[trace]["abortReason"] = str(exc)
+                for item in self.contents:
+                    if item.get("traceId") == trace and item.get("stage") not in (
+                            "published", "archived"):
+                        item["stage"] = "blocked"
+                        item["blockedBy"] = "cost-gate"
+            self.send("escalation", "cto", "owner", trace,
+                      {"text": f"任务已在阶段边界停止：{exc}", "aborted": True}, priority=2)
         except Exception as exc:
             self.send("escalation", "ceo", "owner", trace, {"text": f"编排异常：{exc}"}, priority=2)
             with self.lock:
                 self.traces[trace]["status"] = "error"
                 self.traces[trace]["closedAt"] = iso_now()
         finally:
+            if self.active_trace == trace:
+                self.active_trace = ""
             # 编排异常时也要收口会议，避免 3D 会议室一直停留在“开会中”
             if self.meeting_log.get("traceId") == trace and self.meeting_log.get("status") == "live":
                 try:
@@ -1144,6 +1383,7 @@ class Kernel:
             "summary, evidence, confidence, tools, selected, eliminated")
         data = data or self._deg("cco", "选题汇总")
         selected = self._coerce_selection(data, pm_topics)
+        eliminated = data.get("eliminated") or []
         self.send("topic.select", "cco", "ceo", trace,
                   {"selected": selected, "eliminated": data.get("eliminated", []),
                    "poolSize": pool_size, "result": data, "engine": meta["engine"]}, priority=2)
@@ -1211,6 +1451,43 @@ class Kernel:
         self.meeting_end(trace, conclusion, (meeting_doc or {}).get("minutes", ""))
         self.set_scene("WORK", trace, title="定稿 6 条，进入制作")
 
+        # 3.5 CCO 邮件汇报老板：选题评审结果 + 等待开工审批（抄送 CEO/CTO）
+        self.guard_budget(trace)
+        mail_lines = [
+            f"老板：",
+            "",
+            f"本轮选题评审已完成（热点：{hotspot['title']}）。",
+            f"候选池 {pool_size} 条 → CCO 筛出 9 条 → 评审会定稿 {sum(len(v) for v in final.values())} 条（每项目 2 条）。",
+            "",
+            "## 定稿清单",
+        ]
+        for pid in self.PIDS:
+            mail_lines.append(f"### {PROJECTS[pid]['name']}")
+            for t in final[pid]:
+                mail_lines.append(
+                    f"- 《{t['title']}》｜角度：{t.get('angle', '—')}｜形态：{t.get('form', '—')}｜"
+                    f"时长：{t.get('durationSec', '—')}s｜理由：{t.get('reason', '—')}")
+        if eliminated:
+            mail_lines += ["", "## 淘汰与原因"]
+            for e in eliminated[:12]:
+                mail_lines.append(f"- {e.get('title', '—')}：{e.get('reason', '—')}")
+        mail_lines += [
+            "",
+            "## 待办",
+            "- 开工审批单已生成（含成本/素材/合规检查），请老板在 OPC 工作台批准后进入制作。",
+            f"- 会议纪要：{(meeting_doc or {}).get('minutes', '（未生成）')}",
+        ]
+        mail_subject = f"[选题评审] {str(hotspot['title'])[:30]} · 定稿 6 条，待开工审批"
+        mail_body = "\n".join(mail_lines)
+        self.send("biz.event", "cco", "owner", trace,
+                  {"text": "CCO 已邮件汇报选题评审结果，等待开工审批",
+                   "to": BOSS_MAIL, "cc": ["ceo", "cto"], "subject": mail_subject,
+                   "finalCount": sum(len(v) for v in final.values()),
+                   "eliminated": len(eliminated)}, priority=2)
+        threading.Thread(target=self.mail_boss,
+                         args=(mail_subject, mail_body, "cco", ["ceo", "cto"]),
+                         daemon=True).start()
+
         # 4. 建 6 条内容（每项目 2 条）
         items = {}
         for pid in self.PIDS:
@@ -1267,6 +1544,8 @@ class Kernel:
             self.emit("approval", trace, prod_appr)
             self.set_scene("WORK", trace, title="开工审批未通过")
             return
+
+        self.guard_budget(trace)   # CTO 成本熔断：审批通过后、进入制作前再核一次
 
         # 5. PM 组织本项目组出《制作评估报告》：文案要求、分镜、时长、配音/TTS、素材
         jobs = {}
@@ -1506,6 +1785,7 @@ class Kernel:
             self.items_emit(trace, item)
 
         # 10. 审核员最终审核（精剪后）；驳回返工重写，最多 2 轮
+        self.guard_budget(trace)   # 制作完成后、终审前核对成本
         passed_items, review_history = {}, []
         pending = [iid for iid in items
                    if iid not in sample_blocked and iid not in render_blocked]
@@ -1579,6 +1859,7 @@ class Kernel:
             return
 
         # 11. 审批门（仅放行审核通过的内容）
+        self.guard_budget(trace)   # 发布审批前最后一道成本核对
         approval = {"id": uid("ap"), "traceId": trace, "action": "publish.execute", "risk": "high",
                     "status": "pending", "approver": "老板", "createdAt": iso_now(), "decidedAt": "",
                     "items": list(passed_items),
@@ -1772,6 +2053,7 @@ class Kernel:
             f"精剪说明：{(item.get('finalCut') or '—')[:120]}",
             f"项目：{PROJECTS[item['projectId']]['name']}；要求风格：{expected}；样片三方评审：{sample_note}",
             extra, "summary, evidence, confidence, tools, pass, reasons")
+        self.record_usage("reviewer", meta, trace)
         if not data:
             return (True, ["模型审核不可用，结构护栏通过"], meta)
         passed = bool(data.get("pass", True))
@@ -1890,6 +2172,12 @@ class Kernel:
                                                           len(self.stats["approvalSeconds"]), 1)
                               if self.stats["approvalSeconds"] else 0,
                               "hermes": HERMES.stats()},
+                    "cost": {"limits": {"traceTokens": TOKEN_LIMIT,
+                                        "callTokens": CALL_TOKEN_LIMIT,
+                                        "usd": COST_LIMIT_USD},
+                             "activeTrace": self.active_trace,
+                             "aborted": dict(self.aborts),
+                             "usage": {k: v for k, v in list(self.token_usage.items())[-5:]}},
                     "eventsList": self.messages[-40:],
                     "engine": MODE, "serverTime": iso_now(), "serverStartedAt": self.startedAt}
 
