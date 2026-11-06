@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+<rect x="70" y="70" width="260" height="260" rx="30" fill="none" stroke="{{ACCENT}}" stroke-width="16"/>
+<path d="M130 210 l50 50 l100 -120" fill="none" stroke="{{ACCENT}}" stroke-width="24"/>
+<path d="M110 320 H290" stroke="{{PRIMARY}}" stroke-width="8" opacity=".5"/>
+</svg>

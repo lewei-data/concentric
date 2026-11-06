@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "canvas": 400,
+  "style": "flat editorial vector, ink outline, transparent background, 2-3 colors",
+  "assets": [
+    {
+      "id": "photo_paper",
+      "label": "相纸/照片",
+      "file": "photo_paper.svg",
+      "tags": [
+        "照片",
+        "相纸",
+        "底片",
+        "影像",
+        "老照片",
+        "photo",
+        "paper",
+        "negative",
+        "image"
+      ]
+    },
+    {
+      "id": "developing_tray",
+      "label": "药水盘/暗房",
+      "file": "developing_tray.svg",
+      "tags": [
+        "药水",
+        "暗房",
+        "显影",
+        "水盘",
+        "冲洗",
+        "tray",
+        "darkroom",
+        "developer"
+      ]
+    },
+    {
+      "id": "magnifier",
+      "label": "放大镜/检查",
+      "file": "magnifier.svg",
+      "tags": [
+        "放大",
+        "细节",
+        "查看",
+        "检查",
+        "审核",
+        "magnifier",
+        "detail",
+        "inspect"
+      ]
+    },
+    {
+      "id": "album",
+      "label": "相册/回忆",
+      "file": "album.svg",
+      "tags": [
+        "相册",
+        "家族",
+        "回忆",
+        "album",
+        "family",
+        "memory"
+      ]
+    },
+    {
+      "id": "chat_bubble",
+      "label": "群聊/消息",
+      "file": "chat_bubble.svg",
+      "tags": [
+        "群聊",
+        "消息",
+        "微信",
+        "对话",
+        "聊天",
+        "评论",
+        "chat",
+        "message",
+        "wechat"
+      ]
+    },
+    {
+      "id": "red_envelope",
+      "label": "红包/收益",
+      "file": "red_envelope.svg",
+      "tags": [
+        "红包",
+        "打赏",
+        "付费",
+        "收益",
+        "payment"
+      ]
+    },
+    {
+      "id": "document",
+      "label": "合同/文件",
+      "file": "document.svg",
+      "tags": [
+        "合同",
+        "授权",
+        "文件",
+        "条款",
+        "报告",
+        "文档",
+        "contract",
+        "document",
+        "license"
+      ]
+    },
+    {
+      "id": "stamp",
+      "label": "审批/盖章",
+      "file": "stamp.svg",
+      "tags": [
+        "盖章",
+        "审批",
+        "通过",
+        "驳回",
+        "合规",
+        "stamp",
+        "approval",
+        "reject"
+      ]
+    },
+    {
+      "id": "clock",
+      "label": "时间/倒计时",
+      "file": "clock.svg",
+      "tags": [
+        "时间",
+        "倒计时",
+        "排期",
+        "等待",
+        "clock",
+        "time",
+        "deadline"
+      ]
+    },
+    {
+      "id": "server",
+      "label": "服务器/系统",
+      "file": "server.svg",
+      "tags": [
+        "服务器",
+        "系统",
+        "接口",
+        "上线",
+        "部署",
+        "server",
+        "system",
+        "api",
+        "deploy"
+      ]
+    },
+    {
+      "id": "shield",
+      "label": "风险/合规",
+      "file": "shield.svg",
+      "tags": [
+        "风险",
+        "合规",
+        "红线",
+        "保护",
+        "shield",
+        "risk",
+        "compliance"
+      ]
+    },
+    {
+      "id": "chart",
+      "label": "数据/增长",
+      "file": "chart.svg",
+      "tags": [
+        "数据",
+        "增长",
+        "倍率",
+        "图表",
+        "趋势",
+        "chart",
+        "data",
+        "growth"
+      ]
+    },
+    {
+      "id": "camera",
+      "label": "拍摄/镜头",
+      "file": "camera.svg",
+      "tags": [
+        "拍摄",
+        "相机",
+        "镜头",
+        "视频",
+        "camera",
+        "shoot",
+        "lens"
+      ]
+    },
+    {
+      "id": "ai_chip",
+      "label": "AI/模型",
+      "file": "ai_chip.svg",
+      "tags": [
+        "AI",
+        "模型",
+        "算法",
+        "分身",
+        "智能",
+        "ai",
+        "model",
+        "algorithm"
+      ]
+    }
+  ]
+}

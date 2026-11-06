@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>同心圆 · 3D 会议室</title>
+<style>
+  :root{
+    --ink:#111827; --muted:#6B7280; --line:#E5E7EB; --primary:#4F46E5;
+    --wenren:#2563EB; --gou:#EA580C; --tong:#7C3AED; --mid:#0D9488;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#E9EEF7;color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  #stage{position:fixed;inset:0}
+  canvas{display:block}
+
+  .hud{position:fixed;top:14px;left:14px;right:14px;display:flex;align-items:center;gap:12px;
+    padding:10px 14px;background:rgba(255,255,255,.84);backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.9);border-radius:14px;box-shadow:0 8px 26px rgba(17,24,39,.10);z-index:5}
+  .mark{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#4F46E5,#7C3AED);
+    display:grid;place-items:center;box-shadow:0 2px 8px rgba(79,70,229,.30);flex:none}
+  .mark svg{width:22px;height:22px;display:block}
+  .brand{display:flex;flex-direction:column;line-height:1.15;flex:none}
+  .brand b{font-size:16px;letter-spacing:1.2px}
+  .brand i{font-style:normal;font-size:10.5px;color:var(--muted);letter-spacing:1.4px;white-space:nowrap}
+  .scene{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#3730A3;
+    background:#EEF2FF;border:1px solid #C7D2FE;white-space:nowrap;flex:none}
+  .scene.live{color:#065F46;background:#ECFDF5;border-color:#A7F3D0}
+  .scene.ended{color:#92400E;background:#FFFBEB;border-color:#FDE68A}
+  .mtitle{font-size:12.5px;font-weight:600;color:#475569;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;max-width:26vw}
+  .chips{display:flex;gap:7px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+  .chip{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;
+    background:#fff;border:1px solid var(--line);font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .chip b{font-size:13px;color:var(--ink)}
+  .go{cursor:pointer;border:0;border-radius:999px;padding:7px 14px;font-size:12px;font-weight:700;
+    color:#fff;background:linear-gradient(135deg,#4F46E5,#7C3AED);white-space:nowrap;
+    box-shadow:0 3px 10px rgba(79,70,229,.28)}
+  .go:hover{filter:brightness(1.06)}
+  .go:disabled{opacity:.55;cursor:default;box-shadow:none}
+  .back{text-decoration:none;font-size:12px;font-weight:700;color:#3730A3;background:#EEF2FF;
+    border:1px solid #C7D2FE;border-radius:999px;padding:6px 12px;white-space:nowrap;flex:none}
+  .back:hover{background:#E0E7FF}
+
+  .hint{position:fixed;left:14px;bottom:14px;padding:8px 12px;background:rgba(17,24,39,.70);
+    color:#fff;font-size:11.5px;border-radius:10px;z-index:5;max-width:52vw}
+
+  .records{position:fixed;right:14px;top:86px;width:304px;max-height:calc(100vh - 110px);
+    display:flex;flex-direction:column;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);
+    border:1px solid #fff;border-radius:14px;box-shadow:0 12px 34px rgba(17,24,39,.12);z-index:6;overflow:hidden}
+  .rh{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;border-bottom:1px solid var(--line);flex:none}
+  .rh b{font-size:13px;display:block}
+  .rh span{font-size:10.5px;color:var(--muted)}
+  .rh .cnt{font-size:11px;color:#3730A3;background:#EEF2FF;border:1px solid #C7D2FE;
+    border-radius:999px;padding:1px 8px;flex:none}
+  .rlist{overflow:auto;padding:8px;display:flex;flex-direction:column;gap:7px}
+  .ritem{cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:8px 9px;background:#fff;transition:.15s}
+  .ritem:hover{border-color:#C7D2FE;background:#FBFCFE}
+  .rt{display:flex;align-items:center;gap:6px}
+  .rt b{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rt .tag{font-size:9.5px;color:#6B7280;background:#F1F5F9;border:1px solid #E2E8F0;
+    border-radius:999px;padding:1px 6px;flex:none}
+  .rt .tag.live{color:#065F46;background:#ECFDF5;border-color:#A7F3D0}
+  .rm{font-size:10.5px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums}
+  .rc{font-size:11px;color:#475569;line-height:1.5;margin-top:4px;display:-webkit-box;
+    -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .rempty{padding:18px 8px;text-align:center;color:#9CA3AF;font-size:11.5px;line-height:1.7}
+  .rfoot{flex:none;display:block;padding:9px 12px;border-top:1px solid var(--line);
+    font-size:11px;color:#4338CA;text-decoration:none;background:#F8FAFF}
+  .rfoot:hover{background:#EEF2FF}
+
+  .emp{position:fixed;left:14px;bottom:54px;width:280px;padding:12px 14px;border-radius:14px;
+    background:rgba(255,255,255,.94);border:1px solid #fff;box-shadow:0 12px 30px rgba(17,24,39,.14);
+    z-index:6;display:none;max-height:46vh;overflow:auto}
+  .emp .row1{display:flex;align-items:center;gap:8px}
+  .emp .ava{width:40px;height:40px;border-radius:10px;object-fit:cover;flex:none;background:#E5E7EB}
+  .emp .sw{width:10px;height:10px;border-radius:3px;flex:none}
+  .emp .nm{font-size:14px;font-weight:800}
+  .emp .rl{font-size:11.5px;color:var(--muted)}
+  .emp .close{position:absolute;top:8px;right:10px;cursor:pointer;color:#9CA3AF;font-size:14px}
+  .emp .say{margin-top:8px;font-size:11.5px;line-height:1.65;color:#374151;
+    border-left:2px solid #E5E7EB;padding:2px 0 2px 8px}
+  .emp .say b{color:var(--primary)}
+  .emp .say .t{color:#9CA3AF;font-size:10px;margin-left:4px}
+
+  .modal{position:fixed;inset:0;background:rgba(17,24,39,.46);display:none;place-items:center;z-index:30}
+  .modal.on{display:grid}
+  .mbox{width:min(720px,92vw);max-height:84vh;overflow:auto;background:#fff;border-radius:16px;
+    box-shadow:0 24px 70px rgba(17,24,39,.3)}
+  .mh{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
+    border-bottom:1px solid var(--line);font-size:13px;font-weight:700;position:sticky;top:0;background:#fff;z-index:1}
+  .mh .x{cursor:pointer;color:#9CA3AF;font-size:18px;line-height:1}
+  .mb{padding:14px 16px 18px;font-size:12.5px;line-height:1.8;color:#374151}
+  .mb h4{margin:14px 0 6px;font-size:12.5px;color:#111827}
+  .mb h4:first-child{margin-top:0}
+  .mb .meta{color:var(--muted);font-size:11.5px}
+  .mb .sp{background:#F8FAFC;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:7px 0}
+  .mb .sp .who{font-size:12px;font-weight:700}
+  .mb .sp .who i{font-style:normal;font-weight:500;color:var(--muted);font-size:11px;margin-left:6px}
+  .mb .sp .tx{margin-top:3px;white-space:pre-wrap}
+  .mb .concl{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:10px;padding:10px 12px;
+    color:#065F46;white-space:pre-wrap}
+  .mb .link{display:inline-block;margin-top:10px;font-size:11.5px;color:#4338CA;background:#EEF2FF;
+    border:1px solid #C7D2FE;border-radius:7px;padding:3px 9px;text-decoration:none}
+  .mb .link:hover{background:#E0E7FF}
+  .mb .empty{color:#9CA3AF}
+
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%) translateY(14px);
+    background:rgba(17,24,39,.88);color:#fff;font-size:12px;padding:9px 16px;border-radius:10px;
+    opacity:0;pointer-events:none;transition:.22s;z-index:40}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .loading{position:fixed;inset:0;display:grid;place-items:center;background:#E9EEF7;z-index:9;
+    font-size:13px;color:var(--muted)}
+  .loading .box{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding:20px}
+  .spinner{width:26px;height:26px;border-radius:50%;border:3px solid #C7D2FE;border-top-color:#4F46E5;
+    animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  @media (max-width:1080px){
+    .mtitle{display:none}
+    .records{width:270px}
+  }
+  @media (max-width:860px){
+    .records{display:none}
+    .chips{display:none}
+    .emp{width:236px}
+  }
+</style>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+
+<header class="hud">
+  <span class="mark" aria-hidden="true">
+    <svg viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="12" stroke="#fff" stroke-width="2.4" opacity=".95"/>
+      <circle cx="16" cy="16" r="7" stroke="#fff" stroke-width="2.2" opacity=".75"/>
+      <circle cx="16" cy="16" r="2.4" fill="#fff"/>
+      <circle cx="28" cy="16" r="1.8" fill="#fff"/>
+    </svg>
+  </span>
+  <span class="brand"><b>同心圆</b><i>3D 会议室 · MEETING ROOM</i></span>
+  <span class="scene" id="modePill">空闲</span>
+  <span class="mtitle" id="titlePill">暂无会议</span>
+  <div class="chips">
+    <span class="chip">参会 <b id="cCount">0</b></span>
+    <span class="chip">发言 <b id="cSpeak">0</b></span>
+  </div>
+  <button class="go" id="startBtn">召开选题会</button>
+  <a class="back" href="/office3d">← 3D 办公区</a>
+  <a class="back" href="/">工作台</a>
+</header>
+
+<aside class="records">
+  <div class="rh">
+    <div><b>会议记录</b><span>Obsidian 归档 · 随时可查</span></div>
+    <span class="cnt" id="recCount">0</span>
+  </div>
+  <div class="rlist" id="recList"></div>
+  <a class="rfoot" id="recFoot" href="/vault/OPC/会议纪要/00-会议索引.md" target="_blank" rel="noopener">打开会议索引 ↗</a>
+</aside>
+
+<div class="emp" id="emp">
+  <span class="close" id="empClose">×</span>
+  <div class="row1"><img class="ava" id="empAva" alt=""><i class="sw" id="empSw"></i>
+    <div><div class="nm" id="empName"></div><div class="rl" id="empRole"></div></div></div>
+  <div id="empSays"></div>
+</div>
+
+<div class="hint">拖拽旋转 · 滚轮缩放 · 点击人物查看其发言 · 会议记录自动写入 Obsidian</div>
+
+<div class="modal" id="modal">
+  <div class="mbox">
+    <div class="mh"><span id="mTitle">会议记录</span><span class="x" id="mClose">×</span></div>
+    <div class="mb" id="mBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="loading" id="loading"><div class="box"><div class="spinner"></div><div>正在打开 3D 会议室…</div></div></div>
+
+<script>
+  window.__meetingBooted = false;
+  setTimeout(function(){
+    if (!window.__meetingBooted) {
+      var el = document.getElementById('loading');
+      if (el) el.innerHTML = '<div class="box"><div>加载超时：请确认服务可访问（/vendor/three.module.js 与 /api/meeting）</div></div>';
+    }
+  }, 8000);
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ================= 基础常量 ================= */
+const PROJECT_COLOR = { wenren: '#2563EB', gou: '#EA580C', tongxinyuan: '#7C3AED', all: '#0D9488' };
+const PROJECT_HEX = { wenren: 0x2563EB, gou: 0xEA580C, tongxinyuan: 0x7C3AED, all: 0x0D9488 };
+const PROJECT_NAME = { wenren: '文人莫克', gou: '狗大人', tongxinyuan: '同心圆', all: '全公司' };
+const SKIN = [0xF3CBA7, 0xE8B98C, 0xD9A06B, 0xF7D7B6];
+const FONT = '"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif';
+
+/* 与 3D 办公区同一套人设配色，保证两个 3D 页面里是同一批人 */
+const LOOKS = {
+  boss:           { hair: 'guan',     robe: 0xC9A227, trim: 0x5B4720 },
+  cco:            { hair: 'long',     robe: 0x24252D, trim: 0x9AA3B2 },
+  ceo:            { hair: 'crown',    robe: 0xF1EEE4, trim: 0xC8A96A },
+  cto:            { hair: 'topknot',  robe: 0x2E4057, trim: 0x8FB3C9 },
+  pm_wenren:      { hair: 'scholar',  robe: 0x3E6FA8, trim: 0xDCE6F2 },
+  pm_gou:         { hair: 'buns',     robe: 0xD9772E, trim: 0xF3D6BE },
+  pm_tongxinyuan: { hair: 'long',     robe: 0x8B6BB5, trim: 0xE8DDF4 },
+  cw_wenren:      { hair: 'scholar',  robe: 0x4E7CB5, trim: 0xE5EEF7 },
+  cw_gou:         { hair: 'highpony', robe: 0xC2601F, trim: 0xF0D4B8 },
+  cw_tongxinyuan: { hair: 'halfup',   robe: 0x7255A0, trim: 0xD9CCEC },
+  vd_wenren:      { hair: 'hood',     robe: 0x3C6CA3, trim: 0x9CC3E0 },
+  vd_gou:         { hair: 'highpony', robe: 0xB4541C, trim: 0xE6C9A8 },
+  vd_tongxinyuan: { hair: 'long',     robe: 0x5F4386, trim: 0xC7B2E0 },
+  release_ops:    { hair: 'guan',     robe: 0x1F5C55, trim: 0xC2B280 },
+  reviewer:       { hair: 'topknot',  robe: 0x3B3F46, trim: 0xB9BEC5 },
+  scout:          { hair: 'ponytail', robe: 0xDDE6EE, trim: 0x8FB2C6 },
+  kb_manager:     { hair: 'scholar',  robe: 0x8C9A6B, trim: 0xEDE6CF }
+};
+const LOOK_FALLBACK = { hair: 'short', robe: 0x6B7280, trim: 0xCBD5E1 };
+
+/* 座位：长桌两侧各 4 位，南侧面向北、北侧面向南 */
+const TABLE = { x: 0, z: 0.3, w: 6.6, d: 2.2 };
+const SEATS = [
+  { x: -2.50, z: 1.85, ry: Math.PI },
+  { x: -0.84, z: 1.85, ry: Math.PI },
+  { x:  0.84, z: 1.85, ry: Math.PI },
+  { x:  2.50, z: 1.85, ry: Math.PI },
+  { x: -2.50, z: -1.25, ry: 0 },
+  { x: -0.84, z: -1.25, ry: 0 },
+  { x:  0.84, z: -1.25, ry: 0 },
+  { x:  2.50, z: -1.25, ry: 0 }
+];
+
+/* ================= 渲染器 / 场景 / 相机 ================= */
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xE9EEF7);
+scene.fog = new THREE.Fog(0xE9EEF7, 32, 62);
+
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 200);
+const target = new THREE.Vector3(0, 1.1, -0.6);
+const cam = { theta: 0.5, phi: 0.92, radius: 17.6 };
+
+function placeCamera() {
+  const sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
+  camera.position.set(
+    target.x + cam.radius * sp * Math.sin(cam.theta),
+    target.y + cam.radius * cp,
+    target.z + cam.radius * sp * Math.cos(cam.theta)
+  );
+  camera.lookAt(target);
+}
+placeCamera();
+
+/* ================= 灯光 ================= */
+const hemi = new THREE.HemisphereLight(0xFFFFFF, 0xD8E2F2, 0.82);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xFFF4E2, 1.05);
+sun.position.set(8, 14, 9);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -14; sun.shadow.camera.right = 14;
+sun.shadow.camera.top = 14; sun.shadow.camera.bottom = -14;
+sun.shadow.camera.far = 42;
+scene.add(sun);
+
+const tableLight = new THREE.SpotLight(0xFFFFFF, 12, 16, 0.72, 0.55, 1.4);
+tableLight.position.set(0, 4.6, 1.2);
+tableLight.target.position.set(0, 0.8, 0.2);
+tableLight.castShadow = true;
+tableLight.shadow.mapSize.set(1024, 1024);
+scene.add(tableLight, tableLight.target);
+
+const screenGlow = new THREE.PointLight(0x6C8CFF, 9, 12, 2);
+screenGlow.position.set(0, 2.6, -4.6);
+scene.add(screenGlow);
+
+/* ================= 房间 ================= */
+const ROOM = { w: 12.4, d: 10.0, h: 3.6, z0: -6.0, z1: 4.0 };
+const mat = {
+  floor: null,
+  wall: new THREE.MeshStandardMaterial({ color: 0xF8FAFD, roughness: 0.92 }),
+  wain: new THREE.MeshStandardMaterial({ color: 0xDCE5F2, roughness: 0.85 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x9AA5B5, roughness: 0.38, metalness: 0.6 }),
+  deskTop: new THREE.MeshStandardMaterial({ color: 0xE9DCCB, roughness: 0.46, metalness: 0.05 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x2F3A4D, roughness: 0.62 }),
+  white: new THREE.MeshStandardMaterial({ color: 0xF8FAFC, roughness: 0.45 }),
+  paper: new THREE.MeshStandardMaterial({ color: 0xFEFEF8, roughness: 0.85 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0xC7E3F5, roughness: 0.08, metalness: 0.12,
+    transparent: true, opacity: 0.26, side: THREE.DoubleSide })
+};
+
+/* 地板：程序化细网格，避免整块纯色显得空 */
+function floorTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#E8EDF6'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 260; i++) {
+    g.fillStyle = `rgba(148,163,184,${0.05 + Math.random() * 0.06})`;
+    g.fillRect(Math.random() * 512, Math.random() * 512, 2 + Math.random() * 2, 2 + Math.random() * 2);
+  }
+  g.strokeStyle = 'rgba(148,163,184,.20)'; g.lineWidth = 2;
+  g.strokeRect(0, 0, 512, 512);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(7, 6);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+mat.floor = new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.94 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), mat.floor);
+floor.rotation.x = -Math.PI / 2;
+floor.position.set(0, 0, (ROOM.z0 + ROOM.z1) / 2);
+floor.receiveShadow = true;
+scene.add(floor);
+
+function wallMesh(w, h, x, y, z, ry) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat.wall);
+  m.position.set(x, y, z);
+  m.rotation.y = ry;
+  m.receiveShadow = true;
+  scene.add(m);
+  return m;
+}
+wallMesh(ROOM.w, ROOM.h, 0, ROOM.h / 2, ROOM.z0, 0);                       // 北墙（投屏墙）
+wallMesh(ROOM.d, ROOM.h, -ROOM.w / 2, ROOM.h / 2, (ROOM.z0 + ROOM.z1) / 2, Math.PI / 2);  // 西墙
+wallMesh(ROOM.d, ROOM.h, ROOM.w / 2, ROOM.h / 2, (ROOM.z0 + ROOM.z1) / 2, -Math.PI / 2); // 东墙
+
+/* 墙裙 + 踢脚线 */
+function wainscot(w, x, z, ry) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.9, 0.06), mat.wain);
+  m.position.set(x, 0.45, z);
+  m.rotation.y = ry;
+  m.receiveShadow = true;
+  scene.add(m);
+}
+wainscot(ROOM.w, 0, ROOM.z0 + 0.03, 0);
+wainscot(ROOM.d, -ROOM.w / 2 + 0.03, (ROOM.z0 + ROOM.z1) / 2, Math.PI / 2);
+wainscot(ROOM.d, ROOM.w / 2 - 0.03, (ROOM.z0 + ROOM.z1) / 2, Math.PI / 2);
+
+/* ================= 投屏大屏 ================= */
+const screenCanvas = document.createElement('canvas');
+screenCanvas.width = 1600; screenCanvas.height = 700;
+const sctx = screenCanvas.getContext('2d');
+const screenTex = new THREE.CanvasTexture(screenCanvas);
+screenTex.colorSpace = THREE.SRGBColorSpace;
+screenTex.anisotropy = 8;
+
+const bezel = new THREE.Mesh(new THREE.BoxGeometry(7.5, 3.46, 0.14),
+  new THREE.MeshStandardMaterial({ color: 0x161E2E, roughness: 0.5, metalness: 0.35 }));
+bezel.position.set(0, 2.62, ROOM.z0 + 0.08);
+bezel.castShadow = true;
+scene.add(bezel);
+const bigScreen = new THREE.Mesh(new THREE.PlaneGeometry(7.16, 3.12),
+  new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false }));
+bigScreen.position.set(0, 2.62, ROOM.z0 + 0.16);
+scene.add(bigScreen);
+
+/* ================= 长桌 / 椅子 / 桌上小物 ================= */
+const tableTop = new THREE.Mesh(new THREE.BoxGeometry(TABLE.w, 0.13, TABLE.d), mat.deskTop);
+tableTop.position.set(TABLE.x, 0.76, TABLE.z);
+tableTop.castShadow = true; tableTop.receiveShadow = true;
+scene.add(tableTop);
+[-2.4, 2.4].forEach(dx => {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.70, 0.9), mat.metal);
+  leg.position.set(TABLE.x + dx, 0.35, TABLE.z);
+  leg.castShadow = true;
+  scene.add(leg);
+});
+const cableTray = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.06, 0.24), mat.dark);
+cableTray.position.set(TABLE.x, 0.66, TABLE.z);
+scene.add(cableTray);
+
+const chairMat = new THREE.MeshStandardMaterial({ color: 0x556179, roughness: 0.74 });
+SEATS.forEach(s => {
+  const dx = s.x - TABLE.x, dz = s.z - TABLE.z;
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.09, 0.66), chairMat);
+  seat.position.set(s.x, 0.47, s.z);
+  seat.castShadow = true;
+  scene.add(seat);
+  const backZ = s.z + (dz > 0 ? 0.31 : -0.31);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.60, 0.08), chairMat);
+  back.position.set(s.x, 0.78, backZ);
+  back.castShadow = true;
+  scene.add(back);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.42, 10), mat.metal);
+  pole.position.set(s.x, 0.24, s.z);
+  scene.add(pole);
+});
+
+/* 桌上：笔记本 / 杯子 / 资料 / 中间绿植 */
+function addLaptop(x, z, ry) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.025, 0.36), mat.dark);
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.30, 0.02), mat.metal);
+  lid.position.set(0, 0.15, -0.17);
+  lid.rotation.x = -0.30;
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.26),
+    new THREE.MeshBasicMaterial({ color: 0x9DB8FF, toneMapped: false }));
+  glow.position.set(0, 0.157, -0.152);
+  glow.rotation.x = -0.30 + Math.PI / 2;
+  g.add(base, lid, glow);
+  g.position.set(x, 0.83, z);
+  g.rotation.y = ry;
+  scene.add(g);
+}
+addLaptop(-2.4, 0.3, 0.12);
+addLaptop(2.4, 0.3, -0.12);
+
+function addCup(x, z, color) {
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.048, 0.11, 14),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.45 }));
+  cup.position.set(x, 0.885, z);
+  cup.castShadow = true;
+  scene.add(cup);
+}
+addCup(-1.5, 1.02, 0xE2E8F0);
+addCup(0.6, -0.42, 0xBFD7EA);
+addCup(-0.2, 1.05, 0xE7C9A9);
+
+function addPapers(x, z) {
+  for (let i = 0; i < 3; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.008, 0.24), mat.paper);
+    p.position.set(x + i * 0.05, 0.832 + i * 0.009, z + i * 0.03);
+    p.rotation.y = 0.12 * i;
+    scene.add(p);
+  }
+}
+addPapers(1.4, 0.82);
+addPapers(-2.05, -0.5);
+
+const plant = new THREE.Group();
+const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.10, 0.16, 14),
+  new THREE.MeshStandardMaterial({ color: 0xE4E7EC, roughness: 0.6 }));
+pot.position.y = 0.08;
+const leafMat = new THREE.MeshStandardMaterial({ color: 0x3E8E5A, roughness: 0.7 });
+[-0.1, 0.1].forEach((dx, i) => {
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), leafMat);
+  leaf.scale.set(1, 0.62, 0.8);
+  leaf.position.set(dx, 0.22 + i * 0.06, 0);
+  plant.add(leaf);
+});
+plant.add(pot);
+plant.position.set(0, 0.83, 0.24);
+scene.add(plant);
+
+/* 白板 / 资料柜（东墙，增加会议室的识别度） */
+const boardMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.32 });
+const board = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.5, 3.0), boardMat);
+board.position.set(ROOM.w / 2 - 0.09, 1.85, -2.2);
+scene.add(board);
+const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(0.10, 1.62, 3.12), mat.metal);
+boardFrame.position.set(ROOM.w / 2 - 0.05, 1.85, -2.2);
+scene.add(boardFrame);
+
+/* ================= 铭牌 / 工牌贴图 ================= */
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
+  g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+  g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y);
+  g.closePath();
+}
+function fitFont(g, text, maxW, base, weight = '700') {
+  let size = base;
+  do {
+    g.font = `${weight} ${size}px ${FONT}`;
+    size -= 2;
+  } while (g.measureText(text).width > maxW && size > 12);
+  return size;
+}
+function plateTexture(name, role, colorHex, flip = false) {
+  const W = 512, H = 256;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  if (flip) { g.translate(W, 0); g.scale(-1, 1); }
+  g.fillStyle = '#FFFFFF'; roundRect(g, 0, 0, W, H, 26); g.fill();
+  g.fillStyle = colorHex; roundRect(g, 0, 0, W, 68, 26); g.fill();
+  g.fillRect(0, 44, W, 24);
+  g.fillStyle = '#FFFFFF'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  fitFont(g, role, W - 70, 36, '600');
+  g.fillText(role, W / 2, 34);
+  g.fillStyle = '#111827';
+  fitFont(g, name, W - 70, 96);
+  g.fillText(name, W / 2, 158);
+  g.strokeStyle = colorHex; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(W / 2 - 40, 208); g.lineTo(W / 2 + 40, 208); g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+function badgeTexture(name, role, colorHex) {
+  const W = 200, H = 260;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#FFFFFF'; roundRect(g, 0, 0, W, H, 20); g.fill();
+  g.fillStyle = colorHex; roundRect(g, 0, 0, W, 46, 20); g.fill();
+  g.fillRect(0, 30, W, 20);
+  g.strokeStyle = 'rgba(255,255,255,.92)'; g.lineWidth = 2;
+  [11, 6].forEach(r => { g.beginPath(); g.arc(24, 23, r, 0, Math.PI * 2); g.stroke(); });
+  g.fillStyle = '#FFFFFF'; g.beginPath(); g.arc(24, 23, 2.4, 0, Math.PI * 2); g.fill();
+  g.font = `600 13px ${FONT}`;
+  g.textBaseline = 'middle'; g.fillText('同心圆 · AI', 42, 24);
+  g.textAlign = 'center';
+  fitFont(g, name, W - 34, 44);
+  g.fillStyle = '#111827'; g.fillText(name, W / 2, 118);
+  g.fillStyle = '#6B7280'; g.font = `500 15px ${FONT}`;
+  g.fillText(role, W / 2, 168);
+  g.strokeStyle = '#E5E7EB'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(28, 204); g.lineTo(W - 28, 204); g.stroke();
+  g.fillStyle = '#9CA3AF'; g.font = '500 13px ui-monospace,Menlo,monospace';
+  g.fillText('CONCENTRIC', W / 2, 230);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/* ================= 坐着开会的人 ================= */
+const actors = new Map();
+const pickables = [];
+const plates = [];
+let actorKey = '';
+
+function buildSeatedActor(p, seat) {
+  const look = LOOKS[p.id] || LOOK_FALLBACK;
+  const hex = PROJECT_COLOR[p.projectId] || PROJECT_COLOR.all;
+  const skinMat = new THREE.MeshStandardMaterial({
+    color: SKIN[(p.name.length + p.id.length) % SKIN.length], roughness: 0.72 });
+  const cloth = new THREE.MeshStandardMaterial({ color: look.robe, roughness: 0.72 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: look.trim, roughness: 0.55 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x1F1B22, roughness: 0.54 });
+
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.40, 5, 14), cloth);
+  body.position.y = 0.95;
+  body.castShadow = true;
+  g.add(body);
+
+  const shoulder = new THREE.Mesh(new THREE.CapsuleGeometry(0.235, 0.18, 4, 12), cloth);
+  shoulder.rotation.z = Math.PI / 2;
+  shoulder.position.y = 1.22;
+  shoulder.scale.set(1, 1, 0.72);
+  shoulder.castShadow = true;
+  g.add(shoulder);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.185, 20, 16), skinMat);
+  head.position.y = 1.52;
+  head.scale.setScalar(1.10);
+  head.castShadow = true;
+  g.add(head);
+
+  const hairBack = new THREE.Mesh(new THREE.SphereGeometry(0.205, 16, 12), hairMat);
+  hairBack.position.set(0, 1.525, -0.078);
+  hairBack.scale.set(1.06, 1.13, 0.58);
+  hairBack.castShadow = true;
+  g.add(hairBack);
+  const bun = (r, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), hairMat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    g.add(m);
+  };
+  switch (look.hair) {
+    case 'crown':
+      bun(0.072, 0, 1.715, -0.03);
+      {
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.092, 0.085, 12), trimMat);
+        crown.position.set(0, 1.80, -0.02); g.add(crown);
+      }
+      break;
+    case 'guan': {
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.235, 0.165, 0.235), hairMat);
+      cap.position.set(0, 1.74, -0.02); cap.castShadow = true; g.add(cap);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.207, 0.207, 0.04, 16), trimMat);
+      band.position.set(0, 1.66, -0.02); g.add(band);
+      break;
+    }
+    case 'topknot':
+    case 'halfup':
+      bun(look.hair === 'topknot' ? 0.072 : 0.06, 0, 1.72, -0.02);
+      break;
+    case 'buns':
+      bun(0.068, -0.15, 1.70, -0.03);
+      bun(0.068, 0.15, 1.70, -0.03);
+      break;
+    case 'scholar': {
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.135, 0.255), hairMat);
+      cap.position.set(0, 1.72, -0.025); cap.castShadow = true; g.add(cap);
+      break;
+    }
+    case 'highpony':
+    case 'ponytail': {
+      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.30, 4, 8), hairMat);
+      tail.position.set(0, 1.40, -0.20); tail.rotation.x = 0.32; g.add(tail);
+      break;
+    }
+    case 'hood': {
+      const hood = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), trimMat);
+      hood.position.set(0, 1.54, -0.06); hood.scale.set(1.06, 1.12, 0.72); g.add(hood);
+      break;
+    }
+    case 'long': {
+      const longHair = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.30, 4, 10), hairMat);
+      longHair.position.set(0, 1.32, -0.14); longHair.scale.set(1, 1, 0.7); g.add(longHair);
+      break;
+    }
+    default:
+      break;
+  }
+
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.135, 0.026, 8, 20), trimMat);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = 1.335;
+  g.add(collar);
+
+  const arms = [];
+  [-0.275, 0.275].forEach(dx => {
+    const pivot = new THREE.Group();
+    pivot.position.set(dx, 1.16, 0.01);
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.30, 4, 8), cloth);
+    arm.position.y = -0.19;
+    arm.castShadow = true;
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.062, 10, 8), skinMat);
+    hand.position.set(0, -0.40, 0.05);
+    hand.castShadow = true;
+    pivot.add(arm, hand);
+    pivot.rotation.x = -0.48;
+    g.add(pivot);
+    arms.push(pivot);
+  });
+
+  g.position.set(seat.x, 0, seat.z);
+  g.rotation.y = seat.ry;
+  g.scale.setScalar(1.18);
+  g.traverse(o => { o.userData.agentId = p.id; });
+  scene.add(g);
+  pickables.push(g);
+
+  const faceTex = new THREE.TextureLoader().load(`/faces/${p.id}.png`);
+  faceTex.colorSpace = THREE.SRGBColorSpace;
+  const face = new THREE.Mesh(
+    new THREE.CircleGeometry(0.305, 36),
+    new THREE.MeshBasicMaterial({ map: faceTex, transparent: true, depthWrite: false, toneMapped: false })
+  );
+  face.renderOrder = 6;
+  face.userData.agentId = p.id;
+  scene.add(face);
+  pickables.push(face);
+
+  const badge = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.25, 0.325),
+    new THREE.MeshBasicMaterial({ map: badgeTexture(p.name, p.role, hex), transparent: true,
+      depthWrite: false, toneMapped: false })
+  );
+  badge.renderOrder = 7;
+  badge.userData.agentId = p.id;
+  scene.add(badge);
+  pickables.push(badge);
+
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTexture(hex), transparent: true, depthWrite: false, toneMapped: false, opacity: 0.9
+  }));
+  glow.scale.set(0.6, 0.6, 1);
+  glow.visible = false;
+  scene.add(glow);
+
+  return { id: p.id, name: p.name, role: p.role, projectId: p.projectId,
+           group: g, head, arms, face, badge, glow, phase: Math.random() * 10 };
+}
+
+function glowTexture(hex) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,.95)');
+  grd.addColorStop(0.32, hex);
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/* 桌面铭牌：双面可读，立在每个人正前方 */
+function makeSeatPlate(p, seat) {
+  const hex = PROJECT_COLOR[p.projectId] || PROJECT_COLOR.all;
+  const grp = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.035, 0.22), mat.dark);
+  base.position.y = 0.018;
+  const tex = plateTexture(p.name, p.role, hex);
+  const texBack = plateTexture(p.name, p.role, hex, true);
+  const cardMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false });
+  const cardMatBack = new THREE.MeshBasicMaterial({ map: texBack, transparent: true, toneMapped: false });
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.475), cardMat);
+  front.position.set(0, 0.275, 0.008);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.475), cardMatBack);
+  back.position.set(0, 0.275, -0.008);
+  back.rotation.y = Math.PI;
+  grp.add(base, front, back);
+  grp.rotation.x = -0.16;
+  const north = seat.z < TABLE.z;
+  grp.position.set(seat.x, 0.795, TABLE.z + (north ? -0.62 : 0.62));
+  grp.traverse(o => { o.userData.agentId = p.id; });
+  scene.add(grp);
+  plates.push(grp);
+  pickables.push(grp);
+}
+
+function clearActors() {
+  actors.forEach(a => {
+    scene.remove(a.group, a.face, a.badge, a.glow);
+    a.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    [a.face, a.badge].forEach(m => {
+      if (m.material) {
+        if (m.material.map) m.material.map.dispose();
+        m.material.dispose();
+      }
+    });
+    if (a.glow.material) {
+      if (a.glow.material.map) a.glow.material.map.dispose();
+      a.glow.material.dispose();
+    }
+  });
+  actors.clear();
+  plates.forEach(p => {
+    scene.remove(p);
+    p.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        if (o.material.map) o.material.map.dispose();
+        o.material.dispose();
+      }
+    });
+  });
+  plates.length = 0;
+  for (let i = pickables.length - 1; i >= 0; i--) {
+    if (pickables[i].userData.agentId) pickables.splice(i, 1);
+  }
+}
+
+function syncActors(people) {
+  const key = people.map(p => p.id).join(',');
+  if (key === actorKey) return;
+  actorKey = key;
+  clearActors();
+  people.forEach((p, i) => {
+    const seat = SEATS[i % SEATS.length];
+    actors.set(p.id, buildSeatedActor(p, seat));
+    makeSeatPlate(p, seat);
+  });
+}
+
+/* ================= 投屏绘制 ================= */
+const M = { active: false, current: null, last: null, history: [] };
+let lastSpeechAt = 0;
+let lastDrawAt = 0;
+let currentSpeakerId = '';
+let screenMode = 'idle';
+
+function fmtHM(iso) {
+  try {
+    const d = new Date(iso);
+    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit',
+      minute: '2-digit', hour12: false }).format(d);
+  } catch (e) { return '--:--'; }
+}
+function fmtFull(iso) {
+  try {
+    const d = new Date(iso);
+    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit',
+      day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+  } catch (e) { return '—'; }
+}
+function nowHM() {
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit',
+    minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
+}
+function lineWrap(g, text, maxW, maxLines = 3) {
+  const chars = Array.from(String(text || ''));
+  const lines = [];
+  let line = '';
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === '\n') { lines.push(line); line = ''; continue; }
+    if (g.measureText(line + ch).width > maxW) {
+      lines.push(line);
+      line = ch;
+      if (lines.length === maxLines) {
+        if (i < chars.length - 1) lines[maxLines - 1] = lines[maxLines - 1].slice(0, -1) + '…';
+        return lines;
+      }
+    } else {
+      line += ch;
+    }
+  }
+  if (line || !lines.length) lines.push(line);
+  return lines.slice(0, maxLines);
+}
+
+function drawScreen() {
+  const g = sctx;
+  const W = screenCanvas.width, H = screenCanvas.height;
+  g.clearRect(0, 0, W, H);
+  const bg = g.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#0A1226');
+  bg.addColorStop(0.55, '#0D1A33');
+  bg.addColorStop(1, '#101F3D');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+
+  /* 背景网格 */
+  g.strokeStyle = 'rgba(99,132,201,.10)';
+  g.lineWidth = 1;
+  for (let x = 0; x < W; x += 64) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+  }
+  for (let y = 0; y < H; y += 64) {
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+  }
+
+  /* 顶部品牌栏 */
+  g.fillStyle = 'rgba(255,255,255,.055)';
+  roundRect(g, 40, 26, W - 80, 66, 14); g.fill();
+  g.strokeStyle = 'rgba(140,165,220,.30)'; g.lineWidth = 1.5;
+  [11, 6.5].forEach(r => {
+    g.beginPath(); g.arc(78, 59, r, 0, Math.PI * 2); g.stroke();
+  });
+  g.fillStyle = '#FFFFFF';
+  g.beginPath(); g.arc(78, 59, 2.6, 0, Math.PI * 2); g.fill();
+  g.font = `700 23px ${FONT}`;
+  g.fillStyle = '#C7D2FE'; g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.fillText('同心圆 · 3D 会议室', 108, 59);
+
+  const mode = M.active ? 'live' : (M.last ? 'ended' : 'idle');
+  const pill = { live: ['会议进行中', '#34D399', 'rgba(52,211,153,.16)'],
+                 ended: ['会议已结束', '#FBBF24', 'rgba(251,191,36,.16)'],
+                 idle: ['会议室空闲', '#94A3B8', 'rgba(148,163,184,.16)'] }[mode];
+  g.font = `700 20px ${FONT}`;
+  const pw = g.measureText(pill[0]).width + 44;
+  const px = W - 70 - pw;
+  g.fillStyle = pill[2];
+  roundRect(g, px, 43, pw, 32, 16); g.fill();
+  g.fillStyle = pill[1];
+  g.beginPath(); g.arc(px + 20, 59, 5, 0, Math.PI * 2); g.fill();
+  g.fillText(pill[0], px + 32, 60);
+  g.font = '600 18px ui-monospace,Menlo,monospace';
+  g.fillStyle = '#8FA3C8'; g.textAlign = 'right';
+  g.fillText(nowHM(), W - 62, 60);
+  g.textAlign = 'left';
+
+  if (mode === 'live') drawLive(g, W, H);
+  else if (mode === 'ended') drawConclusion(g, W, H);
+  else drawIdle(g, W, H);
+
+  screenTex.needsUpdate = true;
+  lastDrawAt = performance.now();
+}
+
+function drawLive(g, W, H) {
+  const rec = M.current || {};
+  const speeches = rec.speeches || [];
+  const latest = speeches[speeches.length - 1];
+
+  g.textBaseline = 'middle';
+  g.fillStyle = '#FFFFFF';
+  g.font = `800 46px ${FONT}`;
+  g.fillText(rec.title || '会议进行中', 56, 142);
+
+  g.font = `500 21px ${FONT}`;
+  g.fillStyle = '#8FA3C8';
+  g.fillText(`开始 ${fmtHM(rec.startedAt)} · 参会 ${(rec.participants || []).length} 人 · 已记录 ${speeches.length} 条发言`,
+             58, 190);
+
+  g.strokeStyle = 'rgba(140,165,220,.26)'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(56, 220); g.lineTo(W - 56, 220); g.stroke();
+
+  /* 左侧：发言人滚动记录（最新 3 条） */
+  g.font = `700 19px ${FONT}`;
+  g.fillStyle = '#93A7C9';
+  g.fillText('会议记录 · 实时投屏', 58, 252);
+
+  const shown = speeches.slice(-3);
+  const x = 58, w = 1000;
+  let y = 292;
+  const alphaNew = Math.max(0, 1 - (performance.now() - lastSpeechAt) / 900);
+  shown.forEach((sp, i) => {
+    const isNew = i === shown.length - 1;
+    const alpha = isNew ? 1 - alphaNew * 0.35 : 0.82;
+    drawSpeechBlock(g, sp, x, y, w, alpha, isNew);
+    y += 118;
+  });
+  if (!shown.length) {
+    g.font = `500 26px ${FONT}`;
+    g.fillStyle = '#6B7F9E';
+    g.fillText('会议已开始，等待第一位发言人…', x, 360);
+  }
+
+  /* 右侧：正在发言 */
+  const cardX = 1108, cardW = 436;
+  g.fillStyle = 'rgba(255,255,255,.05)';
+  roundRect(g, cardX, 240, cardW, 208, 16); g.fill();
+  const accent = latest ? (PROJECT_COLOR[latest.projectId] || '#60A5FA') : '#60A5FA';
+  g.strokeStyle = accent; g.lineWidth = 2;
+  roundRect(g, cardX, 240, cardW, 208, 16); g.stroke();
+  g.font = `700 17px ${FONT}`;
+  g.fillStyle = '#93A7C9';
+  g.fillText('正在发言', cardX + 24, 272);
+  g.font = `800 34px ${FONT}`;
+  g.fillStyle = '#FFFFFF';
+  g.fillText(latest ? latest.speaker : '—', cardX + 24, 318);
+  g.font = `500 18px ${FONT}`;
+  g.fillStyle = accent;
+  g.fillText(latest ? `${latest.role} · ${PROJECT_NAME[latest.projectId] || '全公司'}` : '', cardX + 24, 350);
+  g.font = `400 19px ${FONT}`;
+  g.fillStyle = '#CBD8EC';
+  lineWrap(g, latest ? latest.text : '等待发言…', cardW - 48, 2).forEach((ln, i) => {
+    g.fillText(ln, cardX + 24, 388 + i * 29);
+  });
+
+  /* 右侧：议题 */
+  g.fillStyle = 'rgba(255,255,255,.045)';
+  roundRect(g, cardX, 466, cardW, 158, 16); g.fill();
+  g.font = `700 17px ${FONT}`;
+  g.fillStyle = '#93A7C9';
+  g.fillText('本次议题', cardX + 24, 496);
+  g.font = `400 19px ${FONT}`;
+  g.fillStyle = '#D7E2F5';
+  (rec.agenda || []).slice(0, 3).forEach((a, i) => {
+    const ys = 532 + i * 30;
+    g.fillStyle = '#818CF8';
+    g.beginPath(); g.arc(cardX + 28, ys - 2, 3, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#D7E2F5';
+    g.fillText(lineWrap(g, a, cardW - 66, 1)[0] || '', cardX + 42, ys);
+  });
+
+  /* 底部提示 */
+  g.font = `500 16px ${FONT}`;
+  g.fillStyle = '#5D7292';
+  g.fillText('每条发言实时写入 Obsidian · OPC/会议纪要', 58, H - 26);
+}
+
+function drawSpeechBlock(g, sp, x, y, w, alpha, highlight) {
+  const color = PROJECT_COLOR[sp.projectId] || '#94A3B8';
+  g.globalAlpha = alpha;
+  g.fillStyle = color;
+  roundRect(g, x, y, highlight ? 6 : 4, 96, 3); g.fill();
+  if (highlight) {
+    g.fillStyle = 'rgba(255,255,255,.035)';
+    roundRect(g, x + 16, y - 8, w - 16, 108, 10); g.fill();
+  }
+  g.font = `700 26px ${FONT}`;
+  g.fillStyle = '#FFFFFF';
+  g.textAlign = 'left';
+  g.fillText(sp.speaker || '', x + 24, y + 22);
+  const nameW = g.measureText(sp.speaker || '').width;
+  g.font = `500 17px ${FONT}`;
+  g.fillStyle = color;
+  g.fillText(`${sp.role || ''}`, x + 34 + nameW, y + 23);
+  g.font = '500 16px ui-monospace,Menlo,monospace';
+  g.fillStyle = '#64748B';
+  g.textAlign = 'right';
+  g.fillText(fmtHM(sp.at), x + w - 8, y + 23);
+  g.textAlign = 'left';
+  g.font = `400 22px ${FONT}`;
+  g.fillStyle = '#D7E2F5';
+  lineWrap(g, sp.text, w - 30, 2).forEach((ln, i) => {
+    g.fillText(ln, x + 24, y + 58 + i * 30);
+  });
+  g.globalAlpha = 1;
+}
+
+function drawConclusion(g, W, H) {
+  const rec = M.last || {};
+  g.textBaseline = 'middle';
+  g.fillStyle = '#FBBF24';
+  g.font = `700 19px ${FONT}`;
+  g.fillText('会议结论', 58, 126);
+
+  g.fillStyle = '#FFFFFF';
+  g.font = `800 42px ${FONT}`;
+  g.fillText(rec.title || '会议', 56, 168);
+
+  g.font = `500 19px ${FONT}`;
+  g.fillStyle = '#8FA3C8';
+  g.fillText(`${fmtFull(rec.startedAt)} — ${fmtHM(rec.endedAt)} · 参会 ${(rec.participants || []).length} 人 · 发言 ${rec.speechCount || 0} 条`,
+             58, 208);
+
+  g.strokeStyle = 'rgba(251,191,36,.35)'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(56, 236); g.lineTo(W - 56, 236); g.stroke();
+
+  const conclusion = rec.conclusion || '本次会议未形成书面结论。';
+  g.fillStyle = '#EAF1FF';
+  g.font = `600 34px ${FONT}`;
+  let y = 300;
+  lineWrap(g, conclusion, W - 150, 4).forEach(ln => {
+    g.fillText(ln, 60, y);
+    y += 52;
+  });
+
+  if (y < 560) {
+    g.font = `400 21px ${FONT}`;
+    g.fillStyle = '#93A7C9';
+    const tips = [
+      `会议记录已归档：OPC/会议纪要/${rec.id || rec.traceId || ''}/meeting-transcript.md`,
+      rec.minutesUrl ? `会议纪要：${rec.minutesUrl}` : '',
+      '全部历史会议可在右侧「会议记录」中随时查看'
+    ].filter(Boolean);
+    tips.forEach((t, i) => {
+      g.fillText(lineWrap(g, t, W - 140, 1)[0], 60, 590 + i * 32);
+    });
+  }
+
+  g.font = `500 16px ${FONT}`;
+  g.fillStyle = '#5D7292';
+  g.fillText('会议已结束，参会人已离场', 58, H - 26);
+}
+
+function drawIdle(g, W, H) {
+  g.textBaseline = 'middle';
+  g.textAlign = 'center';
+  g.fillStyle = 'rgba(255,255,255,.94)';
+  g.font = `800 60px ${FONT}`;
+  g.fillText('会议室空闲', W / 2, 300);
+
+  g.fillStyle = '#8FA3C8';
+  g.font = `500 25px ${FONT}`;
+  g.fillText('暂无进行中的会议', W / 2, 372);
+
+  g.fillStyle = '#5D7292';
+  g.font = `400 19px ${FONT}`;
+  g.fillText('点击右上角「召开选题会」，或从 3D 办公区发起会议', W / 2, 426);
+
+  if (M.last) {
+    const rec = M.last;
+    g.fillStyle = 'rgba(255,255,255,.05)';
+    roundRect(g, 180, 486, W - 360, 138, 16); g.fill();
+    g.textAlign = 'left';
+    g.fillStyle = '#FBBF24';
+    g.font = `700 17px ${FONT}`;
+    g.fillText('上次会议 · ' + (rec.title || '会议'), 208, 516);
+    g.fillStyle = '#CBD8EC';
+    g.font = `400 20px ${FONT}`;
+    lineWrap(g, rec.conclusion || '—', W - 440, 2).forEach((ln, i) => {
+      g.fillText(ln, 208, 552 + i * 30);
+    });
+  }
+  g.textAlign = 'center';
+  g.fillStyle = '#5D7292';
+  g.font = `500 16px ${FONT}`;
+  g.fillText('会议记录自动归档到 Obsidian：OPC/会议纪要', W / 2, H - 26);
+  g.textAlign = 'left';
+}
+
+/* ================= 数据 ================= */
+async function loadMeeting() {
+  try {
+    const r = await fetch('/api/meeting', { cache: 'no-store' });
+    if (!r.ok) return false;
+    const data = await r.json();
+    M.active = !!data.active;
+    M.current = data.current || null;
+    M.last = data.last || null;
+    M.history = data.history || [];
+    renderAll();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function applyMeetingStart(rec) {
+  M.active = true;
+  M.current = rec;
+  lastSpeechAt = performance.now();
+  currentSpeakerId = '';
+  renderAll();
+}
+
+function applySpeech(sp) {
+  if (!M.current || M.current.status !== 'live') return;
+  M.current.speeches = M.current.speeches || [];
+  if (!M.current.speeches.some(s => s.id === sp.id)) M.current.speeches.push(sp);
+  lastSpeechAt = performance.now();
+  currentSpeakerId = sp.speakerId || '';
+  drawScreen();
+  updateHud();
+  renderEmp();
+}
+
+function applyMeetingEnd(rec) {
+  M.active = false;
+  M.current = rec;
+  M.last = toSummary(rec);
+  M.history = [M.last].concat(M.history.filter(r => r.id !== rec.id));
+  currentSpeakerId = '';
+  renderAll();
+}
+
+function toSummary(rec) {
+  return { id: rec.id, traceId: rec.traceId, title: rec.title, status: rec.status,
+           startedAt: rec.startedAt, endedAt: rec.endedAt,
+           participants: rec.participants || [], agenda: rec.agenda || [],
+           speeches: rec.speeches || [],
+           speechCount: (rec.speeches || []).length, conclusion: rec.conclusion || '',
+           transcriptUrl: rec.transcriptUrl || '', minutesUrl: rec.minutesUrl || '' };
+}
+
+function renderAll() {
+  const people = M.active && M.current ? (M.current.participants || []) : [];
+  syncActors(people);
+  updateHud();
+  drawScreen();
+  renderRecords();
+  renderEmp();
+}
+
+function updateHud() {
+  const pill = document.getElementById('modePill');
+  const title = document.getElementById('titlePill');
+  if (M.active && M.current) {
+    pill.textContent = '会议中';
+    pill.className = 'scene live';
+    title.textContent = M.current.title || '会议进行中';
+  } else if (M.last) {
+    pill.textContent = '已结束';
+    pill.className = 'scene ended';
+    title.textContent = M.last.title || '会议已结束';
+  } else {
+    pill.textContent = '空闲';
+    pill.className = 'scene';
+    title.textContent = '暂无会议';
+  }
+  const cur = M.active && M.current ? M.current : null;
+  document.getElementById('cCount').textContent = cur ? (cur.participants || []).length : 0;
+  document.getElementById('cSpeak').textContent = cur ? (cur.speeches || []).length : 0;
+}
+
+function renderRecords() {
+  const list = document.getElementById('recList');
+  const items = (M.history || []).slice(0, 20);
+  document.getElementById('recCount').textContent = String((M.history || []).length);
+  if (!items.length) {
+    list.innerHTML = '<div class="rempty">暂无会议记录<br>会议结束后会自动写入 Obsidian</div>';
+    return;
+  }
+  list.innerHTML = items.map(r => {
+    const live = r.status === 'live';
+    const people = (r.participants || []).length;
+    const count = r.speechCount != null ? r.speechCount : ((r.speeches || []).length);
+    return `<div class="ritem" data-id="${escapeAttr(r.id || '')}">
+      <div class="rt"><b>${escapeHtml(r.title || '会议')}</b>
+        <span class="tag ${live ? 'live' : ''}">${live ? '进行中' : (r.legacy ? '历史纪要' : '已结束')}</span></div>
+      <div class="rm">${escapeHtml(fmtFull(r.endedAt || r.startedAt))} · ${people} 人参会 · ${count} 条发言</div>
+      <div class="rc">${escapeHtml(r.conclusion || '—')}</div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.ritem').forEach(el => {
+    el.onclick = () => openRecord(el.dataset.id);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+let selected = null;
+
+function renderEmp() {
+  const box = document.getElementById('emp');
+  if (!selected || !actors.has(selected)) { box.style.display = 'none'; return; }
+  const a = actors.get(selected);
+  const rec = (M.active && M.current) ? M.current : (M.last || null);
+  const says = ((rec && rec.speeches) || []).filter(sp => sp.speakerId === a.id);
+  box.style.display = 'block';
+  document.getElementById('empAva').src = `/avatars/${a.id}.png`;
+  document.getElementById('empSw').style.background = PROJECT_COLOR[a.projectId] || PROJECT_COLOR.all;
+  document.getElementById('empName').textContent = a.name;
+  document.getElementById('empRole').textContent = `${a.role} · ${PROJECT_NAME[a.projectId] || '全公司'}`;
+  const wrap = document.getElementById('empSays');
+  wrap.innerHTML = says.length
+    ? `<div class="say" style="border-color:transparent;color:#6B7280;font-size:11px">本次会议发言 ${says.length} 条</div>` +
+      says.map(sp => `<div class="say">${escapeHtml(sp.text)}<span class="t">${escapeHtml(fmtHM(sp.at))}</span></div>`).join('')
+    : '<div class="say" style="color:#9CA3AF">本次会议暂无发言记录</div>';
+}
+
+async function openRecord(id) {
+  let rec = (M.history || []).find(r => r.id === id) || null;
+  if (rec && !rec.speeches) {
+    try {
+      const r = await fetch(`/api/meeting/${encodeURIComponent(id)}`, { cache: 'no-store' });
+      if (r.ok) rec = await r.json();
+    } catch (e) { /* 保持摘要 */ }
+  }
+  if (!rec) return;
+  document.getElementById('mTitle').textContent = rec.title || '会议记录';
+  const body = document.getElementById('mBody');
+  const sps = rec.speeches || [];
+  body.innerHTML = `
+    <div class="meta">${escapeHtml(fmtFull(rec.startedAt))} — ${escapeHtml(rec.endedAt ? fmtHM(rec.endedAt) : '进行中')}
+      · 参会 ${(rec.participants || []).length} 人 · 发言 ${sps.length} 条</div>
+    <h4>参会人</h4>
+    <div>${(rec.participants || []).map(p => escapeHtml(typeof p === 'string' ? p : `${p.name}（${p.role}）`)).join('、') || '—'}</div>
+    <h4>议题</h4>
+    <div>${(rec.agenda || []).map(a => '· ' + escapeHtml(a)).join('<br>') || '—'}</div>
+    <h4>会议结论</h4>
+    <div class="concl">${escapeHtml(rec.conclusion || '（未形成结论）')}</div>
+    <h4>发言记录</h4>
+    ${sps.length ? sps.map(sp => `<div class="sp">
+        <div class="who">${escapeHtml(sp.speaker)}<i>${escapeHtml(sp.role || '')} · ${escapeHtml(fmtHM(sp.at))}</i></div>
+        <div class="tx">${escapeHtml(sp.text)}</div></div>`).join('')
+      : '<div class="empty">该会议只有纪要文件，暂无逐条发言记录。</div>'}
+    ${rec.transcriptUrl ? `<a class="link" href="${escapeAttr(rec.transcriptUrl)}" target="_blank" rel="noopener">在 Obsidian 中查看原始记录 ↗</a>` : ''}
+    ${rec.minutesUrl ? `<a class="link" href="${escapeAttr(rec.minutesUrl)}" target="_blank" rel="noopener">会议纪要 ↗</a>` : ''}
+  `;
+  document.getElementById('modal').classList.add('on');
+}
+document.getElementById('mClose').onclick = () => document.getElementById('modal').classList.remove('on');
+document.getElementById('modal').onclick = e => {
+  if (e.target.id === 'modal') document.getElementById('modal').classList.remove('on');
+};
+document.getElementById('empClose').onclick = () => { selected = null; renderEmp(); };
+
+/* ================= 交互 ================= */
+let dragging = false, moved = 0, px = 0, py = 0;
+const raycaster = new THREE.Raycaster();
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  dragging = true; moved = 0; px = e.clientX; py = e.clientY;
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - px, dy = e.clientY - py;
+  moved += Math.abs(dx) + Math.abs(dy);
+  px = e.clientX; py = e.clientY;
+  cam.theta -= dx * 0.005;
+  cam.phi = Math.min(1.40, Math.max(0.45, cam.phi - dy * 0.004));
+  placeCamera();
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  dragging = false;
+  if (moved >= 6) return;
+  const ndc = new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1,
+                                -(e.clientY / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(pickables, true);
+  let id = null;
+  for (const h of hits) {
+    let o = h.object;
+    while (o && !id) {
+      if (o.userData && o.userData.agentId) id = o.userData.agentId;
+      o = o.parent;
+    }
+    if (id) break;
+  }
+  selected = id && id !== selected ? id : null;
+  renderEmp();
+});
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.radius = Math.min(38, Math.max(7, cam.radius + e.deltaY * 0.012));
+  placeCamera();
+}, { passive: false });
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ================= 发起会议 ================= */
+const startBtn = document.getElementById('startBtn');
+startBtn.onclick = async () => {
+  startBtn.disabled = true;
+  const old = startBtn.textContent;
+  startBtn.textContent = '正在召集…';
+  try {
+    const r = await fetch('/api/meetings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${r.status}`);
+    }
+    toast('已发起每日选题会，参会人就位后大屏会实时投影发言');
+  } catch (e) {
+    toast('发起失败：' + e.message);
+  } finally {
+    startBtn.disabled = false;
+    startBtn.textContent = old;
+  }
+};
+
+let toastTimer = 0;
+function toast(text) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 3200);
+}
+
+/* ================= SSE / 轮询 ================= */
+function bootLive() {
+  try {
+    const es = new EventSource('/api/events');
+    es.onmessage = m => {
+      let env;
+      try { env = JSON.parse(m.data); } catch (e) { return; }
+      const d = env.data || {};
+      if (env.kind === 'meeting.start') applyMeetingStart(d);
+      else if (env.kind === 'meeting.speech') applySpeech(d);
+      else if (env.kind === 'meeting.end') applyMeetingEnd(d);
+      else if (env.kind === 'scene') loadMeeting();
+    };
+    es.onerror = () => { /* EventSource 会自动重连 */ };
+  } catch (e) { /* ignore */ }
+}
+
+/* ================= 主循环 ================= */
+const _v = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+let booted = false;
+
+function animate(t) {
+  requestAnimationFrame(animate);
+  const sec = t / 1000;
+
+  actors.forEach(a => {
+    const speaking = a.id === currentSpeakerId &&
+      (performance.now() - lastSpeechAt < 16000);
+    const s = speaking ? Math.sin(sec * 5.4 + a.phase) : Math.sin(sec * 1.4 + a.phase);
+    a.arms[0].rotation.x = -0.48 + s * (speaking ? 0.34 : 0.04);
+    a.arms[1].rotation.x = -0.48 - s * (speaking ? 0.30 : 0.04);
+    a.group.position.y = Math.sin(sec * 1.2 + a.phase) * 0.008;
+
+    a.head.getWorldPosition(_v);
+    _v.y += 0.02;
+    _dir.copy(camera.position).sub(_v).normalize();
+    a.face.position.copy(_v).addScaledVector(_dir, 0.14);
+    a.face.quaternion.copy(camera.quaternion);
+
+    _v.set(a.group.position.x, a.group.position.y + 1.02 * 1.18, a.group.position.z);
+    _dir.copy(camera.position).sub(_v).normalize();
+    a.badge.position.copy(_v).addScaledVector(_dir, 0.30);
+    a.badge.quaternion.copy(camera.quaternion);
+
+    a.glow.position.set(a.group.position.x, a.group.position.y + 2.42, a.group.position.z);
+    a.glow.visible = speaking;
+    if (speaking) a.glow.scale.setScalar(0.55 + Math.sin(sec * 6) * 0.06);
+  });
+
+  const now = performance.now();
+  if (M.active && (now - lastDrawAt > 260 || now - lastSpeechAt < 1100)) drawScreen();
+
+  renderer.render(scene, camera);
+}
+
+/* ================= 启动 ================= */
+function startWhenReady() {
+  loadMeeting().then(ok => {
+    if (ok) boot().catch(() => {});
+    else setTimeout(startWhenReady, 2000);
+  });
+}
+
+async function boot() {
+  if (booted) return;
+  booted = true;
+  bootLive();
+  setInterval(loadMeeting, 15000);
+  document.getElementById('loading').style.display = 'none';
+  window.__meetingBooted = true;
+  drawScreen();
+  requestAnimationFrame(animate);
+}
+
+startWhenReady();
+</script>
+</body>
+</html>

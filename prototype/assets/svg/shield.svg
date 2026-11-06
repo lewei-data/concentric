@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+<path d="M200 40 L330 90 V200 Q330 310 200 360 Q70 310 70 200 V90 Z" fill="{{PAPER}}" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M140 200 l40 40 l80 -100" fill="none" stroke="{{PRIMARY}}" stroke-width="20"/>
+<circle cx="200" cy="285" r="10" fill="{{ACCENT}}"/>
+</svg>

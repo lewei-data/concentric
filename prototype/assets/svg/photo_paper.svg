@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+<g transform="rotate(-7 200 200)">
+<rect x="70" y="45" width="260" height="310" rx="16" fill="{{PAPER}}" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="98" y="75" width="204" height="170" rx="8" fill="{{MUTED}}"/>
+<path d="M98 245 L150 190 L198 230 L244 185 L302 245" fill="none" stroke="{{INK}}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="250" cy="120" r="20" fill="{{PRIMARY}}"/>
+<path d="M70 300 L330 300" stroke="{{ACCENT}}" stroke-width="8" opacity=".45"/>
+</g>
+</svg>
