@@ -11,7 +11,7 @@ type Agent = {
   tools: string[];
   profile: boolean;
   hasSoul: boolean;
-  skills: { name: string; bytes: number; updated: string }[];
+  skills: { name: string; category?: string; bytes: number; updated: string }[];
   memoryChars: { memory: number; user: number };
 };
 
@@ -91,7 +91,7 @@ export function OrgPage() {
     try {
       const data = await api<{ agent: AgentDetail }>(`/api/org/agent/${id}`);
       setDetail(data.agent);
-      setSkillName(data.agent.skills[0]?.name ?? "");
+      setSkillName("");
       setSkillBody("");
       setErr("");
     } catch (e) {
@@ -328,8 +328,25 @@ export function OrgPage() {
               <>
                 <textarea className="editor" value={detail.soul} onChange={(e) => setDetail({ ...detail, soul: e.target.value })} />
                 <button type="button" className="btn" onClick={() => void saveSoul()}>保存 SOUL</button>
-                <h3 className="section-title">技能（skills/&lt;name&gt;/SKILL.md）</h3>
+                <h3 className="section-title">技能（skills/&lt;分类&gt;/&lt;name&gt;/SKILL.md）</h3>
                 <div className="toolbar">
+                  <select
+                    className="input"
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!v) return;
+                      setSkillName(v);
+                      void loadSkill(v);
+                    }}
+                  >
+                    <option value="">选择已有技能（{detail.skills.length}）</option>
+                    {detail.skills.map((s) => (
+                      <option key={`${s.category ?? ""}/${s.name}`} value={s.name}>
+                        {s.category ? `${s.category}/${s.name}` : s.name}
+                      </option>
+                    ))}
+                  </select>
                   <input className="input" value={skillName} placeholder="技能名，如 final-reviewer"
                     onChange={(e) => setSkillName(e.target.value)} />
                   <button type="button" className="btn btn-ghost" onClick={() => void loadSkill(skillName)}>读取</button>

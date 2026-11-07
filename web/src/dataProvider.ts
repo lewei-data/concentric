@@ -30,17 +30,21 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-function extractQ(filters: unknown): string {
-  if (!Array.isArray(filters)) return "";
+// 后端列表接口支持 q / project / stage / status 四个查询参数，这里按字段名透传
+const LIST_FIELDS = ["q", "project", "stage", "status"];
+
+function extractFilters(filters: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!Array.isArray(filters)) return out;
   for (const filter of filters) {
     if (!filter || typeof filter !== "object") continue;
     const item = filter as { field?: string; value?: unknown };
-    if (item.field === "q") {
-      if (Array.isArray(item.value)) return String(item.value[0] ?? "");
-      return String(item.value ?? "");
-    }
+    if (!item.field || !LIST_FIELDS.includes(item.field)) continue;
+    const value = Array.isArray(item.value) ? item.value[0] : item.value;
+    if (value === undefined || value === null || value === "") continue;
+    out[item.field] = String(value);
   }
-  return "";
+  return out;
 }
 
 async function getList<TData extends BaseRecord = BaseRecord>({
@@ -50,12 +54,12 @@ async function getList<TData extends BaseRecord = BaseRecord>({
 }: GetListParams): Promise<GetListResponse<TData>> {
   const current = pagination?.current ?? 1;
   const pageSize = pagination?.pageSize ?? 20;
-  const q = extractQ(filters);
   const params = new URLSearchParams({
     page: String(current),
     size: String(pageSize),
   });
-  if (q) params.set("q", q);
+  const extra = extractFilters(filters);
+  for (const [key, value] of Object.entries(extra)) params.set(key, value);
   const json = await requestJson<ListResponse<Record<string, unknown>>>(
     `${API}/${resource}?${params.toString()}`,
   );

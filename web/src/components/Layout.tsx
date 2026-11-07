@@ -1,4 +1,4 @@
-import { Link, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { useGetIdentity } from "@refinedev/core";
 import { authProvider } from "../authProvider";
 import type { OpcUser } from "../types";
@@ -16,9 +16,11 @@ export function Layout() {
       <header className="topbar">
         <div className="brand">OPC 内容生产工作台</div>
         <nav className="nav">
-          <Link to="/hotspots">热点</Link>
-          <Link to="/knowledge">知识库</Link>
-          <Link to="/org">组织配置</Link>
+          <NavLink to="/" end>首页</NavLink>
+          <NavLink to="/works">作品档案</NavLink>
+          <NavLink to="/hotspots">热点</NavLink>
+          <NavLink to="/knowledge">知识库</NavLink>
+          <NavLink to="/org">组织配置</NavLink>
           <a href="/">返回旧版</a>
         </nav>
         <div className="userbox">

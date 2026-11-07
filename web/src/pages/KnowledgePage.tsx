@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useList, useOne } from "@refinedev/core";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { Knowledge } from "../types";
+
+// react-markdown 及其依赖体积较大，改为按需加载：打开知识详情时才拉这个 chunk
+const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
 const PAGE_SIZE = 20;
 
@@ -135,7 +136,9 @@ export function KnowledgePage() {
                 <h3 className="detail-title">{detail.data.data.title}</h3>
                 <div className="detail-body">
                   {detail.data.data.body ? (
-                    <Markdown remarkPlugins={[remarkGfm]}>{detail.data.data.body}</Markdown>
+                    <Suspense fallback={<span className="muted">正文渲染中…</span>}>
+                      <MarkdownBody text={detail.data.data.body} />
+                    </Suspense>
                   ) : (
                     "（无正文）"
                   )}

@@ -242,6 +242,13 @@ except Exception as _dl_err:          # 缺 Pillow/ffmpeg 时降级为仅内存�
     DL = None
     print(f"[boot] 交付物落盘不可用：{type(_dl_err).__name__}: {_dl_err}", flush=True)
 
+# 作品档案：把交付物目录归一成「名称 + 时间」可管理的资产记录（只读）
+try:
+    import works as WK
+except Exception as _wk_err:
+    WK = None
+    print(f"[boot] 作品档案不可用：{type(_wk_err).__name__}: {_wk_err}", flush=True)
+
 # 真实样片渲染（MCP-TTS 旁白 + OpenMontage/Remotion 出片 + 画面验收门）
 try:
     import om_render as OMR
@@ -632,7 +639,8 @@ def _org_sync_org_table(aid, name, role, project_label, tone, tools):
     try:
         txt = _org_read(path)
         lines = txt.splitlines(keepends=True)
-        skills = "、".join(s["name"] for s in _org_skills(os.path.join(ORG_PROFILES, aid)))
+        skills = "、".join(dict.fromkeys(s["category"] or s["name"] for s in _org_skills(
+            os.path.join(ORG_PROFILES, aid))))
         for i, ln in enumerate(lines):
             if not ln.lstrip().startswith("|"):
                 continue
@@ -1599,7 +1607,7 @@ class Kernel:
                 "storyboardNotes": str(src.get("storyboardNotes") or "4-6 镜，首镜 3 秒抓人")[:300]}
 
     def _review_map(self, data, ids):
-        """样片评审：三票制；解析失败按基础设施降级放行并写明原因。"""
+        """样片评审：三票制；评审结果缺失按未通过处理（基础设施故障不得放行）。"""
         raw = (data or {}).get("reviews")
         out = {}
         if isinstance(raw, list):
@@ -1611,7 +1619,7 @@ class Kernel:
                     out[iid] = (bool(r.get("pass")),
                                 [str(x)[:100] for x in (r.get("reasons") or [])][:5])
         for iid in ids:
-            out.setdefault(iid, (True, ["评审结果未返回，按基础设施降级放行"]))
+            out.setdefault(iid, (False, ["评审结果未返回，按未通过处理"]))
         return out
 
     def _sample_wave(self, trace, ids, items):
@@ -2023,6 +2031,8 @@ class Kernel:
         for iid, item in items.items():
             pid = item["projectId"]
             data, meta = jobs[iid].result()
+            if meta.get("engine") != "hermes" or not (data or {}).get("copy"):
+                item.setdefault("degraded", []).append("copy")
             data = data or {"summary": "文案已交付（降级）", "evidence": [], "confidence": 0.2,
                             "tools": [], "copy": f"{PROJECTS[pid]['name']} 文案占位"}
             item["stage"] = "copy"
@@ -2051,6 +2061,8 @@ class Kernel:
         for iid, item in items.items():
             pid = item["projectId"]
             data, meta = jobs[iid].result()
+            if meta.get("engine") != "hermes" or not (data or {}).get("storyboard"):
+                item.setdefault("degraded", []).append("video")
             data = data or {"summary": "样片已出（降级）", "evidence": [], "confidence": 0.2, "tools": []}
             item["stage"] = "sample"
             item["video"] = data
@@ -2434,6 +2446,101 @@ class Kernel:
             return False
         return str(url).startswith(prefix)
 
+    def _tech_gate(self, item):
+        """发布前的技术硬门槛：对实际落盘的成片重新 probe，不达标即不得 PASS。
+
+        制度要求「导出文件必须重新 probe 才算验收」，本函数是这条制度的执行点：
+        分辨率/帧率/编码/像素格式/音轨/采样率/声道/时长/黑帧/削波/静音，逐项实测。
+        """
+        import subprocess
+        path = ""
+        # 复检对象优先取"精剪母版"（05-final.mp4），其次取样片
+        cands = list(item.get("finalAssets") or []) + [((item.get("files") or {}).get("final") or "")]
+        cands += [a for a in reversed(item.get("assets") or []) if str(a).lower().endswith(".mp4")]
+        for a in cands:
+            if not a:
+                continue
+            cand = DL._local(a) if (DL and str(a).startswith("/vault/")) else str(a)
+            if os.path.isfile(cand):
+                path = cand
+                break
+        if not path or not os.path.isfile(path):
+            return {"pass": False, "reasons": ["缺少可复检的成片文件"], "path": path}
+        env = dict(os.environ)
+        env.pop("LD_LIBRARY_PATH", None)
+        try:
+            out = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", path],
+                capture_output=True, text=True, timeout=120, env=env).stdout
+            info = json.loads(out or "{}")
+        except Exception as e:
+            return {"pass": False, "reasons": [f"ffprobe 失败：{type(e).__name__}"], "path": path}
+        streams = info.get("streams") or []
+        v = next((s for s in streams if s.get("codec_type") == "video"), None)
+        au = next((s for s in streams if s.get("codec_type") == "audio"), None)
+        reasons, checks = [], {}
+        if not v:
+            reasons.append("没有视频流")
+        if not au:
+            reasons.append("没有音轨（旁白缺失）")
+        if v:
+            checks.update(width=v.get("width"), height=v.get("height"),
+                          fps=v.get("r_frame_rate"), codec=v.get("codec_name"),
+                          pix_fmt=v.get("pix_fmt"), duration=v.get("duration"))
+            if (v.get("width"), v.get("height")) != (1080, 1920):
+                reasons.append(f"分辨率 {v.get('width')}x{v.get('height')}，要求 1080x1920（竖屏）")
+            if str(v.get("r_frame_rate")) != "30/1":
+                reasons.append(f"帧率 {v.get('r_frame_rate')}，要求 30/1")
+            if v.get("codec_name") != "h264":
+                reasons.append(f"视频编码 {v.get('codec_name')}，要求 h264")
+            if v.get("pix_fmt") != "yuv420p":
+                reasons.append(f"像素格式 {v.get('pix_fmt')}，要求 yuv420p")
+        if au:
+            checks.update(sample_rate=au.get("sample_rate"), channels=au.get("channels"),
+                          audio_codec=au.get("codec_name"))
+            if str(au.get("sample_rate")) != "48000":
+                reasons.append(f"采样率 {au.get('sample_rate')}，要求 48000")
+            if _to_int(au.get("channels"), 0) != 2:
+                reasons.append(f"声道数 {au.get('channels')}，要求 2")
+        try:
+            dur = float((info.get("format") or {}).get("duration") or 0)
+        except (TypeError, ValueError):
+            dur = 0.0
+        checks["duration"] = round(dur, 3)
+        want = float(item.get("durationSec") or 0)
+        if want and abs(dur - want) > 2.5:
+            reasons.append(f"时长 {dur:.2f}s 与分镜 {want:.0f}s 偏差过大")
+        # 黑帧与音量：只读输入，不产生新文件
+        try:
+            bd = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-vf",
+                 "blackdetect=d=0.5:pix_th=0.10", "-an", "-f", "null", "-"],
+                capture_output=True, text=True, timeout=300, env=env).stderr
+            checks["blackFrames"] = bd.count("black_start")
+            if checks["blackFrames"]:
+                reasons.append(f"检出 {checks['blackFrames']} 段黑帧（>0.5s）")
+        except Exception as e:
+            reasons.append(f"黑帧检测失败：{type(e).__name__}")
+        try:
+            vd = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af", "volumedetect",
+                 "-vn", "-f", "null", "-"],
+                capture_output=True, text=True, timeout=300, env=env).stderr
+            mx = re.search(r"max_volume:\s*(-?[\d.]+) dB", vd)
+            mn = re.search(r"mean_volume:\s*(-?[\d.]+) dB", vd)
+            if mx:
+                checks["maxVolumeDb"] = float(mx.group(1))
+                if checks["maxVolumeDb"] > -1.0:
+                    reasons.append(f"峰值 {checks['maxVolumeDb']} dB，存在削波风险")
+            if mn:
+                checks["meanVolumeDb"] = float(mn.group(1))
+                if checks["meanVolumeDb"] <= -45:
+                    reasons.append(f"音轨近乎静音（均值 {checks['meanVolumeDb']} dB）")
+        except Exception as e:
+            reasons.append(f"音量检测失败：{type(e).__name__}")
+        checks["path"] = path
+        return {"pass": not reasons, "reasons": reasons, "checks": checks}
+
     def review_with_model(self, item, trace):
         structural = []
         expected = TONE.get(item["projectId"])
@@ -2449,7 +2556,14 @@ class Kernel:
             structural.append(f"画面验收未通过：{why}")
         if not item.get("copy"):
             structural.append("缺少稿件正文")
+        tech = self._tech_gate(item)
+        item["techCheck"] = tech
+        structural.extend(f"成片技术门槛未过：{r}" for r in tech.get("reasons") or [])
+        if item.get("degraded"):
+            structural.append(f"产出为模型降级占位（{','.join(item['degraded'])}），不得作为发布件")
         if structural:
+            self.emit("tech-gate", trace, {"itemId": item.get("id"), "pass": tech.get("pass"),
+                                           "checks": tech.get("checks", {}), "reasons": structural})
             return (False, structural, {"engine": "guardrail"})
         a = self.agents["reviewer"]
         extra = ("判定标准：1) 文案语气必须与项目风格一致；2) 不得出现其他项目的专属人设特征；"
@@ -3125,6 +3239,20 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/knowledge/"):
             rec = KERNEL.knowledge_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "knowledge not found"}, 404)
+        # ---------- 作品档案（交付物统一管理：名称 + 时间 + 处理流程） ----------
+        if path == "/api/works":
+            if WK is None:
+                return self._json({"ok": False, "error": "作品档案模块未加载"}, 500)
+            with KERNEL.lock:
+                approvals = list(KERNEL.approvals)
+            return self._json(WK.page(parse_qs(urlparse(self.path).query), approvals))
+        if path.startswith("/api/works/"):
+            if WK is None:
+                return self._json({"ok": False, "error": "作品档案模块未加载"}, 500)
+            with KERNEL.lock:
+                approvals = list(KERNEL.approvals)
+            rec = WK.detail(path[len("/api/works/"):], approvals)
+            return self._json(rec) if rec else self._json({"error": "work not found"}, 404)
         if path == "/api/hotspots":
             return self._json(KERNEL.hotspot_page(urlparse(self.path).query))
         if path.startswith("/api/hotspots/"):
