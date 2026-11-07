@@ -153,6 +153,35 @@
   .dl-issue{font-size:11px;color:#9A3412;line-height:1.55;max-width:210px}
   .dl-issue .none{color:#059669}
   .dl-empty{padding:10px 0 14px;color:#9CA3AF;font-size:12px}
+  /* 素材库 */
+  .mat-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px;
+    padding:4px 14px 14px;max-height:300px;overflow:auto}
+  .mat-filters{display:flex;flex-wrap:wrap;gap:6px}
+  .mat-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 14px 10px}
+  .mat-search{flex:0 1 300px;min-width:180px;border:1px solid var(--line);border-radius:999px;
+    padding:5px 12px;font-size:11.5px;font-family:inherit;color:var(--ink);background:#fff;outline:none}
+  .mat-search::placeholder{color:#9CA3AF}
+  .mat-search:focus{border-color:#C7D2FE;box-shadow:0 0 0 3px rgba(199,210,254,.35)}
+  .mat-chip{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;
+    padding:3px 10px;font-size:11px;line-height:1.6;cursor:pointer;font-family:inherit}
+  .mat-chip:hover{border-color:#C7D2FE;color:#4338CA}
+  .mat-chip.on{background:#EEF2FF;border-color:#C7D2FE;color:#4338CA;font-weight:700}
+  .mat-chip .n{opacity:.6;margin-left:4px;font-size:10px;font-weight:400}
+  .mat-card{display:block;text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;background:#fff;cursor:pointer;transition:background .12s,border-color .12s,transform .08s}
+  .mat-card:hover{border-color:#C7D2FE;background:#F8FAFF;box-shadow:0 2px 10px rgba(67,56,202,.08)}
+  .mat-card:hover .mat-title{color:#4338CA}
+  .mat-card:active{transform:translateY(1px)}
+  .mat-card:focus-visible{outline:2px solid #C7D2FE;outline-offset:2px}
+  .mat-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .mat-open{flex:0 0 auto;font-size:10.5px;color:#4338CA;font-weight:700;background:#EEF2FF;
+    border:1px solid #C7D2FE;border-radius:999px;padding:1px 8px}
+  .mat-card:hover .mat-open{background:#4338CA;border-color:#4338CA;color:#fff}
+  .mat-cat{display:inline-block;font-size:10.5px;color:#4338CA;background:#EEF2FF;border:1px solid #C7D2FE;
+    border-radius:999px;padding:1px 7px}
+  .mat-title{font-weight:700;font-size:12.5px;margin:7px 0 3px;line-height:1.45}
+  .mat-desc{font-size:11px;color:var(--muted);line-height:1.6}
+  .mat-meta{margin-top:7px;font-size:10.5px;color:#9CA3AF}
   .dl-mask{position:fixed;inset:0;background:rgba(17,24,39,.45);display:none;place-items:center;z-index:30}
   .dl-mask.on{display:grid}
   .dl-modal{width:min(760px,92vw);max-height:86vh;overflow:auto;background:#fff;border-radius:16px;
@@ -240,6 +269,15 @@
   <div class="dl-wrap" id="deliverables"></div>
 </div>
 
+<div class="card" style="margin:0 14px 14px">
+  <div class="card-h"><span>素材库 · 研发资料（点击卡片在新窗口打开）</span><span class="sub" id="matSummary">—</span></div>
+  <div class="mat-toolbar">
+    <input class="mat-search" id="matSearch" type="search" autocomplete="off" placeholder="搜索素材：标题 / 描述 / 分类" aria-label="搜索素材">
+    <div class="mat-filters" id="matFilters"></div>
+  </div>
+  <div class="mat-wrap" id="materials"><div class="dl-empty">素材库加载中…</div></div>
+</div>
+
 <div class="card tabs">
   <div class="tabbar" id="tabbar">
     <div class="tab on" data-tab="meeting">会议纪要</div>
@@ -290,7 +328,8 @@ const AGENTS=[
 const S={
   mode:'DEMO', scene:'WORK', agents:{}, projects:{}, contents:[], hotspots:[], collection:null,
   reports:[], approvals:[], knowledge:{count:0,latest:[]}, meeting:{active:false},
-  meetingHistory:[], stats:{approvalSecondsAvg:0,published:0,events:0}, events:[], selected:null, tab:'meeting'
+  meetingHistory:[], stats:{approvalSecondsAvg:0,published:0,events:0}, events:[], selected:null, tab:'meeting',
+  materials:[], matCat:'全部', matQ:''
 };
 AGENTS.forEach(a=>S.agents[a.id]=a);
 
@@ -966,6 +1005,77 @@ async function sendCmd(){
   setTimeout(()=>{const h=document.getElementById('askHint');if(h&&!h.textContent.startsWith('请求失败'))h.textContent='';},5000);
 }
 
+/* ============ 素材库（首页卡片：分类筛选 + 搜索 + 新窗口打开） ============ */
+function matCounts(){
+  const out={};
+  (S.materials||[]).forEach(m=>{out[m.category]=(out[m.category]||0)+1;});
+  return out;
+}
+function matQuery(){return (S.matQ||'').trim().toLowerCase();}
+function matMatch(m,q){
+  if(!q)return true;
+  return [m.title,m.desc,m.category,m.meta,m.id].join(' ').toLowerCase().includes(q);
+}
+function renderMatFilters(){
+  const wrap=document.getElementById('matFilters'); if(!wrap)return;
+  const counts=matCounts();
+  const cats=['全部'].concat(Object.keys(counts));
+  wrap.innerHTML=cats.map(c=>{
+    const n=c==='全部'?S.materials.length:counts[c];
+    return `<button type="button" class="mat-chip${c===S.matCat?' on':''}" data-cat="${escHtml(c)}">${escHtml(c)}<span class="n">${n}</span></button>`;
+  }).join('');
+  if(!wrap._bound){
+    wrap._bound=true;
+    wrap.addEventListener('click',e=>{
+      const b=e.target.closest('.mat-chip'); if(!b)return;
+      const c=b.dataset.cat;
+      if(c===S.matCat)return;
+      S.matCat=c; renderMatFilters(); renderMaterials();
+    });
+  }
+}
+function renderMaterials(){
+  const el=document.getElementById('materials'); if(!el)return;
+  const all=S.materials||[];
+  const q=matQuery();
+  const items=all.filter(m=>(S.matCat==='全部'||m.category===S.matCat)&&matMatch(m,q));
+  const sum=document.getElementById('matSummary');
+  if(sum){
+    const parts=[];
+    if(all.length)parts.push((q||S.matCat!=='全部')?`${items.length} / ${all.length} 项`:`${all.length} 项`);
+    if(S.matCat!=='全部')parts.push(S.matCat);
+    if(q)parts.push(`搜索“${S.matQ.trim()}”`);
+    sum.textContent=parts.length?parts.join(' · '):'—';
+  }
+  el.innerHTML=items.length?items.map(m=>`<a class="mat-card" href="${escHtml(m.url)}" target="_blank" rel="noopener"
+      title="在新窗口打开：${escHtml(m.title)}" aria-label="在新窗口打开：${escHtml(m.title)}">
+      <div class="mat-top"><span class="mat-cat">${escHtml(m.category)}</span><span class="mat-open">打开 ↗</span></div>
+      <div class="mat-title">${escHtml(m.title)}</div>
+      <div class="mat-desc">${escHtml(m.desc)}</div>
+      <div class="mat-meta">${escHtml(m.meta)}</div>
+    </a>`).join(''):`<div class="dl-empty">${q?`没有匹配「${escHtml(S.matQ.trim())}」的素材，换个关键词或清空搜索框`: `「${escHtml(S.matCat)}」分类下暂无素材`}</div>`;
+}
+async function loadMaterials(){
+  const el=document.getElementById('materials'); if(!el)return;
+  const box=document.getElementById('matSearch');
+  if(box&&!box._bound){
+    box._bound=true;
+    box.addEventListener('input',()=>{S.matQ=box.value;renderMaterials();});
+  }
+  try{
+    const r=await fetch('/api/materials',{cache:'no-store'});
+    const j=await r.json();
+    S.materials=(j&&j.items)||[];
+    if(!S.materials.length){
+      el.innerHTML=`<div class="dl-empty">素材库为空：在 prototype/materials.json 里登记条目${j&&j.error?'（'+escHtml(j.error)+'）':''}</div>`;
+      return;
+    }
+    renderMatFilters(); renderMaterials();
+  }catch(e){
+    el.innerHTML='<div class="dl-empty">素材库加载失败：'+escHtml(e.message)+'</div>';
+  }
+}
+
 /* ============ 启动：LIVE 优先，失败回落 DEMO ============ */
 async function boot(){
   let live=false;
@@ -987,6 +1097,7 @@ async function boot(){
     mockRun();
   }
   renderAll();
+  loadMaterials();
   pushEvent({kind:'heartbeat',traceId:'',at:new Date().toISOString(),data:{}});
   setInterval(()=>{if(S.scene==='REPORT')renderMeeting();},1000);
 }
