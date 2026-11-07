@@ -16,7 +16,7 @@ export function LoginPage() {
     try {
       const result = await authProvider.login({ account, password });
       if (result.success) {
-        navigate("/hotspots");
+        navigate("/");
       } else {
         setError(result.error?.message ?? "登录失败");
       }

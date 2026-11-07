@@ -348,7 +348,5 @@ def detail(work_id, approvals=None):
             if text:
                 docs[key] = {"label": label, "text": text}
         rec["docs"] = docs
-        rec["copy"] = str(_read(os.path.join(folder, "02-copy.md")))[:3000]
-        rec["storyboard"] = str(_read(os.path.join(folder, "03-storyboard.md")))[:6000]
         return rec
     return None

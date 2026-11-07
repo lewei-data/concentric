@@ -148,6 +148,4 @@ export type Work = {
   }>;
   timeline: WorkStep[];
   docs?: Record<string, { label: string; text: string }>;
-  copy?: string;
-  storyboard?: string;
 };
