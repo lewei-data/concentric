@@ -288,7 +288,7 @@ const AGENTS=[
   color:color||PROJECTS[pid].color,status:'idle',task:'',tools:[],tone:TONE[pid]||'跨项目中台'}));
 
 const S={
-  mode:'DEMO', scene:'WORK', agents:{}, projects:{}, contents:[], hotspots:[],
+  mode:'DEMO', scene:'WORK', agents:{}, projects:{}, contents:[], hotspots:[], collection:null,
   reports:[], approvals:[], knowledge:{count:0,latest:[]}, meeting:{active:false},
   meetingHistory:[], stats:{approvalSecondsAvg:0,published:0,events:0}, events:[], selected:null, tab:'meeting'
 };
@@ -758,7 +758,9 @@ function renderTab(){
     body.innerHTML=k.length?k.map(r=>`<h5 style="color:#991B1B">${r.title}</h5><div>${r.conclusion}</div>
       <div class="muted">${(r.evidence||[]).join(' · ')}</div>`).join(''):'<div class="empty">暂无风险单。历史风险单只保存在旧进程内存中，未落盘；新一轮起会自动保存。</div>';
   }else{
-    body.innerHTML=`<h5>热点</h5>${S.hotspots.slice(-5).map(h=>`<div>· ${h.title} <span class="muted">热度 ${h.score}</span></div>`).join('')||'<div class="empty">暂无热点</div>'}
+    const col=S.collection;
+    const colLine=col&&col.top?`<div class="muted" style="margin-top:4px">采集状态（苏寒）：${escHtml(col.date)} ${escHtml(col.time)} · ${col.count||0} 条 · 榜首 ${escHtml(col.top.repo)} +${escHtml(col.top.stars)}★</div>`:'';
+    body.innerHTML=`<h5>热点</h5>${S.hotspots.slice(-5).map(h=>`<div>· ${h.title} <span class="muted">热度 ${h.score}</span></div>`).join('')||'<div class="empty">暂无热点</div>'}${colLine}
       <h5 style="margin-top:8px">知识库（${S.knowledge.count||0} 条）</h5>
       ${(S.knowledge.latest||[]).map(k=>`<div>· ${k.title} <span class="muted">${k.projectId}</span></div>`).join('')||'<div class="empty">暂无归档</div>'}`;
   }
@@ -771,7 +773,9 @@ function handle(env){
   switch(env.kind){
     case 'state': applyState(env.data); break;
     case 'hotspot':
-      S.hotspots.push(d); break;
+      S.hotspots=mergeHotspot(S.hotspots,d); break;
+    case 'collection':
+      S.collection=d; break;
     case 'scene':
       S.scene=d.scene;
       S.meeting=d.scene==='MEETING'
@@ -797,6 +801,8 @@ function handle(env){
       break;
     case 'config-reload':
       refreshState(); break;
+    case 'knowledge':
+      refreshState(); break;
   }
   renderAll();
 }
@@ -804,7 +810,9 @@ function applyState(st){
   if(!st)return;
   S.scene=st.scene; S.projects={}; (st.projects||[]).forEach(p=>S.projects[p.id]=p);
   (st.agents||[]).forEach(a=>{S.agents[a.id]=Object.assign(S.agents[a.id]||{},a);});
-  S.contents=st.pipeline||[]; S.hotspots=st.hotspots||[]; S.reports=st.reports||[];
+  S.contents=st.pipeline||[]; S.hotspots=(st.hotspots||[]).reduce((acc,h)=>mergeHotspot(acc,h),[]);
+  S.collection=st.collection||null;
+  S.reports=st.reports||[];
   S.approvals=st.approvals||[]; S.knowledge=st.knowledge||{count:0,latest:[]};
   S.meeting=st.meeting||S.meeting; S.stats=Object.assign(S.stats,st.stats||{});
   S.meetingHistory=st.meetingHistory||S.meetingHistory;
@@ -815,6 +823,15 @@ function applyState(st){
     if(!S.stats.events)S.stats.events=S.events.length;
     renderFeed();
   }
+}
+/* 热点去重：同一标题只保留一条，SSE 推送与全量快照都不会叠出重复行 */
+function mergeHotspot(list,h){
+  if(!h||!h.title)return list;
+  const key=x=>String(x&&x.title||'').replace(/\s+/g,'').toLowerCase();
+  const k=key(h);
+  const i=list.findIndex(x=>x.id===h.id||key(x)===k);
+  if(i>=0)list[i]=Object.assign({},list[i],h); else list.push(h);
+  return list;
 }
 function renderAll(){renderMap();renderKPIs();renderPipeline();renderDeliverables();renderApproval();renderMeeting();renderTab();/*事件流单独*/}
 

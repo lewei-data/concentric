@@ -62,6 +62,11 @@ def uid(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
+def _hotkey(title) -> str:
+    """热点去重键：忽略空白与大小写，同一议题只留一条。"""
+    return re.sub(r"\s+", "", str(title or "")).lower()
+
+
 def _to_int(value, default):
     try:
         return int(float(value))
@@ -558,6 +563,8 @@ class Kernel:
                 print(f"[boot] 读取会议历史失败：{type(e).__name__}: {e}", flush=True)
         self.messages, self.events = [], 0
         self.hotspots, self.contents, self.reports, self.approvals, self.knowledge = [], [], [], [], []
+        self._hotspot_scan_at = 0.0        # 热点目录重扫节流（秒级时间戳）
+        self.collection = None             # 苏寒最近一次原始榜采集状态（只展示，不当业务热点）
         self.subscribers, self.approval_events, self.traces = [], {}, {}
         self.stats = {"approvalSeconds": [], "published": 0, "blockedPublish": 0, "traces": 0}
         # 成本护栏：按 trace 聚合 token/花费，阈值/异常由 CTO 处置
@@ -569,6 +576,8 @@ class Kernel:
         self.startedAt = iso_now()          # 本次进程启动时间：快照用它区分“内存态归零”
         self.journal_file = os.path.join(VAULT, "动态", "runtime.json")
         self._restore_history()
+        self._sync_stop = threading.Event()
+        threading.Thread(target=self._background_sync, daemon=True).start()
 
     def _restore_history(self):
         """重启后恢复历史：交付物读磁盘，报告/审批/热点/知识/消息读运行时日志。"""
@@ -621,6 +630,7 @@ class Kernel:
                     self.knowledge = DL.load_knowledge()
                 except Exception as e:
                     print(f"[boot] 恢复历史知识失败：{type(e).__name__}: {e}", flush=True)
+        self._backfill_knowledge()
         print(f"[boot] 恢复运行时历史：报告 {len(self.reports)} / 审批 {len(self.approvals)} / "
               f"热点 {len(self.hotspots)} / 知识 {len(self.knowledge)} / 消息 {len(self.messages)}", flush=True)
 
@@ -691,7 +701,7 @@ class Kernel:
                     q.put_nowait(env)
                 except queue.QueueFull:
                     pass
-        if kind in ("hotspot", "report", "approval"):
+        if kind in ("hotspot", "report", "approval", "knowledge"):
             self.save_runtime()     # 低频关键事件落盘，重启后可恢复
         return env
 
@@ -1035,8 +1045,16 @@ class Kernel:
                "tongxinyuan": round(max(0.2, (score or 0.8) - 0.45), 3)}
         hotspot = {"id": uid("hs"), "traceId": trace, "title": title, "source": "热点源/RSS",
                    "tags": tags or ["综合"], "score": score or 0.8, "fit": fit, "at": iso_now()}
+        key = _hotkey(title)
         with self.lock:
-            self.hotspots.append(hotspot)
+            idx = next((i for i in range(len(self.hotspots) - 1, -1, -1)
+                        if _hotkey(self.hotspots[i].get("title")) == key), -1)
+            if idx >= 0:
+                # 同一议题重复注入：替换列表里的旧记录（旧 trace 仍保留自己的快照）
+                hotspot["id"] = self.hotspots[idx].get("id") or hotspot["id"]
+                self.hotspots[idx] = hotspot
+            else:
+                self.hotspots.append(hotspot)
             self.last_hotspot = hotspot
             self.stats["traces"] += 1
             self.traces[trace] = {"traceId": trace, "hotspot": hotspot, "startedAt": iso_now(),
@@ -1449,6 +1467,13 @@ class Kernel:
         self.meeting_say("ceo", "结论：" + conclusion + "。后续按项目进入制作，会议纪要已归档到 Obsidian。",
                          "conclusion", trace)
         self.meeting_end(trace, conclusion, (meeting_doc or {}).get("minutes", ""))
+        # 祁南（kb_manager）在选题定稿即归档，不再等发布审批；发布后只更新同一条
+        self.archive_knowledge(trace, [
+            {"projectId": pid, "title": t.get("title"),
+             "body": f"选题定稿：{t.get('angle') or t.get('title')}；来源热点：{hotspot.get('title')}；"
+                     f"评审会结论：{conclusion[:120]}",
+             "tags": ["热点/" + str(hotspot.get("title") or "")[:24]] + list(hotspot.get("tags") or [])[:3]}
+            for pid in self.PIDS for t in final.get(pid, [])])
         self.set_scene("WORK", trace, title="定稿 6 条，进入制作")
 
         # 3.5 CCO 邮件汇报老板：选题评审结果 + 等待开工审批（抄送 CEO/CTO）
@@ -1923,13 +1948,12 @@ class Kernel:
         data, meta = self.call_agent("kb_manager", "把本轮 6 条内容归档为知识条目，给出检索标签。",
                                      pub_ctx, "", "summary, evidence, confidence, tools")
         data = data or {"summary": "已归档知识资产", "evidence": ["kb.write"], "confidence": 0.9, "tools": []}
+        # 定稿时已归档过同题条目，这里按 traceId + 标题更新为发布口径，不重复计数
+        self.archive_knowledge(trace, [
+            {"projectId": item["projectId"], "title": item["title"],
+             "body": data.get("summary", "归档"), "tags": ["内容复盘"]}
+            for item in passed_items.values()], stage_label="发布归档")
         for iid, item in passed_items.items():
-            pid = item["projectId"]
-            entry = {"id": uid("kb"), "projectId": pid, "traceId": trace, "sourceTrace": trace,
-                     "title": item["title"], "body": data.get("summary", "归档"),
-                     "tags": [pid, "内容复盘"], "at": iso_now()}
-            with self.lock:
-                self.knowledge.append(entry)
             item["stage"] = "archived"
             self.items_emit(trace, item)
         self.send("result", "kb_manager", "ceo", trace, {"result": data, "engine": meta["engine"]},
@@ -2156,12 +2180,134 @@ class Kernel:
         self.emit("pipeline", trace, item)
         return {"traceId": trace, "pass": verdict, "reasons": reasons}
 
+    # ---------- 热点目录同步 ----------
+    def _background_sync(self):
+        """每 60 秒同步一次采集状态；变化时推给前端，避免页面一直显示旧值。"""
+        while not self._sync_stop.wait(60):
+            try:
+                before = json.dumps(self.collection, ensure_ascii=False, sort_keys=True)
+                self._sync_hotspots_from_vault(force=True)
+                after = json.dumps(self.collection, ensure_ascii=False, sort_keys=True)
+                if after != before:
+                    self.emit("collection", "", self.collection)
+            except Exception as e:
+                print(f"[hotspot] 后台同步失败：{type(e).__name__}: {e}", flush=True)
+
+    def _sync_hotspots_from_vault(self, force=False):
+        """运行中重扫 OPC/热点采集：苏寒新落盘的业务简报无需重启即可进面板。"""
+        if not DL:
+            return
+        now = time.time()
+        if not force and now - self._hotspot_scan_at < 60:
+            return
+        self._hotspot_scan_at = now
+        try:
+            self.collection = DL.load_collection_status()
+        except Exception as e:
+            print(f"[hotspot] 读取采集状态失败：{type(e).__name__}: {e}", flush=True)
+        try:
+            disk = DL.load_hotspots()
+        except Exception as e:
+            print(f"[hotspot] 扫描热点目录失败：{type(e).__name__}: {e}", flush=True)
+            return
+        if not disk:
+            return
+        changed = False
+        with self.lock:
+            before = len(self.hotspots)
+            by_key = {_hotkey(h.get("title")): h for h in self.hotspots if h.get("title")}
+            for h in disk:
+                key = _hotkey(h.get("title"))
+                if not key:
+                    continue
+                cur = by_key.get(key)
+                if not cur:
+                    self.hotspots.append(h)
+                    by_key[key] = h
+                elif not cur.get("traceId"):
+                    # 内存里是启动时读入的旧简报，用磁盘上的最新字段覆盖
+                    for field in ("score", "tags", "at", "source"):
+                        if h.get(field):
+                            cur[field] = h[field]
+            self.hotspots = self._hotspot_view(20)
+            changed = len(self.hotspots) != before
+        if changed:
+            self.save_runtime()
+
+    def _hotspot_view(self, limit=5):
+        """同一标题只保留最新一条，避免“简报 + 注入”出现两行重复。"""
+        latest = {}
+        for h in sorted(self.hotspots, key=lambda x: str(x.get("at") or "")):
+            if h.get("title"):
+                latest[_hotkey(h.get("title"))] = h
+        return sorted(latest.values(), key=lambda x: str(x.get("at") or ""))[-limit:]
+
+    # ---------- 知识归档 ----------
+    def archive_knowledge(self, trace, entries, stage_label="选题定稿"):
+        """祁南（kb_manager）归档：按 traceId + 标题去重，重复触发只更新不叠加。"""
+        made = []
+        if not entries:
+            return made
+        with self.lock:
+            index = {(k.get("sourceTrace") or k.get("traceId"), k.get("title")): k
+                     for k in self.knowledge}
+            for e in entries:
+                title = str(e.get("title") or "").strip()
+                if not title:
+                    continue
+                pid = e.get("projectId") or "全公司"
+                body = str(e.get("body") or "").strip()
+                tags = [pid, stage_label] + [str(t) for t in (e.get("tags") or []) if t]
+                cur = index.get((trace, title))
+                if cur:
+                    if body:
+                        cur["body"] = body[:300]
+                    cur["tags"] = list(dict.fromkeys(list(cur.get("tags") or []) + tags))[:12]
+                    cur["at"] = iso_now()
+                    made.append(cur)
+                    continue
+                entry = {"id": uid("kb"), "projectId": pid, "traceId": trace,
+                         "sourceTrace": trace, "title": title[:80],
+                         "body": body[:300] or "（归档占位）",
+                         "tags": list(dict.fromkeys(tags))[:12], "at": iso_now()}
+                self.knowledge.append(entry)
+                index[(trace, title)] = entry
+                made.append(entry)
+        if made:
+            self.emit("knowledge", trace, {
+                "stage": stage_label, "count": len(made),
+                "latest": [{"title": k["title"], "projectId": k["projectId"]} for k in made[-3:]]})
+        return made
+
+    def _backfill_knowledge(self):
+        """启动修复：最近一轮已有交付物、但知识库没有对应条目时，按定稿标题补登。"""
+        if not self.contents or not self.knowledge:
+            return
+        latest_trace = ""
+        for item in self.contents:
+            if item.get("traceId") and item.get("title"):
+                latest_trace = item["traceId"]
+        if not latest_trace:
+            return
+        existing = {k.get("title") for k in self.knowledge
+                    if str(k.get("sourceTrace") or k.get("traceId") or "").startswith(latest_trace)}
+        todo = [i for i in self.contents
+                if i.get("traceId") == latest_trace and i.get("title") not in existing]
+        if not todo:
+            return
+        self.archive_knowledge(latest_trace, [
+            {"projectId": i.get("projectId"), "title": i.get("title"),
+             "body": f"启动补登：交付物已落盘（阶段 {i.get('stage')}）",
+             "tags": [str(i.get("stage") or "")]} for i in todo], stage_label="启动补登")
+
     # ---------- 快照 ----------
     def snapshot(self):
+        self._sync_hotspots_from_vault()
         with self.lock:
             return {"scene": self.scene, "agents": list(self.agents.values()),
                     "projects": [{"id": p, **self.projects[p]} for p in self.projects],
-                    "pipeline": self.contents[-60:], "hotspots": self.hotspots[-5:],
+                    "pipeline": self.contents[-60:], "hotspots": self._hotspot_view(5),
+                    "collection": self.collection,
                     "reports": self.reports[-8:], "approvals": self.approvals[-5:],
                     "knowledge": {"count": len(self.knowledge), "latest": self.knowledge[-3:]},
                     "meeting": self.meeting,
@@ -2375,7 +2521,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/events":
             return self._sse()
         if path.startswith("/api/trace/"):
-            return self._json(self._trace(path.rsplit("/", 1)[-1]))
+            data = self._trace(path.rsplit("/", 1)[-1])
+            if data is None:
+                return self._json({"error": "trace not found"}, 404)
+            return self._json(data)
         if path == "/api/reports":
             kind = (parse_qs(urlparse(self.path).query).get("kind") or [""])[0]
             return self._json({"reports": [r for r in KERNEL.reports if (not kind or r["kind"] == kind)]})
@@ -2440,12 +2589,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _trace(self, trace):
         with KERNEL.lock:
-            msgs = [m for m in KERNEL.messages if m["traceId"] == trace]
+            msgs = [m for m in KERNEL.messages if m.get("traceId") == trace]
+            contents = [c for c in KERNEL.contents if c.get("traceId") == trace]
+            if trace not in KERNEL.traces and not msgs and not contents:
+                return None
             return {"traceId": trace, "meta": KERNEL.traces.get(trace, {}),
-                    "messages": msgs, "contents": [c for c in KERNEL.contents if c["traceId"] == trace],
-                    "approvals": [a for a in KERNEL.approvals if a["traceId"] == trace],
-                    "reports": [r for r in KERNEL.reports if r["traceId"] == trace],
-                    "knowledge": [k for k in KERNEL.knowledge if k["traceId"] == trace],
+                    "messages": msgs, "contents": contents,
+                    "approvals": [a for a in KERNEL.approvals if a.get("traceId") == trace],
+                    "reports": [r for r in KERNEL.reports if r.get("traceId") == trace],
+                    "knowledge": [k for k in KERNEL.knowledge if k.get("traceId") == trace],
                     "messageCount": len(msgs)}
 
     def _sse(self):
