@@ -193,17 +193,17 @@ def main():
         meeting_latency = round(time.time() - t0, 2)
         record("CEO 召集选题会（scene=MEETING）", meeting, f"{meeting_latency}s")
 
-        # 真实模型单次调用约 60-120s：W1（6 并行）→ CCO → CEO 三段串行，阈值按实测留余量
-        # 实测（2026-11-07 06:30 轮）：CCO 事件 360s、定稿 633s —— 员工已启用邮件工具，选题段更慢
+        # 真实模型单次调用 60-300s，超时上限 600s 时可能重试一次：选题段实测 8-16 分钟
+        # 实测（2026-11-07）：CCO 事件 465s、定稿 660s；网关拥塞时会更慢
         selected = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "topic.select"
-            and e.get("traceId") == trace for e in evs), 540)
+            and e.get("traceId") == trace for e in evs), 900)
         record("CCO 汇总选出 9 条（每项目 3 条）", selected, f"{round(time.time() - t0, 2)}s")
         decided = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "decision"
-            and e.get("traceId") == trace for e in evs), 600)
+            and e.get("traceId") == trace for e in evs), 900)
         decide_latency = round(time.time() - t0, 2)
-        record("热点→选题评审会定稿 ≤ 900s", decided and decide_latency <= 900, f"{decide_latency}s")
+        record("热点→选题评审会定稿 ≤ 1800s", decided and decide_latency <= 1800, f"{decide_latency}s")
 
         msgs = [m for m in sse.msgs(trace)]
         types = {m["type"] for m in msgs}
