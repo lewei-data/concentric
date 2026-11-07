@@ -14,6 +14,8 @@ export function HotspotsPage() {
     resource: "hotspots",
     pagination: { current: page, pageSize: PAGE_SIZE },
     filters: q ? [{ field: "q", operator: "eq", value: q }] : [],
+    // 15 秒自动重取，界面跟着 OPC 里落盘的数据走（后端每 60 秒同步一次）
+    queryOptions: { refetchInterval: 15000 },
   });
 
   const detail = useOne<Hotspot>({

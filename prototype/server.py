@@ -582,6 +582,11 @@ class Kernel:
         self.messages, self.events = [], 0
         self.hotspots, self.contents, self.reports, self.approvals, self.knowledge = [], [], [], [], []
         self._hotspot_scan_at = 0.0        # 热点目录重扫节流（秒级时间戳）
+        self._kb_stamp = DL.knowledge_stamp() if DL else (0, 0.0)   # 知识库目录指纹
+        try:
+            self._cfg_stamp = (os.path.getmtime(PROJECT_FILE), os.path.getmtime(ROSTER_FILE))
+        except OSError:
+            self._cfg_stamp = None         # 项目配置/名册 mtime 指纹
         self.collection = None             # 苏寒最近一次原始榜采集状态（只展示，不当业务热点）
         self.subscribers, self.approval_events, self.traces = [], {}, {}
         self.stats = {"approvalSeconds": [], "published": 0, "blockedPublish": 0, "traces": 0}
@@ -643,11 +648,13 @@ class Kernel:
                     self.hotspots = DL.load_hotspots()
                 except Exception as e:
                     print(f"[boot] 恢复历史热点失败：{type(e).__name__}: {e}", flush=True)
-            if not self.knowledge:
-                try:
-                    self.knowledge = DL.load_knowledge()
-                except Exception as e:
-                    print(f"[boot] 恢复历史知识失败：{type(e).__name__}: {e}", flush=True)
+            # Obsidian 是唯一真源：md 文件优先，runtime.json 只在没有 md 时兜底
+            try:
+                disk_kb = DL.load_knowledge(limit=200)
+                if disk_kb:
+                    self.knowledge = [self._kb_norm(k) for k in disk_kb]
+            except Exception as e:
+                print(f"[boot] 恢复历史知识失败：{type(e).__name__}: {e}", flush=True)
         self._backfill_knowledge()
         print(f"[boot] 恢复运行时历史：报告 {len(self.reports)} / 审批 {len(self.approvals)} / "
               f"热点 {len(self.hotspots)} / 知识 {len(self.knowledge)} / 消息 {len(self.messages)}", flush=True)
@@ -2288,6 +2295,58 @@ class Kernel:
                     self.emit("collection", "", self.collection)
             except Exception as e:
                 print(f"[hotspot] 后台同步失败：{type(e).__name__}: {e}", flush=True)
+            try:
+                self._sync_knowledge_from_vault()
+            except Exception as e:
+                print(f"[kb] 后台同步失败：{type(e).__name__}: {e}", flush=True)
+            try:
+                self._sync_config_from_vault()
+            except Exception as e:
+                print(f"[config] 后台同步失败：{type(e).__name__}: {e}", flush=True)
+
+    @staticmethod
+    def _kb_norm(item):
+        """统一知识条目结构：文件解析结果与内存归档保持同一套字段。"""
+        body = str(item.get("body") or "")
+        return {"id": item.get("id"), "projectId": item.get("projectId"),
+                "traceId": item.get("traceId") or item.get("sourceTrace") or "",
+                "sourceTrace": item.get("sourceTrace") or "",
+                "title": item.get("title") or "",
+                "summary": item.get("summary") or body[:80],
+                "body": body, "tags": item.get("tags") or [], "at": item.get("at") or ""}
+
+    def _sync_knowledge_from_vault(self):
+        """运行中重扫 OPC/知识库：md 有变化就以文件为准替换 Web 端知识库。"""
+        if not DL:
+            return
+        stamp = DL.knowledge_stamp()
+        if stamp == self._kb_stamp:
+            return
+        items = DL.load_knowledge(limit=200)
+        if not items:
+            return
+        fresh = [self._kb_norm(k) for k in items]
+        with self.lock:
+            before = len(self.knowledge)
+            self.knowledge = fresh
+        self._kb_stamp = stamp
+        if len(fresh) != before:
+            self.emit("knowledge", "", {"stage": "vault-sync", "count": len(fresh)})
+
+    def _sync_config_from_vault(self):
+        """项目配置/员工名册改动后自动热加载，不用手动点重载。"""
+        try:
+            stamp = (os.path.getmtime(PROJECT_FILE), os.path.getmtime(ROSTER_FILE))
+        except OSError:
+            return
+        if stamp == self._cfg_stamp:
+            return
+        self._cfg_stamp = stamp
+        try:
+            info = self.reload_config()
+            print(f"[config] 检测到 Obsidian 配置变更，已热加载：{info}", flush=True)
+        except Exception as e:
+            print(f"[config] 自动热加载失败：{type(e).__name__}: {e}", flush=True)
 
     def _sync_hotspots_from_vault(self, force=False):
         """运行中重扫 OPC/热点采集：苏寒新落盘的业务简报无需重启即可进面板。"""
@@ -2425,6 +2484,12 @@ class Kernel:
                 index[(trace, title)] = entry
                 made.append(entry)
         if made:
+            if DL:                                   # 写回 Obsidian，文件与 Web 同步落地
+                for k in made:
+                    try:
+                        DL.save_knowledge(k)
+                    except Exception as e:
+                        print(f"[kb] 写回 Obsidian 失败：{type(e).__name__}: {e}", flush=True)
             self.emit("knowledge", trace, {
                 "stage": stage_label, "count": len(made),
                 "latest": [{"title": k["title"], "summary": k.get("summary") or k["title"][:80],

@@ -14,6 +14,8 @@ export function KnowledgePage() {
     resource: "knowledge",
     pagination: { current: page, pageSize: PAGE_SIZE },
     filters: q ? [{ field: "q", operator: "eq", value: q }] : [],
+    // 15 秒自动重取，界面跟着 OPC 里的 md 文件走（后端每 60 秒重扫一次）
+    queryOptions: { refetchInterval: 15000 },
   });
 
   const detail = useOne<Knowledge>({
