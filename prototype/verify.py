@@ -198,7 +198,7 @@ def main():
         selected = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "topic.select"
             and e.get("traceId") == trace for e in evs), 900)
-        record("CCO 汇总选出 9 条（每项目 3 条）", selected, f"{round(time.time() - t0, 2)}s")
+        record("CCO 12 选 9（每项目 3 条）", selected, f"{round(time.time() - t0, 2)}s")
         decided = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "decision"
             and e.get("traceId") == trace for e in evs), 900)
@@ -210,6 +210,9 @@ def main():
         record("类型化消息 ≥ 20 条", len(msgs) >= 20, f"messages={len(msgs)}")
         record("消息类型 ≥ 6 种", len(types) >= 6, ",".join(sorted(types)))
         record("CCO 选题（topic.select）", "topic.select" in types)
+        topic_sel = next((m for m in msgs if m["type"] == "topic.select"), {})
+        elim = (topic_sel.get("payload") or {}).get("eliminated") or []
+        record("CCO 淘汰记录 ≥ 3 条（每项目 ≥1）", len(elim) >= 3, f"eliminated={len(elim)}")
         record("决议（decision）", "decision" in types)
         decision = next((m for m in msgs if m["type"] == "decision"), {})
         final = (decision.get("payload") or {}).get("final") or {}
@@ -229,12 +232,12 @@ def main():
         if prod:
             post(f"/api/approvals/{prod[0]['id']}", {"decision": "approve"})
 
-        # 4. 审核结论（真实出片 + 样片评审 + 精剪 + 终审，按事件等待）
+        # 4. 审核结论（真实出片 + 样片评审 + 定版 + 终审，按事件等待）
         # 实测单条 Remotion 渲染 ≈ 316s，6 条串行 + TTS + 模型评审 ≈ 40-55 分钟
         sse.wait(lambda evs: sum(1 for e in evs if e.get("kind") == "sample-review"
                                  and e.get("traceId") == trace) >= 6, 4200)
         sample = [e for e in sse.snapshot() if e.get("kind") == "sample-review" and e.get("traceId") == trace]
-        # 样片三方评审通过的条目才进入精剪与终审
+        # 样片三方评审通过的条目才进入定版与终审
         sample_pass_ids = {e["data"]["itemId"] for e in sample if e["data"].get("pass")}
         sse.wait(lambda evs: len({e["data"]["payload"]["verdict"].get("itemId")
                                   for e in evs
