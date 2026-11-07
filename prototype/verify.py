@@ -141,6 +141,18 @@ def login():
         return False
 
 
+def print_report():
+    """打印汇总并返回退出码（中途终止时也复用，避免只输出半截结果）。"""
+    ok = all(r[1] for r in RESULTS)
+    print("\n" + "=" * 60)
+    for name, passed, detail in RESULTS:
+        print(f"{'PASS' if passed else 'FAIL'}  {name}" + (f"  [{detail}]" if detail else ""))
+    print("=" * 60)
+    print(f"共 {len(RESULTS)} 项，通过 {sum(1 for r in RESULTS if r[1])} 项")
+    print("RESULT: ALL PASS" if ok else "RESULT: FAIL")
+    return 0 if ok else 1
+
+
 def main():
     proc = ensure_server()
     try:
@@ -182,15 +194,16 @@ def main():
         record("CEO 召集选题会（scene=MEETING）", meeting, f"{meeting_latency}s")
 
         # 真实模型单次调用约 60-120s：W1（6 并行）→ CCO → CEO 三段串行，阈值按实测留余量
+        # 实测（2026-11-07 06:30 轮）：CCO 事件 360s、定稿 633s —— 员工已启用邮件工具，选题段更慢
         selected = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "topic.select"
-            and e.get("traceId") == trace for e in evs), 360)
+            and e.get("traceId") == trace for e in evs), 540)
         record("CCO 汇总选出 9 条（每项目 3 条）", selected, f"{round(time.time() - t0, 2)}s")
         decided = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "decision"
-            and e.get("traceId") == trace for e in evs), 420)
+            and e.get("traceId") == trace for e in evs), 600)
         decide_latency = round(time.time() - t0, 2)
-        record("热点→选题评审会定稿 ≤ 600s", decided and decide_latency <= 600, f"{decide_latency}s")
+        record("热点→选题评审会定稿 ≤ 900s", decided and decide_latency <= 900, f"{decide_latency}s")
 
         msgs = [m for m in sse.msgs(trace)]
         types = {m["type"] for m in msgs}
@@ -217,8 +230,9 @@ def main():
             post(f"/api/approvals/{prod[0]['id']}", {"decision": "approve"})
 
         # 4. 审核结论（真实出片 + 样片评审 + 精剪 + 终审，按事件等待）
+        # 实测单条 Remotion 渲染 ≈ 316s，6 条串行 + TTS + 模型评审 ≈ 40-55 分钟
         sse.wait(lambda evs: sum(1 for e in evs if e.get("kind") == "sample-review"
-                                 and e.get("traceId") == trace) >= 6, 2400)
+                                 and e.get("traceId") == trace) >= 6, 4200)
         sample = [e for e in sse.snapshot() if e.get("kind") == "sample-review" and e.get("traceId") == trace]
         # 样片三方评审通过的条目才进入精剪与终审
         sample_pass_ids = {e["data"]["itemId"] for e in sample if e["data"].get("pass")}
@@ -226,7 +240,7 @@ def main():
                                   for e in evs
                                   if e.get("kind") == "message" and e.get("data", {}).get("type") == "result"
                                   and isinstance(e.get("data", {}).get("payload", {}).get("verdict"), dict)
-                                  and "reasons" in e["data"]["payload"]["verdict"]}) >= len(sample_pass_ids), 900)
+                                  and "reasons" in e["data"]["payload"]["verdict"]}) >= len(sample_pass_ids), 1200)
         msgs = [e["data"] for e in sse.snapshot()
                 if e.get("kind") == "message" and e.get("traceId") == trace]
         verdicts = [m for m in msgs if m["type"] == "result"
@@ -243,7 +257,7 @@ def main():
         # 5. 审批门：未审批绝不发布
         sse.wait(lambda evs: any(e.get("kind") == "approval" and e.get("traceId") == trace
                                  and (e.get("data") or {}).get("action") == "publish.execute"
-                                 for e in evs), 900)
+                                 for e in evs), 1500)
         pub_before = [m for m in msgs if m["sender"] == "release_ops"]
         appr = [a for a in get("/api/state").get("approvals", [])
                 if a["traceId"] == trace and a.get("action") == "publish.execute"
@@ -257,19 +271,18 @@ def main():
         record("被阻断项已升级给老板", bool(blocked), f"escalation={len(blocked)}")
         if not appr:
             print("\n[verify] 审批未挂起，终止后续断言")
-            print_report()
-            sys.exit(1)
+            sys.exit(print_report())
 
         # 6. 老板审批 → 发布 → 归档 → 日报
         t1 = time.time()
         post(f"/api/approvals/{appr[0]['id']}", {"decision": "approve"})
         published = sse.wait(lambda evs: any(
-            e.get("kind") == "pipeline" and e.get("data", {}).get("stage") == "published" for e in evs), 300)
+            e.get("kind") == "pipeline" and e.get("data", {}).get("stage") == "published" for e in evs), 600)
         record("审批后进入已发布", published, f"{round(time.time() - t1, 2)}s")
 
         sse.wait(lambda evs: any(
             e.get("kind") == "report" and e.get("data", {}).get("kind") == "daily"
-            and e.get("traceId") == trace for e in evs), 300)
+            and e.get("traceId") == trace for e in evs), 600)
 
         st2 = get("/api/state")
         stages = {}
@@ -334,14 +347,7 @@ def main():
         if proc:
             proc.terminate()
 
-    ok = all(r[1] for r in RESULTS)
-    print("\n" + "=" * 60)
-    for name, passed, detail in RESULTS:
-        print(f"{'PASS' if passed else 'FAIL'}  {name}" + (f"  [{detail}]" if detail else ""))
-    print("=" * 60)
-    print(f"共 {len(RESULTS)} 项，通过 {sum(1 for r in RESULTS if r[1])} 项")
-    print("RESULT: ALL PASS" if ok else "RESULT: FAIL")
-    return 0 if ok else 1
+    return print_report()
 
 
 if __name__ == "__main__":

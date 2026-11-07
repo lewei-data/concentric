@@ -378,6 +378,56 @@ def load_hotspots(limit=20):
     return out[-limit:]
 
 
+DATE_FILE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
+
+
+def load_collection_status():
+    """读取苏寒最近一次 GitHub Trending 采集，返回“采集进程状态”。
+
+    原始榜只用于证明采集在跑，不作为业务热点；业务热点仍走 `- 热点：` 简报。
+    """
+    try:
+        names = [n for n in os.listdir(HOT_DIR) if DATE_FILE_RE.match(n)]
+    except OSError:
+        return None
+    if not names:
+        return None
+    name = max(names, key=lambda n: os.path.getmtime(os.path.join(HOT_DIR, n)))
+    path = os.path.join(HOT_DIR, name)
+    try:
+        text = open(path, encoding="utf-8").read()
+        at = datetime.fromtimestamp(os.path.getmtime(path), TZ).isoformat(timespec="seconds")
+    except OSError:
+        return None
+
+    picked = None
+    for sec in reversed(list(re.finditer(r"^##\s+(\d{2}:\d{2})\s*$", text, re.M))):
+        tail = text[sec.end():]
+        rows = []
+        for line in tail.splitlines():
+            if not line.startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 5:
+                continue
+            if cells[0] == "排名" or set(cells[0]) <= set("-: "):
+                continue
+            rows.append({"rank": cells[0], "repo": cells[1], "stars": cells[2],
+                         "lang": cells[3], "desc": cells[4]})
+        if rows:
+            picked = (sec, tail, rows)
+            break
+    if not picked:
+        return None
+
+    sec, tail, rows = picked
+    m = re.search(r"页面实际返回\s*(\d+)\s*条", tail)
+    return {"date": name[:-3], "time": sec.group(1),
+            "count": int(m.group(1)) if m else len(rows), "rows": len(rows),
+            "top": rows[0], "at": at, "file": "热点采集/" + name,
+            "source": "GitHub Trending"}
+
+
 def _frontmatter(text):
     if not text.startswith("---"):
         return {}, text
