@@ -35,7 +35,7 @@ export const authProvider: AuthProvider = {
       };
     }
     localStorage.setItem(USER_KEY, JSON.stringify(body.user ?? {}));
-    return { success: true, redirectTo: "/hotspots" };
+    return { success: true, redirectTo: "/" };
   },
   check: checkAuth,
   getIdentity: async () => {

@@ -4,10 +4,12 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { authProvider } from "./authProvider";
 import { dataProvider } from "./dataProvider";
 import { Layout } from "./components/Layout";
+import { HomePage } from "./pages/HomePage";
 import { HotspotsPage } from "./pages/HotspotsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OrgPage } from "./pages/OrgPage";
+import { WorksPage } from "./pages/WorksPage";
 
 export default function App() {
   return (
@@ -17,6 +19,7 @@ export default function App() {
         authProvider={authProvider}
         routerProvider={routerProvider}
         resources={[
+          { name: "works", list: "/works" },
           { name: "hotspots", list: "/hotspots" },
           { name: "knowledge", list: "/knowledge" },
           { name: "org", list: "/org" },
@@ -31,12 +34,13 @@ export default function App() {
               </Authenticated>
             }
           >
-            <Route path="/" element={<Navigate to="/hotspots" replace />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/works" element={<WorksPage />} />
             <Route path="/hotspots" element={<HotspotsPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/org" element={<OrgPage />} />
           </Route>
-          <Route path="*" element={<Navigate to="/hotspots" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Refine>
     </BrowserRouter>
