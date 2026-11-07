@@ -2493,8 +2493,8 @@ class Kernel:
                 reasons.append(f"帧率 {v.get('r_frame_rate')}，要求 30/1")
             if v.get("codec_name") != "h264":
                 reasons.append(f"视频编码 {v.get('codec_name')}，要求 h264")
-            if v.get("pix_fmt") != "yuv420p":
-                reasons.append(f"像素格式 {v.get('pix_fmt')}，要求 yuv420p")
+            if v.get("pix_fmt") not in ("yuv420p", "yuvj420p"):
+                reasons.append(f"像素格式 {v.get('pix_fmt')}，要求 4:2:0 8bit（yuv420p/yuvj420p）")
         if au:
             checks.update(sample_rate=au.get("sample_rate"), channels=au.get("channels"),
                           audio_codec=au.get("codec_name"))

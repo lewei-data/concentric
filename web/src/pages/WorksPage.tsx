@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useList, useOne } from "@refinedev/core";
 import type { Work } from "../types";
 
@@ -24,6 +24,7 @@ export function WorksPage() {
   const [q, setQ] = useState("");
   const [project, setProject] = useState("");
   const [status, setStatus] = useState("");
+  const [sort, setSort] = useState("updated");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [docKey, setDocKey] = useState("topic");
@@ -32,6 +33,7 @@ export function WorksPage() {
   if (q) filters.push({ field: "q", operator: "eq", value: q });
   if (project) filters.push({ field: "project", operator: "eq", value: project });
   if (status) filters.push({ field: "status", operator: "eq", value: status });
+  if (sort !== "updated") filters.push({ field: "sort", operator: "eq", value: sort });
 
   const list = useList<Work>({
     resource: "works",
@@ -50,6 +52,14 @@ export function WorksPage() {
   const total = list.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const work = detail.data?.data;
+
+  useEffect(() => {
+    if (!work?.docs) return;
+    if (!work.docs[docKey]) {
+      const first = DOC_ORDER.find((key) => work.docs?.[key]);
+      if (first) setDocKey(first);
+    }
+  }, [work, docKey]);
 
   const resetPage = () => setPage(1);
 
@@ -108,6 +118,24 @@ export function WorksPage() {
               }}
             >
               {item || "全部状态"}
+            </button>
+          ))}
+        </div>
+        <div className="chip-group">
+          {[
+            { id: "updated", name: "按时间" },
+            { id: "name", name: "按名称" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`chip-btn${sort === item.id ? " is-active" : ""}`}
+              onClick={() => {
+                setSort(item.id);
+                resetPage();
+              }}
+            >
+              {item.name}
             </button>
           ))}
         </div>

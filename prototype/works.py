@@ -306,6 +306,7 @@ def page(query_params, approvals=None):
     project = one("project")
     stage = one("stage")
     status = one("status")
+    sort = one("sort", "updated")
 
     items = scan(approvals)
     facets = _facets(items)
@@ -321,6 +322,10 @@ def page(query_params, approvals=None):
         items = [it for it in items if it.get("stage") == stage]
     if status:
         items = [it for it in items if it.get("status") == status]
+    if sort == "name":
+        items.sort(key=lambda it: str(it.get("title") or ""))
+    elif sort == "created":
+        items.sort(key=lambda it: str(it.get("createdAt") or ""), reverse=True)
 
     total = len(items)
     start = (page_no - 1) * size
