@@ -2135,6 +2135,7 @@ class Kernel:
             if rnd == 2:
                 for iid in failed:
                     items[iid]["stage"] = "blocked"
+                    items[iid]["blockedBy"] = "sample-gate"
                     sample_blocked.add(iid)
                     self.items_emit(trace, items[iid])
                     self.send("escalation", "cco", "owner", trace,
@@ -2240,6 +2241,7 @@ class Kernel:
             if rnd == 2:
                 for iid in failed:
                     items[iid]["stage"] = "blocked"
+                    items[iid]["blockedBy"] = "review-gate"
                     self.items_emit(trace, items[iid])
                     self.send("escalation", "reviewer", "owner", trace,
                               {"text": f"《{items[iid]['title']}》两次审核未通过，已阻断，不进入审批"},
