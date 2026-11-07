@@ -37,6 +37,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+WEB_DIST = os.path.normpath(os.path.join(BASE_DIR, "..", "web", "dist"))
+WEB_MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",
+            ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff"}
 TZ = timezone(timedelta(hours=8))
 CLI = os.environ.get("OPC_HERMES_CLI", "/opt/sefs/hermes/run-hermes.sh")
 MODE = os.environ.get("OPC_HERMES_MODE", "hermes")
@@ -2334,6 +2338,61 @@ class Kernel:
                 latest[_hotkey(h.get("title"))] = h
         return sorted(latest.values(), key=lambda x: str(x.get("at") or ""))[-limit:]
 
+    def _page_params(self, query="", default_size=20, max_size=100):
+        """解析 ?page=&size=&q=，供列表接口做服务端分页与关键词过滤。"""
+        qs = parse_qs(query)
+        try:
+            page = max(1, int(qs.get("page", ["1"])[0]))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            size = min(max_size, max(1, int(qs.get("size", [str(default_size)])[0])))
+        except (TypeError, ValueError):
+            size = default_size
+        q = (qs.get("q", [""])[0] or "").strip().lower()
+        return page, size, q
+
+    def knowledge_page(self, query=""):
+        """知识库分页列表：title 为完整标题，summary 供列表省略显示。"""
+        page, size, q = self._page_params(query)
+        with self.lock:
+            items = list(self.knowledge)
+        if q:
+            items = [k for k in items if q in
+                     f"{k.get('title') or ''} {k.get('summary') or ''} {k.get('body') or ''} "
+                     f"{k.get('projectId') or ''} {' '.join(k.get('tags') or [])}".lower()]
+        items.sort(key=lambda k: str(k.get("at") or ""), reverse=True)
+        total = len(items)
+        start = (page - 1) * size
+        rows = [{"id": k.get("id"),
+                 "title": k.get("title") or k.get("summary") or "",
+                 "summary": k.get("summary") or (k.get("title") or "")[:80],
+                 "projectId": k.get("projectId"), "traceId": k.get("traceId"),
+                 "tags": k.get("tags") or [], "at": k.get("at"),
+                 "body": k.get("body") or ""} for k in items[start:start + size]]
+        return {"ok": True, "total": total, "page": page, "size": size, "items": rows}
+
+    def hotspot_page(self, query=""):
+        """热点分页列表：沿用 _hotspot_view 的同标题去重。"""
+        page, size, q = self._page_params(query)
+        items = sorted(self._hotspot_view(10 ** 6), key=lambda h: str(h.get("at") or ""), reverse=True)
+        if q:
+            items = [h for h in items if q in
+                     f"{h.get('title') or ''} {h.get('source') or ''} "
+                     f"{' '.join(h.get('tags') or [])}".lower()]
+        total = len(items)
+        start = (page - 1) * size
+        return {"ok": True, "total": total, "page": page, "size": size,
+                "items": items[start:start + size]}
+
+    def knowledge_detail(self, kid):
+        with self.lock:
+            return next((k for k in self.knowledge if k.get("id") == kid), None)
+
+    def hotspot_detail(self, hid):
+        with self.lock:
+            return next((h for h in self.hotspots if h.get("id") == hid), None)
+
     # ---------- 知识归档 ----------
     def archive_knowledge(self, trace, entries, stage_label="选题定稿"):
         """祁南（kb_manager）归档：按 traceId + 标题去重，重复触发只更新不叠加。"""
@@ -2359,7 +2418,7 @@ class Kernel:
                     made.append(cur)
                     continue
                 entry = {"id": uid("kb"), "projectId": pid, "traceId": trace,
-                         "sourceTrace": trace, "title": title[:80],
+                         "sourceTrace": trace, "title": title, "summary": title[:80],
                          "body": body[:300] or "（归档占位）",
                          "tags": list(dict.fromkeys(tags))[:12], "at": iso_now()}
                 self.knowledge.append(entry)
@@ -2368,7 +2427,8 @@ class Kernel:
         if made:
             self.emit("knowledge", trace, {
                 "stage": stage_label, "count": len(made),
-                "latest": [{"title": k["title"], "projectId": k["projectId"]} for k in made[-3:]]})
+                "latest": [{"title": k["title"], "summary": k.get("summary") or k["title"][:80],
+                            "projectId": k["projectId"], "id": k["id"]} for k in made[-3:]]})
         return made
 
     def _backfill_knowledge(self):
@@ -2591,6 +2651,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(os.path.join("assets", "faces", name), "image/png")
         if path.startswith("/vault/"):
             return self._vault(path[len("/vault/"):])
+        # 新版前端（Refine）外壳与构建资源公开：页面本身不含数据，数据接口仍在 /api 层鉴权
+        # 带内容哈希的 JS/CSS 用长缓存，其余（含 index.html）每次校验，避免发版后拿到旧壳
+        if path.startswith("/app/assets/"):
+            return self._web_dist(path[len("/app/"):], immutable=True)
+        if path == "/app/legacy":
+            self.send_response(302)
+            self.send_header("Location", "/")
+            self.end_headers()
+            return
+        if path == "/app":
+            return self._web_dist("index.html")
+        if path.startswith("/app/"):
+            return self._web_dist(path[len("/app/"):])
         # 素材库文件只读发布（可外部浏览器直接打开，与交付链接同口径不拦登录）
         if path.startswith("/materials/"):
             return self._material(path[len("/materials/"):])
@@ -2613,6 +2686,16 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/meeting/"):
             rec = KERNEL.meeting_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "meeting not found"}, 404)
+        if path == "/api/knowledge":
+            return self._json(KERNEL.knowledge_page(urlparse(self.path).query))
+        if path.startswith("/api/knowledge/"):
+            rec = KERNEL.knowledge_detail(path.rsplit("/", 1)[-1])
+            return self._json(rec) if rec else self._json({"error": "knowledge not found"}, 404)
+        if path == "/api/hotspots":
+            return self._json(KERNEL.hotspot_page(urlparse(self.path).query))
+        if path.startswith("/api/hotspots/"):
+            rec = KERNEL.hotspot_detail(path.rsplit("/", 1)[-1])
+            return self._json(rec) if rec else self._json({"error": "hotspot not found"}, 404)
         if path == "/api/state":
             return self._json(KERNEL.snapshot())
         if path == "/api/events":
@@ -2641,6 +2724,28 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _web_dist(self, rel, immutable=False):
+        """提供 Refine 前端构建产物（web/dist）；未命中的路径回退 index.html 以支持 SPA 路由。"""
+        root = WEB_DIST
+        target = os.path.normpath(os.path.join(root, rel or "index.html"))
+        if not (target == root or target.startswith(root + os.sep)):
+            return self._json({"error": "bad path"}, 404)
+        if not os.path.isfile(target):
+            target = os.path.join(root, "index.html")
+        if not os.path.isfile(target):
+            return self._json({"error": "web/dist 未构建，先在 web/ 执行 npm run build"}, 404)
+        body = open(target, "rb").read()
+        self.send_response(200)
+        self.send_header("Content-Type", WEB_MIME.get(os.path.splitext(target)[1].lower(),
+                                                     "application/octet-stream"))
+        self.send_header("Content-Length", str(len(body)))
+        if immutable:
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
 

@@ -23,7 +23,8 @@
 opc-workbench/
 ├── opc.sh                  # 后台管理脚本：start/stop/restart/status/logs/verify/reload/patrol/vault
 ├── vault_export.py         # 公司配置 + 运行时动态 → Obsidian Markdown
-└── prototype/
+├── web/                    # 新版前端（React 18 + Refine v4 + Vite，构建产物 dist 托管在 /app）
+└── prototype/                # 旧版前端与服务端（旧界面仍保留，回滚用）
     ├── server.py           # 服务端主程序（标准库 HTTP + SSE + Hermes 适配层）
     ├── verify.py           # 端到端验收（零依赖）
     ├── deliverables.py     # 交付物落盘（Markdown / 封面 / 分镜帧）
@@ -79,7 +80,9 @@ chmod +x opc.sh
 
 | 路径 | 说明 |
 | --- | --- |
-| `/`、`/index.html` | 工作台控制台（需登录） |
+| `/`、`/index.html` | 旧版工作台控制台（需登录，首页顶部有「新版界面」入口） |
+| `/app` | 新版界面（React + Refine：热点 / 知识库两页，页面公开、数据接口需登录） |
+| `/app/assets/...` | 新版前端静态资源（带内容哈希，长缓存） |
 | `/login` | 登录页 |
 | `/office3d` | 3D 办公区（需登录） |
 | `/meeting3d` | 3D 会议室（需登录） |
@@ -92,6 +95,8 @@ chmod +x opc.sh
 | `/api/meeting`、`/api/meetings` | 会议纪要查询 |
 | `/api/approvals/<id>` | 审批动作 |
 | `/api/patrol` | 触发 CEO 巡检 |
+| `/api/hotspots`、`/api/hotspots/<id>` | 热点分页列表（`page`/`size`/`q`）与单条详情 |
+| `/api/knowledge`、`/api/knowledge/<id>` | 知识库分页列表（`page`/`size`/`q`）与单条详情（含完整正文） |
 | `/api/hotspots/inject` | 注入热点 |
 | `/api/delegate`、`/api/commands` | 人工派单与指令 |
 | `/api/login`、`/api/logout`、`/api/session` | 会话管理 |
