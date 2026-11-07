@@ -825,7 +825,7 @@ def _md_review(item):
                   f"- 结论：{'通过' if r.get('pass') else '未通过'}",
                   f"- 理由：{'；'.join(r.get('reasons') or []) or '—'}", ""]
     if item.get("finalCut"):
-        lines += ["## 最终精剪", "", item["finalCut"], ""]
+        lines += ["## 定版（不重剪）", "", item["finalCut"], ""]
     if item.get("finalAssets"):
         lines += ["## 交付物", ""] + [f"- {a}" for a in item["finalAssets"]] + [""]
     return "\n".join(lines)

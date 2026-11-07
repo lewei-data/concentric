@@ -278,6 +278,63 @@ def _num(v):
     return 0
 
 
+DEFAULT_DELIVERY = {
+    "_default": {"width": 1080, "height": 1920, "fps": "30/1", "video_codec": "h264",
+                 "pix_fmt": ["yuv420p", "yuvj420p"], "audio_codec": "aac",
+                 "sample_rate": 48000, "channels": 2,
+                 "duration_tolerance": 2.5, "min_mean_db": -45.0, "max_peak_db": -1.0},
+}
+
+
+def _parse_delivery_cfg(path):
+    """解析《项目配置》里的「交付合同」表；缺表则用内置默认（竖屏 1080×1920/30fps）。"""
+    spec = {"_default": dict(DEFAULT_DELIVERY["_default"])}
+    section, rows = "", 0
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if line.startswith("## "):
+                section = line[3:]
+                continue
+            if "交付合同" not in section or not line.startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 10:
+                continue
+            pid = cells[0]
+            if pid in ("项目", "项目 ID") or set(pid) <= set("-: "):
+                continue
+            try:
+                one = dict(DEFAULT_DELIVERY["_default"])
+                one.update(width=_to_int(cells[1], 1080), height=_to_int(cells[2], 1920),
+                           fps=cells[3] or "30/1",
+                           video_codec=cells[4] or "h264",
+                           pix_fmt=[x.strip() for x in cells[5].replace("、", "|").split("|") if x.strip()]
+                           or DEFAULT_DELIVERY["_default"]["pix_fmt"],
+                           sample_rate=_to_int(cells[6], 48000),
+                           channels=_to_int(cells[7], 2),
+                           duration_tolerance=float(cells[8] or 2.5),
+                           min_mean_db=float(cells[9] or -45.0),
+                           max_peak_db=float(cells[10]) if len(cells) > 10 and cells[10] else -1.0)
+            except (TypeError, ValueError):
+                continue
+            spec[pid] = one
+            rows += 1
+    return spec, rows
+
+
+def _load_delivery_cfg():
+    try:
+        spec, rows = _parse_delivery_cfg(PROJECT_FILE)
+        print(f"[boot] 交付合同 {PROJECT_FILE} → 专属 {rows} 项目（其余用默认 "
+              f"{spec['_default']['width']}x{spec['_default']['height']}@{spec['_default']['fps']}）",
+              flush=True)
+        return spec
+    except Exception as e:
+        print(f"[boot] 交付合同解析失败({type(e).__name__})，使用内置默认", flush=True)
+        return {"_default": dict(DEFAULT_DELIVERY["_default"])}
+
+
 def _parse_project_cfg(path):
     projects, tone, stages, high = {}, {}, [], []
     section = ""
@@ -289,7 +346,8 @@ def _parse_project_cfg(path):
                 continue
             if line.startswith("|"):
                 cells = [c.strip() for c in line.strip().strip("|").split("|")]
-                if len(cells) < 6:
+                # 项目表固定 6 列；其余表格（如「交付合同」11 列）不按项目解析
+                if len(cells) != 6:
                     continue
                 pid = cells[0]
                 if pid.startswith("项目") or set(pid) <= set("-: "):
@@ -328,6 +386,7 @@ def _load_project_cfg():
 
 
 PROJECTS, TONE, STAGES, HIGH_RISK_TOOLS = _load_project_cfg()
+DELIVERY = _load_delivery_cfg()
 
 DEFAULT_AGENT_SPEC = [
     ("ceo", "马斯克", "CEO", "all", ["project.read", "metric.read", "report.render", "kb.search"], "全公司"),
@@ -510,6 +569,19 @@ def _org_skills(profile_dir):
     return out
 
 
+def _org_toolsets(profile_dir):
+    """运行时真实生效的工具集（config.yaml → platform_toolsets.cli）；名册里的白名单只是意图。"""
+    try:
+        import yaml
+        with open(os.path.join(profile_dir, "config.yaml"), encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        pt = data.get("platform_toolsets") or {}
+        cli = pt.get("cli") or []
+        return [str(x) for x in cli]
+    except Exception:
+        return []
+
+
 def _org_agents():
     out = []
     for aid, name, role, pid, tools, scope in AGENT_SPEC:
@@ -520,6 +592,7 @@ def _org_agents():
             "id": aid, "name": name, "role": role, "projectId": pid,
             "project": _org_project_label(pid), "scope": scope, "tone": _org_tone(pid),
             "tools": tools, "profile": has_profile,
+            "toolsets": _org_toolsets(pdir) if has_profile else [],
             "hasSoul": os.path.isfile(os.path.join(pdir, "SOUL.md")),
             "skills": _org_skills(pdir) if has_profile else [],
             "memoryChars": {
@@ -549,10 +622,11 @@ def _org_agent_detail(aid):
         "id": aid, "name": row[1], "role": row[2], "projectId": row[3],
         "project": _org_project_label(row[3]), "scope": row[5],
         "tone": _org_tone(row[3]), "tools": row[4],
-        "profile": os.path.isdir(pdir),
+        "profile": os.path.isdir(pdir), "toolsets": [],
         "soul": "", "memory": "", "user": "", "config": "", "skills": [],
     }
     if os.path.isdir(pdir):
+        detail["toolsets"] = _org_toolsets(pdir)
         detail["soul"] = _org_read(os.path.join(pdir, "SOUL.md"))
         detail["memory"] = _org_read(os.path.join(pdir, "memories", "MEMORY.md"))
         detail["user"] = _org_read(os.path.join(pdir, "memories", "USER.md"))
@@ -1505,7 +1579,7 @@ class Kernel:
         return self.fallback(aid, what)
 
     def _coerce_topics(self, data, pid, hotspot):
-        """PM 选题卡：强制恰好 3 条，模型漏项时用规则兜底。"""
+        """PM 选题卡：每项目恰好 4 条（CCO 有 12 选 9 的淘汰空间），模型漏项时规则兜底。"""
         raw = (data or {}).get("topics")
         out = []
         if isinstance(raw, list):
@@ -1520,15 +1594,15 @@ class Kernel:
                             "form": str(t.get("form") or "短视频")[:16],
                             "durationSec": _to_int(t.get("durationSec"), 45),
                             "reason": str(t.get("reason") or "")[:120]})
-        while len(out) < 3:
+        forms = ("热点解读", "延伸视角", "互动话题", "反常识问答")
+        while len(out) < 4:
             i = len(out)
             base = PROJECTS[pid]["name"]
             angle = (hotspot.get("title") or "今日热点").strip()
-            forms = ("热点解读", "延伸视角", "互动话题")
             out.append({"projectId": pid, "title": f"{angle}｜{base}{forms[i]}",
                         "angle": f"从{base}定位切入{forms[i]}", "form": forms[i],
                         "durationSec": 45, "reason": "规则兜底选题"})
-        return out[:3]
+        return out[:4]
 
     def _coerce_mgmt_topics(self, data):
         raw = (data or {}).get("topics")
@@ -1545,7 +1619,7 @@ class Kernel:
         return out[:3]
 
     def _coerce_selection(self, data, pm_topics):
-        """CCO 选 9 条：每个项目强制 3 条，缺项从 PM 池补齐。"""
+        """CCO 选 9 条：每个项目 3 条（从 4 条池中淘汰 1 条），缺项从 PM 池补齐。"""
         raw = (data or {}).get("selected")
         picked = {pid: [] for pid in self.PIDS}
         if isinstance(raw, list):
@@ -1647,7 +1721,7 @@ class Kernel:
                 p_ctx = json.dumps([items[i] for i in pid_ids], ensure_ascii=False)
                 jobs[pid] = HERMES.pool.submit(
                     self.call_agent, f"pm_{pid}",
-                    f"以 {PROJECTS[pid]['name']} 产品经理身份评审本项目样片，判断能否进入精剪。",
+                    f"以 {PROJECTS[pid]['name']} 产品经理身份评审本项目样片，判断能否进入定版。",
                     p_ctx, extra, schema)
         maps, metas = {}, {}
         for who, job in jobs.items():
@@ -1685,7 +1759,7 @@ class Kernel:
                 "toneIsolation": True,
                 "projectBinding": True,
                 "sourcesRequired": False,
-                "reviewerGate": "精剪后终审",
+                "reviewerGate": "定版后终审",
             },
         }
 
@@ -1718,9 +1792,9 @@ class Kernel:
 
     def _pipeline(self, trace, hotspot):
         pms = [("wenren", "pm_wenren"), ("gou", "pm_gou"), ("tongxinyuan", "pm_tongxinyuan")]
-        # 1. 每日选题会：PM 各交 3 条 + CEO/CTO 指定选题 + scout 简报，同波 6 个调用
+        # 1. 每日选题会：PM 各交 4 条（池 12）+ CEO/CTO 指定选题 + scout 简报，同波 6 个调用
         participants = ["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan", "scout", "kb_manager"]
-        agenda1 = [f"热点：{hotspot['title']}", "三项目各 3 条候选", "CCO 汇总选 9 条"]
+        agenda1 = [f"热点：{hotspot['title']}", "三项目各 4 条候选（池 12）", "CCO 12 选 9"]
         self.meeting_begin(trace, "每日选题会", participants, agenda1)
         self.set_scene("MEETING", trace, title="每日选题会", participants=participants, agenda=agenda1)
         for aid in participants:
@@ -1728,7 +1802,7 @@ class Kernel:
             self.send("delegation", "ceo", aid, trace, {"task": "参会：按岗位职责提交/评估选题"},
                       project=None if self.agents[aid]["projectId"] == "all" else self.agents[aid]["projectId"])
         self.meeting_say("ceo", f"开会。今天的议题是热点「{hotspot['title']}」（热度 {hotspot['score']}）。"
-                                "请热点采集先报简报，三位产品经理各提 3 条候选，CCO 汇总。", "opening", trace)
+                                "请热点采集先报简报，三位产品经理各提 4 条候选，CCO 汇总 12 选 9。", "opening", trace)
 
         fit = hotspot.get("fit") or {}
         ctx = (f"热点：{hotspot['title']}；热度 {hotspot['score']}；三项目匹配度："
@@ -1740,9 +1814,9 @@ class Kernel:
         for pid, pm in pms:
             futures[pm] = HERMES.pool.submit(
                 self.call_agent, pm,
-                f"提交 {PROJECTS[pid]['name']} 今日 3 条候选选题，供 CCO 与 CTO 汇总。",
+                f"提交 {PROJECTS[pid]['name']} 今日 4 条候选选题，供 CCO 与 CTO 汇总。",
                 ctx,
-                f"本项目匹配度 {fit.get(pid, '未评估')}。额外 JSON 字段：topics(数组，恰好 3 条，"
+                f"本项目匹配度 {fit.get(pid, '未评估')}。额外 JSON 字段：topics(数组，恰好 4 条，"
                 "每条 {title, angle, form, durationSec, reason})。",
                 "summary, evidence, confidence, tools, topics")
         futures["ceo"] = HERMES.pool.submit(
@@ -1775,7 +1849,7 @@ class Kernel:
                        "latencyMs": meta.get("latencyMs", 0), "projectId": pid}, project=pid)
             self.send("result", pm, "cto", trace,
                       {"topics": pm_topics[pid], "engine": meta["engine"]}, project=pid)
-            self.meeting_say(pm, "提交 3 条候选：" + "；".join(t.get("title", "") for t in pm_topics[pid]),
+            self.meeting_say(pm, "提交 4 条候选：" + "；".join(t.get("title", "") for t in pm_topics[pid]),
                              "speech", trace)
         ceo_topics = self._coerce_mgmt_topics(futures["ceo"].result()[0])
         cto_topics = self._coerce_mgmt_topics(futures["cto"].result()[0])
@@ -1783,26 +1857,37 @@ class Kernel:
                       "angle": "老板注入选题", "form": "老板指定", "durationSec": 45,
                       "reason": "老板直接指定"}
 
-        # 2. CCO 汇总创意池 → 选 9 条（每项目 3 条），抄送 CEO、CTO
+        # 2. CCO 从 12 条池中淘汰 3 条 → 选 9 条（每项目 3 条），抄送 CEO、CTO
         pool = {pid: pm_topics[pid] for pid in self.PIDS}
         pool["_management"] = {"ceo": ceo_topics, "cto": cto_topics, "boss": [boss_topic]}
         pool_size = sum(len(pm_topics[p]) for p in self.PIDS) + len(ceo_topics) + len(cto_topics) + 1
         data, meta = self.call_agent(
             "cco",
-            "汇总 3 名产品经理的 9 条创意，叠加 CEO/CTO/老板指定选题与自选创意，"
-            "按项目调性、匹配度、差异化去重，选出 9 条（每项目恰好 3 条），并给出淘汰理由。",
+            f"汇总 3 名产品经理的 {sum(len(pm_topics[p]) for p in self.PIDS)} 条创意，叠加 CEO/CTO/老板指定选题与自选创意，"
+            "按项目调性、匹配度、差异化去重，每个项目必须淘汰至少 1 条，最终选出 9 条（每项目恰好 3 条），"
+            "并给出被淘汰条目与理由。",
             json.dumps(pool, ensure_ascii=False),
             "额外 JSON 字段：selected(数组，恰好 9 条，每条 {projectId, title, angle, form, durationSec, reason})；"
-            "eliminated(数组，每条 {title, reason})。",
+            "eliminated(数组，每条 {title, projectId, reason}，不得少于 3 条)。",
             "summary, evidence, confidence, tools, selected, eliminated")
         data = data or self._deg("cco", "选题汇总")
         selected = self._coerce_selection(data, pm_topics)
-        eliminated = data.get("eliminated") or []
+        # 淘汰记录必须可核：模型漏填时，用「PM 池 − 入选」补足，保证每项目至少 1 条可追溯
+        eliminated = [x for x in (data.get("eliminated") or []) if isinstance(x, dict)]
+        seen = {t.get("title") for v in selected.values() for t in v}
+        known = {str(x.get("title") or "") for x in eliminated}
+        for pid in self.PIDS:
+            for t in pm_topics[pid]:
+                if t["title"] not in seen and t["title"] not in known:
+                    eliminated.append({"projectId": pid, "title": t["title"],
+                                       "reason": "四选三未入选（按调性/匹配度/差异化淘汰，规则补记）"})
+                    known.add(t["title"])
         self.send("topic.select", "cco", "ceo", trace,
-                  {"selected": selected, "eliminated": data.get("eliminated", []),
+                  {"selected": selected, "eliminated": eliminated,
                    "poolSize": pool_size, "result": data, "engine": meta["engine"]}, priority=2)
         self.send("topic.select", "cco", "cto", trace,
-                  {"selected": selected, "cc": True, "engine": meta["engine"]}, priority=1)
+                  {"selected": selected, "eliminated": eliminated, "cc": True,
+                   "engine": meta["engine"]}, priority=1)
         self.emit("engine-meta", trace, {"agent": "cco", **meta})
         picked = [t.get("title", "") for pid in self.PIDS for t in selected.get(pid, [])]
         self.meeting_say("cco", (data.get("summary") or
@@ -1930,6 +2015,7 @@ class Kernel:
         prod_approval = {
             "id": uid("ap"), "traceId": trace, "action": "production.start", "risk": "high",
             "status": "pending", "approver": "老板", "createdAt": iso_now(), "decidedAt": "",
+            "timeoutSec": APPROVAL_TIMEOUT,
             "items": list(items.keys()),
             "titles": [i["title"] for i in items.values()],
             "title": f"{len(items)} 条内容开工审批（含成本/素材/合规检查）",
@@ -1951,6 +2037,7 @@ class Kernel:
                 if prod_appr["status"] == "pending":
                     prod_appr["status"] = "timeout"
                     prod_appr["decidedAt"] = iso_now()
+                    prod_appr["timeoutReason"] = f"等待老板审批超过 {APPROVAL_TIMEOUT}s，按挂起处理"
                 for item in items.values():
                     item["stage"] = "blocked"
                     item["blockedBy"] = "production-gate"
@@ -2160,16 +2247,33 @@ class Kernel:
                 data, meta = job.result()
                 data = data or {"summary": "返工未返回，沿用原样片", "evidence": [], "confidence": 0.2}
                 item = items[iid]
+                pid = item["projectId"]
                 item["storyboard"] = data.get("storyboard") or item.get("storyboard", "")
                 item["cover"] = data.get("cover") or item.get("cover", "")
                 item["sampleNote"] = data.get("sample") or item.get("sampleNote", "")
+                # 返工必须重新出片，否则第二轮仍在评审同一份视频（空转）
+                if OMR and not item.get("renderSkipped"):
+                    try:
+                        res = OMR.produce(item, PROJECTS[pid], TONE.get(pid, ""))
+                        item["render"] = {k: v for k, v in res.items() if k != "check"}
+                        item["renderCheck"] = res.get("check") or {
+                            "pass": False, "reasons": [res.get("reason") or "未知渲染错误"]}
+                        if res.get("ok"):
+                            item["assets"] = [res["videoUrl"], res["coverUrl"]]
+                            item.pop("renderError", None)
+                        else:
+                            item["assets"] = []
+                            item["renderError"] = res.get("reason", "")
+                    except Exception as e:
+                        item["renderCheck"] = {"pass": False, "reasons": [f"返工出片异常：{type(e).__name__}"]}
+                        print(f"[pipeline] {iid} 返工出片异常：{type(e).__name__}: {e}", flush=True)
                 self.items_emit(trace, item)
                 self.send("result", f"vd_{item['projectId']}", f"pm_{item['projectId']}", trace,
                           {"result": data, "itemId": iid, "engine": meta["engine"]},
                           project=item["projectId"])
             review_ids = failed
 
-        # 9. 通过样片评审后进入最终精剪
+        # 9. 样片过审后「定版」：不再二次剪辑，直接把过审样片锁为 05-final.mp4
         final_ids = [iid for iid in items
                      if iid not in sample_blocked and iid not in render_blocked]
         jobs = {}
@@ -2178,21 +2282,22 @@ class Kernel:
             pid = item["projectId"]
             jobs[iid] = HERMES.pool.submit(
                 self.call_agent, f"vd_{pid}",
-                f"《{item['title']}》样片已通过 CCO/CTO/PM 评审，按意见完成最终精剪并说明交付物。",
+                f"《{item['title']}》样片已通过 CCO/CTO/PM 评审，现执行定版：确认交付物清单与口径。",
                 f"项目：{PROJECTS[pid]['name']}；文案：{item.get('copy', '')}；"
                 f"样片说明：{item.get('sampleNote', '')}",
-                "额外 JSON 字段：finalCut(精剪说明≤120字), assets(数组，交付文件名)。",
+                "制度：定版不重剪，禁止声称做了帧级调整或重新剪辑；额外 JSON 字段："
+                "finalCut(定版说明≤120字，须写明「不改画面」), assets(数组，交付文件名)。",
                 "summary, evidence, confidence, tools, finalCut, assets")
             self.send("delegation", f"pm_{pid}", f"vd_{pid}", trace,
-                      {"task": "样片评审通过，执行最终精剪"}, project=pid)
+                      {"task": "样片评审通过，执行定版（不重剪）"}, project=pid)
         for iid, job in jobs.items():
             data, meta = job.result()
-            data = data or {"summary": "精剪完成（降级）", "evidence": [], "confidence": 0.2}
+            data = data or {"summary": "定版完成（降级）", "evidence": [], "confidence": 0.2}
             item = items[iid]
             pid = item["projectId"]
             item["stage"] = "final"
             item["finalCut"] = data.get("finalCut") or data.get("summary", "")
-            # 精剪必须产出可直接审的真实母版：以已过画面验收的样片为母版落 05-final.mp4
+            # 定版 = 以过审样片为母版锁定，不做二次剪辑；禁止声称改动画面
             files = item.get("files") or {}
             final_url = files.get("final", "")
             src = (item.get("render") or {}).get("video") or ""
@@ -2205,12 +2310,12 @@ class Kernel:
                     item["finalAssets"] = [final_url]
                     item["assets"] = [a for a in item.get("assets", []) if a and a != final_url] + [final_url]
                 except Exception as e:
-                    print(f"[pipeline] {iid} 精剪母版落盘失败：{type(e).__name__}: {e}", flush=True)
+                    print(f"[pipeline] {iid} 定版母版落盘失败：{type(e).__name__}: {e}", flush=True)
             self.send("result", f"vd_{pid}", f"pm_{pid}", trace,
                       {"result": data, "itemId": iid, "engine": meta["engine"]}, project=pid)
             self.items_emit(trace, item)
 
-        # 10. 审核员最终审核（精剪后）；驳回返工重写，最多 2 轮
+        # 10. 审核员终审（定版后）；驳回返工重写，最多 2 轮
         self.guard_budget(trace)   # 制作完成后、终审前核对成本
         passed_items, review_history = {}, []
         pending = [iid for iid in items
@@ -2289,6 +2394,7 @@ class Kernel:
         self.guard_budget(trace)   # 发布审批前最后一道成本核对
         approval = {"id": uid("ap"), "traceId": trace, "action": "publish.execute", "risk": "high",
                     "status": "pending", "approver": "老板", "createdAt": iso_now(), "decidedAt": "",
+                    "timeoutSec": APPROVAL_TIMEOUT,
                     "items": list(passed_items),
                     "titles": [i["title"] for i in passed_items.values()],
                     "title": f"{len(passed_items)} 条内容发布审批（含同心圆对外承诺）",
@@ -2312,10 +2418,17 @@ class Kernel:
                 if appr["status"] == "pending":
                     appr["status"] = "timeout"
                     appr["decidedAt"] = iso_now()
+                    appr["timeoutReason"] = f"等待老板审批超过 {APPROVAL_TIMEOUT}s，按挂起处理"
+                for item in passed_items.values():
+                    item["stage"] = "blocked"
+                    item["blockedBy"] = "publish-gate"
+                    self._schedule_export(trace, item)
                 self.traces[trace]["status"] = "rejected" if appr["status"] == "rejected" else "timeout"
                 self.traces[trace]["closedAt"] = iso_now()
+            for item in passed_items.values():
+                self.emit("pipeline", trace, item)
             self.send("escalation", "ceo", "owner", trace,
-                      {"text": "审批未通过，内容保持未发布"}, priority=2)
+                      {"text": "审批未通过或超时，内容已标记 blocked（publish-gate），保持未发布"}, priority=2)
             self.emit("approval", trace, appr)
             return
 
@@ -2456,7 +2569,7 @@ class Kernel:
         """
         import subprocess
         path = ""
-        # 复检对象优先取"精剪母版"（05-final.mp4），其次取样片
+        # 复检对象优先取"定版母版"（05-final.mp4），其次取样片
         cands = list(item.get("finalAssets") or []) + [((item.get("files") or {}).get("final") or "")]
         cands += [a for a in reversed(item.get("assets") or []) if str(a).lower().endswith(".mp4")]
         for a in cands:
@@ -2480,7 +2593,11 @@ class Kernel:
         streams = info.get("streams") or []
         v = next((s for s in streams if s.get("codec_type") == "video"), None)
         au = next((s for s in streams if s.get("codec_type") == "audio"), None)
-        reasons, checks = [], {}
+        pid = item.get("projectId") or ""
+        spec = DELIVERY.get(pid) or DELIVERY.get("_default") or DEFAULT_DELIVERY["_default"]
+        checks_spec = {"projectId": pid, "source": "项目配置.md#交付合同" if pid in DELIVERY else "内置默认",
+                       "width": spec["width"], "height": spec["height"], "fps": spec["fps"]}
+        reasons, checks = [], {"spec": checks_spec}
         if not v:
             reasons.append("没有视频流")
         if not au:
@@ -2489,29 +2606,33 @@ class Kernel:
             checks.update(width=v.get("width"), height=v.get("height"),
                           fps=v.get("r_frame_rate"), codec=v.get("codec_name"),
                           pix_fmt=v.get("pix_fmt"), duration=v.get("duration"))
-            if (v.get("width"), v.get("height")) != (1080, 1920):
-                reasons.append(f"分辨率 {v.get('width')}x{v.get('height')}，要求 1080x1920（竖屏）")
-            if str(v.get("r_frame_rate")) != "30/1":
-                reasons.append(f"帧率 {v.get('r_frame_rate')}，要求 30/1")
-            if v.get("codec_name") != "h264":
-                reasons.append(f"视频编码 {v.get('codec_name')}，要求 h264")
-            if v.get("pix_fmt") not in ("yuv420p", "yuvj420p"):
-                reasons.append(f"像素格式 {v.get('pix_fmt')}，要求 4:2:0 8bit（yuv420p/yuvj420p）")
+            if (v.get("width"), v.get("height")) != (spec["width"], spec["height"]):
+                reasons.append(f"分辨率 {v.get('width')}x{v.get('height')}，"
+                               f"交付合同要求 {spec['width']}x{spec['height']}")
+            if str(v.get("r_frame_rate")) != spec["fps"]:
+                reasons.append(f"帧率 {v.get('r_frame_rate')}，交付合同要求 {spec['fps']}")
+            if v.get("codec_name") != spec["video_codec"]:
+                reasons.append(f"视频编码 {v.get('codec_name')}，交付合同要求 {spec['video_codec']}")
+            if v.get("pix_fmt") not in spec["pix_fmt"]:
+                reasons.append(f"像素格式 {v.get('pix_fmt')}，交付合同要求 {'/'.join(spec['pix_fmt'])}")
         if au:
             checks.update(sample_rate=au.get("sample_rate"), channels=au.get("channels"),
                           audio_codec=au.get("codec_name"))
-            if str(au.get("sample_rate")) != "48000":
-                reasons.append(f"采样率 {au.get('sample_rate')}，要求 48000")
-            if _to_int(au.get("channels"), 0) != 2:
-                reasons.append(f"声道数 {au.get('channels')}，要求 2")
+            if str(au.get("sample_rate")) != str(spec["sample_rate"]):
+                reasons.append(f"采样率 {au.get('sample_rate')}，交付合同要求 {spec['sample_rate']}")
+            if _to_int(au.get("channels"), 0) != spec["channels"]:
+                reasons.append(f"声道数 {au.get('channels')}，交付合同要求 {spec['channels']}")
+            if au.get("codec_name") != spec["audio_codec"]:
+                reasons.append(f"音频编码 {au.get('codec_name')}，交付合同要求 {spec['audio_codec']}")
         try:
             dur = float((info.get("format") or {}).get("duration") or 0)
         except (TypeError, ValueError):
             dur = 0.0
         checks["duration"] = round(dur, 3)
         want = float(item.get("durationSec") or 0)
-        if want and abs(dur - want) > 2.5:
-            reasons.append(f"时长 {dur:.2f}s 与分镜 {want:.0f}s 偏差过大")
+        if want and abs(dur - want) > spec["duration_tolerance"]:
+            reasons.append(f"时长 {dur:.2f}s 与分镜 {want:.0f}s 偏差超过 "
+                           f"{spec['duration_tolerance']}s")
         # 黑帧与音量：只读输入，不产生新文件
         try:
             bd = subprocess.run(
@@ -2532,12 +2653,14 @@ class Kernel:
             mn = re.search(r"mean_volume:\s*(-?[\d.]+) dB", vd)
             if mx:
                 checks["maxVolumeDb"] = float(mx.group(1))
-                if checks["maxVolumeDb"] > -1.0:
-                    reasons.append(f"峰值 {checks['maxVolumeDb']} dB，存在削波风险")
+                if checks["maxVolumeDb"] > spec["max_peak_db"]:
+                    reasons.append(f"峰值 {checks['maxVolumeDb']} dB，超过交付合同上限 "
+                                   f"{spec['max_peak_db']} dB")
             if mn:
                 checks["meanVolumeDb"] = float(mn.group(1))
-                if checks["meanVolumeDb"] <= -45:
-                    reasons.append(f"音轨近乎静音（均值 {checks['meanVolumeDb']} dB）")
+                if checks["meanVolumeDb"] <= spec["min_mean_db"]:
+                    reasons.append(f"音轨近乎静音（均值 {checks['meanVolumeDb']} dB，"
+                                   f"下限 {spec['min_mean_db']} dB）")
         except Exception as e:
             reasons.append(f"音量检测失败：{type(e).__name__}")
         checks["path"] = path
@@ -2577,13 +2700,22 @@ class Kernel:
             f"{role}:{'通过' if v.get('pass') else '未通过'}" for role, v in sample.items()) or "未记录"
         data, meta = HERMES.ask(
             a,
-            f"审核精剪成片：{item['title']}；文案：{item.get('copy', '')[:120]}；"
-            f"精剪说明：{(item.get('finalCut') or '—')[:120]}",
+            f"审核定版成片：{item['title']}；文案：{item.get('copy', '')[:120]}；"
+            f"定版说明：{(item.get('finalCut') or '—')[:120]}",
             f"项目：{PROJECTS[item['projectId']]['name']}；要求风格：{expected}；样片三方评审：{sample_note}",
             extra, "summary, evidence, confidence, tools, pass, reasons")
         self.record_usage("reviewer", meta, trace)
         if not data:
-            return (False, ["审核不可用：模型未返回判定，按未通过处理，不得放行"], meta)
+            # 审核员单点故障：不得降级放行，按未通过处理并升级给管理层指定代理复核
+            item["reviewUnavailable"] = True
+            self.send("escalation", "reviewer", "cto", trace,
+                      {"text": f"审核模型不可用：《{item['title']}》未获结论。"
+                               "按制度不得放行；如需继续，请 CTO 指定代理复核（代理结论只能 PENDING_HUMAN）。",
+                       "itemId": item.get("id")}, project=item["projectId"], priority=2)
+            self.send("escalation", "reviewer", "cco", trace,
+                      {"text": f"审核模型不可用：《{item['title']}》内容项待代理复核（仅 CCO 可代内容项）。",
+                       "itemId": item.get("id")}, project=item["projectId"], priority=2)
+            return (False, ["审核不可用：模型未返回判定，按未通过处理，不得放行；已升级管理层代理复核"], meta)
         passed = bool(data.get("pass", True))
         reasons = data.get("reasons") or data.get("evidence") or ["模型审核完成"]
         return (passed, reasons, meta)

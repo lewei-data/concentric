@@ -764,6 +764,30 @@ a:hover {
   padding: 9px 22px;
 }
 
+.cmd-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.cmd-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #c7d2fe;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: cmd-spin 0.8s linear infinite;
+}
+
+@keyframes cmd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .cmd-quick {
   display: flex;
   flex-wrap: wrap;
@@ -791,6 +815,11 @@ a:hover {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+}
+
+.chip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .cmd-result {

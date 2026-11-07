@@ -69,8 +69,14 @@ type CommandResult = {
   answer?: CommandAnswer;
   traceId?: string;
   engine?: string;
+  latencyMs?: number;
+  busy?: boolean;
   hotspot?: { title?: string; score?: number };
+  personaTest?: { pass?: boolean; reasons?: string[]; traceId?: string };
 };
+
+// 单次模型调用通常 20–60s，长任务更久；超过这个时间前端放弃等待，但后台仍会继续跑
+const COMMAND_TIMEOUT_MS = 300000;
 
 async function fetchState(): Promise<OpcState | null> {
   const res = await fetch("/api/state", { credentials: "include" });
@@ -132,8 +138,10 @@ export function HomePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [command, setCommand] = useState("");
   const [sending, setSending] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<CommandResult | null>(null);
   const agentsRef = useRef<Agent[]>([]);
+  const startedRef = useRef(0);
 
   const agents = state?.agents ?? [];
   agentsRef.current = agents;
@@ -156,6 +164,14 @@ export function HomePage() {
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!sending) return;
+    const timer = window.setInterval(() => {
+      setElapsed(Math.max(0, Math.round((Date.now() - startedRef.current) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [sending]);
 
   useEffect(() => {
     const source = new EventSource("/api/events");
@@ -218,24 +234,46 @@ export function HomePage() {
   const sendCommand = async (text: string) => {
     const value = text.trim();
     if (!value || sending) return;
+    // 立即清空输入框：避免模型调用期间用户改写的文字在响应回来时被清掉
+    setCommand("");
     setSending(true);
     setResult(null);
+    setElapsed(0);
+    startedRef.current = Date.now();
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), COMMAND_TIMEOUT_MS);
     try {
       const res = await fetch("/api/commands", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: value }),
+        signal: controller.signal,
       });
-      const json = (await res.json()) as CommandResult;
+      const json = (await res.json().catch(() => ({}))) as CommandResult;
+      if (res.status === 401) {
+        window.location.assign("/app/login");
+        return;
+      }
+      if (!res.ok && !json.error) {
+        json.ok = false;
+        json.error = `HTTP ${res.status}`;
+      }
       setResult(json);
-      if (res.status === 401) window.location.assign("/app/login");
-      setCommand("");
       loadState();
     } catch (err: any) {
-      setResult({ ok: false, error: String(err?.message || err) });
+      if (err?.name === "AbortError") {
+        setResult({
+          ok: false,
+          error: "等待超过 5 分钟。任务可能仍在后台执行，稍后可在 Conring 事件流查看结果。",
+        });
+      } else {
+        setResult({ ok: false, error: `请求失败：${String(err?.message || err)}` });
+      }
     } finally {
+      window.clearTimeout(timer);
       setSending(false);
+      setElapsed(0);
     }
   };
 
@@ -420,7 +458,9 @@ export function HomePage() {
             value={command}
             onChange={(event) => setCommand(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              // 中文输入法用 Enter 选词时不能误发送
+              if (event.key === "Enter" && !event.shiftKey
+                && !(event.nativeEvent as KeyboardEvent).isComposing) {
                 event.preventDefault();
                 sendCommand(command);
               }
@@ -433,19 +473,23 @@ export function HomePage() {
             disabled={sending || !command.trim()}
             onClick={() => sendCommand(command)}
           >
-            {sending ? "执行中…" : "发送"}
+            {sending ? `执行中 ${elapsed}s` : "发送"}
           </button>
         </div>
+        {sending && (
+          <div className="cmd-progress">
+            <span className="cmd-spinner" />
+            正在发送并等待回复，已等待 {elapsed}s · 单次模型调用通常 20–60s
+          </div>
+        )}
         <div className="cmd-quick">
           {QUICK_COMMANDS.map((text) => (
             <button
               key={text}
               type="button"
               className="chip-btn"
-              onClick={() => {
-                setCommand(text);
-                sendCommand(text);
-              }}
+              disabled={sending}
+              onClick={() => sendCommand(text)}
             >
               {text}
             </button>
@@ -458,16 +502,38 @@ export function HomePage() {
             ) : (
               <>
                 <div className="cmd-result-head">
-                  <span>{result.agent ? `${result.agent} 回复` : result.hotspot ? "热点注入" : "CEO 回复"}</span>
+                  <span>
+                    {result.agent
+                      ? `${result.agent} 回复`
+                      : result.personaTest
+                        ? "人设串味检测"
+                        : result.hotspot
+                          ? "热点注入"
+                          : "CEO 回复"}
+                  </span>
                   {typeof result.answer?.confidence === "number" && (
                     <span className="muted">置信度 {Math.round(result.answer.confidence * 100)}%</span>
+                  )}
+                  {typeof result.latencyMs === "number" && (
+                    <span className="muted">耗时 {Math.round(result.latencyMs / 100) / 10}s</span>
                   )}
                   {result.engine && <span className="muted">{result.engine}</span>}
                 </div>
                 <p className="cmd-result-text">
-                  {result.answer?.summary || result.answer?.reply
-                    || (result.hotspot ? `已注入《${result.hotspot.title || "-"}》，trace ${result.traceId || "-"}` : "已完成")}
+                  {result.personaTest
+                    ? `检测结果：${result.personaTest.pass ? "通过，未发现跨项目人设串味" : "未通过，发现人设或素材越界"}`
+                    : result.answer?.summary || result.answer?.reply
+                      || (result.hotspot
+                        ? `已注入《${result.hotspot.title || "-"}》，trace ${result.traceId || "-"}`
+                        : "已执行")}
                 </p>
+                {!!result.personaTest?.reasons?.length && (
+                  <div className="tags">
+                    {result.personaTest.reasons.map((item) => (
+                      <span key={item} className="tag tag-danger">{item}</span>
+                    ))}
+                  </div>
+                )}
                 {!!result.answer?.evidence?.length && (
                   <div className="tags">
                     {result.answer.evidence.map((item) => (

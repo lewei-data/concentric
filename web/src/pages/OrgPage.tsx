@@ -9,6 +9,7 @@ type Agent = {
   scope: string;
   tone: string;
   tools: string[];
+  toolsets: string[];
   profile: boolean;
   hasSoul: boolean;
   skills: { name: string; category?: string; bytes: number; updated: string }[];
@@ -282,10 +283,14 @@ export function OrgPage() {
                 <label className="field"><span>负责范围</span>
                   <input className="input" value={detail.scope} onChange={(e) => setDetail({ ...detail, scope: e.target.value })} />
                 </label>
-                <label className="field"><span>工具白名单（顿号或逗号分隔）</span>
+                <label className="field"><span>工具白名单（意图，顿号或逗号分隔）</span>
                   <input className="input" value={detail.tools.join("、")}
                     onChange={(e) => setDetail({ ...detail, tools: e.target.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean) })} />
                 </label>
+                <div className="field">
+                  <span>实际生效工具集（config.yaml → platform_toolsets.cli）</span>
+                  <div className="muted">{detail.toolsets.length ? detail.toolsets.join("、") : "无 profile / 未配置"}</div>
+                </div>
                 <p className="muted">调性：{detail.tone}｜保存后写回《员工名册》并热加载；SOUL 头部（姓名/岗位/项目）同步。</p>
                 <button type="button" className="btn btn-primary" onClick={() => void saveStaff()}>保存人员与岗位</button>
               </div>
