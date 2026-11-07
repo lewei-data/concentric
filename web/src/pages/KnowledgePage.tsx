@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useList, useOne } from "@refinedev/core";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Knowledge } from "../types";
 
 const PAGE_SIZE = 20;
@@ -131,7 +133,13 @@ export function KnowledgePage() {
             ) : (
               <>
                 <h3 className="detail-title">{detail.data.data.title}</h3>
-                <div className="detail-body">{detail.data.data.body || "（无正文）"}</div>
+                <div className="detail-body">
+                  {detail.data.data.body ? (
+                    <Markdown remarkPlugins={[remarkGfm]}>{detail.data.data.body}</Markdown>
+                  ) : (
+                    "（无正文）"
+                  )}
+                </div>
                 <dl className="kv">
                   <dt>项目</dt>
                   <dd>{detail.data.data.projectId || "-"}</dd>
