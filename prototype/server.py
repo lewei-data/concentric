@@ -40,14 +40,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TZ = timezone(timedelta(hours=8))
 CLI = os.environ.get("OPC_HERMES_CLI", "/opt/sefs/hermes/run-hermes.sh")
 MODE = os.environ.get("OPC_HERMES_MODE", "hermes")
-TIMEOUT = int(os.environ.get("OPC_HERMES_TIMEOUT", "300"))
+TIMEOUT = int(os.environ.get("OPC_HERMES_TIMEOUT", "600"))
 WORKERS = int(os.environ.get("OPC_HERMES_WORKERS", "6"))
 APPROVAL_TIMEOUT = int(os.environ.get("OPC_APPROVAL_TIMEOUT", "600"))
 MODEL = os.environ.get("OPC_HERMES_MODEL", "deepseek-v4.1-flash")
 # CTO 成本护栏：单轮 trace 累计 / 单次调用 token 上限；金额阈值默认关闭（0=不启用）
-# 标定依据（hermes --usage-file 实测）：空载单次调用约 7.7k tokens；一轮完整编排约 1.0–1.6M。
-TOKEN_LIMIT = int(os.environ.get("OPC_TOKEN_LIMIT", "3000000"))
-CALL_TOKEN_LIMIT = int(os.environ.get("OPC_CALL_TOKEN_LIMIT", "150000"))
+# 标定依据（2026-11-07 实测，hermes --usage-file 的 total_including_auxiliary.total_tokens）：
+#   单次员工调用（含工具轮次）约 7k–650k；选题阶段全轮累计约 2.3M；一轮完整编排约 5–10M。
+# 默认阈值取 12M / 2M，只拦截真正的失控消耗；可按需用环境变量收紧。
+TOKEN_LIMIT = int(os.environ.get("OPC_TOKEN_LIMIT", "12000000"))
+CALL_TOKEN_LIMIT = int(os.environ.get("OPC_CALL_TOKEN_LIMIT", "2000000"))
 COST_LIMIT_USD = float(os.environ.get("OPC_COST_LIMIT_USD", "0"))
 AUTH_USER = os.environ.get("OPC_BASIC_USER", "")
 AUTH_PASS = os.environ.get("OPC_BASIC_PASS", "")
@@ -460,9 +462,10 @@ class HermesAdapter:
             except Exception as exc:
                 with self.lock:
                     self.calls += 1
-                reason = str(exc)[:160]
                 if isinstance(exc, subprocess.TimeoutExpired):
+                    reason = f"调用超时（>{TIMEOUT}s）"
                     break
+                reason = f"{type(exc).__name__}: {exc}"[:160]
             finally:
                 if usage_path:
                     try:
