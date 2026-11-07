@@ -46,9 +46,9 @@ APPROVAL_TIMEOUT = int(os.environ.get("OPC_APPROVAL_TIMEOUT", "600"))
 MODEL = os.environ.get("OPC_HERMES_MODEL", "deepseek-v4.1-flash")
 # CTO 成本护栏：单轮 trace 累计 / 单次调用 token 上限；金额阈值默认关闭（0=不启用）
 # 标定依据（2026-11-07 实测，hermes --usage-file 的 total_including_auxiliary.total_tokens）：
-#   单次员工调用（含工具轮次）约 7k–650k；选题阶段全轮累计约 2.3M；一轮完整编排约 5–10M。
-# 默认阈值取 12M / 2M，只拦截真正的失控消耗；可按需用环境变量收紧。
-TOKEN_LIMIT = int(os.environ.get("OPC_TOKEN_LIMIT", "12000000"))
+#   单次员工调用（含工具轮次）约 7k–650k；选题阶段约 2.6M；一轮完整编排实测 12.4M（含返工）。
+# 默认阈值取 20M / 2M：正常整轮不触发，只拦截真正的失控消耗；可用环境变量按项目收紧。
+TOKEN_LIMIT = int(os.environ.get("OPC_TOKEN_LIMIT", "20000000"))
 CALL_TOKEN_LIMIT = int(os.environ.get("OPC_CALL_TOKEN_LIMIT", "2000000"))
 COST_LIMIT_USD = float(os.environ.get("OPC_COST_LIMIT_USD", "0"))
 AUTH_USER = os.environ.get("OPC_BASIC_USER", "")
@@ -71,7 +71,7 @@ def _hotkey(title) -> str:
 
 def _to_int(value, default):
     try:
-        return int(float(value))
+        return int(float(str(value).replace(",", "")))
     except (TypeError, ValueError):
         return default
 
@@ -539,6 +539,14 @@ KERNEL = None  # 延迟绑定，见下方 Kernel
 
 class BudgetAbort(Exception):
     """CTO 判定成本/额度超限，在阶段边界终止本轮任务。"""
+
+
+class BusyError(Exception):
+    """已有一轮选题会未收口：拒绝并发注入，避免两条流水线互相覆盖。"""
+
+    def __init__(self, trace):
+        super().__init__(f"上一轮选题会仍在进行（{trace}），请等它结束或先处理待审批")
+        self.traceId = trace
 
 
 class Kernel:
@@ -1022,8 +1030,9 @@ class Kernel:
             title = hs["title"] + "（二轮深挖）"
             tags, score = hs.get("tags") or ["综合"], min(0.95, (hs.get("score") or 0.8) + 0.02)
         else:
-            title, tags, score = "AI 编程工具周报：多智能体协作成主流", ["科技", "AI", "生产力"], 0.88
-        trace, hotspot = self.inject_hotspot(title, tags, score)
+            title, tags, score = None, None, None
+        trace, hotspot = self.inject_hotspot(title, tags, score, force=True)
+        title = hotspot["title"]
         assign = {"scout": "复核热点与素材包", "pm_wenren": "出文人莫克选题卡", "pm_gou": "出狗大人选题卡",
                   "pm_tongxinyuan": "出同心圆选题卡", "cw_wenren": "写稿", "cw_gou": "写稿",
                   "cw_tongxinyuan": "写产品文案", "vd_wenren": "出片", "vd_gou": "出片",
@@ -1037,17 +1046,92 @@ class Kernel:
         threading.Thread(target=self._patrol_note, args=(result, facts), daemon=True).start()
         return result
 
-    def inject_hotspot(self, title=None, tags=None, score=None):
-        if not title:
-            title = "AI 复活老照片引发版权争议"
-            tags = ["科技", "版权", "文化"]
-            score = 0.86
+    def _hotspot_from_collection(self):
+        """按最新一档原始采集榜生成热点；没有采集数据时返回 None。
+
+        取当日最新一档榜单里“今日新增★”最高的仓库，热度用它在当档新增总量里的占比，
+        来源写清文件名与档位，避免再出现“热点源/RSS”这类无依据字段。
+        """
+        status = None
+        if DL:
+            try:
+                status = DL.load_collection_status()
+            except Exception as e:
+                print(f"[hotspot] 读取最新采集榜失败：{type(e).__name__}: {e}", flush=True)
+        if status:
+            self.collection = status
+        if not status:
+            return None
+        items = status.get("items") or []
+        picked = max(items, key=lambda r: _to_int(r.get("stars"), 0)) if items else (status.get("top") or {})
+        repo = str(picked.get("repo") or "").strip()
+        if not repo:
+            return None
+        stars = _to_int(picked.get("stars"), 0)
+        total = sum(_to_int(r.get("stars"), 0) for r in items)
+        lang = str(picked.get("lang") or "").strip()
+        stamp = f"{status.get('date') or ''} {status.get('time') or ''}".strip()
+        if stars > 0:
+            title = f"GitHub 日榜 {stamp} 今日新增最高：{repo}（+{stars:,}★" + (f"，{lang}）" if lang else "）")
+        else:
+            title = f"GitHub 日榜 {stamp}：{repo}"
+        if stars > 0 and total > 0:
+            score = round(min(1.0, stars / total), 3)
+            basis = f"今日新增 {stars:,}★ / 当档 {len(items)} 个仓库合计 {total:,}★"
+        else:
+            score = 0.0
+            basis = "原始榜未给出可计算的今日新增★"
+        return {"title": title,
+                "tags": [t for t in ("GitHub Trending", lang) if t],
+                "score": score, "scoreBasis": basis,
+                "source": f"{status.get('file') or '热点采集'} · {status.get('time') or '?'} 档"}
+
+    def inject_hotspot(self, title=None, tags=None, score=None, force=False):
+        """注入热点并触发选题会。
+
+        未显式传 title 时，热点由最新一档原始采集榜定义；采集缺失直接报错，不再写死文案。
+        """
+        if not force:
+            self._sweep_stale()
+            with self.lock:
+                running = [t for t, d in self.traces.items() if d.get("status") == "running"]
+            if running:
+                raise BusyError(running[-1])
+        if title is not None and not isinstance(title, str):
+            raise ValueError("title 需为字符串")
+        if tags is not None and not isinstance(tags, (list, tuple, str)):
+            raise ValueError("tags 需为数组或字符串")
+        if score is not None:
+            try:
+                score = float(score)
+            except (TypeError, ValueError):
+                raise ValueError("score 需为 0-1 的数字")
+            if not 0 <= score <= 1:
+                raise ValueError("score 需在 0-1 之间")
+        basis, source = "", "手动注入"
+        if title and title.strip():
+            title = title.strip()
+            if score is None:
+                basis = "手动注入未提供热度"
+        else:
+            data = self._hotspot_from_collection()
+            if not data:
+                raise ValueError("暂无最新采集数据：OPC/热点采集 下没有当日榜单，请先执行采集")
+            title = data["title"]
+            tags = tags or data["tags"]
+            if score is None:
+                score = data["score"]
+            basis, source = data["scoreBasis"], data["source"]
+        if score is None:
+            score = 0.8
+        if isinstance(tags, str):
+            tags = re.split(r"[/、,，]", tags)
+        tags = [str(t).strip() for t in (tags or []) if str(t).strip()] or ["综合"]
         trace = uid("tr")
-        fit = {"wenren": round(min(0.97, (score or 0.8) + 0.04), 3),
-               "gou": round(max(0.3, (score or 0.8) - 0.14), 3),
-               "tongxinyuan": round(max(0.2, (score or 0.8) - 0.45), 3)}
-        hotspot = {"id": uid("hs"), "traceId": trace, "title": title, "source": "热点源/RSS",
-                   "tags": tags or ["综合"], "score": score or 0.8, "fit": fit, "at": iso_now()}
+        hotspot = {"id": uid("hs"), "traceId": trace, "title": title, "source": source,
+                   "tags": tags, "score": score, "fit": {}, "at": iso_now()}
+        if basis:
+            hotspot["scoreBasis"] = basis
         key = _hotkey(title)
         with self.lock:
             idx = next((i for i in range(len(self.hotspots) - 1, -1, -1)
@@ -1339,8 +1423,10 @@ class Kernel:
         self.meeting_say("ceo", f"开会。今天的议题是热点「{hotspot['title']}」（热度 {hotspot['score']}）。"
                                 "请热点采集先报简报，三位产品经理各提 3 条候选，CCO 汇总。", "opening", trace)
 
+        fit = hotspot.get("fit") or {}
         ctx = (f"热点：{hotspot['title']}；热度 {hotspot['score']}；三项目匹配度："
-               f"文人莫克 {hotspot['fit']['wenren']}，狗大人 {hotspot['fit']['gou']}，同心圆 {hotspot['fit']['tongxinyuan']}")
+               f"文人莫克 {fit.get('wenren', '未评估')}，狗大人 {fit.get('gou', '未评估')}，"
+               f"同心圆 {fit.get('tongxinyuan', '未评估')}")
         futures = {"scout": HERMES.pool.submit(
             self.call_agent, "scout", "针对给定热点产出一条业务简报，并判断素材可用性。",
             f"热点：{hotspot['title']}；热度 {hotspot['score']}；标签 {hotspot['tags']}")}
@@ -1349,7 +1435,7 @@ class Kernel:
                 self.call_agent, pm,
                 f"提交 {PROJECTS[pid]['name']} 今日 3 条候选选题，供 CCO 与 CTO 汇总。",
                 ctx,
-                f"本项目匹配度 {hotspot['fit'][pid]}。额外 JSON 字段：topics(数组，恰好 3 条，"
+                f"本项目匹配度 {fit.get(pid, '未评估')}。额外 JSON 字段：topics(数组，恰好 3 条，"
                 "每条 {title, angle, form, durationSec, reason})。",
                 "summary, evidence, confidence, tools, topics")
         futures["ceo"] = HERMES.pool.submit(
@@ -2655,13 +2741,28 @@ class Handler(BaseHTTPRequestHandler):
         if not user:
             return self._json({"error": "unauthorized", "login": "/login"}, 401)
         if path == "/api/patrol":
-            return self._json({"ok": True, **KERNEL.patrol()})
+            try:
+                return self._json({"ok": True, **KERNEL.patrol()})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/api/hotspots/inject":
-            trace, hotspot = KERNEL.inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
+            try:
+                trace, hotspot = KERNEL.inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
+            except BusyError as e:
+                return self._json({"ok": False, "error": str(e), "busy": True,
+                                   "traceId": e.traceId}, 409)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
             return self._json({"ok": True, "traceId": trace, "hotspot": hotspot})
         if path == "/api/meetings":
-            trace, hs = KERNEL.inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
-            return self._json({"ok": True, "traceId": trace, "meeting": "daily_topic"})
+            try:
+                trace, hs = KERNEL.inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
+            except BusyError as e:
+                return self._json({"ok": False, "error": str(e), "busy": True,
+                                   "traceId": e.traceId}, 409)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            return self._json({"ok": True, "traceId": trace, "meeting": "daily_topic", "hotspot": hs})
         if path.startswith("/api/approvals/"):
             if user.get("role") != "老板":
                 return self._json({"ok": False, "error": "forbidden",
@@ -2705,7 +2806,13 @@ class Handler(BaseHTTPRequestHandler):
             if "串味" in text or "persona" in text.lower():
                 return self._json({"ok": True, "personaTest": KERNEL.persona_injection()})
             if "注入" in text or "热点" in text:
-                trace, hs = KERNEL.inject_hotspot()
+                try:
+                    trace, hs = KERNEL.inject_hotspot()
+                except BusyError as e:
+                    return self._json({"ok": False, "error": str(e), "busy": True,
+                                       "traceId": e.traceId}, 409)
+                except ValueError as e:
+                    return self._json({"ok": False, "error": str(e)}, 400)
                 return self._json({"ok": True, "traceId": trace, "hotspot": hs})
             with KERNEL.lock:
                 blockers = [c for c in KERNEL.contents if c["stage"] in ("review", "approved")]

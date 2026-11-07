@@ -424,7 +424,7 @@ def load_collection_status():
     m = re.search(r"页面实际返回\s*(\d+)\s*条", tail)
     return {"date": name[:-3], "time": sec.group(1),
             "count": int(m.group(1)) if m else len(rows), "rows": len(rows),
-            "top": rows[0], "at": at, "file": "热点采集/" + name,
+            "top": rows[0], "items": rows, "at": at, "file": "热点采集/" + name,
             "source": "GitHub Trending"}
 
 
