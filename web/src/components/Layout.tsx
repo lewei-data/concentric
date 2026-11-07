@@ -18,6 +18,7 @@ export function Layout() {
         <nav className="nav">
           <Link to="/hotspots">热点</Link>
           <Link to="/knowledge">知识库</Link>
+          <Link to="/org">组织配置</Link>
           <a href="/">返回旧版</a>
         </nav>
         <div className="userbox">

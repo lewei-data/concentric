@@ -384,6 +384,285 @@ def _load_agent_spec():
 AGENT_SPEC = _load_agent_spec()
 
 
+# =============================================================================
+# 组织配置（Web 可编辑）：制度 md / 员工名册 / SOUL / 技能 / 记忆 / config.yaml
+# 写入全部走白名单 + 路径校验 + 审计日志（logs/org-changes.jsonl），仅老板可写
+# =============================================================================
+ORG_PROFILES = os.environ.get("OPC_PROFILES", "/opt/sefs/hermes/profiles")
+ORG_AUDIT = os.path.normpath(os.path.join(BASE_DIR, "..", "logs", "org-changes.jsonl"))
+ORG_LOCK = threading.Lock()
+# key → (相对 VAULT 的路径, 标题, 是否允许编辑)；登录凭据永不开放
+POLICY_FILES = {
+    "jobs": ("公司/岗位职责.md", "岗位职责（制度源）", True),
+    "org": ("公司/组织编制.md", "组织编制", True),
+    "roster": ("公司/员工名册.md", "员工名册（配置源）", True),
+    "projects": ("公司/项目配置.md", "项目配置（配置源）", True),
+    "kernel": ("公司/内核与编排.md", "内核与编排", True),
+    "tone": ("公司/项目与调性.md", "项目与调性（自动生成视图）", False),
+    "tech": ("公司/技术备忘-运行时状态重导.md", "技术备忘", False),
+}
+ORG_FILE_LIMIT = 2_000_000          # 单个文件读写上限（config.yaml 约 114KB）
+
+
+def _org_agent_row(aid):
+    for row in AGENT_SPEC:
+        if row[0] == aid:
+            return row
+    return None
+
+
+def _org_project_label(pid):
+    return "全公司" if pid == "all" else PROJECTS.get(pid, {}).get("name", pid)
+
+
+def _org_tone(pid):
+    return "跨项目中台" if pid == "all" else TONE.get(pid, "")
+
+
+def _org_profile_dir(aid):
+    if not re.fullmatch(r"[a-z][a-z0-9_]{1,31}", str(aid or "")):
+        raise ValueError("非法员工 ID")
+    path = os.path.join(ORG_PROFILES, aid)
+    if not os.path.isdir(path):
+        raise ValueError(f"{aid} 没有独立 Hermes profile（老板为人工审批角色）")
+    return path
+
+
+def _org_read(path, limit=ORG_FILE_LIMIT):
+    try:
+        if os.path.getsize(path) > limit:
+            raise ValueError(f"文件超过 {limit} 字节，拒绝网页读写")
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _org_write(path, text, expect_prefix=None):
+    """原子替换写入；保留原文件权限；expect_prefix 用于锁定只允许写指定目录。"""
+    real = os.path.realpath(path)
+    if expect_prefix and not real.startswith(os.path.realpath(expect_prefix) + os.sep):
+        raise ValueError("写入路径越界")
+    if len(text.encode("utf-8")) > ORG_FILE_LIMIT:
+        raise ValueError(f"内容超过 {ORG_FILE_LIMIT} 字节")
+    os.makedirs(os.path.dirname(real), exist_ok=True)
+    mode = 0o644
+    try:
+        mode = os.stat(real).st_mode & 0o777
+    except FileNotFoundError:
+        pass
+    tmp = f"{real}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.chmod(tmp, mode)
+    os.replace(tmp, real)
+
+
+def _org_audit(user, action, target, detail=""):
+    try:
+        os.makedirs(os.path.dirname(ORG_AUDIT), exist_ok=True)
+        with open(ORG_AUDIT, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": iso_now(), "by": (user or {}).get("name", ""),
+                                "role": (user or {}).get("role", ""), "action": action,
+                                "target": target, "detail": str(detail)[:200]},
+                               ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def _org_skill_paths(profile_dir):
+    """返回 [(相对 skills 的路径, 分类, 名称)]；支持 skills/<name> 与 skills/<分类>/<name> 两种层级。"""
+    root = os.path.join(profile_dir, "skills")
+    out = []
+    try:
+        for top in sorted(os.listdir(root)):
+            top_dir = os.path.join(root, top)
+            if top.startswith(".") or not os.path.isdir(top_dir):
+                continue
+            if os.path.isfile(os.path.join(top_dir, "SKILL.md")):
+                out.append((top, "", top))
+                continue
+            for name in sorted(os.listdir(top_dir)):
+                sub = os.path.join(top_dir, name)
+                if name.startswith(".") or not os.path.isdir(sub):
+                    continue
+                if os.path.isfile(os.path.join(sub, "SKILL.md")):
+                    out.append((os.path.join(top, name), top, name))
+    except FileNotFoundError:
+        pass
+    return out
+
+
+def _org_skills(profile_dir):
+    out = []
+    for rel, cat, name in _org_skill_paths(profile_dir):
+        f = os.path.join(profile_dir, "skills", rel, "SKILL.md")
+        out.append({"name": name, "category": cat, "bytes": os.path.getsize(f),
+                    "updated": datetime.fromtimestamp(os.path.getmtime(f), TZ)
+                    .isoformat(timespec="minutes")})
+    return out
+
+
+def _org_agents():
+    out = []
+    for aid, name, role, pid, tools, scope in AGENT_SPEC:
+        pdir = os.path.join(ORG_PROFILES, aid)
+        has_profile = os.path.isdir(pdir)
+        mem = os.path.join(pdir, "memories")
+        out.append({
+            "id": aid, "name": name, "role": role, "projectId": pid,
+            "project": _org_project_label(pid), "scope": scope, "tone": _org_tone(pid),
+            "tools": tools, "profile": has_profile,
+            "hasSoul": os.path.isfile(os.path.join(pdir, "SOUL.md")),
+            "skills": _org_skills(pdir) if has_profile else [],
+            "memoryChars": {
+                "memory": len(_org_read(os.path.join(mem, "MEMORY.md"))),
+                "user": len(_org_read(os.path.join(mem, "USER.md"))),
+            },
+        })
+    return out
+
+
+def _org_policies():
+    out = []
+    for key, (rel, title, editable) in POLICY_FILES.items():
+        full = os.path.join(VAULT, rel)
+        out.append({"key": key, "title": title, "path": rel, "editable": editable,
+                    "exists": os.path.isfile(full),
+                    "bytes": os.path.getsize(full) if os.path.isfile(full) else 0})
+    return out
+
+
+def _org_agent_detail(aid):
+    row = _org_agent_row(aid)
+    if not row:
+        raise ValueError(f"没有员工 {aid}")
+    pdir = os.path.join(ORG_PROFILES, aid)
+    detail = {
+        "id": aid, "name": row[1], "role": row[2], "projectId": row[3],
+        "project": _org_project_label(row[3]), "scope": row[5],
+        "tone": _org_tone(row[3]), "tools": row[4],
+        "profile": os.path.isdir(pdir),
+        "soul": "", "memory": "", "user": "", "config": "", "skills": [],
+    }
+    if os.path.isdir(pdir):
+        detail["soul"] = _org_read(os.path.join(pdir, "SOUL.md"))
+        detail["memory"] = _org_read(os.path.join(pdir, "memories", "MEMORY.md"))
+        detail["user"] = _org_read(os.path.join(pdir, "memories", "USER.md"))
+        detail["config"] = _org_read(os.path.join(pdir, "config.yaml"))
+        detail["skills"] = _org_skills(pdir)
+    elif aid == "boss":
+        detail["note"] = "老板为人工审批角色，无独立 profile"
+    return detail
+
+
+def _org_skill_detail(aid, name):
+    pdir = _org_profile_dir(aid)
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,40}", str(name or "")):
+        raise ValueError("非法技能名")
+    for rel, cat, nm in _org_skill_paths(pdir):
+        if nm == name:
+            return {"name": name, "category": cat,
+                    "content": _org_read(os.path.join(pdir, "skills", rel, "SKILL.md"))}
+    raise ValueError(f"{aid} 没有技能 {name}")
+
+
+def _org_update_roster(aid, body):
+    """改写员工名册对应行（唯一数据源），返回 (name, role, projectId, tools, scope)。"""
+    row = _org_agent_row(aid)
+    if not row:
+        raise ValueError(f"没有员工 {aid}")
+    name = str(body.get("name", row[1])).strip() or row[1]
+    role = str(body.get("role", row[2])).strip() or row[2]
+    pid = str(body.get("projectId", row[3])).strip() or row[3]
+    scope = str(body.get("scope", row[5])).strip() or row[5]
+    tools = body.get("tools", row[4])
+    if not isinstance(tools, list):
+        tools = [t.strip() for t in re.split(r"[、,，]", str(tools)) if t.strip()]
+    tools = [str(t).strip() for t in tools if str(t).strip()]
+    if pid != "all" and pid not in PROJECTS:
+        raise ValueError(f"项目不存在：{pid}")
+    for label, value, cap in (("姓名", name, 24), ("岗位", role, 24), ("负责范围", scope, 60)):
+        if len(value) > cap or "\n" in value or "|" in value:
+            raise ValueError(f"{label}不合法（≤{cap} 字、不含换行与竖线）")
+    for t in tools:
+        if not re.fullmatch(r"[a-z][a-z0-9._-]{1,40}", t):
+            raise ValueError(f"工具名不合法：{t}")
+    project_name = _org_project_label(pid)
+    line = f"| {aid} | {name} | {role} | {project_name} | {scope} | {'、'.join(tools)} |\n"
+    with ORG_LOCK:
+        raw = _org_read(ROSTER_FILE)
+        hit = False
+        lines = raw.splitlines(keepends=True)
+        for i, ln in enumerate(lines):
+            if not ln.lstrip().startswith("|"):
+                continue
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            if len(cells) >= 6 and cells[0] == aid:
+                lines[i] = line
+                hit = True
+                break
+        if not hit:
+            raise ValueError(f"名册里找不到 {aid} 的数据行")
+        _org_write(ROSTER_FILE, "".join(lines), expect_prefix=VAULT)
+    return name, role, pid, tools, scope, project_name
+
+
+def _org_sync_soul(aid, name, role, project_label, tone):
+    pdir = os.path.join(ORG_PROFILES, aid)
+    path = os.path.join(pdir, "SOUL.md")
+    if not os.path.isfile(path):
+        return False
+    txt = _org_read(path)
+    new = re.sub(r"^你是 OPC 一人公司的 AI 员工「[^」]*」，岗位：[^。\n]*。",
+                 f"你是 OPC 一人公司的 AI 员工「{name}」，岗位：{role}。",
+                 txt, count=1, flags=re.M)
+    new = re.sub(r"^负责范围：[^\n]*", f"负责范围：{project_label}", new, count=1, flags=re.M)
+    new = re.sub(r"^所属项目：[^\n]*", f"所属项目：{project_label}｜风格基调：{tone}",
+                 new, count=1, flags=re.M)
+    if new != txt:
+        _org_write(path, new, expect_prefix=pdir)
+        return True
+    return False
+
+
+def _org_sync_org_table(aid, name, role, project_label, tone, tools):
+    """组织编制是视图页，能同步就同步，失败不影响名册写入。"""
+    path = os.path.join(VAULT, "公司", "组织编制.md")
+    try:
+        txt = _org_read(path)
+        lines = txt.splitlines(keepends=True)
+        skills = "、".join(s["name"] for s in _org_skills(os.path.join(ORG_PROFILES, aid)))
+        for i, ln in enumerate(lines):
+            if not ln.lstrip().startswith("|"):
+                continue
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            if len(cells) >= 10 and cells[1] == aid:
+                cells[2], cells[3], cells[4], cells[5] = name, role, project_label, tone
+                if skills:
+                    cells[7] = skills
+                cells[8] = "、".join(tools)
+                lines[i] = "| " + " | ".join(cells) + " |\n"
+                _org_write(path, "".join(lines), expect_prefix=VAULT)
+                return True
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def _org_validate_config(text):
+    try:
+        import yaml
+        data = yaml.safe_load(text)
+    except Exception as e:
+        raise ValueError(f"config.yaml 解析失败：{type(e).__name__}: {e}")
+    if not isinstance(data, dict):
+        raise ValueError("config.yaml 顶层必须是映射")
+    if not isinstance(data.get("model", {}).get("default") if isinstance(data.get("model"), dict) else None, str):
+        raise ValueError("config.yaml 缺少 model.default")
+    return True
+
+
 class HermesAdapter:
     """把一名员工的活交给真实 Hermes 一次性会话，并强约束 JSON 输出。"""
 
@@ -634,9 +913,14 @@ class Kernel:
             if isinstance(stats, dict):
                 self.stats["published"] = _to_int(stats.get("published"), 0)
                 self.stats["blockedPublish"] = _to_int(stats.get("blockedPublish"), 0)
+                self.stats["traces"] = _to_int(stats.get("traces"), 0)
                 secs = stats.get("approvalSeconds")
                 if isinstance(secs, list):
                     self.stats["approvalSeconds"] = secs[-100:]
+        # 统计口径自洽：trace 数不得少于历史交付里实际出现的 trace 数
+        disk_traces = len({c.get("traceId") for c in self.contents if c.get("traceId")})
+        if disk_traces > self.stats["traces"]:
+            self.stats["traces"] = disk_traces
         if not self.messages and DL:
             try:
                 self.messages = DL.load_recent_messages(120)
@@ -672,6 +956,7 @@ class Kernel:
                     "messages": self.messages[-120:],
                     "stats": {"published": self.stats["published"],
                               "blockedPublish": self.stats["blockedPublish"],
+                              "traces": self.stats["traces"],
                               "approvalSeconds": self.stats["approvalSeconds"][-100:]},
                 }
             os.makedirs(os.path.dirname(self.journal_file), exist_ok=True)
@@ -2182,7 +2467,7 @@ class Kernel:
             extra, "summary, evidence, confidence, tools, pass, reasons")
         self.record_usage("reviewer", meta, trace)
         if not data:
-            return (True, ["模型审核不可用，结构护栏通过"], meta)
+            return (False, ["审核不可用：模型未返回判定，按未通过处理，不得放行"], meta)
         passed = bool(data.get("pass", True))
         reasons = data.get("reasons") or data.get("evidence") or ["模型审核完成"]
         return (passed, reasons, meta)
@@ -2681,6 +2966,90 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[auth] 登录成功 {ip} → {user['name']}", flush=True)
         return self._json({"ok": True, "user": user}, cookie=cookie)
 
+    def _org_save(self, path, body, user):
+        """组织配置写入：白名单 + 路径校验 + 审计；返回 applied=immediate|restart。"""
+        try:
+            if path == "/api/org/reload":
+                info = KERNEL.reload_config()
+                _org_audit(user, "config.reload", "公司/员工名册.md", str(info))
+                return self._json({"ok": True, "applied": "immediate", **info})
+            if path == "/api/org/policy":
+                key = str(body.get("key") or "")
+                if key not in POLICY_FILES:
+                    return self._json({"ok": False, "error": "未知制度文件"}, 404)
+                rel, title, editable = POLICY_FILES[key]
+                if not editable:
+                    return self._json({"ok": False, "error": f"{title} 为只读视图"}, 403)
+                content = str(body.get("content") or "")
+                if not content.strip():
+                    return self._json({"ok": False, "error": "内容为空，拒绝写入"}, 400)
+                _org_write(os.path.join(VAULT, rel), content, expect_prefix=VAULT)
+                _org_audit(user, "policy.save", rel, f"{len(content)} chars")
+                return self._json({"ok": True, "applied": "immediate", "key": key,
+                                   "path": rel, "bytes": len(content.encode('utf-8'))})
+            parts = [p for p in path[len("/api/org/agent/"):].split("/") if p]
+            if not parts:
+                return self._json({"ok": False, "error": "缺少员工 ID"}, 400)
+            aid = parts[0]
+            if len(parts) == 1:
+                name, role, pid, tools, scope, project_label = _org_update_roster(aid, body)
+                tone = _org_tone(pid)
+                soul = _org_sync_soul(aid, name, role, project_label, tone)
+                _org_sync_org_table(aid, name, role, project_label, tone, tools)
+                info = KERNEL.reload_config()
+                _org_audit(user, "agent.update", aid,
+                           f"{name}/{role}/{project_label}/{scope}/{','.join(tools)} soul={soul}")
+                return self._json({"ok": True, "applied": "immediate", "soulSynced": soul,
+                                   "agent": _org_agent_detail(aid), "reload": info})
+            action = parts[1]
+            pdir = _org_profile_dir(aid)
+            if action == "soul":
+                content = str(body.get("content") or "")
+                if not content.strip():
+                    return self._json({"ok": False, "error": "SOUL 内容为空"}, 400)
+                _org_write(os.path.join(pdir, "SOUL.md"), content, expect_prefix=pdir)
+                _org_audit(user, "soul.save", aid, f"{len(content)} chars")
+                return self._json({"ok": True, "applied": "immediate", "path": "SOUL.md"})
+            if action == "memory":
+                mem_dir = os.path.join(pdir, "memories")
+                changed = []
+                for key, fname in (("memory", "MEMORY.md"), ("user", "USER.md")):
+                    if key in body:
+                        content = str(body.get(key) or "")
+                        _org_write(os.path.join(mem_dir, fname), content, expect_prefix=pdir)
+                        changed.append(f"{fname}:{len(content)}")
+                        _org_audit(user, "memory.save", f"{aid}/{fname}", f"{len(content)} chars")
+                if not changed:
+                    return self._json({"ok": False, "error": "没有提供 memory 或 user"}, 400)
+                return self._json({"ok": True, "applied": "immediate", "changed": changed})
+            if action == "skill":
+                name = str(body.get("name") or "")
+                if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,40}", name):
+                    return self._json({"ok": False, "error": "技能名只能用小写字母/数字/-/_（2-41 位）"}, 400)
+                content = str(body.get("content") or "")
+                if not content.strip():
+                    return self._json({"ok": False, "error": "技能内容为空"}, 400)
+                target = os.path.join(pdir, "skills", name, "SKILL.md")
+                for rel, _cat, nm in _org_skill_paths(pdir):
+                    if nm == name:
+                        target = os.path.join(pdir, "skills", rel, "SKILL.md")
+                        break
+                _org_write(target, content, expect_prefix=pdir)
+                _org_audit(user, "skill.save", f"{aid}/{name}", f"{len(content)} chars")
+                return self._json({"ok": True, "applied": "immediate", "name": name})
+            if action == "config":
+                content = str(body.get("content") or "")
+                _org_validate_config(content)
+                _org_write(os.path.join(pdir, "config.yaml"), content, expect_prefix=pdir)
+                _org_audit(user, "config.save", f"{aid}/config.yaml", f"{len(content)} chars")
+                return self._json({"ok": True, "applied": "next-call",
+                                   "note": "config.yaml 已保存；Hermes 每次 -z 调用都会重读，无需重启服务"})
+            return self._json({"ok": False, "error": "not found"}, 404)
+        except ValueError as e:
+            return self._json({"ok": False, "error": str(e)}, 400)
+        except Exception as e:
+            return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+
     def log_message(self, fmt, *args):
         print(f"[http] {self.address_string()} {fmt % args}", flush=True)
 
@@ -2773,6 +3142,49 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/reports":
             kind = (parse_qs(urlparse(self.path).query).get("kind") or [""])[0]
             return self._json({"reports": [r for r in KERNEL.reports if (not kind or r["kind"] == kind)]})
+        # ---------- 组织配置（制度 / 岗位 / 人员 / 性格 / 技能 / 记忆） ----------
+        if path == "/api/org":
+            try:
+                return self._json({
+                    "ok": True, "agents": _org_agents(), "policies": _org_policies(),
+                    "profilesRoot": ORG_PROFILES,
+                    "projects": [{"id": k, "name": v["name"]} for k, v in PROJECTS.items()]
+                               + [{"id": "all", "name": "全公司"}],
+                })
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/org/policy":
+            key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
+            if key not in POLICY_FILES:
+                return self._json({"ok": False, "error": "未知制度文件"}, 404)
+            rel, title, editable = POLICY_FILES[key]
+            try:
+                return self._json({"ok": True, "key": key, "title": title, "path": rel,
+                                   "editable": editable,
+                                   "content": _org_read(os.path.join(VAULT, rel))})
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/org/audit":
+            limit = _to_int((parse_qs(urlparse(self.path).query).get("limit") or ["50"])[0], 50)
+            lines = []
+            try:
+                with open(ORG_AUDIT, encoding="utf-8") as f:
+                    lines = f.readlines()[-max(1, min(limit, 500)):]
+            except FileNotFoundError:
+                pass
+            return self._json({"ok": True, "items": [json.loads(x) for x in lines if x.strip()]})
+        if path.startswith("/api/org/agent/"):
+            parts = [p for p in path[len("/api/org/agent/"):].split("/") if p]
+            aid = parts[0] if parts else ""
+            try:
+                if len(parts) == 1:
+                    return self._json({"ok": True, "agent": _org_agent_detail(aid)})
+                if len(parts) == 2 and parts[1] == "skill":
+                    name = (parse_qs(urlparse(self.path).query).get("name") or [""])[0]
+                    return self._json({"ok": True, "skill": _org_skill_detail(aid, name)})
+                return self._json({"ok": False, "error": "not found"}, 404)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
         return self._json({"error": "not found"}, 404)
 
     def _index(self):
@@ -2977,6 +3389,12 @@ class Handler(BaseHTTPRequestHandler):
         user = self._session_user()
         if not user:
             return self._json({"error": "unauthorized", "login": "/login"}, 401)
+        # ---------- 组织配置写入（仅老板） ----------
+        if path.startswith("/api/org/"):
+            if user.get("role") != "老板":
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅老板可修改制度、岗位、人员、性格、技能与记忆"}, 403)
+            return self._org_save(path, body, user)
         if path == "/api/patrol":
             try:
                 return self._json({"ok": True, **KERNEL.patrol()})

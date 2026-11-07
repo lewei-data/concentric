@@ -7,6 +7,7 @@ import { Layout } from "./components/Layout";
 import { HotspotsPage } from "./pages/HotspotsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LoginPage } from "./pages/LoginPage";
+import { OrgPage } from "./pages/OrgPage";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         resources={[
           { name: "hotspots", list: "/hotspots" },
           { name: "knowledge", list: "/knowledge" },
+          { name: "org", list: "/org" },
         ]}
       >
         <Routes>
@@ -32,6 +34,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/hotspots" replace />} />
             <Route path="/hotspots" element={<HotspotsPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
+            <Route path="/org" element={<OrgPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/hotspots" replace />} />
         </Routes>
