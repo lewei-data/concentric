@@ -482,8 +482,15 @@ def load_knowledge(limit=40):
                 pid = key
                 break
         tags = re.findall(r"[\w\u4e00-\u9fa5/\-]+", fm.get("tags") or "")
-        summary = ""
+        # body 取落盘全文（去掉文件尾部的“- 标签：”行）；summary 只是首行前 120 字，供列表预览
+        kept = []
         for line in body.splitlines():
+            if line.strip().startswith("- 标签："):
+                break
+            kept.append(line)
+        full_text = "\n".join(kept).strip()
+        summary = ""
+        for line in full_text.splitlines():
             s = line.strip().lstrip("#").strip()
             if s and not s.startswith("|") and not s.startswith("-"):
                 summary = s[:120]
@@ -492,7 +499,8 @@ def load_knowledge(limit=40):
             "id": fm.get("kb_id") or ("kb_" + _slug(os.path.splitext(os.path.basename(path))[0])),
             "projectId": pid,
             "title": title,
-            "body": summary,
+            "body": full_text,
+            "summary": summary,
             "tags": tags[:8],
             "sourceTrace": fm.get("trace") or "",
             "at": fm.get("archived") or "",
@@ -500,6 +508,63 @@ def load_knowledge(limit=40):
         })
     out.sort(key=lambda k: str(k.get("at") or ""))
     return out[-limit:]
+
+
+PROJECT_DISPLAY = {"wenren": "文人莫克", "gou": "狗大人", "tongxinyuan": "同心圆",
+                   "all": "全公司", "全公司": "全公司"}
+
+
+def _kb_filename(entry):
+    title = str(entry.get("title") or "").strip()
+    day = str(entry.get("at") or now())[:10].replace("/", "-")
+    slug = re.sub(r"[^\w\u4e00-\u9fa5-]+", "-", title).strip("-")[:60] or "kb"
+    kid = str(entry.get("id") or "kb").split("_")[-1]
+    return f"{day}-{slug}-{kid}.md"
+
+
+def save_knowledge(entry):
+    """知识条目写回 OPC/知识库：Obsidian 是唯一数据源，Web 归档即落盘（同 id 覆盖同一文件）。"""
+    title = str(entry.get("title") or "").strip()
+    if not title:
+        return ""
+    os.makedirs(KB_DIR, exist_ok=True)
+    path = os.path.join(KB_DIR, _kb_filename(entry))
+    tags = "、".join(str(t) for t in (entry.get("tags") or []) if t)
+    body = str(entry.get("body") or "").strip() or title
+    lines = [
+        "---",
+        f"kb_id: {entry.get('id') or ''}",
+        f"title: {title}",
+        f"project: {PROJECT_DISPLAY.get(entry.get('projectId'), '全公司')}",
+        f"tags: {tags}",
+        f"trace: {entry.get('traceId') or ''}",
+        f"archived: {entry.get('at') or now()}",
+        "---",
+        "",
+        body,
+        "",
+        f"- 标签：{tags or '-'}",
+    ]
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, path)
+    return path
+
+
+def knowledge_stamp():
+    """知识库指纹（文件数 + 最新 mtime），60 秒轮询用它判断是否要重扫。"""
+    total, latest = 0, 0.0
+    for root, _dirs, files in os.walk(KB_DIR):
+        for name in files:
+            if not name.endswith(".md") or name.startswith("00-"):
+                continue
+            try:
+                latest = max(latest, os.path.getmtime(os.path.join(root, name)))
+            except OSError:
+                continue
+            total += 1
+    return (total, round(latest, 3))
 
 
 def _local(url_path):
