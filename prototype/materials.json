@@ -1,0 +1,134 @@
+{
+  "updated": "2026-11-07",
+  "root": "/mnt/sefs/github-hotspots",
+  "items": [
+    {
+      "id": "rust-subset-report",
+      "category": "分析报告",
+      "title": "Rust 标准库枢纽子图 · 可视化分析报告",
+      "desc": "2,000 节点 / 4,885 边，8 张图表：度分布、模块耦合、枢纽符号、社区结构、边语义",
+      "url": "/materials/rust-subset-report/rust-subset-report.html",
+      "meta": "HTML · 自包含 · 9.6 MB · 离线可用"
+    },
+    {
+      "id": "rust-subset-index",
+      "category": "索引",
+      "title": "Rust 枢纽子图索引",
+      "desc": "按模块列出关键符号（std / stdarch / core / alloc），附 graphify explain / path 用法",
+      "url": "/materials/RUST-SUBSET-INDEX.md",
+      "meta": "Markdown · 2,000 节点口径"
+    },
+    {
+      "id": "hotspots-index",
+      "category": "索引",
+      "title": "GitHub 热点 Top10 索引",
+      "desc": "2026-11-07 12:05 榜：10 个仓库的简介、语言、许可证、本地源码与图谱入口",
+      "url": "/materials/INDEX.md",
+      "meta": "Markdown · Top10"
+    },
+    {
+      "id": "hotspots-readme",
+      "category": "说明",
+      "title": "热点跟踪任务说明文档",
+      "desc": "采集任务、目录结构、复跑方式、Graphify 口径、环境占用与已知限制",
+      "url": "/materials/README.md",
+      "meta": "Markdown · 使用说明"
+    },
+    {
+      "id": "graph-rust-subset",
+      "category": "交互图谱",
+      "title": "Rust 子图（2,000 节点）",
+      "desc": "高连接度枢纽切片，节点按社区着色，可拖拽缩放",
+      "url": "/materials/graphs/rust-lang__rust-subset/graphify-out/graph.html",
+      "meta": "graph.html · 2.0 MB"
+    },
+    {
+      "id": "graph-rust-library",
+      "category": "交互图谱",
+      "title": "Rust 标准库全图（81,244 节点）",
+      "desc": "library/ 子树全量 AST 图谱，体量较大，打开需等待数秒",
+      "url": "/materials/graphs/rust-lang__rust-library/graphify-out/graph.html",
+      "meta": "graph.html · 2.0 MB"
+    },
+    {
+      "id": "data-rust-subset",
+      "category": "原始数据",
+      "title": "Rust 子图 graph.json",
+      "desc": "节点 / 边 / 社区字段全量数据，报告所有数字的计算来源",
+      "url": "/materials/graphs/rust-lang__rust-subset/graphify-out/graph.json",
+      "meta": "JSON · 4.1 MB"
+    },
+    {
+      "id": "graph-react",
+      "category": "交互图谱",
+      "title": "react__react",
+      "desc": "35,504 节点 / 68,690 边",
+      "url": "/materials/graphs/react__react/graphify-out/graph.html",
+      "meta": "graph.html · 1.7 MB"
+    },
+    {
+      "id": "graph-angular",
+      "category": "交互图谱",
+      "title": "angular__angular",
+      "desc": "69,555 节点 / 174,475 边",
+      "url": "/materials/graphs/angular__angular/graphify-out/graph.html",
+      "meta": "graph.html · 2.3 MB"
+    },
+    {
+      "id": "graph-rails",
+      "category": "交互图谱",
+      "title": "rails__rails",
+      "desc": "62,253 节点 / 105,934 边",
+      "url": "/materials/graphs/rails__rails/graphify-out/graph.html",
+      "meta": "graph.html · 2.5 MB"
+    },
+    {
+      "id": "graph-symfony",
+      "category": "交互图谱",
+      "title": "symfony__symfony",
+      "desc": "120,969 节点 / 336,551 边（本批最大）",
+      "url": "/materials/graphs/symfony__symfony/graphify-out/graph.html",
+      "meta": "graph.html · 4.5 MB"
+    },
+    {
+      "id": "graph-zed",
+      "category": "交互图谱",
+      "title": "zed-industries__zed",
+      "desc": "105,193 节点 / 336,235 边",
+      "url": "/materials/graphs/zed-industries__zed/graphify-out/graph.html",
+      "meta": "graph.html · 4.0 MB"
+    },
+    {
+      "id": "graph-prometheus",
+      "category": "交互图谱",
+      "title": "prometheus__prometheus",
+      "desc": "20,239 节点 / 77,560 边",
+      "url": "/materials/graphs/prometheus__prometheus/graphify-out/graph.html",
+      "meta": "graph.html · 0.9 MB"
+    },
+    {
+      "id": "graph-mpv",
+      "category": "交互图谱",
+      "title": "mpv-player__mpv",
+      "desc": "11,093 节点 / 32,309 边",
+      "url": "/materials/graphs/mpv-player__mpv/graphify-out/graph.html",
+      "meta": "graph.html · 0.7 MB"
+    },
+    {
+      "id": "graph-google-skills",
+      "category": "交互图谱",
+      "title": "google__skills",
+      "desc": "4,573 节点 / 8,254 边",
+      "url": "/materials/graphs/google__skills/graphify-out/graph.html",
+      "meta": "graph.html · 5.1 MB"
+    },
+    {
+      "id": "graph-nvidia",
+      "category": "交互图谱",
+      "title": "NVIDIA__auto-ontology",
+      "desc": "13,488 节点 / 33,430 边",
+      "url": "/materials/graphs/NVIDIA__auto-ontology/graphify-out/graph.html",
+      "meta": "graph.html · 0.5 MB"
+    }
+  ]
+}

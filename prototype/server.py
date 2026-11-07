@@ -83,6 +83,9 @@ ROSTER_FILE = os.path.join(VAULT, "公司", "员工名册.md")
 
 # 登录凭据放在 Obsidian 公司目录，每次登录实时读取（改文件即生效，不用重启服务）
 CRED_FILE = os.path.join(VAULT, "公司", "登录凭据.md")
+# 素材库：首页卡片的数据源 + 只读文件发布目录（materials.json 里写相对路径即可）
+MATERIALS_FILE = os.path.join(BASE_DIR, "materials.json")
+MATERIALS_ROOT = os.environ.get("OPC_MATERIALS_ROOT", "/mnt/sefs/github-hotspots")
 SESSION_COOKIE = "opc_sess"
 SESSION_TTL = 7 * 24 * 3600          # 7 天免登录
 SESSIONS = {}                        # token -> {"user": {...}, "exp": epoch}
@@ -2588,6 +2591,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(os.path.join("assets", "faces", name), "image/png")
         if path.startswith("/vault/"):
             return self._vault(path[len("/vault/"):])
+        # 素材库文件只读发布（可外部浏览器直接打开，与交付链接同口径不拦登录）
+        if path.startswith("/materials/"):
+            return self._material(path[len("/materials/"):])
+        if path == "/api/materials":
+            return self._json(self._materials_index())
         # 其余页面与接口一律要求登录
         if not self._need_login(path):
             return
@@ -2629,6 +2637,65 @@ class Handler(BaseHTTPRequestHandler):
             body = open(file, "rb").read()
         except FileNotFoundError:
             return self._json({"error": f"{rel} missing"}, 404)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _materials_index(self):
+        """首页「素材库」清单：读 prototype/materials.json，文件改了下次刷新即生效。"""
+        try:
+            with open(MATERIALS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            return {"ok": False, "error": "materials.json 缺失", "items": []}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}", "items": []}
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            items = []
+        out = []
+        for it in items:
+            if not isinstance(it, dict) or not it.get("url"):
+                continue
+            out.append({
+                "id": str(it.get("id") or ""),
+                "title": str(it.get("title") or "未命名素材"),
+                "category": str(it.get("category") or "其他"),
+                "desc": str(it.get("desc") or ""),
+                "url": str(it["url"]),
+                "meta": str(it.get("meta") or ""),
+            })
+        return {"ok": True, "updated": str(data.get("updated") or ""), "items": out}
+
+    def _material(self, rel):
+        """素材库只读发布：/materials/... → MATERIALS_ROOT/...（限定目录、无隐藏目录）。"""
+        root = os.path.realpath(MATERIALS_ROOT)
+        full = os.path.realpath(os.path.join(root, rel))
+        if not full.startswith(root + os.sep) or not os.path.isfile(full):
+            return self._json({"error": "not found"}, 404)
+        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep)):
+            return self._json({"error": "not found"}, 404)
+        ext = os.path.splitext(full)[1].lower()
+        ctype = {
+            ".html": "text/html; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".md": "text/plain; charset=utf-8",
+            ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".ttf": "font/ttf", ".otf": "font/otf", ".woff2": "font/woff2",
+            ".mp4": "video/mp4",
+        }.get(ext, "application/octet-stream")
+        try:
+            with open(full, "rb") as f:
+                body = f.read()
+        except OSError as e:
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
