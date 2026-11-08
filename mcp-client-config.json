@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "mail": {
+      "type": "streamable-http",
+      "url": "http://192.168.31.206:9100/mcp",
+      "headers": {
+        "X-Mail-Agent": "ceo"
+      }
+    },
+    "tts": {
+      "type": "streamable-http",
+      "url": "http://192.168.31.206:9101/mcp"
+    },
+    "asr": {
+      "type": "streamable-http",
+      "url": "http://192.168.31.206:9102/mcp"
+    }
+  }
+}
