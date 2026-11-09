@@ -89,7 +89,7 @@ const Gauge: React.FC<{ f: number; dur: number }> = ({ f, dur }) => {
         })}
       </g>
       <circle cx={540} cy={420} r={178} fill="none" stroke="url(#gGoldSoft)" strokeWidth={10} strokeDasharray={`${2 * Math.PI * 178}`} strokeDashoffset={(2 * Math.PI * 178) * (1 - 0.72 * eo(p))} opacity={0.5} />
-      <Orb x={540} y={420} r={13 + 5 * Math.sin(bp * Math.PI)} glow />
+      <Orb x={540} y={420} r={26 + 10 * Math.sin(bp * Math.PI)} glow />
     </svg>
   );
 };
@@ -123,7 +123,7 @@ const Bubbles: React.FC<{ f: number; dur: number }> = ({ f, dur }) => {
           </g>
         );
       })}
-      <Orb x={540} y={420} r={11} o={eo(cl((p - 0.4) / 0.4))} glow />
+      <Orb x={540} y={420} r={22} o={eo(cl((p - 0.4) / 0.4))} glow />
     </svg>
   );
 };
@@ -202,6 +202,41 @@ const Converge: React.FC<{ f: number; dur: number }> = ({ f, dur }) => {
         <path d="M -120 -70 L 0 -6 L 0 118 L -120 54 Z" fill="url(#gGold)" opacity={0.24} />
         <path d="M 120 -70 L 0 -6 L 0 118 L 120 54 Z" fill="url(#gGold)" opacity={0.34} />
         <path d="M -120 -70 L 0 -134 L 120 -70 L 0 -6 Z M -120 -70 L 0 -6 L 0 118 L -120 54 Z M 120 -70 L 0 -6 L 0 118 L 120 54 Z" fill="none" stroke={GOLD_L} strokeWidth={2} opacity={0.65} />
+      </g>
+      {/* 模型标签：GPT / DeepSeek（大字压住方块，保证可读） */}
+      <g opacity={eo(cl((p - 0.62) / 0.38))}>
+        <text
+          x={468}
+          y={432}
+          textAnchor="middle"
+          fill="#FFF4D6"
+          fontFamily="NotoSansSC"
+          fontSize={84}
+          fontWeight={700}
+          letterSpacing={4}
+          stroke="#0A0A0C"
+          strokeWidth={7}
+          strokeOpacity={0.92}
+          paintOrder="stroke"
+        >
+          GPT
+        </text>
+        <text
+          x={606}
+          y={474}
+          textAnchor="middle"
+          fill="#FFF4D6"
+          fontFamily="NotoSansSC"
+          fontSize={50}
+          fontWeight={600}
+          letterSpacing={1}
+          stroke="#0A0A0C"
+          strokeWidth={6}
+          strokeOpacity={0.92}
+          paintOrder="stroke"
+        >
+          DeepSeek
+        </text>
       </g>
     </svg>
   );
@@ -373,7 +408,7 @@ const OnlyYou: React.FC<{ f: number; dur: number }> = ({ f, dur }) => {
         const a = k * (Math.PI * 2 / 14) + 0.12;
         return <circle key={k} cx={540 + Math.cos(a) * 330} cy={420 + Math.sin(a) * 330} r={4} fill="#8A887E" opacity={0.42 * ring} />;
       })}
-      <Orb x={540} y={420} r={15 + 5 * Math.sin(bp * Math.PI)} o={eo(cl((p - 0.35) / 0.4))} glow />
+      <Orb x={540} y={420} r={30 + 10 * Math.sin(bp * Math.PI)} o={eo(cl((p - 0.35) / 0.4))} glow />
     </svg>
   );
 };
@@ -442,49 +477,60 @@ const Calendar: React.FC<{ f: number; dur: number }> = ({ f, dur }) => {
   );
 };
 
-// ============ S12 分身 ============
+// ============ S12 分身：一个变多个 ============
 const Duplicate: React.FC<{ f: number; dur: number }> = ({ f, dur }) => {
-  const p = P(f, dur, 0.8);
-  const sp = eo(cl(f / (dur * 0.6)));
-  const dx = 158 * sp;
+  const sp = eo(cl(f / (dur * 0.66)));
   const bp = (f % BEAT_FRAMES) / BEAT_FRAMES;
-  const link = eo(cl((p - 0.3) / 0.5));
   const grow = eo(cl(f / (dur * 0.5)));
-  const cx1 = 540 - dx;
-  const cx2 = 540 + dx;
-  const rings = [34, 62, 90];
+  const N = 6;
   return (
     <svg viewBox="0 0 1080 880" width={1080} height={880}>
       <Defs />
-      <Halo r={430} o={0.7} />
-      {/* 中轴：镜像的对称面 */}
-      <line x1={540} y1={270} x2={540} y2={570} stroke={W_} strokeOpacity={0.18 * link} strokeWidth={1.4} strokeDasharray="6 12" />
-      {[cx1, cx2].map((cx, k) => (
-        <g key={k}>
-          <circle cx={cx} cy={420} r={118} fill="url(#gGlow)" opacity={0.55} />
-          {rings.map((r, i) => (
-            <circle
-              key={i}
-              cx={cx}
-              cy={420}
-              r={r * (0.62 + 0.38 * grow)}
-              fill="none"
-              stroke="url(#gGold)"
-              strokeWidth={i === 0 ? 2.6 : 1.6}
-              strokeDasharray={k === 1 && i === 2 ? "12 10" : undefined}
-              opacity={(0.3 + i * 0.14) * (k === 1 ? 0.88 : 1)}
-            />
-          ))}
-          <Orb x={cx} y={420} r={13 + 3 * Math.sin((bp + k * 0.5) * Math.PI)} glow />
-        </g>
+      <Halo r={440} o={0.72} />
+      {/* 本体：三环 + 金核 */}
+      <circle cx={540} cy={420} r={132} fill="url(#gGlow)" opacity={0.5} />
+      {[40, 72, 104].map((r, i) => (
+        <circle
+          key={i}
+          cx={540}
+          cy={420}
+          r={r * (0.62 + 0.38 * grow)}
+          fill="none"
+          stroke="url(#gGold)"
+          strokeWidth={i === 0 ? 3 : 1.8}
+          opacity={0.42 + i * 0.16}
+        />
       ))}
-      {/* 复制箭头：从本体指向分身 */}
-      <g opacity={link}>
-        <path d={`M ${cx1 + 34} 356 Q 540 246 ${cx2 - 34} 356`} fill="none" stroke={GOLD_L} strokeWidth={2.4} opacity={0.85} />
-        <path d={`M ${cx2 - 58} 384 L ${cx2 - 34} 356 L ${cx2 - 64} 346`} fill="none" stroke={GOLD_L} strokeWidth={2.4} opacity={0.85} />
-        <circle cx={540} cy={286} r={4.5} fill={GOLD_L} opacity={0.9} />
-      </g>
-      {sp < 0.9 && <Orb x={540} y={420} r={13 * (1 - sp)} o={1 - sp} glow />}
+      <Orb x={540} y={420} r={26 + 6 * Math.sin(bp * Math.PI)} glow />
+      {/* 复制体：逐个沿径向推出，一个变多个 */}
+      {Array.from({ length: N }, (_, k) => {
+        const a = -Math.PI / 2 + k * (Math.PI * 2 / N) + Math.PI / N;
+        const kk = eo(cl((sp - k * 0.07) / 0.55));
+        if (kk <= 0.01) return null;
+        const R = 96 + 122 * kk;
+        const cx = 540 + Math.cos(a) * R;
+        const cy = 420 + Math.sin(a) * R;
+        return (
+          <g key={k} opacity={kk}>
+            <line x1={540} y1={420} x2={cx} y2={cy} stroke={GOLD} strokeOpacity={0.3 * kk} strokeWidth={1.2} strokeDasharray="7 9" />
+            <circle cx={cx} cy={cy} r={66} fill="url(#gGlow)" opacity={0.4} />
+            {[26, 42, 58].map((r, i) => (
+              <circle
+                key={i}
+                cx={cx}
+                cy={cy}
+                r={r * kk}
+                fill="none"
+                stroke={i === 2 ? GOLD : "url(#gGold)"}
+                strokeWidth={i === 2 ? 1.2 : 1.8}
+                strokeDasharray={i === 2 ? "9 7" : undefined}
+                opacity={0.32 + i * 0.12}
+              />
+            ))}
+            <Orb x={cx} y={cy} r={(11 + 3 * Math.sin((bp + k * 0.3) * Math.PI)) * kk} glow />
+          </g>
+        );
+      })}
     </svg>
   );
 };
@@ -602,7 +648,7 @@ const Logo: React.FC<{ f: number; dur: number }> = ({ f, dur }) => {
       })}
       <circle cx={540} cy={420} r={286 + 34 * (1 - bp)} fill="none" stroke={GOLD_L} strokeWidth={1.4} opacity={0.45 * bp} />
       <circle cx={540} cy={420} r={64} fill="url(#gGlow)" opacity={0.9} />
-      <Orb x={540} y={420} r={13 + 4 * Math.sin(bp * Math.PI)} glow />
+      <Orb x={540} y={420} r={26 + 8 * Math.sin(bp * Math.PI)} glow />
     </svg>
   );
 };

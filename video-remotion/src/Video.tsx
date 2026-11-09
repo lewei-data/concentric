@@ -158,20 +158,68 @@ const SceneLayer: React.FC<{ scene: Scene; f: number; opacity: number }> = ({ sc
   );
 };
 
-/** 字幕：逐行错位入场，退场在切换拍之前收完 */
+/** 字幕：底部淡入 → 匀速上滑（同时放大）→ 抵达圆心 → 旋转收缩消失 */
+const ORB_CANVAS_Y = 510; // 插图区圆心在画布上的位置（top 90 + cy 420）
+const SUB_CENTER_Y = 1315;
+
+/** 消失（旋转收缩）固定 22 帧，保证每句节奏一致 */
+const SPIN = 22;
+/** 上滑固定 20 帧、线性匀速（805px / 0.8s ≈ 1000px/s，全场同速） */
+const TRAVEL = 20;
+/** 抵达圆心的帧号 */
+const arriveAt = (dur: number) => dur - Math.min(SPIN, Math.round(dur * 0.35));
+/** 上滑起始帧（匀速段起点的帧） */
+const travelStart = (dur: number) => Math.max(10, arriveAt(dur) - TRAVEL);
+
 const Subtitles: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
   if (!scene.lines) return null;
   const local = f - scene.start;
-  const IN = 8.5; // 340ms
-  const OUT = 6; // 240ms
+  const dur = scene.dur;
+  const IN = 9; // 360ms 淡入
   const STAGGER = 2; // 85ms ≈ 2 帧
-  const outAt = scene.dur - OUT;
   const heights = scene.lines.map((l) => l.size * 1.42 + (l.size < 60 ? 56 : 0));
   const total = heights.reduce((a, b) => a + b, 0);
-  const top = 1315 - total / 2;
+  const top = SUB_CENTER_Y - total / 2;
+
+  // 入场：从底部 +110px 淡入
+  const enter = interpolate(local, [0, 13], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: GOLDEN,
+  });
+
+  // 上滑：线性匀速冲向圆心，期间字号缓慢放大到 1.3 倍
+  const tr = interpolate(local, [travelStart(dur), arriveAt(dur)], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.linear,
+  });
+
+  // 抵达圆心后才开始的消失：边旋转边收缩
+  const sp = interpolate(local, [arriveAt(dur), dur], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  const dy = 110 * (1 - enter) + (ORB_CANVAS_Y - SUB_CENTER_Y) * tr;
+  const sc = (1 + 0.3 * tr) * (1 - 0.95 * sp);
+  const rot = -400 * Math.pow(sp, 0.72);
+  const outAlpha = interpolate(sp, [0.35, 1], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+
   return (
     <AbsoluteFill>
-      <div style={{ position: "absolute", left: 0, top, width: WIDTH }}>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top,
+          width: WIDTH,
+          height: total,
+          opacity: 1 - outAlpha,
+          transform: `translateY(${dy}px) rotate(${rot}deg) scale(${sc})`,
+          transformOrigin: "50% 50%",
+        }}
+      >
         {scene.lines.map((line, i) => {
           const s = i * STAGGER;
           const inP = interpolate(local, [s, s + IN], [0, 1], {
@@ -179,14 +227,7 @@ const Subtitles: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
             extrapolateRight: "clamp",
             easing: GOLDEN,
           });
-          const outP = interpolate(local, [outAt, outAt + OUT], [0, 1], {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-            easing: Easing.in(Easing.cubic),
-          });
-          const alpha = inP * (1 - outP);
-          if (alpha <= 0.01) return null;
-          const y = 26 * (1 - inP) - 14 * outP;
+          if (inP <= 0.01) return null;
           return (
             <div
               key={i}
@@ -198,8 +239,8 @@ const Subtitles: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
                 fontSize: line.size,
                 fontFamily: "NotoSansSC",
                 letterSpacing: line.size < 60 ? 2 : 0,
-                opacity: alpha,
-                transform: `translateY(${y}px)`,
+                opacity: inP,
+                transform: `translateY(${16 * (1 - inP)}px)`,
                 textShadow: line.gold ? "0 0 26px rgba(216,178,74,0.35)" : "0 2px 18px rgba(0,0,0,0.55)",
               }}
             >
@@ -208,6 +249,29 @@ const Subtitles: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
           );
         })}
       </div>
+    </AbsoluteFill>
+  );
+};
+
+/** 吸入口：抵达圆心后，金环塌缩 + 一颗光点绕旋进中心 */
+const SuckRing: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
+  if (!scene.lines) return null;
+  const local = f - scene.start;
+  const s = arriveAt(scene.dur);
+  if (local < s) return null;
+  const t = clamp01((local - s) / (scene.dur - s));
+  const r = 320 - 296 * Easing.in(Easing.cubic)(t);
+  const o = 0.62 * Math.pow(1 - t, 0.7);
+  const a = -Math.PI / 2 - (Math.PI * 4) * t; // 四圈半的旋进
+  const dotX = 540 + Math.cos(a) * r;
+  const dotY = 420 + Math.sin(a) * r;
+  return (
+    <AbsoluteFill style={{ top: 90, height: 880 }}>
+      <svg viewBox="0 0 1080 880" width={WIDTH} height={880}>
+        <circle cx={540} cy={420} r={r} fill="none" stroke={GOLD} strokeWidth={2.6} opacity={o} />
+        <circle cx={540} cy={420} r={r * 0.82} fill="none" stroke="#F4DE9A" strokeWidth={1.1} opacity={o * 0.7} />
+        <circle cx={dotX} cy={dotY} r={5.5} fill="#F4DE9A" opacity={o * 1.2} />
+      </svg>
     </AbsoluteFill>
   );
 };
@@ -235,6 +299,7 @@ export const Video: React.FC = () => {
       <BeatRing f={f} />
 
       <Subtitles scene={cur} f={f} />
+      <SuckRing scene={cur} f={f} />
 
       {/* 底部压暗：把抖音评论区/按钮区让出来 */}
       <AbsoluteFill
