@@ -3331,6 +3331,12 @@ class Handler(BaseHTTPRequestHandler):
             if not re.fullmatch(r"[a-z_]+\.png", name):
                 return self._json({"error": "not found"}, 404)
             return self._static(os.path.join("assets", "faces", name), "image/png")
+        # 数字人仿真人视频素材（可插拔：assets/videos/<id>[.talk|.idle].mp4）
+        if path.startswith("/videos/"):
+            name = path[len("/videos/"):]
+            if not re.fullmatch(r"[a-z_]+(?:\.(?:talk|idle))?\.mp4", name):
+                return self._json({"error": "not found"}, 404)
+            return self._static(os.path.join("assets", "videos", name), "video/mp4")
         if path.startswith("/vault/"):
             return self._vault(path[len("/vault/"):])
         # 新版前端（Refine）外壳与构建资源公开：页面本身不含数据，数据接口仍在 /api 层鉴权
