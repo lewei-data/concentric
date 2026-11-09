@@ -33,7 +33,7 @@ const RAW: Array<{ ill: string; beats: number; lines?: Line[] }> = [
   { ill: "duplicate", beats: 8, lines: [{ text: "让 AI 成为", size: 108 }, { text: "你的分身", size: 108, gold: true }] },
   { ill: "loop", beats: 8, lines: [{ text: "替你干", size: 106 }, { text: "重复的活", size: 106, gold: true }] },
   { ill: "hourglass", beats: 8, lines: [{ text: "把时间还给", size: 102 }, { text: "更值得的事", size: 102, gold: true }] },
-  { ill: "steps", beats: 8, lines: [{ text: "开启", size: 106 }, { text: "高价值的人生", size: 106, gold: true }] },
+  { ill: "steps", beats: 8, lines: [{ text: "开启", size: 106 }, { text: "高价值人生", size: 106, gold: true }] },
   { ill: "logo", beats: 12, lines: [{ text: "同 心 圆", size: 44 }, { text: "同心同频", size: 100 }, { text: "共谱华章", size: 100, gold: true }] },
 ];
 

@@ -179,7 +179,10 @@ const Subtitles: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
   const STAGGER = 2; // 85ms ≈ 2 帧
   const heights = scene.lines.map((l) => l.size * 1.42 + (l.size < 60 ? 56 : 0));
   const total = heights.reduce((a, b) => a + b, 0);
-  const top = SUB_CENTER_Y - total / 2;
+  // 淡入结束（静止）位置整体上移 2 行：行高按本场景平均行高计算
+  const LIFT_LINES = 2;
+  const lift = LIFT_LINES * (total / scene.lines.length);
+  const top = SUB_CENTER_Y - total / 2 - lift;
 
   // 入场：从底部 +110px 淡入
   const enter = interpolate(local, [0, 13], [0, 1], {
@@ -201,7 +204,8 @@ const Subtitles: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
     extrapolateRight: "clamp",
   });
 
-  const dy = 110 * (1 - enter) + (ORB_CANVAS_Y - SUB_CENTER_Y) * tr;
+  // 上滑终点仍是圆心：静止位置已上移 lift，故位移相应缩短 lift
+  const dy = 110 * (1 - enter) + (ORB_CANVAS_Y - SUB_CENTER_Y + lift) * tr;
   const sc = (1 + 0.3 * tr) * (1 - 0.95 * sp);
   const rot = -400 * Math.pow(sp, 0.72);
   const outAlpha = interpolate(sp, [0.35, 1], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
