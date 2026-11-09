@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 5.426,
+  "segments": [
+    {
+      "index": 0,
+      "text": "把你说过的话、做过的判断、重复过的那套流程，蒸馏成一个人格。",
+      "start": 0.0,
+      "end": 5.426
+    }
+  ]
+}

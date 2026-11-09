@@ -1,0 +1,20 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 6.368,
+  "segments": [
+    {
+      "index": 0,
+      "text": "AI 时代，人人都能用模型。",
+      "start": 0.0,
+      "end": 2.588
+    },
+    {
+      "index": 1,
+      "text": "但模型不知道你是谁，知道的只有你自己。",
+      "start": 2.708,
+      "end": 6.368
+    }
+  ]
+}

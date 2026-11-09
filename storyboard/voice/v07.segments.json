@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 5.234,
+  "segments": [
+    {
+      "index": 0,
+      "text": "带一个具体场景来，我们只回答两件事：能不能做，怎么做。",
+      "start": 0.0,
+      "end": 5.234
+    }
+  ]
+}

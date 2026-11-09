@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 6.699,
+  "segments": [
+    {
+      "index": 0,
+      "text": "所以分身不是替身，是把你已经想清楚的部分交出去，替你干活。",
+      "start": 0.0,
+      "end": 6.699
+    }
+  ]
+}

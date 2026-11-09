@@ -1,0 +1,22 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Noto Sans SC,46,&H00FFFFFF,&H000000FF,&H80000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,60,60,150,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.40,0:00:05.32,Default,,0,0,0,,AI 让说话变便宜了。便宜之后，稀缺的是你本人的判断。
+Dialogue: 0,0:00:06.60,0:00:11.11,Default,,0,0,0,,同心圆不是一家公司，是你的一份镜像。圆心是你。
+Dialogue: 0,0:00:12.30,0:00:17.73,Default,,0,0,0,,把你说过的话、做过的判断、重复过的那套流程，蒸馏成一个人格。
+Dialogue: 0,0:00:18.90,0:00:24.01,Default,,0,0,0,,有了它，你不用每次从头解释自己。它照着你的方式，把活干完。
+Dialogue: 0,0:00:25.00,0:00:28.92,Default,,0,0,0,,最值得蒸的，是那些你每周都要重复一遍的事。
+Dialogue: 0,0:00:30.20,0:00:36.85,Default,,0,0,0,,有两件事它不做：替不在的人点头，给在世的人编没发生过的场景。
+Dialogue: 0,0:00:38.00,0:00:44.37,Default,,0,0,0,,AI 时代，人人都能用模型。但模型不知道你是谁，知道的只有你自己。
+Dialogue: 0,0:00:45.60,0:00:52.30,Default,,0,0,0,,所以分身不是替身，是把你已经想清楚的部分交出去，替你干活。
+Dialogue: 0,0:00:53.60,0:00:56.31,Default,,0,0,0,,先从一件你重复最多的事开始。

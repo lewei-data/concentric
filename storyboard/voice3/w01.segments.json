@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 4.917,
+  "segments": [
+    {
+      "index": 0,
+      "text": "AI 让说话变便宜了。便宜之后，稀缺的是你本人的判断。",
+      "start": 0.0,
+      "end": 4.917
+    }
+  ]
+}

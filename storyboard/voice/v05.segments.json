@@ -1,0 +1,20 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 6.862,
+  "segments": [
+    {
+      "index": 0,
+      "text": "所以有两类单我们不接：替不在的人点头；",
+      "start": 0.0,
+      "end": 4.091
+    },
+    {
+      "index": 1,
+      "text": "给在世的人编没发生过的场景。",
+      "start": 4.211,
+      "end": 6.862
+    }
+  ]
+}

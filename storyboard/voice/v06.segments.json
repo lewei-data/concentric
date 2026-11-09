@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 2.438,
+  "segments": [
+    {
+      "index": 0,
+      "text": "边界写死，事情才敢交给你。",
+      "start": 0.0,
+      "end": 2.438
+    }
+  ]
+}

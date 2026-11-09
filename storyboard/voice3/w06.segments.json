@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 6.653,
+  "segments": [
+    {
+      "index": 0,
+      "text": "有两件事它不做：替不在的人点头，给在世的人编没发生过的场景。",
+      "start": 0.0,
+      "end": 6.653
+    }
+  ]
+}

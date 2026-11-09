@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 4.513,
+  "segments": [
+    {
+      "index": 0,
+      "text": "同心圆不是一家公司，是你的一份镜像。圆心是你。",
+      "start": 0.0,
+      "end": 4.513
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "voice": "female-zh-short",
+  "speed": 0.92,
+  "sample_rate": 24000,
+  "duration": 4.413,
+  "segments": [
+    {
+      "index": 0,
+      "text": "先说清楚：同心圆做的，不是陪你聊天的数字人。",
+      "start": 0.0,
+      "end": 4.413
+    }
+  ]
+}
