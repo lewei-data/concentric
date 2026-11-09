@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../../../opt/sefs"
+		}
+	],
+	"trae": {
+		"workspaceId": "ca3ed3dddf025f7914aa4edf6b092a20"
+	},
+	"settings": {}
+}

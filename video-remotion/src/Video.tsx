@@ -334,16 +334,21 @@ export const Video: React.FC = () => {
     <AbsoluteFill style={{ backgroundColor: "#0A0A0D", fontFamily: "NotoSansSC, sans-serif" }}>
       <Audio src={staticFile("ep2-mix.wav")} />
       <Backdrop f={f} t={t} />
-      <Rings t={t} chapter={chapter} chapterP={chapterP} />
-      <ChapterGeometry ill={chapter.ill} p={chapterP} pulse={pulse} />
+      {/* 片尾时几何淡出，避免落版文字压在圆环上 */}
+      <AbsoluteFill style={{ opacity: 1 - outroFade * 0.9 }}>
+        <Rings t={t} chapter={chapter} chapterP={chapterP} />
+        <ChapterGeometry ill={chapter.ill} p={chapterP} pulse={pulse} />
+      </AbsoluteFill>
 
-      {/* 章节标题 */}
-      <div style={{ position: "absolute", top: 150, width: WIDTH, textAlign: "center", opacity: introFade * 0.9 }}>
-        <div style={{ fontSize: 26, letterSpacing: 8, color: GOLD, opacity: 0.75 }}>
-          {String(chapter.index + 1).padStart(2, "0")} / {chapter.title}
+      {/* 章节标题（片尾隐藏） */}
+      {!isOutro && (
+        <div style={{ position: "absolute", top: 150, width: WIDTH, textAlign: "center", opacity: introFade * 0.9 }}>
+          <div style={{ fontSize: 26, letterSpacing: 8, color: GOLD, opacity: 0.75 }}>
+            {String(chapter.index + 1).padStart(2, "0")} / {chapter.title}
+          </div>
+          <div style={{ margin: "18px auto 0", width: 64, height: 1, background: GOLD_DIM, opacity: 0.55 }} />
         </div>
-        <div style={{ margin: "18px auto 0", width: 64, height: 1, background: GOLD_DIM, opacity: 0.55 }} />
-      </div>
+      )}
 
       {/* 逐句字幕 */}
       {!isOutro && (
@@ -358,16 +363,18 @@ export const Video: React.FC = () => {
         </AbsoluteFill>
       )}
 
-      {/* 句进度点：12 个点，当前句点亮 */}
-      <div style={{ position: "absolute", top: 1535, width: WIDTH, display: "flex", justifyContent: "center", gap: 14, opacity: introFade }}>
-        {SEGMENTS.map((s) => {
-          const on = seg && s.index === seg.index;
-          const done = t > s.end;
-          return (
-            <div key={s.index} style={{ width: on ? 22 : 7, height: 7, borderRadius: 4, backgroundColor: on ? GOLD : WHITE, opacity: on ? 0.95 : done ? 0.3 : 0.14, transition: "none" }} />
-          );
-        })}
-      </div>
+      {/* 句进度点：12 个点，当前句点亮（片尾隐藏） */}
+      {!isOutro && (
+        <div style={{ position: "absolute", top: 1535, width: WIDTH, display: "flex", justifyContent: "center", gap: 14, opacity: introFade }}>
+          {SEGMENTS.map((s) => {
+            const on = seg && s.index === seg.index;
+            const done = t > s.end;
+            return (
+              <div key={s.index} style={{ width: on ? 22 : 7, height: 7, borderRadius: 4, backgroundColor: on ? GOLD : WHITE, opacity: on ? 0.95 : done ? 0.3 : 0.14 }} />
+            );
+          })}
+        </div>
+      )}
 
       {/* 角标 */}
       {!isOutro && (
@@ -380,11 +387,14 @@ export const Video: React.FC = () => {
 
       {/* 片尾落版 */}
       {isOutro && (
-        <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: outroFade }}>
+        <AbsoluteFill style={{ opacity: outroFade }}>
+          <AbsoluteFill style={{ background: "radial-gradient(ellipse 720px 520px at 50% 50%, rgba(8,8,11,0.92) 0%, rgba(8,8,11,0.62) 58%, rgba(8,8,11,0) 100%)" }} />
+          <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
           <div style={{ fontSize: 62, letterSpacing: 18, color: WHITE }}>同 心 圆</div>
           <div style={{ marginTop: 34, fontSize: 28, letterSpacing: 4, color: GOLD, opacity: 0.85 }}>模型学得会知识 · 学不走署名</div>
           <div style={{ marginTop: 70, fontSize: 21, color: DIM, opacity: 0.7 }}>事实依据：国家数据局公开文件，2026.11</div>
           <div style={{ marginTop: 14, fontSize: 19, color: DIM, opacity: 0.55 }}>不承诺收益 · 不构成投资或法律意见</div>
+          </AbsoluteFill>
         </AbsoluteFill>
       )}
     </AbsoluteFill>
