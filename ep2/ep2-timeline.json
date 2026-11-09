@@ -1,0 +1,230 @@
+{
+  "voice": "female-zh-short",
+  "lead_in": 1.2,
+  "sentence_gap": 0.32,
+  "chapter_gap": 0.38,
+  "tail": 2.5,
+  "duration": 58.032,
+  "sample_rate": 24000,
+  "out_dir": "/home/boray/mcp-out/ep2tts",
+  "chapters": [
+    {
+      "id": "ch1",
+      "title": "钩子",
+      "ill": "spark",
+      "index": 0,
+      "start": 1.2,
+      "end": 9.495,
+      "segment_indices": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "ch2",
+      "title": "事实起点",
+      "ill": "certificate",
+      "index": 1,
+      "start": 10.195,
+      "end": 18.953,
+      "segment_indices": [
+        2,
+        3
+      ]
+    },
+    {
+      "id": "ch3",
+      "title": "关键落点",
+      "ill": "three_rings",
+      "index": 2,
+      "start": 19.653,
+      "end": 27.131,
+      "segment_indices": [
+        4,
+        5
+      ]
+    },
+    {
+      "id": "ch4",
+      "title": "基础设施",
+      "ill": "lattice",
+      "index": 3,
+      "start": 27.831,
+      "end": 37.209,
+      "segment_indices": [
+        6,
+        7
+      ]
+    },
+    {
+      "id": "ch5",
+      "title": "个人四步",
+      "ill": "four_nodes",
+      "index": 4,
+      "start": 37.909,
+      "end": 51.808,
+      "segment_indices": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "id": "ch6",
+      "title": "收束",
+      "ill": "collapse",
+      "index": 5,
+      "start": 52.508,
+      "end": 55.532,
+      "segment_indices": [
+        11
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "index": 0,
+      "chapter": 0,
+      "chapter_id": "ch1",
+      "chapter_title": "钩子",
+      "ill": "spark",
+      "text": "当模型替你记住一切，什么还算是你的？",
+      "wav": "/home/boray/mcp-out/ep2tts/s00.wav",
+      "file_duration": 3.462,
+      "start": 1.2,
+      "end": 4.662
+    },
+    {
+      "index": 1,
+      "chapter": 0,
+      "chapter_id": "ch1",
+      "chapter_title": "钩子",
+      "ill": "spark",
+      "text": "人工智能让表达变得便宜，你的记录反而变得稀缺。",
+      "wav": "/home/boray/mcp-out/ep2tts/s01.wav",
+      "file_duration": 4.513,
+      "start": 4.982,
+      "end": 9.495
+    },
+    {
+      "index": 2,
+      "chapter": 1,
+      "chapter_id": "ch2",
+      "chapter_title": "事实起点",
+      "ill": "certificate",
+      "text": "二零二六年七月，国家数据局发布数据产权登记工作指引。",
+      "wav": "/home/boray/mcp-out/ep2tts/s02.wav",
+      "file_duration": 4.942,
+      "start": 10.195,
+      "end": 15.137
+    },
+    {
+      "index": 3,
+      "chapter": 1,
+      "chapter_id": "ch2",
+      "chapter_title": "事实起点",
+      "ill": "certificate",
+      "text": "持有权、使用权、经营权，三权分置。",
+      "wav": "/home/boray/mcp-out/ep2tts/s03.wav",
+      "file_duration": 3.496,
+      "start": 15.457,
+      "end": 18.953
+    },
+    {
+      "index": 4,
+      "chapter": 2,
+      "chapter_id": "ch3",
+      "chapter_title": "关键落点",
+      "ill": "three_rings",
+      "text": "指引写得很清楚，自然人也可以申请登记。",
+      "wav": "/home/boray/mcp-out/ep2tts/s04.wav",
+      "file_duration": 3.542,
+      "start": 19.653,
+      "end": 23.195
+    },
+    {
+      "index": 5,
+      "chapter": 2,
+      "chapter_id": "ch3",
+      "chapter_title": "关键落点",
+      "ill": "three_rings",
+      "text": "你合法采集、生成、获取的数据，有了可登记的凭证。",
+      "wav": "/home/boray/mcp-out/ep2tts/s05.wav",
+      "file_duration": 3.616,
+      "start": 23.515,
+      "end": 27.131
+    },
+    {
+      "index": 6,
+      "chapter": 3,
+      "chapter_id": "ch4",
+      "chapter_title": "基础设施",
+      "ill": "lattice",
+      "text": "九月，国家数据产权登记服务系统上线试运行。",
+      "wav": "/home/boray/mcp-out/ep2tts/s06.wav",
+      "file_duration": 4.155,
+      "start": 27.831,
+      "end": 31.986
+    },
+    {
+      "index": 7,
+      "chapter": 3,
+      "chapter_id": "ch4",
+      "chapter_title": "基础设施",
+      "ill": "lattice",
+      "text": "十月，国家数据集团正式挂牌，模型越大，越吃数据。",
+      "wav": "/home/boray/mcp-out/ep2tts/s07.wav",
+      "file_duration": 4.903,
+      "start": 32.306,
+      "end": 37.209
+    },
+    {
+      "index": 8,
+      "chapter": 4,
+      "chapter_id": "ch5",
+      "chapter_title": "个人四步",
+      "ill": "four_nodes",
+      "text": "落到个人，其实是四件很朴素的事。",
+      "wav": "/home/boray/mcp-out/ep2tts/s08.wav",
+      "file_duration": 3.078,
+      "start": 37.909,
+      "end": 40.987
+    },
+    {
+      "index": 9,
+      "chapter": 4,
+      "chapter_id": "ch5",
+      "chapter_title": "个人四步",
+      "ill": "four_nodes",
+      "text": "先留痕，再确权，然后守界，最后复用。",
+      "wav": "/home/boray/mcp-out/ep2tts/cand-b.wav",
+      "file_duration": 3.728,
+      "start": 41.307,
+      "end": 45.035
+    },
+    {
+      "index": 10,
+      "chapter": 4,
+      "chapter_id": "ch5",
+      "chapter_title": "个人四步",
+      "ill": "four_nodes",
+      "text": "把产出整理好，申请登记，授权限定场景和时限，再让数据合规地复用。",
+      "wav": "/home/boray/mcp-out/ep2tts/s10.wav",
+      "file_duration": 6.453,
+      "start": 45.355,
+      "end": 51.808
+    },
+    {
+      "index": 11,
+      "chapter": 5,
+      "chapter_id": "ch6",
+      "chapter_title": "收束",
+      "ill": "collapse",
+      "text": "模型学得会你的知识，学不走你的署名。",
+      "wav": "/home/boray/mcp-out/ep2tts/s11.wav",
+      "file_duration": 3.024,
+      "start": 52.508,
+      "end": 55.532
+    }
+  ]
+}

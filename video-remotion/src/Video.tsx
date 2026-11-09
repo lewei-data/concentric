@@ -4,29 +4,62 @@ import {
   Audio,
   continueRender,
   delayRender,
-  Easing,
-  Img,
   interpolate,
   staticFile,
   useCurrentFrame,
 } from "remotion";
-import { BEAT_FRAMES, FPS, HEIGHT, SCENES, Scene, TOTAL_FRAMES, WIDTH } from "./scenes";
-import { ILLS } from "./Ill";
+import {
+  CHAPTERS,
+  DURATION_SECONDS,
+  FPS,
+  HEIGHT,
+  SEGMENTS,
+  WIDTH,
+  Chapter,
+  Seg,
+} from "./timeline";
+
+/* 同心圆 · 第二支《AI 时代的数字资产》TTS 口播版
+ * 节奏完全由 206 tts MCP 产出的句级时间轴驱动（src/timeline.ts）。
+ * 字体：思源黑体 Noto Sans SC Regular（SIL OFL 1.1）
+ * 视觉：全部 SVG / CSS 代码绘制，零外部图片
+ * 音频：206 自制 BGM + TTS 口播 ducking 混音（public/ep2-mix.wav）
+ */
 
 const GOLD = "#D8B24A";
+const GOLD_DIM = "#C9A227";
 const WHITE = "#F2EDE4";
+const DIM = "#8B877F";
 
-const GOLDEN = Easing.out(Easing.cubic);
-
-/** 确定性伪随机，保证每帧可重放 */
-const rnd = (i: number, salt = 0) => {
-  const x = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
-  return x - Math.floor(x);
+/** 关键落点词上金色（按句 index） */
+const HIGHLIGHTS: Record<number, string[]> = {
+  0: ["什么还算是你的"],
+  1: ["稀缺"],
+  2: ["二零二六年七月"],
+  3: ["三权分置"],
+  4: ["自然人"],
+  5: ["可登记的凭证"],
+  6: ["上线试运行"],
+  7: ["越吃数据"],
+  8: ["四件"],
+  9: ["留痕", "确权", "守界", "复用"],
+  10: ["合规地复用"],
+  11: ["署名"],
 };
 
-/** 字体：渲染前必须等字体就绪，否则首帧会用回退字体 */
+/** 每章底部角标（事实来源，不出现平台 LOGO / 真实界面） */
+const FOOTNOTES: Record<number, string> = {
+  0: "同心圆 · 系列第二支",
+  1: "国家数据局《数据产权登记工作指引（试行）》｜国数综政策〔2026〕35 号",
+  2: "指引：自然人对其合法采集、生成、获取的数据可登记",
+  3: "国家数据产权登记服务系统上线试运行｜国家数据集团挂牌｜2026",
+  4: "个人侧落点：留痕 → 确权 → 守界 → 复用（由登记规则推导，非收益承诺）",
+  5: "事实依据：国家数据局公开文件，2026.11｜不承诺收益、不构成投资或法律意见",
+};
+
+/** 字体必须等加载完成，否则首帧回退到系统字体 */
 const useEmbeddedFont = () => {
-  const [handle] = useState(() => delayRender("loading-font"));
+  const [handle] = useState(() => delayRender("loading-noto-sans-sc"));
   useEffect(() => {
     let alive = true;
     const face = new FontFace("NotoSansSC", `url(${staticFile("fonts/NotoSansSC-Regular.otf")})`);
@@ -46,306 +79,314 @@ const useEmbeddedFont = () => {
   }, [handle]);
 };
 
-const sceneAt = (f: number) => {
-  for (let i = SCENES.length - 1; i >= 0; i--) {
-    if (f >= SCENES[i].start) return i;
+const rnd = (i: number, salt = 0) => {
+  const x = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+/** 把句子切成 1–2 行，优先在标点处断行 */
+const splitLines = (text: string): string[] => {
+  if (text.length <= 14) return [text];
+  const cuts = "，、？。";
+  const mid = Math.ceil(text.length / 2);
+  let cut = mid;
+  for (let d = 0; d < 6; d++) {
+    for (const c of [mid - d, mid + d]) {
+      if (c > 3 && c < text.length - 3 && cuts.includes(text[c])) {
+        cut = c + 1;
+        return [text.slice(0, cut), text.slice(cut)];
+      }
+    }
   }
-  return 0;
+  return [text.slice(0, mid), text.slice(mid)];
 };
 
-/** 背景：深色基底 + 中心暖光 + 极慢旋转光晕，做出"布面"质感 */
-const Backdrop: React.FC<{ f: number }> = ({ f }) => {
-  const spin = (f / FPS) * 6; // 6°/s
-  return (
-    <AbsoluteFill style={{ background: "#0B0B0E" }}>
-      <AbsoluteFill
-        style={{
-          background: "linear-gradient(168deg, #121218 0%, #0B0B0E 45%, #07070A 100%)",
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(ellipse 700px 560px at 50% 26%, rgba(201,162,39,0.10) 0%, rgba(201,162,39,0.035) 45%, rgba(0,0,0,0) 74%)",
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          transform: `rotate(${spin}deg) scale(1.6)`,
-          background:
-            "conic-gradient(from 0deg at 50% 50%, rgba(201,162,39,0.045) 0deg, rgba(0,0,0,0) 70deg, rgba(201,162,39,0.02) 160deg, rgba(0,0,0,0) 250deg, rgba(201,162,39,0.045) 360deg)",
-          opacity: 0.45,
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(ellipse 78% 62% at 50% 46%, rgba(0,0,0,0) 48%, rgba(0,0,0,0.55) 100%)",
-        }}
-      />
-    </AbsoluteFill>
-  );
+type Part = { t: string; gold: boolean };
+/** 把高亮词切成金色片段 */
+const colorize = (text: string, highs: string[]): Part[] => {
+  let parts: Part[] = [{ t: text, gold: false }];
+  for (const h of highs) {
+    const next: Part[] = [];
+    for (const p of parts) {
+      if (p.gold || !h) {
+        next.push(p);
+        continue;
+      }
+      let rest = p.t;
+      let idx = rest.indexOf(h);
+      while (idx >= 0) {
+        if (idx > 0) next.push({ t: rest.slice(0, idx), gold: false });
+        next.push({ t: h, gold: true });
+        rest = rest.slice(idx + h.length);
+        idx = rest.indexOf(h);
+      }
+      if (rest) next.push({ t: rest, gold: false });
+    }
+    parts = next;
+  }
+  return parts;
 };
 
-/** 漂浮金尘：给整幅画面一层空气感，不依赖每个场景单独实现 */
-const Dust: React.FC<{ f: number }> = ({ f }) => {
-  return (
-    <AbsoluteFill style={{ top: 90, height: 880 }}>
-      <svg viewBox="0 0 1080 880" width={WIDTH} height={880}>
-        {Array.from({ length: 42 }, (_, i) => {
-          const sp = 5 + rnd(i, 3) * 11; // px/s
-          const x0 = rnd(i, 1) * 1080;
-          const y0 = rnd(i, 2) * 880;
-          const y = (((y0 - f / FPS * sp) % 880) + 880) % 880;
-          const tw = 0.45 + 0.55 * Math.sin(f * 0.07 + i * 1.7);
-          const r = 1.1 + rnd(i, 4) * 1.9;
-          const hot = i % 9 === 0;
-          return (
-            <circle
-              key={i}
-              cx={x0 + Math.sin(f * 0.02 + i) * 9}
-              cy={y}
-              r={hot ? r * 1.6 : r}
-              fill={hot ? GOLD : "#F2EDE4"}
-              opacity={(hot ? 0.24 : 0.13) * Math.max(0, tw)}
-            />
-          );
-        })}
-      </svg>
-    </AbsoluteFill>
-  );
-};
+const ColoredLine: React.FC<{ text: string; highs: string[] }> = ({ text, highs }) => (
+  <span>
+    {colorize(text, highs).map((p, i) => (
+      <span key={i} style={{ color: p.gold ? GOLD : WHITE }}>{p.t}</span>
+    ))}
+  </span>
+);
 
-/** 每拍一次的脉冲环：画面节奏的视觉锚点 */
-const BeatRing: React.FC<{ f: number }> = ({ f }) => {
-  const beat = Math.floor(f / BEAT_FRAMES);
-  const local = (f - beat * BEAT_FRAMES) * (FPS / FPS); // 帧
-  const p = local / (BEAT_FRAMES * 0.85);
-  if (p <= 0 || p >= 1) return null;
-  const e = GOLDEN(p);
-  const r = 150 + 360 * e;
-  const o = 0.45 * Math.pow(1 - p, 1.2);
-  return (
-    <AbsoluteFill style={{ top: 90, height: 880 }}>
-      <svg viewBox="0 0 1080 880" width={WIDTH} height={880}>
-        <circle cx={540} cy={420} r={r} fill="none" stroke={GOLD} strokeWidth={2.4} opacity={o} />
-        <circle cx={540} cy={420} r={r - 7} fill="none" stroke="#F4DE9A" strokeWidth={1} opacity={o * 0.6} />
-      </svg>
-    </AbsoluteFill>
-  );
-};
-
-/** 单场景插图 + 缓慢推近 / 漂移 / 交叉淡入 */
-const SceneLayer: React.FC<{ scene: Scene; f: number; opacity: number }> = ({ scene, f, opacity }) => {
-  if (opacity <= 0.01) return null;
-  const Ill = ILLS[scene.ill];
-  if (!Ill) return null;
-  const local = f - scene.start;
-  const drift = Math.sin(((f / FPS) / 7.8) * Math.PI * 2) * 5;
-  const push = 1.0 + 0.05 * Math.min(1, local / scene.dur);
-  return (
+/** 背景：近黑渐变 + 金色径向光晕 + 代码生成的颗粒，无外部图片 */
+const Backdrop: React.FC<{ f: number; t: number }> = ({ f, t }) => (
+  <AbsoluteFill style={{ background: "#0A0A0D" }}>
+    <AbsoluteFill style={{ background: "linear-gradient(168deg,#121218 0%,#0B0B0E 45%,#07070A 100%)" }} />
     <AbsoluteFill
       style={{
-        top: 90,
-        height: 880,
-        opacity,
-        transform: `translateY(${drift}px) scale(${push})`,
-        transformOrigin: "540px 460px",
+        background:
+          "radial-gradient(ellipse 700px 560px at 50% 26%, rgba(201,162,39,0.11) 0%, rgba(201,162,39,0.035) 45%, rgba(0,0,0,0) 74%)",
       }}
-    >
-      <Ill f={Math.max(0, local)} dur={scene.dur} />
-    </AbsoluteFill>
+    />
+    <AbsoluteFill
+      style={{
+        background:
+          "radial-gradient(ellipse 80% 64% at 50% 46%, rgba(0,0,0,0) 48%, rgba(0,0,0,0.58) 100%)",
+      }}
+    />
+    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} width={WIDTH} height={HEIGHT}>
+      {Array.from({ length: 46 }, (_, i) => {
+        const y0 = rnd(i, 2) * HEIGHT;
+        const y = (((y0 - t * (5 + rnd(i, 3) * 10)) % HEIGHT) + HEIGHT) % HEIGHT;
+        const x = rnd(i, 1) * WIDTH + Math.sin(f * 0.02 + i) * 8;
+        const tw = 0.45 + 0.55 * Math.sin(f * 0.07 + i * 1.7);
+        return (
+          <circle
+            key={i}
+            cx={x}
+            cy={y}
+            r={1 + rnd(i, 4) * 1.8}
+            fill={i % 9 === 0 ? GOLD : WHITE}
+            opacity={(i % 9 === 0 ? 0.22 : 0.11) * Math.max(0, tw)}
+          />
+        );
+      })}
+    </svg>
+  </AbsoluteFill>
+);
+
+/** 常驻同心圆：细金环 + 缓慢呼吸，章节切换时外扩一次 */
+const Rings: React.FC<{ t: number; chapter: Chapter; chapterP: number }> = ({ t, chapter, chapterP }) => {
+  const radii = [150, 220, 290, 360, 430, 500];
+  const expand = interpolate(chapterP, [0, 0.25, 1], [1, 1.045, 1], { extrapolateRight: "clamp" });
+  return (
+    <svg viewBox="0 0 1080 760" width={1080} height={760} style={{ position: "absolute", top: 300 }}>
+      {radii.map((r, i) => {
+        const breathe = 1 + 0.012 * Math.sin(t * 0.55 + i * 0.7);
+        const a = 0.055 + 0.035 * Math.sin(t * 0.4 + i * 0.9);
+        return (
+          <circle
+            key={i}
+            cx={540}
+            cy={380}
+            r={r * breathe * expand}
+            fill="none"
+            stroke={GOLD_DIM}
+            strokeWidth={i % 2 === 0 ? 1.2 : 0.8}
+            opacity={Math.max(0.025, a)}
+          />
+        );
+      })}
+      <circle cx={540} cy={380} r={5} fill={GOLD} opacity={0.85} />
+      <circle cx={540} cy={380} r={16 + 5 * Math.sin(t * 1.1)} fill="none" stroke={GOLD} strokeWidth={1} opacity={0.35} />
+    </svg>
   );
 };
 
-/** 字幕：底部淡入 → 匀速上滑（同时放大）→ 抵达圆心 → 旋转收缩消失 */
-const ORB_CANVAS_Y = 510; // 插图区圆心在画布上的位置（top 90 + cy 420）
-const SUB_CENTER_Y = 1315;
+/** 章节几何：6 种状态，全部代码绘制，随章节内进度点亮 */
+const ChapterGeometry: React.FC<{ ill: string; p: number; pulse: number }> = ({ ill, p, pulse }) => {
+  const cx = 540, cy = 380;
+  const lit = (i: number, n: number) => clamp01((p - (i / n) * 0.72) / 0.28);
+  const node = (x: number, y: number, a: number, r = 9) => (
+    <g key={`${x}-${y}`}>
+      <circle cx={x} cy={y} r={r + 9 * a} fill={GOLD} opacity={0.08 * a} />
+      <circle cx={x} cy={y} r={r} fill={GOLD} opacity={0.35 + 0.55 * a} />
+      <circle cx={x} cy={y} r={r + 10} fill="none" stroke={GOLD} strokeWidth={1} opacity={0.5 * a} />
+    </g>
+  );
 
-/** 消失（旋转收缩）固定 22 帧，保证每句节奏一致 */
-const SPIN = 22;
-/** 上滑固定 20 帧、线性匀速（805px / 0.8s ≈ 1000px/s，全场同速） */
-const TRAVEL = 20;
-/** 抵达圆心的帧号 */
-const arriveAt = (dur: number) => dur - Math.min(SPIN, Math.round(dur * 0.35));
-/** 上滑起始帧（匀速段起点的帧） */
-const travelStart = (dur: number) => Math.max(10, arriveAt(dur) - TRAVEL);
-
-const Subtitles: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
-  if (!scene.lines) return null;
-  const local = f - scene.start;
-  const dur = scene.dur;
-  const IN = 9; // 360ms 淡入
-  const STAGGER = 2; // 85ms ≈ 2 帧
-  const heights = scene.lines.map((l) => l.size * 1.42 + (l.size < 60 ? 56 : 0));
-  const total = heights.reduce((a, b) => a + b, 0);
-  // 淡入结束（静止）位置整体上移 2 行：行高按本场景平均行高计算
-  const LIFT_LINES = 2;
-  const lift = LIFT_LINES * (total / scene.lines.length);
-  const top = SUB_CENTER_Y - total / 2 - lift;
-
-  // 入场：从底部 +110px 淡入
-  const enter = interpolate(local, [0, 13], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: GOLDEN,
-  });
-
-  // 上滑：线性匀速冲向圆心，期间字号缓慢放大到 1.3 倍
-  const tr = interpolate(local, [travelStart(dur), arriveAt(dur)], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.linear,
-  });
-
-  // 抵达圆心后才开始的消失：边旋转边收缩
-  const sp = interpolate(local, [arriveAt(dur), dur], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
-  // 上滑终点仍是圆心：静止位置已上移 lift，故位移相应缩短 lift
-  const dy = 110 * (1 - enter) + (ORB_CANVAS_Y - SUB_CENTER_Y + lift) * tr;
-  const sc = (1 + 0.3 * tr) * (1 - 0.95 * sp);
-  const rot = -400 * Math.pow(sp, 0.72);
-  const outAlpha = interpolate(sp, [0.35, 1], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-
-  return (
-    <AbsoluteFill>
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top,
-          width: WIDTH,
-          height: total,
-          opacity: 1 - outAlpha,
-          transform: `translateY(${dy}px) rotate(${rot}deg) scale(${sc})`,
-          transformOrigin: "50% 50%",
-        }}
-      >
-        {scene.lines.map((line, i) => {
-          const s = i * STAGGER;
-          const inP = interpolate(local, [s, s + IN], [0, 1], {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-            easing: GOLDEN,
-          });
-          if (inP <= 0.01) return null;
+  if (ill === "spark") {
+    return (
+      <svg viewBox="0 0 1080 760" width={1080} height={760} style={{ position: "absolute", top: 300 }}>
+        {[0, 1, 2].map((k) => {
+          const q = clamp01((p * 2.2 - k * 0.42) / 0.9);
+          return <circle key={k} cx={cx} cy={cy} r={20 + q * (180 + k * 70)} fill="none" stroke={GOLD} strokeWidth={1.4} opacity={0.5 * (1 - q)} />;
+        })}
+        <circle cx={cx} cy={cy} r={7 + 4 * pulse} fill={GOLD} />
+      </svg>
+    );
+  }
+  if (ill === "certificate") {
+    const a = clamp01(p / 0.35);
+    return (
+      <svg viewBox="0 0 1080 760" width={1080} height={760} style={{ position: "absolute", top: 300 }}>
+        <g opacity={a}>
+          <rect x={365} y={205} width={350} height={350} rx={22} fill="#12131A" stroke={GOLD_DIM} strokeWidth={1.5} opacity={0.9} />
+          {[0, 1, 2].map((k) => (
+            <line key={k} x1={405} y1={285 + k * 56} x2={675 - k * 55} y2={285 + k * 56} stroke={WHITE} strokeWidth={2} opacity={0.28 + 0.35 * clamp01((p - 0.2 - k * 0.18) / 0.3)} />
+          ))}
+          <circle cx={640} cy={480} r={44} fill="none" stroke={GOLD} strokeWidth={2.4} opacity={clamp01((p - 0.55) / 0.3)} />
+          <circle cx={640} cy={480} r={33} fill="none" stroke={GOLD} strokeWidth={1} opacity={clamp01((p - 0.6) / 0.3) * 0.6} />
+        </g>
+      </svg>
+    );
+  }
+  if (ill === "three_rings") {
+    return (
+      <svg viewBox="0 0 1080 760" width={1080} height={760} style={{ position: "absolute", top: 300 }}>
+        {[0, 1, 2].map((k) => {
+          const a = lit(k, 3);
           return (
-            <div
-              key={i}
-              style={{
-                height: heights[i],
-                lineHeight: `${heights[i]}px`,
-                textAlign: "center",
-                color: line.gold ? GOLD : WHITE,
-                fontSize: line.size,
-                fontFamily: "NotoSansSC",
-                letterSpacing: line.size < 60 ? 2 : 0,
-                opacity: inP,
-                transform: `translateY(${16 * (1 - inP)}px)`,
-                textShadow: line.gold ? "0 0 26px rgba(216,178,74,0.35)" : "0 2px 18px rgba(0,0,0,0.55)",
-              }}
-            >
-              {line.text}
-            </div>
+            <g key={k}>
+              <circle cx={cx} cy={cy} r={110 + k * 95} fill="none" stroke={GOLD} strokeWidth={2.2} opacity={0.12 + 0.55 * a} />
+              <circle cx={cx} cy={cy} r={110 + k * 95} fill="none" stroke={GOLD} strokeWidth={7} opacity={0.06 * a} />
+              {node(cx + (110 + k * 95) * Math.cos(-Math.PI / 2 + k * 0.9), cy + (110 + k * 95) * Math.sin(-Math.PI / 2 + k * 0.9), a, 7)}
+            </g>
           );
         })}
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-/** 吸入口：抵达圆心后，金环塌缩 + 一颗光点绕旋进中心 */
-const SuckRing: React.FC<{ scene: Scene; f: number }> = ({ scene, f }) => {
-  if (!scene.lines) return null;
-  const local = f - scene.start;
-  const s = arriveAt(scene.dur);
-  if (local < s) return null;
-  const t = clamp01((local - s) / (scene.dur - s));
-  const r = 320 - 296 * Easing.in(Easing.cubic)(t);
-  const o = 0.62 * Math.pow(1 - t, 0.7);
-  const a = -Math.PI / 2 - (Math.PI * 4) * t; // 四圈半的旋进
-  const dotX = 540 + Math.cos(a) * r;
-  const dotY = 420 + Math.sin(a) * r;
-  return (
-    <AbsoluteFill style={{ top: 90, height: 880 }}>
-      <svg viewBox="0 0 1080 880" width={WIDTH} height={880}>
-        <circle cx={540} cy={420} r={r} fill="none" stroke={GOLD} strokeWidth={2.6} opacity={o} />
-        <circle cx={540} cy={420} r={r * 0.82} fill="none" stroke="#F4DE9A" strokeWidth={1.1} opacity={o * 0.7} />
-        <circle cx={dotX} cy={dotY} r={5.5} fill="#F4DE9A" opacity={o * 1.2} />
       </svg>
-    </AbsoluteFill>
+    );
+  }
+  if (ill === "lattice") {
+    return (
+      <svg viewBox="0 0 1080 760" width={1080} height={760} style={{ position: "absolute", top: 300 }}>
+        {Array.from({ length: 18 }, (_, i) => {
+          const col = i % 6, row = Math.floor(i / 6);
+          const a = lit(i, 18);
+          return (
+            <g key={i}>
+              <rect x={300 + col * 82} y={220 + row * 105} width={54} height={54} rx={8} fill="#12131A" stroke={GOLD_DIM} strokeWidth={1} opacity={0.25 + 0.55 * a} />
+              <circle cx={327 + col * 82} cy={247 + row * 105} r={4} fill={GOLD} opacity={0.2 + 0.7 * a} />
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+  if (ill === "four_nodes") {
+    const labels = ["留痕", "确权", "守界", "复用"];
+    return (
+      <svg viewBox="0 0 1080 760" width={1080} height={760} style={{ position: "absolute", top: 300 }}>
+        {[0, 1, 2, 3].map((k) => {
+          const ang = -Math.PI / 2 + (k * Math.PI) / 2;
+          const x = cx + 225 * Math.cos(ang), y = cy + 225 * Math.sin(ang);
+          const a = lit(k, 4);
+          return (
+            <g key={k}>
+              <line x1={cx} y1={cy} x2={x} y2={y} stroke={GOLD_DIM} strokeWidth={1} opacity={0.1 + 0.4 * a} />
+              {node(x, y, a, 10)}
+              <text x={x} y={y + (k === 2 ? 58 : -44)} textAnchor="middle" fontFamily="NotoSansSC" fontSize={27} fill={WHITE} opacity={0.25 + 0.7 * a}>
+                {labels[k]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+  // collapse
+  return (
+    <svg viewBox="0 0 1080 760" width={1080} height={760} style={{ position: "absolute", top: 300 }}>
+      {[0, 1, 2, 3, 4].map((k) => {
+        const r = (460 - k * 70) * (1 - 0.34 * p) + 14;
+        return <circle key={k} cx={cx} cy={cy} r={Math.max(10, r)} fill="none" stroke={GOLD} strokeWidth={1.2} opacity={0.1 + 0.4 * (1 - p) + k * 0.03} />;
+      })}
+      <circle cx={cx} cy={cy} r={8 + 5 * p} fill={GOLD} />
+    </svg>
   );
 };
 
 export const Video: React.FC = () => {
   useEmbeddedFont();
   const f = useCurrentFrame();
+  const t = f / FPS;
 
-  const idx = sceneAt(f);
-  const cur = SCENES[idx];
-  const prev = idx > 0 ? SCENES[idx - 1] : null;
-  const local = f - cur.start;
-  const XF = 6;
-  const fadeIn = clamp01(local / XF);
-  const prevOpacity = prev && local < XF ? 1 - fadeIn : 0;
+  // 当前句 / 当前章
+  const seg: Seg | undefined = SEGMENTS.find((s) => t >= s.start && t < s.end);
+  const lastEnd = SEGMENTS[SEGMENTS.length - 1].end;
+  const isOutro = t >= lastEnd;
+  const activeSeg = seg ?? SEGMENTS.find((s) => t >= s.end) ?? SEGMENTS[0];
+  const chapter: Chapter = CHAPTERS.find((c) => t >= c.start && t <= c.end + 0.5) ?? CHAPTERS[CHAPTERS.length - 1];
+  const chapterP = clamp01((t - chapter.start) / Math.max(0.001, chapter.end - chapter.start));
+  const pulse = seg ? clamp01(1 - (t - seg.start) / 0.5) : 0;
+
+  // 字幕淡入淡出（0.3s）
+  const segOpacity = seg
+    ? interpolate(t, [seg.start, seg.start + 0.3, seg.end - 0.28, seg.end], [0, 1, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+    : 0;
+  const lines = splitLines(activeSeg.text);
+  const maxLen = Math.max(...lines.map((l) => l.length));
+  const fontSize = Math.min(78, Math.floor(880 / Math.max(1, maxLen)));
+  const highs = HIGHLIGHTS[activeSeg.index] ?? [];
+  const introFade = interpolate(t, [0, 0.9], [0, 1], { extrapolateRight: "clamp" });
+  const outroFade = interpolate(t, [lastEnd, lastEnd + 0.7], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#08080A" }}>
-      <Backdrop f={f} />
+    <AbsoluteFill style={{ backgroundColor: "#0A0A0D", fontFamily: "NotoSansSC, sans-serif" }}>
+      <Audio src={staticFile("ep2-mix.wav")} />
+      <Backdrop f={f} t={t} />
+      <Rings t={t} chapter={chapter} chapterP={chapterP} />
+      <ChapterGeometry ill={chapter.ill} p={chapterP} pulse={pulse} />
 
-      {prev && <SceneLayer scene={prev} f={f} opacity={prevOpacity} />}
-      <SceneLayer scene={cur} f={f} opacity={local < XF ? fadeIn : 1} />
+      {/* 章节标题 */}
+      <div style={{ position: "absolute", top: 150, width: WIDTH, textAlign: "center", opacity: introFade * 0.9 }}>
+        <div style={{ fontSize: 26, letterSpacing: 8, color: GOLD, opacity: 0.75 }}>
+          {String(chapter.index + 1).padStart(2, "0")} / {chapter.title}
+        </div>
+        <div style={{ margin: "18px auto 0", width: 64, height: 1, background: GOLD_DIM, opacity: 0.55 }} />
+      </div>
 
-      <Dust f={f} />
-      <BeatRing f={f} />
+      {/* 逐句字幕 */}
+      {!isOutro && (
+        <AbsoluteFill style={{ top: 1150, height: 340, justifyContent: "center", alignItems: "center", opacity: segOpacity }}>
+          <div style={{ width: 940, textAlign: "center", lineHeight: 1.42 }}>
+            {lines.map((ln, i) => (
+              <div key={i} style={{ fontSize, fontWeight: 400, letterSpacing: 2, whiteSpace: "nowrap" }}>
+                <ColoredLine text={ln} highs={highs} />
+              </div>
+            ))}
+          </div>
+        </AbsoluteFill>
+      )}
 
-      <Subtitles scene={cur} f={f} />
-      <SuckRing scene={cur} f={f} />
+      {/* 句进度点：12 个点，当前句点亮 */}
+      <div style={{ position: "absolute", top: 1535, width: WIDTH, display: "flex", justifyContent: "center", gap: 14, opacity: introFade }}>
+        {SEGMENTS.map((s) => {
+          const on = seg && s.index === seg.index;
+          const done = t > s.end;
+          return (
+            <div key={s.index} style={{ width: on ? 22 : 7, height: 7, borderRadius: 4, backgroundColor: on ? GOLD : WHITE, opacity: on ? 0.95 : done ? 0.3 : 0.14, transition: "none" }} />
+          );
+        })}
+      </div>
 
-      {/* 底部压暗：把抖音评论区/按钮区让出来 */}
-      <AbsoluteFill
-        style={{
-          top: 1560,
-          height: HEIGHT - 1560,
-          background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.62) 70%, rgba(0,0,0,0.78) 100%)",
-        }}
-      />
-      {/* 顶部细压暗 */}
-      <AbsoluteFill
-        style={{
-          height: 120,
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.45), rgba(0,0,0,0))",
-        }}
-      />
+      {/* 角标 */}
+      {!isOutro && (
+        <div style={{ position: "absolute", top: 1700, width: WIDTH, textAlign: "center", opacity: introFade * 0.62 }}>
+          <div style={{ fontSize: 24, color: DIM, letterSpacing: 1, padding: "0 90px", lineHeight: 1.5 }}>
+            {FOOTNOTES[chapter.index]}
+          </div>
+        </div>
+      )}
 
-      {/* 颗粒：让深色渐变不再出现色带 */}
-      <Img
-        src={staticFile("grain.png")}
-        style={{
-          position: "absolute",
-          width: WIDTH,
-          height: HEIGHT,
-          objectFit: "cover",
-          opacity: 0.10,
-          mixBlendMode: "overlay",
-        }}
-      />
-
-      <Audio
-        src={staticFile("bgm_cut.wav")}
-        volume={(fr) => {
-          const fin = interpolate(fr, [0, 1.5 * FPS], [0, 1], { extrapolateRight: "clamp" });
-          const fout = interpolate(fr, [TOTAL_FRAMES - 4 * FPS, TOTAL_FRAMES], [1, 0], { extrapolateLeft: "clamp" });
-          return Math.min(fin, fout);
-        }}
-      />
+      {/* 片尾落版 */}
+      {isOutro && (
+        <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", opacity: outroFade }}>
+          <div style={{ fontSize: 62, letterSpacing: 18, color: WHITE }}>同 心 圆</div>
+          <div style={{ marginTop: 34, fontSize: 28, letterSpacing: 4, color: GOLD, opacity: 0.85 }}>模型学得会知识 · 学不走署名</div>
+          <div style={{ marginTop: 70, fontSize: 21, color: DIM, opacity: 0.7 }}>事实依据：国家数据局公开文件，2026.11</div>
+          <div style={{ marginTop: 14, fontSize: 19, color: DIM, opacity: 0.55 }}>不承诺收益 · 不构成投资或法律意见</div>
+        </AbsoluteFill>
+      )}
     </AbsoluteFill>
   );
 };
-
-function clamp01(v: number) {
-  return Math.max(0, Math.min(1, v));
-}
