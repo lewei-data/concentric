@@ -198,7 +198,7 @@ def main():
         selected = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "topic.select"
             and e.get("traceId") == trace for e in evs), 900)
-        record("CCO 12 选 9（每项目 3 条）", selected, f"{round(time.time() - t0, 2)}s")
+        record("CCO 9 选 6（每项目 2 条）", selected, f"{round(time.time() - t0, 2)}s")
         decided = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "decision"
             and e.get("traceId") == trace for e in evs), 900)
@@ -212,7 +212,7 @@ def main():
         record("CCO 选题（topic.select）", "topic.select" in types)
         topic_sel = next((m for m in msgs if m["type"] == "topic.select"), {})
         elim = (topic_sel.get("payload") or {}).get("eliminated") or []
-        record("CCO 淘汰记录 ≥ 3 条（每项目 ≥1）", len(elim) >= 3, f"eliminated={len(elim)}")
+        record("CCO 未入选记录 ≥ 3 条", len(elim) >= 3, f"eliminated={len(elim)}")
         record("决议（decision）", "decision" in types)
         decision = next((m for m in msgs if m["type"] == "decision"), {})
         final = (decision.get("payload") or {}).get("final") or {}
