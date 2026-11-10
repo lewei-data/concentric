@@ -184,6 +184,13 @@ const CharacterScene: React.FC<{ c: Character; index: number; total: number }> =
   const progress = interpolate(frame, [0, CHAR_FRAMES - OVERLAP], [0, 1], {
     extrapolateRight: "clamp",
   });
+  // 文字比画面更早退场，避免转场重叠时出现"上一张脸配下一个名字"
+  const textFade = interpolate(
+    frame,
+    [0, 16, CHAR_FRAMES - 56, CHAR_FRAMES - 30],
+    [0, 1, 1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
 
   return (
     <AbsoluteFill style={{ opacity, fontFamily: "NotoSansSC, sans-serif" }}>
@@ -201,7 +208,7 @@ const CharacterScene: React.FC<{ c: Character; index: number; total: number }> =
             fontSize: 24,
             letterSpacing: 10,
             color: GOLD,
-            opacity: 0.8 * enter,
+            opacity: 0.8 * enter * textFade,
             transform: `translateY(${(1 - enter) * 18}px)`,
           }}
         >
@@ -222,7 +229,7 @@ const CharacterScene: React.FC<{ c: Character; index: number; total: number }> =
             fontSize: 76,
             letterSpacing: 6,
             color: WHITE,
-            opacity: enter2,
+            opacity: enter2 * textFade,
             transform: `translateY(${(1 - enter2) * 24}px)`,
           }}
         >
@@ -234,7 +241,7 @@ const CharacterScene: React.FC<{ c: Character; index: number; total: number }> =
             display: "flex",
             alignItems: "center",
             gap: 14,
-            opacity: enter2,
+            opacity: enter2 * textFade,
           }}
         >
           <div style={{ width: 42, height: 1, backgroundColor: c.accent, opacity: 0.7 }} />
@@ -250,7 +257,7 @@ const CharacterScene: React.FC<{ c: Character; index: number; total: number }> =
             letterSpacing: 1,
             color: DIM,
             textAlign: "center",
-            opacity: lineIn,
+            opacity: lineIn * textFade,
             transform: `translateY(${(1 - lineIn) * 20}px)`,
           }}
         >
@@ -265,7 +272,7 @@ const CharacterScene: React.FC<{ c: Character; index: number; total: number }> =
           display: "flex",
           justifyContent: "center",
           gap: 12,
-          opacity: 0.9 * enter,
+          opacity: 0.9 * enter * textFade,
         }}
       >
         {Array.from({ length: total }).map((_, i) => (
