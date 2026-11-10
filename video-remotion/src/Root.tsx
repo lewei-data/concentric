@@ -17,7 +17,7 @@ export const RemotionRoot: React.FC = () => {
         width={WIDTH}
         height={HEIGHT}
       />
-      {/* 第三支《重复的事，交给分身》—— 无旁白字幕卡样片，50s／30fps */}
+      {/* 第三支《重复的事，交给分身》—— 口播版，50s／30fps */}
       <Composition
         id="TongxinyuanEp3"
         component={Ep3}

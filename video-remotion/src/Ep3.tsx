@@ -21,7 +21,8 @@ import {
   WIDTH3,
 } from "./ep3Timeline";
 
-/* 同心圆 · 第三支《重复的事，交给分身》—— 无旁白字幕卡样片（TTS 音色未签发）
+/* 同心圆 · 第三支《重复的事，交给分身》—— 口播版 v1（female-zh-short，逐句字幕）
+ * 2026-11-10：在已签发 50s 无旁白样片基础上补入口播与 BGM ducking，画面结构不变。
  * 视觉按 CCO 沈青禾 2026-11-10 签发：黑金＋暖灰。
  *   暖灰只做承载层（纸面／方格墙），黑金只做结论层（金句卡、黑场、收口）。
  *   同一帧不同时出现金色花字与暖灰大字卡 —— 纸面镜字幕用近黑，结论镜字幕用金。
@@ -428,7 +429,7 @@ export const Ep3: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: PAPER, fontFamily: "NotoSansSC, sans-serif" }}>
-      <Audio src={staticFile("ep3-bed.wav")} />
+      <Audio src={staticFile("ep3-mix.wav")} />
       {!isBlack && (
         <>
           {shot.id === "S1" && <Shot1 t={t} />}
