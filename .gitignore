@@ -23,3 +23,34 @@ android/signing/*.jks
 android/signing/*.keystore
 # 交付二进制（APK）走 Releases / 服务器留存，不入 git 历史
 android/dist/*.apk
+
+# ---- 运行时产物 / 缓存（本机生成，可重建）----
+.cache/
+*.pack
+video-remotion/out/
+android/dist/
+prototype/assets/live/
+
+# ---- 备份包 / 探测残留 ----
+*.tar.gz
+prototype/assets/_probe.*
+
+# ---- 媒体二进制（本机保留，不入库）----
+# 运行时静态媒体：头像、肖像、开场、素材、字体
+prototype/assets/motion/
+prototype/assets/videos/
+prototype/assets/avatars/
+prototype/assets/portraits/
+prototype/assets/intro/
+prototype/assets/fonts/
+prototype/assets/faces/
+video-remotion/public/
+# 成片与预览
+preview/
+*.mp4
+*.wav
+*.otf
+*.jpg
+*.png
+# 例外：Android 启动图标必须入库，否则 Gradle 打包失败
+!android/app/src/main/res/mipmap-*/ic_launcher*.png
