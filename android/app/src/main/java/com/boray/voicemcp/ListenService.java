@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.IBinder;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -113,7 +114,7 @@ public class ListenService extends Service {
         nm = getSystemService(NotificationManager.class);
         PushProcessor.ensureChannels(this);
         player = new VoicePlayer(getApplicationContext());
-        pool = Executors.newFixedThreadPool(3);
+        pool = Executors.newFixedThreadPool(4);   // 任务轮询 / SSE / 邮件 / 待发指令重试
         // 开机自启场景也保证 18 人档案是最新的（缓存 6 小时，离线用本地缓存）
         EmployeeStore.syncIfStale(this);
     }
@@ -148,6 +149,7 @@ public class ListenService extends Service {
             pool.execute(this::jobLoop);
             pool.execute(this::sseLoop);
             pool.execute(this::mailLoop);
+            pool.execute(this::outboxLoop);
         }
         notifyPending();
         return START_STICKY;
@@ -203,6 +205,7 @@ public class ListenService extends Service {
                             || core.contains("执行失败") || (probe.isError && !terminalError)) {
                         removeJob(jobId);
                         failures.remove(jobId);
+                        VoiceOutbox.doneByJob(this, jobId);
                         McpResult expired = ResultParser.fromText(this,
                                 "任务结果已过期或不存在：" + shortJob(jobId) + "，请重新发送语音指令",
                                 "voice", jobId);
@@ -222,6 +225,7 @@ public class ListenService extends Service {
                         r.jobId = jobId;
                         r.messageId = jobId;
                         removeJob(jobId);
+                        VoiceOutbox.doneByJob(this, jobId);
                         // v2.1.0：status=error 带 error 字段，提示重试而不是把错误 JSON 当正文播报
                         if ("error".equals(st) || "failed".equals(st) || r.isError) {
                             String msg = r.errorText.isEmpty() ? r.bestText() : r.errorText;
@@ -272,6 +276,29 @@ public class ListenService extends Service {
 
     private static String shortJob(String id) {
         return id.length() > 14 ? id.substring(0, 14) + "…" : id;
+    }
+
+    /* ===== 1b. 未发出去的语音指令：落盘重发 ===== */
+
+    /**
+     * 录音在 MainActivity / 实时通话里已经落盘（VoiceOutbox），这里只负责把「还没被服务端
+     * 确认接收」的条目重发出去。没有待发条目时不发请求、只低频检查，不做无意义轮询。
+     */
+    private void outboxLoop() {
+        while (running) {
+            int pending = 0;
+            try {
+                pending = VoiceOutbox.pendingCount(this);
+                if (pending > 0) {
+                    VoiceOutbox.flush(this, McpConfig.load(this));
+                    updateNotification(pending > 1
+                            ? "有 " + pending + " 条语音指令待送达，正在重发" : "正在重发语音指令");
+                }
+            } catch (Exception e) {
+                Log.w("ListenService", "outbox 重发失败", e);
+            }
+            sleep(pending > 0 ? 15000 : 60000);
+        }
     }
 
     /* ===== 2. SSE 服务端推送 ===== */
@@ -460,7 +487,15 @@ public class ListenService extends Service {
 
     private void notifyPending() {
         int n = jobs(this).size();
-        updateNotification(n == 0 ? "正在监听语音任务与服务端消息" : "正在处理 " + n + " 个语音任务");
+        int pendingOut = VoiceOutbox.pendingCount(this);
+        if (n == 0 && pendingOut == 0) {
+            updateNotification("正在监听语音任务与服务端消息");
+        } else if (n == 0) {
+            updateNotification("有 " + pendingOut + " 条语音指令待送达");
+        } else {
+            updateNotification("正在处理 " + n + " 个语音任务"
+                    + (pendingOut > 0 ? " · " + pendingOut + " 条待送达" : ""));
+        }
     }
 
     private Notification buildNotification(String text) {

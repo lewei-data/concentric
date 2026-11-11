@@ -20,7 +20,7 @@ import android.os.Build;
  */
 public final class McpConfig {
 
-    public static final String CLIENT_VERSION = "0.11.2";
+    public static final String CLIENT_VERSION = "0.11.3";
 
     public static final String DEFAULT_URL = "https://ai.boraydata.com/conring/asr/mcp";
     public static final String TTS_URL = "https://ai.boraydata.com/conring/tts/mcp";

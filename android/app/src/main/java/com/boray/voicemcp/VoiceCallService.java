@@ -21,6 +21,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -337,7 +339,10 @@ public class VoiceCallService extends Service {
     private String streamUrl = "";
     private final AtomicBoolean stopSent = new AtomicBoolean(false);
     private Thread sender;
-    private final LinkedBlockingQueue<Utterance> utterances = new LinkedBlockingQueue<>(6);
+    /** 最近一句上行音频：WS 发送失败（通道挂了）时用它落盘重发，避免指令丢失 */
+    private volatile byte[] lastUtteranceWav;
+    // 不设上限：老板连着说几句也不能因为队列满就丢（VAAD 切句后每句都要送到）
+    private final LinkedBlockingQueue<Utterance> utterances = new LinkedBlockingQueue<>();
 
     /** 一句话 + 它对应的「我」那一行占位（抢占位就能立刻看到自己说了话） */
     private static final class Utterance {
@@ -639,6 +644,10 @@ public class VoiceCallService extends Service {
     private final RealtimeChannel.Listener wsListener = new RealtimeChannel.Listener() {
         @Override
         public void onStatus(String text) {
+            // 上行失败时通道已不可用：这句音频转存待发队列，由 voice_chat 补发
+            if (text != null && (text.contains("没发出去") || text.contains("上行发送失败"))) {
+                keepForRetry(lastUtteranceWav, null, "上行中断");
+            }
             ui.post(() -> {
                 subtitle = text;
                 statusText = text;
@@ -905,10 +914,9 @@ public class VoiceCallService extends Service {
                     if (!active || durationMs < 350) return;
                     // 先落一行「我」：说完立刻可见，文字等 ASR 回来再原地补上
                     Line mine = addPendingLine(true);
-                    boolean queued = utterances.offer(new Utterance(wav, mine));
-                    if (!queued) setLine(mine, "（排队已满，这句没发出去）", false);
-                    subtitle = queued ? "听到一句 " + String.format(Locale.CHINA, "%.1fs",
-                            durationMs / 1000.0) + "，正在发送…" : "上一句还在处理，稍等";
+                    utterances.offer(new Utterance(wav, mine));
+                    subtitle = "听到一句 " + String.format(Locale.CHINA, "%.1fs",
+                            durationMs / 1000.0) + "，正在发送…";
                 }
 
                 @Override
@@ -954,17 +962,47 @@ public class VoiceCallService extends Service {
         sender.start();
     }
 
+    /**
+     * 实时通道送不出去的那一句，转存到持久化待发队列（VoiceOutbox），由后台按 voice_chat
+     * 重发。老板的每条指令都必须落地，这里宁可重复报「已存本地」也不静默丢弃。
+     */
+    private void keepForRetry(byte[] wav, Line mine, String why) {
+        if (wav == null || wav.length < 2000) return;
+        lastUtteranceWav = null;                     // 同一句只存一次
+        try {
+            File tmp = new File(getCacheDir(), "retry_" + System.currentTimeMillis() + ".wav");
+            FileOutputStream out = new FileOutputStream(tmp);
+            try {
+                out.write(wav);
+                out.flush();
+            } finally {
+                out.close();
+            }
+            String profile = emp == null ? Briefing.SECRETARY_ID : emp.id;
+            VoiceOutbox.enqueue(this, tmp, profile, profile);
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            ListenService.start(this);
+            if (mine != null) {
+                ui.post(() -> setLine(mine, "（" + why + "，已存本地，联网后自动重发）", false));
+            }
+        } catch (Exception e) {
+            Log.w("VoiceCallService", "指令转存失败：" + e.getMessage());
+        }
+    }
+
     private void sendUtterance(Utterance u) {
         Line mine = u.mine;
         byte[] wav = u.wav;
+        lastUtteranceWav = wav;
         if ("ws".equals(transport)) {
             // WS 链路：服务端自己做 ASR 并回 transcript，不用再并行调一次 ASR
             Line prev = pendingMine;
             if (prev != null && prev.pending) setLine(prev, "（没听清）", false);
             pendingMine = mine;
             RealtimeChannel ch = channel;
-            if (ch == null) {
-                setLine(mine, "（通道未就绪，这句没发出去）", false);
+            if (ch == null || !ch.isReady()) {
+                keepForRetry(wav, mine, "通道未就绪");
                 return;
             }
             subtitle = "已发送，等回应…";
@@ -986,10 +1024,8 @@ public class VoiceCallService extends Service {
             });
             String result = DispatchApi.ask(this, profile, "voice", heard, 180_000);
             if (result.isEmpty()) {
-                ui.post(() -> {
-                    setLine(mine, mine.text.isEmpty() ? "（没进后台）" : mine.text, false);
-                    subtitle = "调度中心没返回结果，这句指令大概率没进后台";
-                });
+                // 调度中心没接住：这句指令转存待发队列，由 voice_chat 重发，不丢
+                keepForRetry(wav, mine, "后台没接住");
                 return;
             }
             ui.post(() -> {

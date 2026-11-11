@@ -761,15 +761,33 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // 先落盘再发网络：断网/超时/进程被杀，这条指令仍在待发队列里，不会丢
+        final VoiceOutbox.Item queued = snapshot.demo ? null : VoiceOutbox.enqueue(this, wav,
+                snapshot.profile, snapshot.avatarId.isEmpty() ? currentEmployeeId() : snapshot.avatarId);
+        final String clientId = queued == null ? "" : queued.id;
+        if (queued != null) ListenService.start(this);
+
         busy = true;
         btnRecord.setEnabled(false);
         progressRing.setVisibility(View.VISIBLE);
         tvRecordHint.setText("发送中…");
-        setStatus("已发送，等待服务端回执…");
+        setStatus(VoiceOutbox.pendingCount(this) > 1
+                ? "已入库，正在发送（另有 " + (VoiceOutbox.pendingCount(this) - 1) + " 条待发）"
+                : "已入库，正在发送…");
         tvResult.setText("请求中，请稍候…");
 
         executor.execute(() -> {
-            McpResult result = doRequest(snapshot, audioBase64);
+            McpResult result = doRequest(snapshot, audioBase64, clientId);
+            if (clientId.isEmpty()) {
+                // 落盘失败（极少数存储异常）：保持原行为，至少当场提示
+            } else if (result.isError || result.status.startsWith("error")) {
+                VoiceOutbox.fail(this, clientId, result.errorText.isEmpty()
+                        ? result.bestText() : result.errorText);
+            } else if (!result.jobId.isEmpty()) {
+                VoiceOutbox.markSent(this, clientId, result.jobId);
+            } else {
+                VoiceOutbox.done(this, clientId);   // 同步模式已拿到最终结果，无需留存
+            }
             ui.post(() -> {
                 busy = false;
                 btnRecord.setEnabled(true);
@@ -780,7 +798,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private McpResult doRequest(McpConfig config, String audioBase64) {
+    private McpResult doRequest(McpConfig config, String audioBase64, String clientId) {
         try {
             if (config.demo) {
                 return ResultParser.parse(this, demoResult());
@@ -792,6 +810,8 @@ public class MainActivity extends Activity {
             }
             JSONObject args = new JSONObject();
             args.put(config.audioKey, audioBase64);
+            // 幂等键：同一条录音重发时服务端认这个 id，不会重复执行
+            if (clientId != null && !clientId.isEmpty()) args.put("client_id", clientId);
             args.put("language", config.language);
             args.put("model", config.model);
             // v2.1.0：音色与人设交给服务端按员工档案 / 语音点名决定，只有显式覆盖才传
@@ -841,9 +861,17 @@ public class MainActivity extends Activity {
             if (cfg.autoPlay) playAck(result);
             refreshListenState();
         } else {
-            setStatus(result.isError ? "服务端返回了错误" : "完成");
+            int pending = VoiceOutbox.pendingCount(this);
+            if (result.isError) {
+                setStatus(pending > 0
+                        ? "没送出去，已存本地，" + pending + " 条待发，恢复网络后自动重发"
+                        : "服务端返回了错误");
+            } else {
+                setStatus("完成");
+            }
             if (cfg.autoPlay) playResult(result);
         }
+        refreshListenState();
     }
 
     /**
