@@ -5,3 +5,5 @@ logs/
 *.pid
 .DS_Store
 .env
+.remotion/
+video-remotion/node_modules/
