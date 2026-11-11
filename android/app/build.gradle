@@ -1,0 +1,131 @@
+plugins {
+    id 'com.android.application'
+}
+
+import java.util.Properties
+
+// ---------------------------------------------------------------------------
+// 版本号：唯一来源。APK 文件名、dist 交付物、README 都引用这里的值。
+// 升级版本只改这两行即可，无需改动任何脚本或 CI。
+// ---------------------------------------------------------------------------
+def appVersionName = "0.11.2"
+def appVersionCode = 39
+def apkPrefix = "voice-mcp-v${appVersionName}-b${appVersionCode}"
+
+// release 签名（供内部自测安装）：
+//  1) 若工程根存在 keystore.properties，用其中的正式证书；
+//  2) 否则回退到 Android 默认 debug 证书，保证 release 也是「已签名、可安装」的 APK。
+// keystore.properties 不入库，格式见 keystore.properties.example。
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+def hasReleaseKeystore = keystoreProps.getProperty("storeFile") != null
+def fallbackKeystore = new File(System.getProperty("user.home"), ".android/debug.keystore")
+
+android {
+    namespace 'com.boray.voicemcp'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.boray.voicemcp"
+        minSdk 26
+        targetSdk 35
+        versionCode appVersionCode
+        versionName appVersionName
+        // 把版本写进资源，App 端以后可直接读取，避免版本号分散维护
+        resValue "string", "build_version_name", appVersionName
+        resValue "string", "build_version_code", String.valueOf(appVersionCode)
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseKeystore) {
+                storeFile rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword keystoreProps.getProperty("storePassword")
+                keyAlias keystoreProps.getProperty("keyAlias")
+                keyPassword keystoreProps.getProperty("keyPassword")
+            } else {
+                storeFile fallbackKeystore
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // debug 与 release 共用同一 applicationId，便于直接覆盖安装对比
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    // 输出文件名带版本号与构建号，例如 voice-mcp-v0.3.2-b5-release.apk
+    applicationVariants.configureEach { variant ->
+        def type = variant.buildType.name
+        variant.outputs.configureEach { output ->
+            output.outputFileName = "${apkPrefix}-${type}.apk"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// 纯 Android framework + org.json 实现，零第三方依赖，避免 AndroidX / 额外 Maven 依赖
+dependencies {
+}
+
+// 版本号防漏：MCP clientInfo.version 必须与 APK 文件名 / defaultConfig 一致
+tasks.register('verifyVersionSync') {
+    group = 'verification'
+    description = 'Ensure McpConfig.CLIENT_VERSION matches appVersionName'
+    doLast {
+        File cfg = file('src/main/java/com/boray/voicemcp/McpConfig.java')
+        def matcher = (cfg.getText('UTF-8') =~ /CLIENT_VERSION\s*=\s*"([^"]+)"/)
+        if (!matcher.find()) {
+            throw new GradleException('McpConfig.java 中未找到 CLIENT_VERSION')
+        }
+        String actual = matcher.group(1)
+        if (actual != appVersionName) {
+            throw new GradleException("版本号不一致：build.gradle=${appVersionName}, McpConfig.CLIENT_VERSION=${actual}")
+        }
+        println "VERSION SYNC OK: ${appVersionName} (versionCode ${appVersionCode})"
+    }
+}
+
+// 一键出包：构建 debug + release，并把带版本号的 APK 收集到 dist/
+tasks.register('collectApks') {
+    group = 'build'
+    description = "Build debug + release APKs and copy them into dist/ (${apkPrefix}-*.apk)"
+    dependsOn 'verifyVersionSync', 'assembleDebug', 'assembleRelease'
+    doLast {
+        File dist = new File(rootProject.projectDir, 'dist')
+        dist.mkdirs()
+        int copied = 0
+        ['debug', 'release'].each { type ->
+            File dir = new File(buildDir, "outputs/apk/${type}")
+            dir.listFiles()?.findAll { it.isFile() && it.name.endsWith('.apk') }?.each { apk ->
+                copy {
+                    from apk
+                    into dist
+                }
+                println "  APK -> dist/${apk.name} (${apk.length()} bytes)"
+                copied++
+            }
+        }
+        if (copied != 2) {
+            throw new GradleException("Expected 2 APKs in dist/, got ${copied}")
+        }
+        println "DONE: ${copied} APKs, release signing = " +
+                (hasReleaseKeystore ? "keystore.properties" : "Android debug keystore (self-test only)")
+    }
+}

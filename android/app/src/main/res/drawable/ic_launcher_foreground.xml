@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  同心圆启动图标 · 前景层（108dp adaptive canvas，中心 54,54）
+  设计：三层同心圆环（由外到内逐层加粗、提亮）= 同心圆 / 语音波纹，
+       中心白色圆盘里的 teal 声波 = 语音指令入口，
+       右上一颗小圆点 = 在线的 Agent 节点。
+  所有图形半径 <= 33dp，落在 adaptive icon 的安全区内，不会被启动器遮罩裁掉。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 外环：最淡、最细，像最外一圈扩散出去的声波 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M23,54 a31,31 0 1,0 62,0 a31,31 0 1,0 -62,0"
+        android:strokeColor="#3DFFFFFF"
+        android:strokeWidth="2.6" />
+
+    <!-- 中环 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M30.5,54 a23.5,23.5 0 1,0 47,0 a23.5,23.5 0 1,0 -47,0"
+        android:strokeColor="#80FFFFFF"
+        android:strokeWidth="4.5" />
+
+    <!-- 内环：最亮、最粗 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M38,54 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0"
+        android:strokeColor="#E6FFFFFF"
+        android:strokeWidth="6" />
+
+    <!-- 中心核：白色实心圆 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M44.5,54 a9.5,9.5 0 1,0 19,0 a9.5,9.5 0 1,0 -19,0" />
+
+    <!-- 中心核内的声波条：呼应「语音指令」 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M50,52 L50,56 M53.2,49.4 L53.2,58.6 M56.4,51 L56.4,57 M59.6,52.8 L59.6,55.2"
+        android:strokeColor="#006C63"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.8" />
+
+    <!-- Agent 在线节点 -->
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M74,34 a2.8,2.8 0 1,0 5.6,0 a2.8,2.8 0 1,0 -5.6,0" />
+</vector>

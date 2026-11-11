@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LocalSend 风格：Material 3 + teal 种子色，浅色方案 -->
+<resources>
+    <color name="window">#F5FAF9</color>
+    <color name="card">#FFFFFF</color>
+    <color name="card_soft">#E4F4F0</color>
+    <color name="hero">#E8F5F2</color>
+    <color name="input_bg">#F0F7F5</color>
+    <color name="stroke">#DCEAE6</color>
+    <color name="divider">#E7F0ED</color>
+
+    <color name="primary">#006C63</color>
+    <color name="primary_bright">#0FA694</color>
+    <color name="primary_container">#CCEDE6</color>
+    <color name="on_primary">#FFFFFF</color>
+
+    <color name="text_primary">#11201E</color>
+    <color name="text_secondary">#5B706C</color>
+    <color name="text_hint">#93A7A3</color>
+
+    <color name="ripple">#22006C63</color>
+    <color name="ripple_on_primary">#33FFFFFF</color>
+
+    <color name="dot_ok">#12A594</color>
+    <color name="dot_busy">#E9A23B</color>
+    <color name="dot_error">#DC5B5B</color>
+
+    <color name="mic_start">#16B7A3</color>
+    <color name="mic_end">#00776C</color>
+    <color name="mic_recording">#DC5B5B</color>
+    <color name="mic_disabled">#B7CBC7</color>
+    <color name="mic_ring">#660FA694</color>
+
+    <color name="badge_bg">#DDF1EC</color>
+    <color name="switch_thumb_off">#FFFFFF</color>
+    <color name="switch_track_off">#C9DCD8</color>
+    <color name="switch_track_on">#7FD2C3</color>
+    <color name="call_red">#D93B3B</color>
+    <color name="call_red_soft">#FBE7E7</color>
+</resources>

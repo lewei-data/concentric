@@ -1,0 +1,326 @@
+{
+  "base": "https://ai.boraydata.com",
+  "endpoints": {
+    "asr": {
+      "url": "https://ai.boraydata.com/conring/asr/mcp",
+      "tools": [
+        {
+          "name": "asr_transcribe",
+          "description": "把一段语音转成文字。支持 base64 音频或服务器本地文件路径，返回文本、句级时间轴与置信度（confidence/low_confidence）。",
+          "params": [
+            "audio_base64",
+            "audio_path",
+            "language",
+            "model",
+            "initial_prompt"
+          ]
+        },
+        {
+          "name": "voice_chat",
+          "description": "接收语音指令，解析完立刻回一句「收到」（如：好的老板，马上安排 / 老板稍等），同时返回 job_id；结果稍后用 voice_job 取，或推送到 callback_url。语音里点名员工（@id/姓名/工号）时，指令直接下发给该员工，由员工处理并回复。识别置信度低（或没识别出字）时不执行指令，改由大模型按该员工的情绪回一句「没听清，请再说一遍」，状态为 need_repeat。返回 text(JSON) + audio(收到/澄清语音) 两个内容块。",
+          "params": [
+            "audio_base64",
+            "audio_path",
+            "language",
+            "model",
+            "initial_prompt",
+            "voice",
+            "profile",
+            "mode",
+            "bandwidth_kbps",
+            "avatar_id",
+            "delegate",
+            "callback_url",
+            "wait",
+            "wait_sec",
+            "include_audio",
+            "timeout_sec",
+            "emotion",
+            "clarify",
+            "clarify_timeout_sec",
+            "live_session"
+          ]
+        },
+        {
+          "name": "voice_job",
+          "description": "按 job_id 取语音指令的执行结果。wait_sec>0 可长轮询（最多 30 秒）。done 时返回简要语音（speech_text + audio）、详细文字（detail_text）、句级时间轴与数字人档案（照片/仿真人视频素材），供客户端解析 WAV 包络驱动口型。",
+          "params": [
+            "job_id",
+            "wait_sec",
+            "include_audio"
+          ]
+        },
+        {
+          "name": "profile",
+          "description": "获取员工档案：默认返回全部员工（工号/部门/岗位/口头禅/简介/技能/形象参数/照片与仿真人视频地址/音色/Hermes profile 是否就绪）。传 id 取单人，可用 dept/project 过滤。",
+          "params": [
+            "id",
+            "dept",
+            "project",
+            "include_assets"
+          ]
+        },
+        {
+          "name": "voice_avatars",
+          "description": "列出可插拔的数字人播报档案（照片 + 仿真人视频素材），按 assets 目录约定自动发现。",
+          "params": []
+        },
+        {
+          "name": "intro_video",
+          "description": "按需生成员工的自我介绍视频（画面 + 语音）：档案字段经大模型润色成 2~3 句，TTS 合成语音，再与 talk 视频（没有则用照片运镜）合成 720×960 MP4，缓存在 assets/intro/<id>.mp4。首次调用生成，之后直接复用；生成后 profile 返回 introVideo / introReady / introText / introDuration。",
+          "params": [
+            "id",
+            "all",
+            "force",
+            "wait"
+          ]
+        },
+        {
+          "name": "live_call",
+          "description": "员工档案里发起实时视频通话：服务端用 ffmpeg 把员工画面（talk 视频循环/照片）与实时写入的语音混成 HLS 直播流（1 秒分片），音视频同流复用天然同步。start 起流返回 hls_url；say 让员工说话（text 或音频）；stop 挂断并收尾；客户端用 MediaPlayer 直接播 m3u8，无需 WebRTC。",
+          "params": [
+            "action",
+            "session_id",
+            "avatar_id",
+            "text",
+            "audio_base64",
+            "audio_path",
+            "voice",
+            "emotion",
+            "first_segment_sec"
+          ]
+        }
+      ]
+    },
+    "tts": {
+      "url": "https://ai.boraydata.com/conring/tts/mcp",
+      "tools": [
+        {
+          "name": "tts_list_voices",
+          "description": "列出 MCP-TTS 可用音色（CosyVoice2 zero-shot 克隆，需参考音频）。",
+          "params": []
+        },
+        {
+          "name": "tts_synthesize",
+          "description": "把一段中英文混排文本合成为音频，输出句级 SRT 与 segments.json 时间轴；默认同时返回 base64 wav 音频内容块。",
+          "params": [
+            "text",
+            "voice",
+            "speed",
+            "out_dir",
+            "stem",
+            "return_audio"
+          ]
+        }
+      ]
+    },
+    "mail": {
+      "url": "https://ai.boraydata.com/conring/mail/ceo/mcp",
+      "tools": [
+        {
+          "name": "mail_send",
+          "description": "以本人邮箱发送内部邮件（仅限 @mail.conring.cn 域内地址）。发件人固定为本人，不可伪造；正文会自动附上姓名与岗位签名。",
+          "params": [
+            "to",
+            "subject",
+            "body",
+            "cc",
+            "auto_reply",
+            "agent"
+          ]
+        },
+        {
+          "name": "mail_list",
+          "description": "列出本人邮箱指定文件夹的邮件摘要（发件人/主题/时间/是否已读），默认 INBOX 最新 10 封，不修改任何已读状态。",
+          "params": [
+            "folder",
+            "limit",
+            "unread_only",
+            "agent"
+          ]
+        },
+        {
+          "name": "mail_read",
+          "description": "按 mail_list 返回的 uid 读取本人邮箱中一封邮件的正文、抄送与附件名，读后标记为已读。",
+          "params": [
+            "uid",
+            "folder",
+            "agent"
+          ]
+        },
+        {
+          "name": "mail_check",
+          "description": "检查本人邮箱配置与连通性：账号、SMTP/IMAP 端口、收件箱总数与未读数。",
+          "params": [
+            "agent"
+          ]
+        }
+      ]
+    }
+  },
+  "profile_top_keys": [
+    "asset_url_base",
+    "count",
+    "employees",
+    "missing_intro",
+    "missing_photo",
+    "missing_video"
+  ],
+  "profile_count": 18,
+  "asset_url_base": "/conring/asr/assets",
+  "profile_meta": {
+    "missing_photo": [],
+    "missing_video": [],
+    "missing_intro": []
+  },
+  "all_employee_field_names": [
+    "accent",
+    "age",
+    "assets",
+    "assets.face_url",
+    "assets.photo",
+    "assets.video_idle",
+    "assets.video_talk",
+    "bio",
+    "dept",
+    "emotion",
+    "gender",
+    "glasses",
+    "hair",
+    "hairStyle",
+    "has_photo",
+    "has_video",
+    "id",
+    "introDuration",
+    "introReady",
+    "introText",
+    "introVideo",
+    "liveCall",
+    "liveCall.protocol",
+    "liveCall.segment_sec",
+    "liveCall.supported",
+    "motto",
+    "name",
+    "no",
+    "photo",
+    "profile",
+    "profile_ready",
+    "project",
+    "role",
+    "shirt",
+    "skills",
+    "skin",
+    "suit",
+    "title",
+    "videoIdle",
+    "videoTalk",
+    "voice"
+  ],
+  "ceo": {
+    "id": "ceo",
+    "no": "OPC-002",
+    "name": "陆清安",
+    "dept": "公司管理层",
+    "title": "CEO",
+    "project": "全公司",
+    "role": "CEO",
+    "motto": "所有人对齐同一张作战地图。",
+    "bio": "统管三个自媒体项目的目标与节奏，负责把老板的战略拆成可执行的季度目标，并在项目之间调度资源。",
+    "skills": [
+      "经营分析",
+      "目标拆解",
+      "跨项目协同",
+      "例会主持",
+      "邮件汇报"
+    ],
+    "profile": "ceo",
+    "voice": "m08",
+    "gender": "male",
+    "age": 42,
+    "accent": "#2563EB",
+    "skin": "#EBC9A8",
+    "hair": "#1F2937",
+    "suit": "#1E3A5F",
+    "shirt": "#FFFFFF",
+    "hairStyle": "short",
+    "glasses": false,
+    "emotion": "calm",
+    "profile_ready": true,
+    "photo": "/conring/asr/assets/avatars/ceo.png",
+    "videoTalk": "/conring/asr/assets/videos/ceo.talk.mp4",
+    "videoIdle": "/conring/asr/assets/videos/ceo.idle.mp4",
+    "has_photo": true,
+    "has_video": true,
+    "assets": {
+      "photo": {
+        "path": "/home/boray/opc-workbench/prototype/assets/avatars/ceo.png",
+        "url": "/conring/asr/assets/avatars/ceo.png"
+      },
+      "face_url": "/conring/asr/assets/faces/ceo.png",
+      "video_talk": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/ceo.talk.mp4",
+        "url": "/conring/asr/assets/videos/ceo.talk.mp4"
+      },
+      "video_idle": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/ceo.idle.mp4",
+        "url": "/conring/asr/assets/videos/ceo.idle.mp4"
+      }
+    },
+    "introVideo": "/conring/asr/assets/intro/ceo.mp4",
+    "introReady": true,
+    "introText": "大家好，我是陆清安，公司管理层的CEO。我主要负责统管三个自媒体项目的目标和节奏，把老板的战略拆成能落地的季度目标，再在项目之间调度资源。一句话，所有人对齐同一张作战地图。",
+    "introDuration": 21.16,
+    "liveCall": {
+      "supported": true,
+      "protocol": "hls",
+      "segment_sec": 1.0
+    }
+  },
+  "intro_ready_ids": [
+    "boss",
+    "ceo",
+    "cco",
+    "cto",
+    "pm_wenren",
+    "pm_gou",
+    "pm_tongxinyuan",
+    "cw_wenren",
+    "cw_gou",
+    "cw_tongxinyuan",
+    "vd_wenren",
+    "vd_gou",
+    "vd_tongxinyuan",
+    "release_ops",
+    "reviewer",
+    "scout",
+    "kb_manager",
+    "manual_scout"
+  ],
+  "live_call_ids": [
+    "boss",
+    "ceo",
+    "cco",
+    "cto",
+    "pm_wenren",
+    "pm_gou",
+    "pm_tongxinyuan",
+    "cw_wenren",
+    "cw_gou",
+    "cw_tongxinyuan",
+    "vd_wenren",
+    "vd_gou",
+    "vd_tongxinyuan",
+    "release_ops",
+    "reviewer",
+    "scout",
+    "kb_manager",
+    "manual_scout"
+  ],
+  "intro_video_call": {
+    "elapsed": 0.1,
+    "text": "{\n  \"count\": 18,\n  \"dir\": \"/home/boray/opc-workbench/prototype/assets/intro\",\n  \"url_base\": \"/conring/asr/assets\",\n  \"items\": [\n    {\n      \"id\": \"boss\",\n      \"name\": \"蒿色莫\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/boss.mp4\",\n      \"text\": \"我是蒿色莫，董事长办公室的老板，负责整个公司的战略取舍和最终拍板。语音指令从我这里发出，所有员工的汇报最后也都汇总到我这里。我常讲的一句话是，先把事做对，再把事做快。\",\n      \"duration\": 21.2,\n      \"size\": 664305,\n      \"source\": \"video:boss.talk.mp4\"\n    },\n    {\n      \"id\": \"ceo\",\n      \"name\": \"陆清安\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/ceo.mp4\",\n      \"text\": \"大家好，我是陆清安，公司管理层的CEO。我主要负责统管三个自媒体项目的目标和节奏，把老板的战略拆成能落地的季度目标，再在项目之间调度资源。一句话，所有人对齐同一张作战地图。\",\n      \"duration\": 21.16,\n      \"size\": 660258,\n      \"source\": \"video:ceo.talk.mp4\"\n    },\n    {\n      \"id\": \"cco\",\n      \"name\": \"沈青禾\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/cco.mp4\",\n      \"text\": \"大家好，我是公司管理层的首席创意官沈青禾。我主要负责把关全公司三个账号的内容调性与视觉风格，制定风格指南，也负责创意评审和选题方向的最终确认。创意不是灵感，是可复用的方法。\",\n      \"duration\": 18.0,\n      \"size\": 548092,\n      \"source\": \"video:cco.talk.mp4\"\n    },\n    {\n      \"id\": \"cto\",\n      \"name\": \"扶频\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/cto.mp4\",\n      \"text\": \"大家好，我是技术中心的扶频，担任CTO。我主要管工作台、MCP工具链和部署架构，也维护自动化流水线，盯线上故障和成本护栏。我常说一句话，能自动化的事，不要用人扛。\",\n      \"duration\": 19.36,\n      \"size\": 596570,\n      \"source\": \"video:cto.talk.mp4\"\n    },\n    {\n      \"id\": \"pm_wenren\",\n      \"name\": \"贺平生\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/pm_wenren.mp4\",\n      \"text\": \"大家好，我是产品中心的产品经理贺平生，负责文人莫克账号的选题和排期。平时主要做热点研判、选题立项、需求拆解和交付验收，从头跟到尾。先想清楚给谁看，再想怎么拍。\",\n      \"duration\": 19.92,\n      \"size\": 641748,\n      \"source\": \"video:pm_wenren.talk.mp4\"\n    },\n    {\n      \"id\": \"pm_gou\",\n      \"name\": \"米珂\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/pm_gou.mp4\",\n      \"text\": \"大家好，我是产品中心的米珂，担任产品经理。在狗大人项目里，我负责选题和排期，也做栏目化设计和数据复盘，最擅长抓萌宠赛道的热点。我说一句：“宠物的内容，先让铲屎官笑出来。\",\n      \"duration\": 19.84,\n      \"size\": 631043,\n      \"source\": \"video:pm_gou.talk.mp4\"\n    },\n    {\n      \"id\": \"pm_tongxinyuan\",\n      \"name\": \"姜月初\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/pm_tongxinyuan.mp4\",\n      \"text\": \"大家好，我是产品中心的姜月初，做产品经理。我在同心圆负责选题和排期，专门把技术话题讲得大家都听得懂。把复杂的产品讲成人话，这就是我的活儿。\",\n      \"duration\": 14.84,\n      \"size\": 436944,\n      \"source\": \"video:pm_tongxinyuan.talk.mp4\"\n    },\n    {\n      \"id\": \"cw_wenren\",\n      \"name\": \"陆川\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/cw_wenren.mp4\",\n      \"text\": \"大家好，我是内容中心的文案编写陆川。平时主要写文人莫克的脚本和文案，长文案、口播稿、标题打磨都归我。一句话说不清，就是还没想清楚。\",\n      \"duration\": 16.64,\n      \"size\": 487125,\n      \"source\": \"video:cw_wenren.talk.mp4\"\n    },\n    {\n      \"id\": \"cw_gou\",\n      \"name\": \"叶秋\",\n      \"ready\": true,\n      \"cached\": true,\n      \"video\": \"/conring/asr/assets/intro/cw_gou.mp4\",\n      \"text\": \"大家"
+  },
+  "live_call_start": {
+    "text": "{\n  \"session_id\": \"lv_040fd43e\",\n  \"status\": \"live\",\n  \"avatar_id\": \"ceo\",\n  \"hls_url\": \"/conring/asr/assets/live/lv_040fd43e/index.m3u8\",\n  \"segment_sec\": 1.0,\n  \"started_at\": 1794289955.9984796,\n  \"elapsed\": 3.31,\n  \"speech_seconds\": 0.0,\n  \"segments\": 1,\n  \"sync\": \"音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳\",\n  \"ready\": true\n}"
+  }
+}

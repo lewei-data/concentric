@@ -1,0 +1,493 @@
+{
+  "version": "0.9.5",
+  "versionCode": 29,
+  "total": 94,
+  "pass": 94,
+  "fail": 0,
+  "apks": [
+    {
+      "type": "debug",
+      "file": "voice-mcp-v0.9.5-b29-debug.apk",
+      "bytes": 451179,
+      "sha256": "5723d1aff59253b596823c4004e6f4e106d0f260cdf48ed1eedad24d551d7a25"
+    },
+    {
+      "type": "release",
+      "file": "voice-mcp-v0.9.5-b29-release.apk",
+      "bytes": 410303,
+      "sha256": "0185f4a9d25a7c0ec31238ca4d232bb372586784aa7df5f6199db027312b63c5"
+    }
+  ],
+  "checks": [
+    {
+      "name": "debug 文件名带版本号 v0.9.5-b29",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 StreamContract",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 StreamPlayback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 CoverVideoView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LiveMic",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 Briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 VoiceCallService",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 VoiceLevelView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LiveLevelMeter",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 SpokenTextSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 CallTone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 ScreenOn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LipSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 Employee",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_intro_player",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_employee_detail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_progress",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_todo",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_voice_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 应用名为同心圆",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 内置版本资源 0.9.5",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 布局使用 CoverVideoView 铺满",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 intro_video",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 live_session",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 voice_job",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 first_segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 hls_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 session_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 boss_briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 secretary",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 audio",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 不含旧 call_* 契约",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "debug ZIP 完好",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 已签名",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 文件名带版本号 v0.9.5-b29",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 StreamContract",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 StreamPlayback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 CoverVideoView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LiveMic",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 Briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 VoiceCallService",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 VoiceLevelView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LiveLevelMeter",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 SpokenTextSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 CallTone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 ScreenOn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LipSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 Employee",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_intro_player",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_employee_detail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_progress",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_todo",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_voice_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 应用名为同心圆",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 内置版本资源 0.9.5",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 布局使用 CoverVideoView 铺满",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 intro_video",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 live_session",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 voice_job",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 first_segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 hls_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 session_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 boss_briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 secretary",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 audio",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 不含旧 call_* 契约",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "release ZIP 完好",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 已签名",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

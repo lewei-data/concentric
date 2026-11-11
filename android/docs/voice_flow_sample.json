@@ -1,0 +1,62 @@
+{
+  "text": "测试连接，请只回复一句话：连接正常。不要执行任何操作，不要发送邮件。",
+  "tts_result_keys": [
+    "content",
+    "isError"
+  ],
+  "tts_text": "{\n  \"audio_path\": \"/opt/sefs/mcp-tts/output/tts_1794257305.wav\",\n  \"srt_path\": \"/opt/sefs/mcp-tts/output/tts_1794257305.srt\",\n  \"segments_path\": \"/opt/sefs/mcp-tts/output/tts_1794257305.segments.json\",\n  \"sample_rate\": 24000,\n  \"duration\": 17.451,\n  \"segment_count\": 2,\n  \"synth_sec\": 30.99,\n  \"rtf\": 1.776,\n  \"model_load_sec\": 7.51,\n  \"segments\": [\n    {\n      \"index\": 0,\n      \"text\": \"测试连接，请只回复一句话：连接正常。\",\n      \"start\": 0.0,\n      \"end\": 13.511\n    },\n    {\n      \"index\": 1,\n      \"text\": \"不要执行任何操作，不要发送邮件。\",\n      \"start\": 13.631,\n      \"end\": 17.451\n    }\n  ]\n}",
+  "tts_audio_bytes": 837720,
+  "voice_chat": {
+    "content": [
+      {
+        "text": "<string len=1004> {\n  \"job_id\": \"vj_8380af_50550\",\n  \"status\": \"accepted\",\n  \"question\": \"信悅太能豪,世界...",
+        "type": "text"
+      }
+    ],
+    "isError": false
+  },
+  "job_id": "vj_8380af_50550",
+  "voice_job_polls": [
+    {
+      "elapsed_sec": 25.1,
+      "result": {
+        "content": [
+          {
+            "text": "<string len=1053> {\n  \"job_id\": \"vj_8380af_50550\",\n  \"status\": \"running\",\n  \"question\": \"信悅太能豪,世界正...",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "elapsed_sec": 25.1,
+      "result": {
+        "content": [
+          {
+            "text": "<string len=1053> {\n  \"job_id\": \"vj_8380af_50550\",\n  \"status\": \"running\",\n  \"question\": \"信悅太能豪,世界正...",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "elapsed_sec": 23.9,
+      "result": {
+        "content": [
+          {
+            "text": "<string len=2913> {\n  \"job_id\": \"vj_8380af_50550\",\n  \"status\": \"done\",\n  \"question\": \"信悅太能豪,世界正常為存...",
+            "type": "text"
+          },
+          {
+            "data": "<string len=997040> UklGRvxoCwBXQVZFZm10IBAAAAABAAEAwF0AAIC7AAACABAATElTVBoAAABJTkZPSVNGVA4AAABMYXZm...",
+            "mimeType": "audio/wav",
+            "type": "audio"
+          }
+        ],
+        "isError": false
+      }
+    }
+  ]
+}

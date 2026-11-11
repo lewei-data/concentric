@@ -1,0 +1,389 @@
+{
+  "version": "0.11.2",
+  "versionCode": 39,
+  "total": 76,
+  "pass": 76,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "库名 conring_sessions.db",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sessions 表",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "messages 表",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "按人+天+时间建索引",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "会话索引",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "只增列不重建",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "begin/finish",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "add/setText/remove",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "按天查询",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "上一日探测",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "本地日期 yyyy-MM-dd",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "今天/昨天标签",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "多面板监听（增删）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "面板 bind(empId,name)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "默认加载 today()",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "标题=员工名 / 副标题=日期+条数",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "日期分隔行",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页绑定当前汇报人",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "onResume 重新绑定",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页整页层 / 视频页底部一条",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "XML 可拖动组件",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "整页占满（MATCH_PARENT）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "不再有拖动/展开档位",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "右上角「收起」（加大的胶囊）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "头部：时长/电平/挂断/条数",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "挂断接宿主逻辑",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "三件套兜底可见",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "整页头部不误触收起",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "时长与电平每帧喂",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "返回键：整页只收起",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话中退出需确认",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "未接通不自动弹整页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页返回键：先收回再确认",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "默认是一条形态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "一条形态隐藏列表",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "折叠态显示最新一条",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "点击标题栏也能展开/收起",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "收起回调（宿主可只留内嵌条）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "内嵌模式（不拖动、只显示最新）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "右上角「打开」入口",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "最新一条取当天",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页内嵌卡 + 整页层两处",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "顶部人数副标题",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "内嵌卡绑定当前汇报人",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "打开=显示弹出层并展开",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "收起=隐藏弹出层（内嵌仍在）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "查询按 ts 正序",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "滚动监听",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "到顶加载上一日",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "加载后保持视口",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "默认贴底",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "用户不在底部时不抢滚动",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "角色/类型字段",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "服务端文本帧 onServerText",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "message/text 帧解析",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情行落库",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "服务端文本落库",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "瞬时状态不入库",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "同一条不重复插入",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页写同一张表",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页 ASR/ack/回复都记",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "URL 正则",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "可点击 Span",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "下划线+主色标记",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "只放行 http(s)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "附件胶囊（name+url）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音服务开/封会话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "定稿回调落库",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页开/封会话",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页展开整页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音接通展开整页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "接通状态行",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页布局含面板",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "版本 ≥ 0.9.9",
+      "ok": true,
+      "detail": "0.11.2"
+    },
+    {
+      "name": "versionCode ≥ 33",
+      "ok": true,
+      "detail": "39"
+    },
+    {
+      "name": "CLIENT_VERSION 同步",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

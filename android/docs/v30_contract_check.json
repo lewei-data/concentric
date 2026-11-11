@@ -1,0 +1,329 @@
+{
+  "version": "0.11.2",
+  "versionCode": 39,
+  "total": 64,
+  "pass": 64,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "公网 dispatch 地址",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "内网 HTTP 9120",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "内网 WS 9121",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "按上一次成功线路排序",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "公网失败切内网",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "任务查询 /task/",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "任务取消 /cancel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "/health 探活",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "双地址可在设置里覆盖",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "显式 channel=ws",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source=boss",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "modality 可传 voice/video",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "text 非空兜底",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "解析 channel_kind",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "realtime_url 模板替换",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "非同源/非 ws 协议拒绝",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "握手 key",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "版本 13",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "101 校验",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Accept 计算含 GUID",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "客户端帧加掩码",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "二进制帧 0x2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "自动回 pong",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "分片续帧 0x0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "wss 证书域名校验",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "SNI",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "hello 帧",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "audio_end 帧",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ping 帧",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "close 帧",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "session_started/hello_ok",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "transcript",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reply / reply_end",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "barge_in",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bye / timeout / error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "4404 视为会话结束",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "30s 内原 channel 重连",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "心跳 12s",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "上行分块 3200B/100ms",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "按 chunk 找 data（不假设 44B 头）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "多段 wav 边界识别",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首段也回调格式",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "采样率变化重配",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "AudioTrack 流式",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "打断 pause+flush",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "打断后静音闸门",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "电平用 PCM 算",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "voice_text 与 text 分离",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "text 相同则不重复展示",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "attachments 只收有 url 的",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "只允许 http(s) 打开",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "附件胶囊挂在会话行下",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话页详情+附件",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情行单独样式",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "WS 主链路",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "失败回退 HLS",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "连接中挂断不再回退",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dispatch 重试上限",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "本地抢先打断",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "挂断发 close",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "回复解除静音",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "挂断清详情",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CLIENT_VERSION 与构建版本一致",
+      "ok": true,
+      "detail": "0.11.2"
+    },
+    {
+      "name": "versionCode ≥ 30",
+      "ok": true,
+      "detail": "39"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OPC 数字员工形象照（矢量占位，可替换为真实 jpg/png） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp" android:height="300dp"
+    android:viewportWidth="240" android:viewportHeight="300">
+    <path android:fillColor="#E9EFF6" android:pathData="M0,0 H240 V300 H0 Z" />
+    <path android:fillColor="#D3E0F0" android:fillAlpha="0.55" android:pathData="M120,34 C174,34 214,76 214,128 C214,180 172,222 120,222 C68,222 26,180 26,128 C26,76 66,34 120,34 Z" />
+    <path android:fillColor="#2F4358" android:pathData="M8,300 C14,236 58,208 120,208 C182,208 226,236 232,300 Z" />
+    <path android:fillColor="#EEF4FA" android:pathData="M96,208 L120,250 L144,208 L120,228 Z" />
+    <path android:fillColor="#3B5C8C" android:pathData="M116,232 L124,232 L128,244 L120,254 L112,244 Z" />
+    <path android:fillColor="#EBC09C" android:pathData="M104,178 H136 V220 C136,228 104,228 104,220 Z" />
+    <path android:fillColor="#EBC09C" android:pathData="M64,126 C54,124 54,148 66,150 Z" />
+    <path android:fillColor="#EBC09C" android:pathData="M176,126 C186,124 186,148 174,150 Z" />
+    <path android:fillColor="#EBC09C" android:pathData="M120,66 C154,66 176,92 176,132 C176,170 152,196 120,196 C88,196 64,170 64,132 C64,92 86,66 120,66 Z" />
+    <path android:fillColor="#1F1B1A" android:pathData="M62,130 C58,88 84,54 120,54 C158,54 182,86 178,130 C172,108 160,96 140,92 C112,86 84,100 62,130 Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#1F1B1A" android:strokeWidth="5" android:strokeLineCap="round" android:pathData="M86,108 C96,104 106,104 112,108" />
+    <path android:fillColor="#00000000" android:strokeColor="#1F1B1A" android:strokeWidth="5" android:strokeLineCap="round" android:pathData="M128,108 C134,104 144,104 154,108" />
+    <path android:fillColor="#FFFFFF" android:pathData="M86,124 C94,118 106,118 112,124 C106,132 94,132 86,124 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M128,124 C134,118 146,118 154,124 C146,132 134,132 128,124 Z" />
+    <path android:fillColor="#2B3330" android:pathData="M95,124 A5,5 0 1,0 103,124 A5,5 0 1,0 95,124 Z" />
+    <path android:fillColor="#2B3330" android:pathData="M137,124 A5,5 0 1,0 145,124 A5,5 0 1,0 137,124 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M96,121 A1.6,1.6 0 1,0 99,121 A1.6,1.6 0 1,0 96,121 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M138,121 A1.6,1.6 0 1,0 141,121 A1.6,1.6 0 1,0 138,121 Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#C98F70" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M118,134 L116,150 L123,150" />
+    <path android:fillColor="#00000000" android:strokeColor="#B4655C" android:strokeWidth="4" android:strokeLineCap="round" android:pathData="M106,168 C114,175 126,175 134,168" />
+    <path android:fillColor="#00000000" android:strokeColor="#3C4A48" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M82,124 A17,14 0 1,0 116,124 A17,14 0 1,0 82,124 Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#3C4A48" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M124,124 A17,14 0 1,0 158,124 A17,14 0 1,0 124,124 Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#3C4A48" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M116,122 L124,122" />
+</vector>

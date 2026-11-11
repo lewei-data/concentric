@@ -1,0 +1,172 @@
+{
+  "start": {
+    "session_id": "lv_be3f76b0",
+    "status": "live",
+    "avatar_id": "ceo",
+    "hls_url": "/conring/asr/assets/live/lv_be3f76b0/index.m3u8",
+    "segment_sec": 1.0,
+    "started_at": 1794290087.9624026,
+    "elapsed": 3.31,
+    "speech_seconds": 0.0,
+    "segments": 1,
+    "sync": "音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳",
+    "ready": true
+  },
+  "playlist_snapshots": [
+    {
+      "t": 3.3,
+      "status": 200,
+      "len": 159,
+      "segments": 1,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n",
+      "segs": [
+        "seg_00000.ts"
+      ]
+    },
+    {
+      "t": 4.6,
+      "status": 200,
+      "len": 190,
+      "segments": 2,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n",
+      "segs": [
+        "seg_00000.ts",
+        "seg_00001.ts"
+      ]
+    },
+    {
+      "t": 5.8,
+      "status": 200,
+      "len": 221,
+      "segments": 3,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n",
+      "segs": [
+        "seg_00001.ts",
+        "seg_00002.ts"
+      ]
+    },
+    {
+      "t": 7.1,
+      "status": 200,
+      "len": 252,
+      "segments": 4,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n",
+      "segs": [
+        "seg_00002.ts",
+        "seg_00003.ts"
+      ]
+    },
+    {
+      "t": 8.4,
+      "status": 200,
+      "len": 314,
+      "segments": 6,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n#EXTINF:1.000000,\nseg_00004.ts\n#EXTINF:1.000000,\nseg_00005.ts\n",
+      "segs": [
+        "seg_00004.ts",
+        "seg_00005.ts"
+      ]
+    },
+    {
+      "t": 9.7,
+      "status": 200,
+      "len": 345,
+      "segments": 7,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n#EXTINF:1.000000,\nseg_00004.ts\n#EXTINF:1.000000,\nseg_00005.ts\n#EXTINF:1.000000,\nseg_00006.ts\n",
+      "segs": [
+        "seg_00005.ts",
+        "seg_00006.ts"
+      ]
+    },
+    {
+      "t": 10.9,
+      "status": 200,
+      "len": 376,
+      "segments": 8,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n#EXTINF:1.000000,\nseg_00004.ts\n#EXTINF:1.000000,\nseg_00005.ts\n#EXTINF:1.000000,\nseg_00006.ts\n#EXTINF:1.000000,\nseg_00007.ts\n",
+      "segs": [
+        "seg_00006.ts",
+        "seg_00007.ts"
+      ]
+    },
+    {
+      "t": 12.2,
+      "status": 200,
+      "len": 438,
+      "segments": 10,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n#EXTINF:1.000000,\nseg_00004.ts\n#EXTINF:1.000000,\nseg_00005.ts\n#EXTINF:1.000000,\nseg_00006.ts\n#EXTINF:1.000000,\nseg_00007.ts\n#EXTINF:1.000000,\nseg_00008.ts\n#EXTINF:1.000000,\nseg_00009.ts\n",
+      "segs": [
+        "seg_00008.ts",
+        "seg_00009.ts"
+      ]
+    },
+    {
+      "t": 13.5,
+      "status": 200,
+      "len": 469,
+      "segments": 11,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n#EXTINF:1.000000,\nseg_00004.ts\n#EXTINF:1.000000,\nseg_00005.ts\n#EXTINF:1.000000,\nseg_00006.ts\n#EXTINF:1.000000,\nseg_00007.ts\n#EXTINF:1.000000,\nseg_00008.ts\n#EXTINF:1.000000,\nseg_00009.ts\n#EXTINF:1.000000,\nseg_00010.ts\n",
+      "segs": [
+        "seg_00009.ts",
+        "seg_00010.ts"
+      ]
+    },
+    {
+      "t": 14.7,
+      "status": 200,
+      "len": 500,
+      "segments": 12,
+      "endlist": false,
+      "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n#EXTINF:1.000000,\nseg_00004.ts\n#EXTINF:1.000000,\nseg_00005.ts\n#EXTINF:1.000000,\nseg_00006.ts\n#EXTINF:1.000000,\nseg_00007.ts\n#EXTINF:1.000000,\nseg_00008.ts\n#EXTINF:1.000000,\nseg_00009.ts\n#EXTINF:1.000000,\nseg_00010.ts\n#EXTINF:1.000000,\nseg_00011.ts\n",
+      "segs": [
+        "seg_00010.ts",
+        "seg_00011.ts"
+      ]
+    }
+  ],
+  "segment": {
+    "name": "seg_00000.ts",
+    "status": 200,
+    "ctype": "video/mp2t",
+    "bytes": 108288,
+    "ts_stream_types": [
+      "0x1b",
+      "0xf"
+    ],
+    "mp4_tracks": [],
+    "first_bytes": "474011100042f025"
+  },
+  "say": {
+    "elapsed": 9.3,
+    "text": "{\n  \"session_id\": \"lv_be3f76b0\",\n  \"status\": \"live\",\n  \"avatar_id\": \"ceo\",\n  \"hls_url\": \"/conring/asr/assets/live/lv_be3f76b0/index.m3u8\",\n  \"segment_sec\": 1.0,\n  \"started_at\": 1794290087.9624026,\n  \"elapsed\": 25.44,\n  \"speech_seconds\": 4.55,\n  \"segments\": 23,\n  \"sync\": \"音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳\",\n  \"queued_seconds\": 4.55\n}"
+  },
+  "after_say": {
+    "segments": 26,
+    "endlist": false,
+    "head": "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:1.000000,\nseg_00000.ts\n#EXTINF:1.000000,\nseg_00001.ts\n#EXTINF:1.000000,\nseg_00002.ts\n#EXTINF:1.000000,\nseg_00003.ts\n#EXTINF:1.000000,\nseg_00004.ts\n#EXTINF:1.000000,\nseg_00005.ts\n#EXTINF:1.000000,\nseg_00006.ts\n#EXTINF:1.000000,\nseg_00007.ts\n#EXTINF:1.000000,\nseg_00008.ts\n#EXTINF:1.000000,\nseg_00009.ts\n#EXTINF:1.000000,\nseg_00010.ts\n#EXTINF:1.000000,\nseg_00011.ts\n",
+    "seg_streams": [
+      "0x1b",
+      "0xf"
+    ],
+    "seg_bytes": 108664
+  },
+  "intro_mp4": {
+    "status": 200,
+    "ctype": "video/mp4",
+    "bytes": 660258,
+    "tracks": [
+      "avc1",
+      "mp4a"
+    ]
+  },
+  "stop": "{\n  \"session_id\": \"lv_be3f76b0\",\n  \"status\": \"ended\",\n  \"avatar_id\": \"ceo\",\n  \"hls_url\": \"/conring/asr/assets/live/lv_be3f76b0/index.m3u8\",\n  \"segment_sec\": 1.0,\n  \"started_at\": 1794290087.9624026,\n  \"elapsed\": 28.96,\n  \"speech_seconds\": 4.55,\n  \"segments\": 27,\n  \"sync\": \"音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳\"\n}"
+}

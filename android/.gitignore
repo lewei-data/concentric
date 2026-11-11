@@ -1,0 +1,14 @@
+*.iml
+.gradle/
+.idea/
+build/
+app/build/
+local.properties
+.cxx/
+.DS_Store
+captures/
+
+# release 签名凭据（正式分发时才配置；留空则用 Android debug 证书自测出包）
+keystore.properties
+signing/*.jks
+signing/*.keystore

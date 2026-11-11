@@ -1,0 +1,339 @@
+{
+  "checked_at": "2026-11-10",
+  "server_count": 18,
+  "offline_count": 18,
+  "asset_url_base": "/conring/asr/assets",
+  "fields": [
+    "photo",
+    "videoTalk",
+    "videoIdle",
+    "faceUrl"
+  ],
+  "compared": 72,
+  "mismatches": [],
+  "ceo": {
+    "id": "ceo",
+    "name": "陆清安",
+    "voice": "m08",
+    "server": {
+      "photo": "/conring/asr/assets/avatars/ceo.png",
+      "videoTalk": "/conring/asr/assets/videos/ceo.talk.mp4",
+      "videoIdle": "/conring/asr/assets/videos/ceo.idle.mp4",
+      "faceUrl": "/conring/asr/assets/faces/ceo.png"
+    },
+    "offline": {
+      "photo": "/conring/asr/assets/avatars/ceo.png",
+      "videoTalk": "/conring/asr/assets/videos/ceo.talk.mp4",
+      "videoIdle": "/conring/asr/assets/videos/ceo.idle.mp4",
+      "faceUrl": "/conring/asr/assets/faces/ceo.png"
+    }
+  },
+  "employees": [
+    {
+      "id": "boss",
+      "name": "蒿色莫",
+      "voice": "m10",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/boss.png",
+        "videoTalk": "/conring/asr/assets/videos/boss.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/boss.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/boss.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/boss.png",
+        "videoTalk": "/conring/asr/assets/videos/boss.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/boss.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/boss.png"
+      }
+    },
+    {
+      "id": "ceo",
+      "name": "陆清安",
+      "voice": "m08",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/ceo.png",
+        "videoTalk": "/conring/asr/assets/videos/ceo.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/ceo.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/ceo.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/ceo.png",
+        "videoTalk": "/conring/asr/assets/videos/ceo.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/ceo.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/ceo.png"
+      }
+    },
+    {
+      "id": "cco",
+      "name": "沈青禾",
+      "voice": "f07",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/cco.png",
+        "videoTalk": "/conring/asr/assets/videos/cco.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cco.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cco.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/cco.png",
+        "videoTalk": "/conring/asr/assets/videos/cco.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cco.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cco.png"
+      }
+    },
+    {
+      "id": "cto",
+      "name": "扶频",
+      "voice": "m05",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/cto.png",
+        "videoTalk": "/conring/asr/assets/videos/cto.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cto.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cto.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/cto.png",
+        "videoTalk": "/conring/asr/assets/videos/cto.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cto.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cto.png"
+      }
+    },
+    {
+      "id": "pm_wenren",
+      "name": "贺平生",
+      "voice": "m04",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/pm_wenren.png",
+        "videoTalk": "/conring/asr/assets/videos/pm_wenren.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/pm_wenren.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/pm_wenren.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/pm_wenren.png",
+        "videoTalk": "/conring/asr/assets/videos/pm_wenren.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/pm_wenren.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/pm_wenren.png"
+      }
+    },
+    {
+      "id": "pm_gou",
+      "name": "米珂",
+      "voice": "f03",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/pm_gou.png",
+        "videoTalk": "/conring/asr/assets/videos/pm_gou.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/pm_gou.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/pm_gou.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/pm_gou.png",
+        "videoTalk": "/conring/asr/assets/videos/pm_gou.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/pm_gou.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/pm_gou.png"
+      }
+    },
+    {
+      "id": "pm_tongxinyuan",
+      "name": "姜月初",
+      "voice": "f05",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/pm_tongxinyuan.png",
+        "videoTalk": "/conring/asr/assets/videos/pm_tongxinyuan.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/pm_tongxinyuan.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/pm_tongxinyuan.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/pm_tongxinyuan.png",
+        "videoTalk": "/conring/asr/assets/videos/pm_tongxinyuan.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/pm_tongxinyuan.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/pm_tongxinyuan.png"
+      }
+    },
+    {
+      "id": "cw_wenren",
+      "name": "陆川",
+      "voice": "m03",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/cw_wenren.png",
+        "videoTalk": "/conring/asr/assets/videos/cw_wenren.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cw_wenren.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cw_wenren.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/cw_wenren.png",
+        "videoTalk": "/conring/asr/assets/videos/cw_wenren.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cw_wenren.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cw_wenren.png"
+      }
+    },
+    {
+      "id": "cw_gou",
+      "name": "叶秋",
+      "voice": "f01",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/cw_gou.png",
+        "videoTalk": "/conring/asr/assets/videos/cw_gou.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cw_gou.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cw_gou.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/cw_gou.png",
+        "videoTalk": "/conring/asr/assets/videos/cw_gou.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cw_gou.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cw_gou.png"
+      }
+    },
+    {
+      "id": "cw_tongxinyuan",
+      "name": "江佑泽",
+      "voice": "m01",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/cw_tongxinyuan.png",
+        "videoTalk": "/conring/asr/assets/videos/cw_tongxinyuan.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cw_tongxinyuan.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cw_tongxinyuan.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/cw_tongxinyuan.png",
+        "videoTalk": "/conring/asr/assets/videos/cw_tongxinyuan.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/cw_tongxinyuan.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/cw_tongxinyuan.png"
+      }
+    },
+    {
+      "id": "vd_wenren",
+      "name": "陆离",
+      "voice": "m06",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/vd_wenren.png",
+        "videoTalk": "/conring/asr/assets/videos/vd_wenren.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/vd_wenren.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/vd_wenren.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/vd_wenren.png",
+        "videoTalk": "/conring/asr/assets/videos/vd_wenren.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/vd_wenren.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/vd_wenren.png"
+      }
+    },
+    {
+      "id": "vd_gou",
+      "name": "萧执",
+      "voice": "m02",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/vd_gou.png",
+        "videoTalk": "/conring/asr/assets/videos/vd_gou.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/vd_gou.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/vd_gou.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/vd_gou.png",
+        "videoTalk": "/conring/asr/assets/videos/vd_gou.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/vd_gou.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/vd_gou.png"
+      }
+    },
+    {
+      "id": "vd_tongxinyuan",
+      "name": "崔聿棠",
+      "voice": "f04",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/vd_tongxinyuan.png",
+        "videoTalk": "/conring/asr/assets/videos/vd_tongxinyuan.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/vd_tongxinyuan.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/vd_tongxinyuan.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/vd_tongxinyuan.png",
+        "videoTalk": "/conring/asr/assets/videos/vd_tongxinyuan.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/vd_tongxinyuan.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/vd_tongxinyuan.png"
+      }
+    },
+    {
+      "id": "release_ops",
+      "name": "顾景琛",
+      "voice": "m07",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/release_ops.png",
+        "videoTalk": "/conring/asr/assets/videos/release_ops.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/release_ops.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/release_ops.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/release_ops.png",
+        "videoTalk": "/conring/asr/assets/videos/release_ops.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/release_ops.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/release_ops.png"
+      }
+    },
+    {
+      "id": "reviewer",
+      "name": "顾凛川",
+      "voice": "m09",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/reviewer.png",
+        "videoTalk": "/conring/asr/assets/videos/reviewer.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/reviewer.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/reviewer.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/reviewer.png",
+        "videoTalk": "/conring/asr/assets/videos/reviewer.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/reviewer.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/reviewer.png"
+      }
+    },
+    {
+      "id": "scout",
+      "name": "苏寒",
+      "voice": "f08",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/scout.png",
+        "videoTalk": "/conring/asr/assets/videos/scout.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/scout.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/scout.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/scout.png",
+        "videoTalk": "/conring/asr/assets/videos/scout.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/scout.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/scout.png"
+      }
+    },
+    {
+      "id": "kb_manager",
+      "name": "祁南",
+      "voice": "f06",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/kb_manager.png",
+        "videoTalk": "/conring/asr/assets/videos/kb_manager.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/kb_manager.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/kb_manager.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/kb_manager.png",
+        "videoTalk": "/conring/asr/assets/videos/kb_manager.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/kb_manager.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/kb_manager.png"
+      }
+    },
+    {
+      "id": "manual_scout",
+      "name": "灰太狼",
+      "voice": "f02",
+      "server": {
+        "photo": "/conring/asr/assets/avatars/manual_scout.png",
+        "videoTalk": "/conring/asr/assets/videos/manual_scout.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/manual_scout.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/manual_scout.png"
+      },
+      "offline": {
+        "photo": "/conring/asr/assets/avatars/manual_scout.png",
+        "videoTalk": "/conring/asr/assets/videos/manual_scout.talk.mp4",
+        "videoIdle": "/conring/asr/assets/videos/manual_scout.idle.mp4",
+        "faceUrl": "/conring/asr/assets/faces/manual_scout.png"
+      }
+    }
+  ]
+}

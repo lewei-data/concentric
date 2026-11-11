@@ -1,0 +1,42 @@
+{
+  "intro_full": {
+    "status": 200,
+    "ctype": "video/mp4",
+    "len": "660258",
+    "cr": null,
+    "accept_ranges": "bytes",
+    "first": ""
+  },
+  "intro_range": {
+    "status": 206,
+    "ctype": "video/mp4",
+    "len": "1024",
+    "cr": "bytes 0-1023/660258",
+    "accept_ranges": "bytes",
+    "first": "\u0000\u0000\u0000 ftypisom\u0000\u0000\u0002\u0000isomiso2avc1mp41\u0000\u00008�moov\u0000\u0000\u0000lmvhd\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0003�\u0000\u0000R�\u0000\u0001\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000@\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0003\u0000\u0000%�trak\u0000\u0000\u0000\\tkhd\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000R�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000@\u0000\u0000\u0000\u0002�\u0000\u0000\u0003�\u0000\u0000\u0000\u0000\u0000$edts\u0000\u0000\u0000\u001celst\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000R�\u0000\u0000\u0004\u0000\u0000\u0001\u0000\u0000\u0000\u0000%smdia\u0000\u0000\u0000 mdhd\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u00002\u0000\u0000\u0004\"\u0000U�\u0000\u0000\u0000\u0000\u0000-hdlr\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000vide\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000VideoHandler\u0000\u0000\u0000%\u001eminf\u0000\u0000\u0000\u0014vmhd\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+  },
+  "start": {
+    "session_id": "lv_bc17c329",
+    "status": "live",
+    "avatar_id": "ceo",
+    "hls_url": "/conring/asr/assets/live/lv_bc17c329/index.m3u8",
+    "segment_sec": 1.0,
+    "started_at": 1794289997.9211597,
+    "elapsed": 3.31,
+    "speech_seconds": 0.0,
+    "segments": 1,
+    "sync": "音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳",
+    "ready": true
+  },
+  "m3u8": {
+    "status": 200,
+    "ctype": "application/vnd.apple.mpegurl",
+    "len": "159",
+    "cr": null,
+    "accept_ranges": "bytes",
+    "first": ""
+  },
+  "say": "{\n  \"session_id\": \"lv_bc17c329\",\n  \"status\": \"live\",\n  \"avatar_id\": \"ceo\",\n  \"hls_url\": \"/conring/asr/assets/live/lv_bc17c329/index.m3u8\",\n  \"segment_sec\": 1.0,\n  \"started_at\": 1794289997.9211597,\n  \"elapsed\": 11.13,\n  \"speech_seconds\": 3.38,\n  \"segments\": 8,\n  \"sync\": \"音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳\",\n  \"queued_seconds\": 3.38\n}",
+  "segments": [],
+  "stop": "{\n  \"session_id\": \"lv_bc17c329\",\n  \"status\": \"ended\",\n  \"avatar_id\": \"ceo\",\n  \"hls_url\": \"/conring/asr/assets/live/lv_bc17c329/index.m3u8\",\n  \"segment_sec\": 1.0,\n  \"started_at\": 1794289997.9211597,\n  \"elapsed\": 11.32,\n  \"speech_seconds\": 3.38,\n  \"segments\": 9,\n  \"sync\": \"音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳\"\n}"
+}

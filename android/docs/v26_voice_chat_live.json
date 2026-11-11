@@ -1,0 +1,56 @@
+{
+  "job_id": "vj_4ca9d6_83970",
+  "status": "need_repeat",
+  "clarify": true,
+  "question": "是一集集談到",
+  "emotion": "calm",
+  "ack": {
+    "text": "没听清，请老板再说一遍。",
+    "audio_path": "/opt/sefs/mcp-asr/output/ack_c5b74c82.wav",
+    "sample_rate": 24000,
+    "duration": 2.787,
+    "segments": [
+      {
+        "index": 0,
+        "text": "没听清，请老板再说一遍。",
+        "start": 0.0,
+        "end": 2.787
+      }
+    ],
+    "emotion": "calm"
+  },
+  "mode": "voice",
+  "avatar": {
+    "id": "secretary",
+    "name": "小秘书",
+    "role": "老板影子分身",
+    "photo": {
+      "path": "/home/boray/opc-workbench/prototype/assets/avatars/boss.png",
+      "url": "/conring/asr/assets/avatars/boss.png"
+    },
+    "videos": {
+      "talk": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/boss.talk.mp4",
+        "url": "/conring/asr/assets/videos/boss.talk.mp4"
+      },
+      "idle": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/boss.idle.mp4",
+        "url": "/conring/asr/assets/videos/boss.idle.mp4"
+      }
+    },
+    "has_video": true
+  },
+  "delegate": null,
+  "asr": {
+    "model": "small",
+    "language": "zh",
+    "audio_seconds": 1.62,
+    "confidence": 0.481,
+    "avg_logprob": -0.699,
+    "no_speech_prob": 0.033,
+    "low_confidence": true,
+    "silent": false,
+    "hear": "是一集集談到"
+  },
+  "next": "识别置信度 0.48 低于阈值 0.50，未执行指令；请老板重说一遍"
+}

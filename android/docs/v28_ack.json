@@ -1,0 +1,56 @@
+{
+ "job_id": "vj_3fc3eb_16898",
+ "status": "need_repeat",
+ "clarify": true,
+ "question": "今天下午三点,提醒我和产品组开会。",
+ "emotion": "cheerful",
+ "ack": {
+  "text": "老板，刚才那句没有听清，请您再说一遍，好吗～",
+  "audio_path": "/opt/sefs/mcp-asr/output/ack_2cd5d0e0.wav",
+  "sample_rate": 24000,
+  "duration": 4.073,
+  "segments": [
+   {
+    "index": 0,
+    "text": "老板，刚才那句没有听清，请您再说一遍，好吗～",
+    "start": 0.0,
+    "end": 4.073
+   }
+  ],
+  "emotion": "cheerful"
+ },
+ "mode": "voice",
+ "avatar": {
+  "id": "secretary",
+  "name": "小秘书",
+  "role": "老板影子分身",
+  "photo": {
+   "path": "/home/boray/opc-workbench/prototype/assets/avatars/secretary.png",
+   "url": "/conring/asr/assets/avatars/secretary.png"
+  },
+  "videos": {
+   "talk": {
+    "path": "/home/boray/opc-workbench/prototype/assets/videos/secretary.talk.mp4",
+    "url": "/conring/asr/assets/videos/secretary.talk.mp4"
+   },
+   "idle": {
+    "path": "/home/boray/opc-workbench/prototype/assets/videos/secretary.idle.mp4",
+    "url": "/conring/asr/assets/videos/secretary.idle.mp4"
+   }
+  },
+  "has_video": true
+ },
+ "delegate": null,
+ "asr": {
+  "model": "small",
+  "language": "zh",
+  "audio_seconds": 3.03,
+  "confidence": 0.465,
+  "avg_logprob": -0.266,
+  "no_speech_prob": 0.393,
+  "low_confidence": true,
+  "silent": false,
+  "hear": "今天下午三点,提醒我和产品组开会。"
+ },
+ "next": "识别置信度 0.47 低于阈值 0.50，未执行指令；请老板重说一遍"
+}

@@ -1,0 +1,28 @@
+{
+  "ask": "请用一句话介绍你自己，不要执行任何操作。",
+  "tts_blocks": [
+    {
+      "mime": "audio/wav",
+      "bytes": 374480
+    }
+  ],
+  "audio_b64_len": 374480,
+  "session_a": "lv_1c959aa6",
+  "A_live_call_audio": {
+    "elapsed": 0.2,
+    "text": "{\n  \"session_id\": \"lv_1c959aa6\",\n  \"status\": \"live\",\n  \"avatar_id\": \"ceo\",\n  \"hls_url\": \"/conring/asr/assets/live/lv_1c959aa6/index.m3u8\",\n  \"segment_sec\": 1.0,\n  \"started_at\": 1794290228.3963966,\n  \"elapsed\": 3.5,\n  \"speech_seconds\": 5.85,\n  \"segments\": 1,\n  \"sync\": \"音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳\",\n  \"queued_seconds\": 5.85\n}",
+    "audio_blocks": []
+  },
+  "session_b": "lv_f38862de",
+  "B_voice_chat_live": {
+    "elapsed": 59.9,
+    "text": "{\n  \"job_id\": \"vj_6fb088_37771\",\n  \"status\": \"done\",\n  \"question\": \"教徒過了,其建在正堅草,以待一度如果力權勝合自己。\",\n  \"ack\": {\n    \"text\": \"老板，稍等。\",\n    \"audio_path\": \"/opt/sefs/mcp-asr/output/ack_abe0e145.wav\",\n    \"sample_rate\": 24000,\n    \"duration\": 0.929,\n    \"segments\": [\n      {\n        \"index\": 0,\n        \"text\": \"老板，稍等。\",\n        \"start\": 0.0,\n        \"end\": 0.929\n      }\n    ],\n    \"emotion\": \"calm\"\n  },\n  \"mode\": \"video\",\n  \"avatar\": {\n    \"id\": \"ceo\",\n    \"name\": \"陆清安\",\n    \"role\": \"CEO\",\n    \"photo\": {\n      \"path\": \"/home/boray/opc-workbench/prototype/assets/avatars/ceo.png\",\n      \"url\": \"/conring/asr/assets/avatars/ceo.png\"\n    },\n    \"videos\": {\n      \"talk\": {\n        \"path\": \"/home/boray/opc-workbench/prototype/assets/videos/ceo.talk.mp4\",\n        \"url\": \"/conring/asr/assets/videos/ceo.talk.mp4\"\n      },\n      \"idle\": {\n        \"path\": \"/home/boray/opc-workbench/prototype/assets/videos/ceo.idle.mp4\",\n        \"url\": \"/conring/asr/assets/videos/ceo.idle.mp4\"\n      }\n    },\n    \"has_video\": true\n  },\n  \"delegate\": null,\n  \"created_at\": 1794290237.7719047,\n  \"callback_url\": \"\",\n  \"voice\": \"m08\",\n  \"emotion\": \"calm\",\n  \"asr\": {\n    \"model\": \"small\",\n    \"language\": \"zh\",\n    \"audio_seconds\": 5.85,\n    \"confidence\": 0.621,\n    \"avg_logprob\": -0.466,\n    \"no_speech_prob\": 0.01,\n    \"low_confidence\": false\n  },\n  \"live\": {\n    \"session_id\": \"lv_f38862de\",\n    \"hls_url\": \"/conring/asr/assets/live/lv_f38862de/index.m3u8\",\n    \"mode\": \"hls\",\n    \"segment_sec\": 1.0,\n    \"speech_seconds\": 15.99\n  },\n  \"started_at\": 1794290237.844478,\n  \"result\": {\n    \"speech_text\": \"这段文字读不通，像是语音识别出错后留下的乱码（当前目录是 mcp-asr，猜测是转写结果）。，你想让我做什么？，重发一遍原话或贴原始文本；。\",\n    \"detail_text\": \"这段文字读不通，像是语音识别出错后留下的乱码（当前目录是 mcp-asr，猜测是转写结果）。你想让我做什么？\\n\\n- 重发一遍原话或贴原始文本；\\n- 或者给我音频文件路径，我用仓库里的 ASR 重新转一遍。\",\n    \"emotion\": \"calm\",\n    \"voice\": \"m08\",\n    \"audio_path\": \"/opt/sefs/mcp-asr/output/job_vj_6fb088_37771.wav\",\n    \"audio_mime\": \"audio/wav\",\n    \"sample_rate\": 24000,\n    \"duration\": 15.988,\n    \"segments\": [\n      {\n        \"index\": 0,\n        \"text\": \"这段文字读不通，像是语音识别出错后留下的乱码（当前目录是 mcp-asr，\",\n        \"start\": 0.0,\n        \"end\": 8.177\n      },\n      {\n        \"index\": 1,\n        \"text\": \"猜测是转写结果）。，你想让我做什么？\",\n        \"start\": 8.297,\n        \"end\": 12.108\n      },\n      {\n        \"index\": 2,\n        \"text\": \"，重发一遍原话或贴原始文本；。\",\n        \"start\": 12.228,\n        \"end\": 15.988\n      }\n    ],\n    \"render\": {\n      \"driver\": \"wav_envelope\",\n      \"lip_sync\": \"amplitude\",\n      \"sample_rate\": 24000,\n      \"timeline\":",
+    "audio_blocks": [
+      {
+        "mime": "audio/wav",
+        "bytes": 59728
+      }
+    ]
+  },
+  "B_segments": 62
+}

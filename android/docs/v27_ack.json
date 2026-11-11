@@ -1,0 +1,60 @@
+{
+  "job_id": "vj_2bd4f1_8665",
+  "status": "accepted",
+  "question": "把上周的交付情况简单汇报一下",
+  "ack": {
+    "text": "好的，老板，马上安排。",
+    "audio_path": "/opt/sefs/mcp-asr/output/ack_dc974e62.wav",
+    "sample_rate": 24000,
+    "duration": 1.537,
+    "segments": [
+      {
+        "index": 0,
+        "text": "好的，老板，马上安排。",
+        "start": 0.0,
+        "end": 1.537
+      }
+    ],
+    "emotion": "cheerful"
+  },
+  "mode": "video",
+  "avatar": {
+    "id": "secretary",
+    "name": "小秘书",
+    "role": "老板影子分身",
+    "photo": {
+      "path": "/home/boray/opc-workbench/prototype/assets/avatars/secretary.png",
+      "url": "/conring/asr/assets/avatars/secretary.png"
+    },
+    "videos": {
+      "talk": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/secretary.talk.mp4",
+        "url": "/conring/asr/assets/videos/secretary.talk.mp4"
+      },
+      "idle": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/secretary.idle.mp4",
+        "url": "/conring/asr/assets/videos/secretary.idle.mp4"
+      }
+    },
+    "has_video": true
+  },
+  "delegate": null,
+  "emotion": "cheerful",
+  "asr": {
+    "model": "small",
+    "language": "zh",
+    "audio_seconds": 2.51,
+    "confidence": 0.553,
+    "avg_logprob": -0.24,
+    "no_speech_prob": 0.297,
+    "low_confidence": false
+  },
+  "live": {
+    "session_id": "lv_70a59671",
+    "hls_url": "/conring/asr/assets/live/lv_70a59671/index.m3u8",
+    "hls_url_full": "https://ai.boraydata.com/conring/asr/assets/live/lv_70a59671/index.m3u8",
+    "mode": "hls",
+    "segment_sec": 1.0
+  },
+  "next": "调用 voice_job(job_id) 取结果；任务完成也会推送到 callback_url"
+}

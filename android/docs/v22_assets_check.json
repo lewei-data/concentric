@@ -1,0 +1,728 @@
+{
+  "asset_url_base": "/conring/asr/assets",
+  "count": 18,
+  "items": [
+    {
+      "id": "boss",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/boss.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "341527",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/boss.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "67864",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/boss.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "69986",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/boss.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "128475",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/boss.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "ceo",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/ceo.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "354076",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/ceo.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "66075",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/ceo.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "65872",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/ceo.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "132716",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/ceo.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "cco",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/cco.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "301602",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/cco.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "64702",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/cco.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "64588",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/cco.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "109700",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/cco.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "cto",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/cto.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "347346",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/cto.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "68378",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/cto.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "68574",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/cto.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "112455",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/cto.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "pm_wenren",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/pm_wenren.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "360800",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/pm_wenren.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "70691",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/pm_wenren.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "74462",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/pm_wenren.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "136491",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/pm_wenren.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "pm_gou",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/pm_gou.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "412128",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/pm_gou.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "70600",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/pm_gou.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "71560",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/pm_gou.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "138613",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/pm_gou.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "pm_tongxinyuan",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/pm_tongxinyuan.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "336367",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/pm_tongxinyuan.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "63106",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/pm_tongxinyuan.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "64129",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/pm_tongxinyuan.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "110381",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/pm_tongxinyuan.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "cw_wenren",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/cw_wenren.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "316557",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/cw_wenren.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "64144",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/cw_wenren.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "64925",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/cw_wenren.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "115731",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/cw_wenren.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "cw_gou",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/cw_gou.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "430484",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/cw_gou.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "83804",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/cw_gou.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "86507",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/cw_gou.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "113898",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/cw_gou.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "cw_tongxinyuan",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/cw_tongxinyuan.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "300914",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/cw_tongxinyuan.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "61037",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/cw_tongxinyuan.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "61317",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/cw_tongxinyuan.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "100579",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/cw_tongxinyuan.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "vd_wenren",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/vd_wenren.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "272599",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/vd_wenren.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "62780",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/vd_wenren.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "64742",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/vd_wenren.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "95525",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/vd_wenren.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "vd_gou",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/vd_gou.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "329040",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/vd_gou.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "69006",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/vd_gou.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "68974",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/vd_gou.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "95007",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/vd_gou.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "vd_tongxinyuan",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/vd_tongxinyuan.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "434166",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/vd_tongxinyuan.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "76373",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/vd_tongxinyuan.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "77979",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/vd_tongxinyuan.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "127746",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/vd_tongxinyuan.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "release_ops",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/release_ops.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "295063",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/release_ops.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "64509",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/release_ops.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "65074",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/release_ops.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "98186",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/release_ops.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "reviewer",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/reviewer.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "453608",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/reviewer.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "78954",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/reviewer.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "81845",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/reviewer.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "162664",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/reviewer.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "scout",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/scout.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "335257",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/scout.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "59545",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/scout.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "60023",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/scout.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "103378",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/scout.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "kb_manager",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/kb_manager.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "393667",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/kb_manager.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "70568",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/kb_manager.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "71778",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/kb_manager.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "115625",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/kb_manager.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    },
+    {
+      "id": "manual_scout",
+      "checks": {
+        "photo": {
+          "path": "/conring/asr/assets/avatars/manual_scout.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "366217",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk": {
+          "path": "/conring/asr/assets/videos/manual_scout.talk.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "73754",
+          "magic": "0000002066747970"
+        },
+        "videoIdle": {
+          "path": "/conring/asr/assets/videos/manual_scout.idle.mp4",
+          "status": 200,
+          "type": "video/mp4",
+          "length": "74386",
+          "magic": "0000002066747970"
+        },
+        "face_url": {
+          "path": "/conring/asr/assets/faces/manual_scout.png",
+          "status": 200,
+          "type": "image/png",
+          "length": "124592",
+          "magic": "89504e470d0a1a0a"
+        },
+        "videoTalk_range": {
+          "path": "/conring/asr/assets/videos/manual_scout.talk.mp4",
+          "status": 206,
+          "type": "video/mp4",
+          "length": "1024",
+          "magic": "0000002066747970"
+        }
+      }
+    }
+  ],
+  "ok": 90,
+  "bad": 0
+}

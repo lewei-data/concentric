@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">同心圆</string>
+    <string name="home_subtitle">数字员工</string>
+    <string name="settings_title">系统设置</string>
+    <string name="employees_title">数字员工档案</string>
+    <string name="employee_detail_title">员工档案</string>
+    <string name="report_title">数字员工汇报</string>
+    <string name="intro_player_title">自我介绍</string>
+    <string name="live_call_title">实时视频通话</string>
+    <string name="history_title">历史消息</string>
+    <string name="history_detail_title">消息详情</string>
+    <string name="channel_listen">保持监听</string>
+    <string name="channel_incoming">新消息播报</string>
+    <string name="progress_title">当前进度</string>
+    <string name="todo_title">待办事项</string>
+    <string name="voice_call_title">实时语音通话</string>
+</resources>

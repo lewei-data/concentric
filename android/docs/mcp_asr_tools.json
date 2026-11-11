@@ -1,0 +1,167 @@
+{
+  "asr_transcribe": {
+    "description": "把一段语音转成文字。支持 base64 音频或服务器本地文件路径，返回文本与句级时间轴。",
+    "inputSchema": {
+      "properties": {
+        "audio_base64": {
+          "type": "string",
+          "description": "音频内容 base64（wav/mp3/ogg/flac/webm 均可），也可用 data: URL"
+        },
+        "audio_path": {
+          "type": "string",
+          "description": "服务器本地音频文件路径（与 audio_base64 二选一）"
+        },
+        "language": {
+          "type": "string",
+          "description": "语言代码，默认 zh"
+        },
+        "model": {
+          "type": "string",
+          "description": "whisper 模型：tiny/base/small/medium/large-v3，默认 small"
+        },
+        "initial_prompt": {
+          "type": "string",
+          "description": "可选提示词，帮助识别专有名词"
+        }
+      },
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  "voice_chat": {
+    "description": "接收语音指令，解析完立刻回一句「收到」（如：好的老板，马上安排 / 老板稍等），同时返回 job_id；结果稍后用 voice_job 取，或推送到 callback_url。语音里点名员工（@id/姓名/工号）时，指令直接下发给该员工，由员工处理并回复。返回 text(JSON) + audio(收到语音) 两个内容块。",
+    "inputSchema": {
+      "properties": {
+        "audio_base64": {
+          "type": "string",
+          "description": "语音指令的 base64 音频（wav/mp3 等）"
+        },
+        "audio_path": {
+          "type": "string",
+          "description": "服务器本地音频路径（与 audio_base64 二选一）"
+        },
+        "language": {
+          "type": "string",
+          "description": "识别语言，默认 zh"
+        },
+        "model": {
+          "type": "string",
+          "description": "whisper 模型，默认 small"
+        },
+        "initial_prompt": {
+          "type": "string",
+          "description": "可选提示词，帮助识别员工姓名等专有名词"
+        },
+        "voice": {
+          "type": "string",
+          "description": "播报音色 id，省略用默认音色"
+        },
+        "profile": {
+          "type": "string",
+          "description": "可选 HERMES_PROFILE（如 ceo）；省略走默认 root 配置"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "voice",
+            "avatar",
+            "video"
+          ],
+          "description": "播报形态：voice 纯语音；avatar 数字人按 WAV 包络实时驱动；video 叠加仿真人视频素材；auto 按带宽与素材自动选"
+        },
+        "bandwidth_kbps": {
+          "type": "number",
+          "description": "客户端下行带宽 kbps；足够时 auto 会升级到视频/数字人播报"
+        },
+        "avatar_id": {
+          "type": "string",
+          "description": "指定播报形象 id；派单时默认用被点名的员工"
+        },
+        "delegate": {
+          "type": "boolean",
+          "description": "是否允许按语音点名自动派单，默认 true"
+        },
+        "callback_url": {
+          "type": "string",
+          "description": "任务完成后接收结果 JSON 的 HTTP 回调地址（可选）"
+        },
+        "wait": {
+          "type": "boolean",
+          "description": "兼容同步调用：true 时等任务结束再返回（默认 false，立即回收到）"
+        },
+        "wait_sec": {
+          "type": "number",
+          "description": "wait=true 时最长等待秒数，默认 240"
+        },
+        "include_audio": {
+          "type": "boolean",
+          "description": "wait=true 时是否连结果语音一起返回，默认 true"
+        },
+        "timeout_sec": {
+          "type": "integer",
+          "description": "后台任务执行超时秒数，默认 240"
+        }
+      },
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  "voice_job": {
+    "description": "按 job_id 取语音指令的执行结果。wait_sec>0 可长轮询（最多 30 秒）。done 时返回简要语音（speech_text + audio）、详细文字（detail_text）、句级时间轴与数字人档案（照片/仿真人视频素材），供客户端解析 WAV 包络驱动口型。",
+    "inputSchema": {
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "description": "voice_chat 返回的任务 id"
+        },
+        "wait_sec": {
+          "type": "number",
+          "description": "长轮询等待秒数，0 表示立即返回（默认 0）"
+        },
+        "include_audio": {
+          "type": "boolean",
+          "description": "完成时是否返回语音音频，默认 true"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  "profile": {
+    "description": "获取员工档案：默认返回全部员工（工号/部门/岗位/口头禅/简介/技能/形象参数/照片与仿真人视频地址/音色/Hermes profile 是否就绪）。传 id 取单人，可用 dept/project 过滤。",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "员工 Agent ID（如 ceo、pm_wenren）；省略返回全部"
+        },
+        "dept": {
+          "type": "string",
+          "description": "按部门模糊过滤，如 产品中心"
+        },
+        "project": {
+          "type": "string",
+          "description": "按项目模糊过滤，如 文人莫克"
+        },
+        "include_assets": {
+          "type": "boolean",
+          "description": "是否探测照片/视频素材并回填地址，默认 true"
+        }
+      },
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  "voice_avatars": {
+    "description": "列出可插拔的数字人播报档案（照片 + 仿真人视频素材），按 assets 目录约定自动发现。",
+    "inputSchema": {
+      "properties": {},
+      "type": "object",
+      "additionalProperties": false
+    }
+  }
+}

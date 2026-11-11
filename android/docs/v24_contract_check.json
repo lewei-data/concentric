@@ -1,0 +1,164 @@
+{
+  "checked_at": "2026-11-10",
+  "version": "0.4.0",
+  "total": 31,
+  "pass": 31,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "Java 纯逻辑校验环境可用",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "VerifyStream 编译通过",
+      "ok": true,
+      "detail": "ע: ĳЩ�����ļ�ʹ�û򸲸����ѹ�ʱ�� API��\nע: �й���ϸ��Ϣ, ��ʹ�� -Xlint:deprecation ���±��롣\n"
+    },
+    {
+      "name": "VerifyStream 全部断言通过",
+      "ok": true,
+      "detail": "  PASS  ������ƵͬԴ����·�������� asset_url_base\n  PASS  live playlist ͬԴ����·��\n  PASS  ������ļ����Ų� asset_url_base\n  PASS  ������ CDN ��ַ���ܾ�\n  PASS  ͬ host ��ͬ�˿ڱ��ܾ�\n  PASS  http �� https ��Ϊ��ͬԴ\n  PASS  Ĭ�� 443 �˿��ж�ͬԴ\n  PASS  file:// ����·������Ϊ����ַ\n  PASS  �յ�ַ��ȫ����\n  PASS  HLS �ж����� query\n  PASS  MP4 �ж�Ϊ����ʽ���� HLS\n  PASS  ���� URL ����ͬԴ��ַ\n  PASS  attempt=0 �������Բ���\n  PASS  ���� query �����Բ����� & ����\nVERIFY STREAM: 14 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "call_start 形态：扁平标准返回",
+      "ok": true,
+      "detail": "spec='/conring/asr/live/s1.m3u8' url='https://ai.boraydata.com/conring/asr/live/s1.m3u8'"
+    },
+    {
+      "name": "call_start 形态：data 嵌套",
+      "ok": true,
+      "detail": "spec='/conring/asr/live/s2.m3u8' url='https://ai.boraydata.com/conring/asr/live/s2.m3u8'"
+    },
+    {
+      "name": "call_start 形态：stream 对象",
+      "ok": true,
+      "detail": "spec='/conring/asr/live/s3.m3u8' url='https://ai.boraydata.com/conring/asr/live/s3.m3u8'"
+    },
+    {
+      "name": "call_start 形态：playback_url 别名",
+      "ok": true,
+      "detail": "spec='https://ai.boraydata.com/conring/asr/live/s4.m3u8' url='https://ai.boraydata.com/conring/asr/live/s4.m3u8'"
+    },
+    {
+      "name": "call_start 外链返回必须被拒绝",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "profile 字段别名覆盖驼峰与蛇形",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "自我介绍视频与通话流都经同源校验",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "源码存在 StreamContract.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "源码存在 StreamPlayback.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "源码存在 IntroPlayerActivity.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "源码存在 LiveCallActivity.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "布局存在 activity_intro_player.xml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "布局存在 activity_live_call.xml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Employee 新增 v2.4 字段与方法",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "StreamContract 工具常量齐全",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "StreamPlayback 同时支持 VOD 与 LIVE 且带音轨",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "自我介绍页：流式播放 + 服务端未就绪降级",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话页：call_start/turn/stop + live 播放 + 上行语音 + 降级",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "档案页两个入口与状态提示",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Manifest 注册自我介绍页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Manifest 注册实时通话页",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "新增页面标题文案",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "布局 id 齐全 activity_intro_player.xml",
+      "ok": true,
+      "detail": "missing=[]"
+    },
+    {
+      "name": "布局 id 齐全 activity_live_call.xml",
+      "ok": true,
+      "detail": "missing=[]"
+    },
+    {
+      "name": "版本号三处一致 0.4.0 / 6",
+      "ok": true,
+      "detail": "gradle=0.4.0/6 cfg=0.4.0"
+    },
+    {
+      "name": "仍然零第三方依赖",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "新增源码不引入任何第三方 URL",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "服务端能力快照已记录（当前无 call_* 工具）",
+      "ok": true,
+      "detail": "tools=['asr_transcribe', 'voice_chat', 'voice_job', 'profile', 'voice_avatars']"
+    }
+  ]
+}

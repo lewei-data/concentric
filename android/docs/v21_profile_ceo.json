@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "text": "{\n  \"count\": 1,\n  \"asset_url_base\": null,\n  \"employees\": [\n    {\n      \"id\": \"ceo\",\n      \"no\": \"OPC-002\",\n      \"name\": \"陆清安\",\n      \"dept\": \"公司管理层\",\n      \"title\": \"CEO\",\n      \"project\": \"全公司\",\n      \"role\": \"CEO\",\n      \"motto\": \"所有人对齐同一张作战地图。\",\n      \"bio\": \"统管三个自媒体项目的目标与节奏，负责把老板的战略拆成可执行的季度目标，并在项目之间调度资源。\",\n      \"skills\": [\n        \"经营分析\",\n        \"目标拆解\",\n        \"跨项目协同\",\n        \"例会主持\",\n        \"邮件汇报\"\n      ],\n      \"profile\": \"ceo\",\n      \"voice\": \"m08\",\n      \"gender\": \"male\",\n      \"age\": 42,\n      \"accent\": \"#2563EB\",\n      \"skin\": \"#EBC9A8\",\n      \"hair\": \"#1F2937\",\n      \"suit\": \"#1E3A5F\",\n      \"shirt\": \"#FFFFFF\",\n      \"hairStyle\": \"short\",\n      \"glasses\": false,\n      \"emotion\": \"calm\",\n      \"profile_ready\": true,\n      \"photo\": \"/avatars/ceo.png\",\n      \"videoTalk\": \"/videos/ceo.talk.mp4\",\n      \"videoIdle\": \"/videos/ceo.idle.mp4\",\n      \"has_photo\": true,\n      \"has_video\": true,\n      \"assets\": {\n        \"photo\": {\n          \"path\": \"/home/boray/opc-workbench/prototype/assets/avatars/ceo.png\",\n          \"url\": \"/avatars/ceo.png\"\n        },\n        \"face_url\": \"/faces/ceo.png\",\n        \"video_talk\": {\n          \"path\": \"/home/boray/opc-workbench/prototype/assets/videos/ceo.talk.mp4\",\n          \"url\": \"/videos/ceo.talk.mp4\"\n        },\n        \"video_idle\": {\n          \"path\": \"/home/boray/opc-workbench/prototype/assets/videos/ceo.idle.mp4\",\n          \"url\": \"/videos/ceo.idle.mp4\"\n        }\n      }\n    }\n  ],\n  \"missing_photo\": [],\n  \"missing_video\": []\n}",
+      "type": "text"
+    }
+  ],
+  "isError": false
+}

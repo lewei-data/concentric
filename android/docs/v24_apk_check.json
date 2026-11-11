@@ -1,0 +1,173 @@
+{
+  "version": "0.4.0",
+  "versionCode": 6,
+  "total": 30,
+  "pass": 30,
+  "fail": 0,
+  "apks": [
+    {
+      "type": "debug",
+      "file": "voice-mcp-v0.4.0-b6-debug.apk",
+      "bytes": 376398,
+      "sha256": "4f9a15b3f81803a967e51a1168242123f652e9ad886aec095d6ef4df40ec003f"
+    },
+    {
+      "type": "release",
+      "file": "voice-mcp-v0.4.0-b6-release.apk",
+      "bytes": 347763,
+      "sha256": "5e38bf87c0b1016972e023417cbc2b9a122477e59e9ab6e931d4965a44f17fc0"
+    }
+  ],
+  "checks": [
+    {
+      "name": "debug 文件名带版本号",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 StreamContract",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 StreamPlayback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LipSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 Employee",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_intro_player",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 应用名为同心圆",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 内置版本资源 0.4.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug ZIP 完好",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 已签名",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 文件名带版本号",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 StreamContract",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 StreamPlayback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LipSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 Employee",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_intro_player",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 应用名为同心圆",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 内置版本资源 0.4.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release ZIP 完好",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 已签名",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

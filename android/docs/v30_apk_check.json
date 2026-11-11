@@ -1,0 +1,723 @@
+{
+  "version": "0.11.2",
+  "versionCode": 39,
+  "total": 140,
+  "pass": 140,
+  "fail": 0,
+  "apks": [
+    {
+      "type": "debug",
+      "file": "voice-mcp-v0.11.2-b39-debug.apk",
+      "bytes": 493110,
+      "sha256": "6058610e93ad0df066afb883effad85bede559faaa50c988e1f4ef76199b220f"
+    },
+    {
+      "type": "release",
+      "file": "voice-mcp-v0.11.2-b39-release.apk",
+      "bytes": 445191,
+      "sha256": "f6a7642d1334d69c49d9eff0f4e10b9d0e3c65e0b063b9a397b9ec1bbb4dc57a"
+    }
+  ],
+  "checks": [
+    {
+      "name": "debug 文件名带版本号 v0.11.2-b39",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug Manifest 注册 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 StreamContract",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 StreamPlayback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 CoverVideoView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LiveMic",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 Briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 VoiceCallService",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 VoiceLevelView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LiveLevelMeter",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 SpokenTextSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 CallTone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 ScreenOn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 LipSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 Employee",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 DispatchApi",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 WsClient",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 RealtimeChannel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 PcmPlayer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 WavStream",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 CallReply",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 SessionStore",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含 SessionPanel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_intro_player",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_employee_detail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_progress",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_todo",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 activity_voice_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 资源含 view_session_panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 应用名为同心圆",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 内置版本资源 0.11.2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 布局使用 CoverVideoView 铺满",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 intro_video",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 first_segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 hls_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 session_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 boss_briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 secretary",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 audio",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 /conring/dispatch",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 realtime_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 channel_kind",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 voice_text",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 attachments",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 barge_in",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 audio_end",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 session_started",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 reply_end",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 ws://192.168.31.206:9121",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 conring_sessions.db",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 messages",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 links_json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 day",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 DispatchApi$Submit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug dex 含契约串 /channel/",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 不含旧 call_* 契约",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "debug ZIP 完好",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "debug 已签名",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 文件名带版本号 v0.11.2-b39",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release Manifest 注册 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 StreamContract",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 StreamPlayback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 IntroPlayerActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LiveCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 CoverVideoView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LiveMic",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 Briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 ProgressActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 TodoActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 VoiceCallService",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 VoiceCallActivity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 VoiceLevelView",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LiveLevelMeter",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 SpokenTextSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 CallTone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 ScreenOn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 LipSync",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 Employee",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 DispatchApi",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 WsClient",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 RealtimeChannel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 PcmPlayer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 WavStream",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 CallReply",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 SessionStore",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含 SessionPanel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_intro_player",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_employee_detail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_progress",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_todo",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 activity_voice_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 资源含 view_session_panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 应用名为同心圆",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 内置版本资源 0.11.2",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 布局使用 CoverVideoView 铺满",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 live_call",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 intro_video",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 first_segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 hls_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 session_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 boss_briefing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 secretary",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 audio",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 /conring/dispatch",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 realtime_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 channel_kind",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 voice_text",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 attachments",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 barge_in",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 audio_end",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 session_started",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 reply_end",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 ws://192.168.31.206:9121",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 conring_sessions.db",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 messages",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 links_json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 day",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 DispatchApi$Submit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release dex 含契约串 /channel/",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 不含旧 call_* 契约",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "release ZIP 完好",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release 已签名",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

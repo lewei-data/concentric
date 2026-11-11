@@ -1,0 +1,209 @@
+{
+  "version": "0.11.2",
+  "versionCode": 39,
+  "total": 40,
+  "pass": 40,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "语音服务不再调 voice_chat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音服务不再轮询 voice_job",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页不再调 voice_chat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频页不再轮询 voice_job",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "submit 支持 modality/channel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "channel=null 走 passthrough",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "submit 仍带 source=boss",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "一轮式 ask（提交+等结果）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "任务结果字段",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音主链路是 dispatch WS",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "HLS 兜底用 dispatch.ask",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "拿到文字后用 live_call say 渲染",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "兜底先本地 ASR 再提交",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "开场白复用 say()",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频接通后建实时通道",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频通道 modality=video",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频回复用 say 渲染",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频通道不可用时退回 dispatch.ask",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频兜底先 ASR",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通道断开后清 submit 标记",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "解析 turn / greeting",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "按轮次排队再回调",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "缺号 300ms 兜底补发",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频跳过服务端重复问候",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "握手后等 session_started 才算就绪",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "假连接会被关掉并试下一个地址",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "上行独立线程（不被重连阻塞）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dispatch 失败原因可见",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "探针忽略 turn=0 的 reply_end",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "上行整句单帧（不分片）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "推流期间不发 ping",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "先停上行再发 close",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "4409 被接管不再重连",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "挂断等 bye 再断",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "单 socket（连新前关旧）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "WS 帧协议（hello/audio_end）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "实时通道 client 有 transcript/reply",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "版本 ≥ 0.11.2",
+      "ok": true,
+      "detail": "0.11.2"
+    },
+    {
+      "name": "versionCode ≥ 39",
+      "ok": true,
+      "detail": "39"
+    },
+    {
+      "name": "CLIENT_VERSION 同步",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

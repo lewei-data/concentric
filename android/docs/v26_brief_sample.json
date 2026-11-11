@@ -1,0 +1,96 @@
+{
+  "job_id": "vj_970d38_93915",
+  "status": "done",
+  "question": "老板上线，汇报近期事项",
+  "ack": {
+    "text": "老板，我先把最近的事过一遍。"
+  },
+  "mode": "voice",
+  "avatar": {
+    "id": "secretary",
+    "name": "小秘书",
+    "role": "老板影子分身",
+    "photo": {
+      "path": "/home/boray/opc-workbench/prototype/assets/avatars/boss.png",
+      "url": "/conring/asr/assets/avatars/boss.png"
+    },
+    "videos": {
+      "talk": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/boss.talk.mp4",
+        "url": "/conring/asr/assets/videos/boss.talk.mp4"
+      },
+      "idle": {
+        "path": "/home/boray/opc-workbench/prototype/assets/videos/boss.idle.mp4",
+        "url": "/conring/asr/assets/videos/boss.idle.mp4"
+      }
+    },
+    "has_video": true
+  },
+  "delegate": {
+    "id": "secretary",
+    "name": "小秘书"
+  },
+  "created_at": 1794300193.9158463,
+  "callback_url": "",
+  "voice": "m10",
+  "emotion": "calm",
+  "scene": "boss_online",
+  "started_at": 1794300193.9162228,
+  "result": {
+    "speech_text": "老板，巡检完了。，以下是当前情况（只读 /opt/sefs/obsidian，来源都标在条目后面）。，一句话结论，全公司 0 条在制作——两批共 12 条定稿全卡在你这道开工审批上……。",
+    "detail_text": "老板，巡检完了。以下是当前情况（只读 /opt/sefs/obsidian，来源都标在条目后面）。\n\n一句话结论\n全公司 0 条在制作——两批共 12 条定稿全卡在你这道开工审批上，最近一批 04:07 定稿 6 条，等你签 production.start。\n\n进展\n- ceo 陆清安 04:07 主持 11-10 第二轮评审会，9 条池定稿 6 条并发纪要（INBOX uid33）；kb_manager 祁南 04:40 归档完毕（OPC/交付物/tr_256fb76d/归档索引.md）。\n- cco 沈青禾 04:05 交 9 条入选池（uid90）；cto 扶频已出这批的开工审批单「合规预扫」补件（OPC/技术复核/2026-11-10-tr_256fb76d-…）。\n- 三 PM（贺平生、米珂、姜月初）04:00 各交 4 条候选；文案／视频 6 人 04:00 后无动作记录，上轮 02:10 派单的草稿在盘（02-copy/03-storyboard/08-assessment），样片 05-preview.mp4 不存在。\n- 苏寒 02:02 复核：sherlock +2,372★ 是 04:05 页面值、非实时增量；顾凛川 00:14 预检记 PENDING_HUMAN。\n- 我的邮箱 0 封、0 未读，没有邮件积压。\n\n风险与异常\n- 连续空转：11-09 20:18、22:24、11-10 00:18、02:20 四轮都以「开工审批未通过」收口，上轮 6 条 blocked；KPI 三项目无新增。依据：各轮 06-log 末行、tr_1f8a906b/06-log.md 第18行。\n- 门禁顺序倒置：上轮 02:10 已向文案／视频派单出稿，02:20 审批才 timeout，与《岗位职责》169–170 行顺序相反。依据：tr_6bb16b6a/归档索引.md 缺口8。\n- 快照失真：动态/运行时快照.md 仍停在 2026-11-07 05:25（全员 idle、trace 0），与 06-log 明显不符，不能当巡检依据。\n- 重复定稿：sherlock 题已在 tr_bc58759c／tr_2eb593bc／tr_6bb16b6a 反复定稿未批。依据：tr_256fb76d/归档索引.md 缺口5。\n\n需要你拍板（急件置顶）\n【急】1. 开工放行哪批？A 只批 04:07 这批 6 条（全新题、素材全自制、补件齐）；B 只批上轮 6 条；C 12 条并批；D 继续挂起。\n 建议 A。不决策的后果：产能继续空烧，blocked 越堆越多，产出仍是 0。\n【急】2. sherlock 条合规三选一，须你书面选一个。A 题面原样＋零LOGO／零界面／零站点名＋事实层文字卡；B 画面用「某开源项目」隐去仓库名；C 改题面为通用版。\n 建议 A（CTO 唯一推荐项）。不决策：该条永远 blocked。依据：OPC/技术复核/2026-11-09-…-r6.md 第16、35–39行。\n【缓】3. 制度口径互斥：岗位职责 34／46／47 行写 3 条，56／57 行写 4 条，实际按 4→12→15→9→6 跑。建议授权 ceo 统一文本。不决策：每轮临时裁定，祁南已两次卡在「待 CEO 裁定」（tr_256fb76d/归档索引.md 缺口6、tr_8a438dc6 22:08 行）。\n\n明细可展开：/opt/sefs/obsidian/OPC/交付物/tr_256fb76d/归档索引.md、/opt/sefs/obsidian/OPC/交付物/tr_6bb16b6a/finalized-6.md",
+    "emotion": "calm",
+    "voice": "m10",
+    "audio_path": "/opt/sefs/mcp-asr/output/job_vj_970d38_93915.wav",
+    "audio_mime": "audio/wav",
+    "sample_rate": 24000,
+    "duration": 19.624,
+    "segments": [
+      {
+        "index": 0,
+        "text": "老板，巡检完了。以下是当前情况（只读 /opt/sefs/obsidian，",
+        "start": 0.0,
+        "end": 6.851
+      },
+      {
+        "index": 1,
+        "text": "来源都标在条目后面）。一句话结论，",
+        "start": 6.971,
+        "end": 11.396
+      },
+      {
+        "index": 2,
+        "text": "全公司 0 条在制作——两批共 12 条定稿全卡在你这道开工审批上……。",
+        "start": 11.516,
+        "end": 19.624
+      }
+    ],
+    "render": {
+      "driver": "wav_envelope",
+      "lip_sync": "amplitude",
+      "sample_rate": 24000,
+      "timeline": "segments",
+      "avatar": {
+        "id": "secretary",
+        "name": "小秘书",
+        "role": "老板影子分身",
+        "photo": {
+          "path": "/home/boray/opc-workbench/prototype/assets/avatars/boss.png",
+          "url": "/conring/asr/assets/avatars/boss.png"
+        },
+        "videos": {
+          "talk": {
+            "path": "/home/boray/opc-workbench/prototype/assets/videos/boss.talk.mp4",
+            "url": "/conring/asr/assets/videos/boss.talk.mp4"
+          },
+          "idle": {
+            "path": "/home/boray/opc-workbench/prototype/assets/videos/boss.idle.mp4",
+            "url": "/conring/asr/assets/videos/boss.idle.mp4"
+          }
+        },
+        "has_video": true
+      }
+    }
+  },
+  "finished_at": 1794300351.9696264
+}

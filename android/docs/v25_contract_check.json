@@ -1,0 +1,731 @@
+{
+  "pass": 145,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Java 校验环境可用",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "真实 org.json 实现可用（android.jar 内为 Stub）",
+      "ok": true,
+      "detail": "tools/lib/json-*.jar 缺失"
+    },
+    {
+      "name": "VerifyStream 编译通过",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "VerifyStream 全部断言通过",
+      "ok": true,
+      "detail": "o ʱ�� 21.16s\n  PASS  intro �İ��ǿ�\n  PASS  intro size 660258\n  PASS  intro �� id ѡ����һ��\n  PASS  δ֪ id �������������ǿ�\n  PASS  intro �������ܾ��ұ��δ����\n  PASS  playlist �з�Ƭ�ŷ���\n  PASS  ֻ�б�ͷ������\n  PASS  ���ַ���������\n  PASS  ENDLIST �ж�Ϊ����β\n  PASS  �����е� EVENT ��������β\n  PASS  playlist ��ʱ�� = 7s��ֱ����Ե��\n  PASS  ��Ƭ�� = 7\n  PASS  ��Ե��λ = �ܳ� - 1.2s\n  PASS  �� playlist ʱ��Ϊ 0\n  PASS  ֻ�б�ͷʱ��Ϊ 0\n  PASS  voice_chat ack ȡ�����յ���\n  PASS  ���ı��ظ�ԭ������\nVERIFY STREAM: 51 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "VerifyStream 计数",
+      "ok": true,
+      "detail": "VERIFY STREAM: 51 PASS / 0 FAIL"
+    },
+    {
+      "name": "VerifyBriefing 编译通过",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "VerifyBriefing 全部断言通过",
+      "ok": true,
+      "detail": "  PASS  һ�仰���۷ǿ�\n  PASS  ��չ���� 3 ��\n  PASS  �������� 2 ��\n  PASS  ���� 3 ��\n  PASS  �� 1 ���Ǽ���\n  PASS  �� 1 ������ȥ�����\n  PASS  �� 1 ���ٳ����� A\n  PASS  �� 1 �����������ߺ��\n  PASS  �� 3 ���ǻ���\n  PASS  �� 3 �������ǡ���Ȩ ceo ͳһ�ı���\n  PASS  ͨ��ָ�����׼����ѡ��\n  PASS  ��ͨ��ָ�������׼�������\n  PASS  ȱ����ʱ�������ܶ���\n  PASS  ������ empty()=true\nVERIFY BRIEFING: 14 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "VerifyBriefing 计数",
+      "ok": true,
+      "detail": "VERIFY BRIEFING: 14 PASS / 0 FAIL"
+    },
+    {
+      "name": "VerifyLevel 编译通过",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "VerifyLevel 全部断言通过",
+      "ok": true,
+      "detail": "�� TARGETDURATION��46.0��\n  PASS  �����ô��ھ�ֵ��44.87��\n  PASS  ĩƬ�ضϲ�Ӱ��ê�㣨ȡ��� EXTINF��\n  PASS  mediaT=45.929 �� 53.2%\n  PASS  mediaT=46.927 �� 82.9%\n  PASS  mediaT=47.929 �� 0\n  PASS  mediaT ���� edge(50.8) ��ȡβ��\n  PASS  �����е����Բ�ֵ = 0.5\n  PASS  ���� t0 ȡ�׸�\n  PASS  �����鷵�� 0\n  PASS  null ��ȫ\n  PASS  ͬԴ��ַ����\n  PASS  �������ܾ�\n  PASS  ��˿ھܾ�\n  PASS  �յ�ַ�ܾ�\n\nVERIFY LEVEL: 16 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "VerifyLevel 计数",
+      "ok": true,
+      "detail": "VERIFY LEVEL: 16 PASS / 0 FAIL"
+    },
+    {
+      "name": "源码存在 StreamContract.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "源码存在 StreamPlayback.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "源码存在 IntroPlayerActivity.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "源码存在 LiveCallActivity.java",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "布局存在 activity_intro_player.xml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "布局存在 activity_live_call.xml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Employee 含 v2.5 字段",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Employee 解析 liveCall.supported/protocol/segment_sec",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "StreamContract 工具常量对齐 v2.5",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "StreamPlayback LIVE 先等首个分片",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话页用 live_call + voice_chat(live_session)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话页只保留开始与结束两个按钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话页不再有「重新连接」按钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "断流自动重连（无需用户点按钮）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "持续聆听：LiveMic 常开麦克风 + VAD 自动断句",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "回声消除（防自问自答死循环）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "一句话一句话串行发送（不丢话）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "播放地址优先 hls_url_full（不再二次拼 origin）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "m3u8 带时间戳，避免中间层缓存旧列表",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "滑动窗口播完重开同一路流（不重建会话）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "live.ended=true 时本地播 job 音频（不重复播流内音频）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "挂断后等未完成回复播完再停服务",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话无时长上限（不设自动挂断）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话页不再使用旧 call_start/call_turn/call_stop",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "介绍页按需调 intro_video 并直接播返回地址",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "档案页入口齐全（语音开关 + 发起通话）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页首次进入自动播放服务端介绍视频",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页进入时与服务端对齐最新视频",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页音量跟随语音控制开关",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页布局用 CoverVideoView 铺满 + 重播按钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页顺序：照片姓名 → 视频 → 通话 → 资料 → 设为当前",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页去掉「试听汇报」与说明性文字",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频舞台全宽出血（负边距抵消 18dp 内缩）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "舞台高度按视频宽高比算（容器比例 == 视频比例才不留白）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "视频尺寸拿不到时轮询重试（部分机型 onPrepared 时为 0）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "出血舞台背景不做圆角（避免视频四角被削掉）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话按钮文案为「发起实时通话」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "介绍全屏页不再静默关页（有 Throwable 兜底与日志）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页入口改为 当前进度 / 待办事项 / 系统设置",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页提示文案随当前汇报人变化（不再写死小秘书）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话服务带上当前汇报人 id（否则永远打到小秘书）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "转写里的对方称呼按汇报人渲染（Line 只带 fromUser）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "自己说的话走并行 asr_transcribe（1.7s 出字，不等 voice_chat）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "员工文字按「已播出到哪」调度（不是按 ack 到达时刻）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "滞后用最近 8 个样本的中位数（抗分段跳变）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "seq 必须单调递增，过期样本丢弃",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "连续 3 次拉取失败降级，恢复后自动切回",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "status=ended 停止轮询并放出剩余字幕",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "锚点来源只有一处（将来 server 给 speech_at 只改这里）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "句子队列：提前 120ms 出、说完 200ms 滚出",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "电平计 300ms 采样一次",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "没混进流（live 缺失）也要本地补播，避免有字无声",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ASR 池与 job 池互不阻塞，服务销毁才回收",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "说完立刻出现「我」这一行（占位不等 ASR）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ASR 文本原地替换占位，不重复出行",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "转写变更主动回调界面（不等定时器）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "占位文案带跳动（识别中 / 处理中）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "员工侧电平与服务端字段兼容（就绪后自动生效）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "电平契约字段解析（level_url_full / level_fps / segment_sec）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "新增 LiveLevelMeter 且只认同源地址",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "单次失败不归零、读不到播放列表时保留旧锚点",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "联调日志（pos/mediaT/edge/seq/anchor）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话服务接入电平计并在起播后启动、断开时停止",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "音量条取「自己 + 员工侧」最大值",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页不再显示「未连接」状态文字",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "点通话会响拨号音、接通放提示音",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "拨号音不会被「服务异步启动」的瞬间状态掐掉（3s 宽限）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "拨号音是铃声式旋律 + 通话声道 + 衰减包络",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "整段旋律共用一条 AudioTrack 连续写，收尾先淡出再停（不咔咔）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话音量为 0 时临时抬到 40%，离开还原",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "拨号音有 ToneGenerator 兜底 + 日志",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "接通后提示「已接通」并自动消失",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "接通中只有动画、不堆文字",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "接通中不显示「正在接通 xxx」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话中保持屏幕常亮（窗口 FLAG，不用 WakeLock）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页通话中/接通中常亮，销毁时清除",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话面板与视频通话页同样常亮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "不引入 WAKE_LOCK 权限",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话块整体收紧（84dp / 更小的间距与控件）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "接通后有紧凑通话条（时长 · 音量 · 挂断）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "接通中/接通后都隐藏「点击通话…」提示与大圆钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "音量条由实时电平驱动（100ms 刷新）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "转写区更高更大并可自动滚到最新",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页主按钮是通话（接通后红色挂断）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页有实时转写区",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "旧录音文案不再出现在首页可见布局",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话走纯音频 mode=audio（不推视频轨）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "挂断先停播放再发 stop",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "列表页头部介绍文字已去掉",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "同步按钮文案改为「立即同步」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "老板单独成块放在列表最后",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "在册员工列表排除老板",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "老板判定按 id / 工号 / 岗位（统一在 Employee.isBoss）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "老板详情页隐藏「发起实时通话」与「设为当前汇报人」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "老板详情页标题为「老板档案」",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "老板不会出现「设为当前汇报员」字样（refreshCurrentButton 提前返回）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页新增实时语音通话图标",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "默认汇报员是小秘书",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音通话跑在 Service 里（切页面不断）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音通话不建视频界面（纯音频）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "通话接入后按钮变红、可随时挂断",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "当前进度页取小秘书简报",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "待办事项页可审批通过/不通过",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "简报解析出结论/进展/风险/待办四段",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Manifest 注册新页面与服务",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "档案缓存原子写入（避免读到半截 JSON）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页已去掉「播放自我介绍」按钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "详情页新增语音控制图标与播放提示",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "音量为开/关两套图标都在",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "自动播放只在本次运行内首次发生（进程级记录）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音控制开关持久化到 McpConfig",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "语音关闭后视频仍加载但静音",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "切回页面不再自动播放（onResume 不起播）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Manifest 注册两个页面",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "布局 id 齐全 activity_intro_player.xml",
+      "ok": true,
+      "detail": "missing=[]"
+    },
+    {
+      "name": "布局 id 齐全 activity_live_call.xml",
+      "ok": true,
+      "detail": "missing=[]"
+    },
+    {
+      "name": "版本号三处一致 0.9.5 / 29",
+      "ok": true,
+      "detail": "gradle=0.9.5/29 cfg=0.9.5"
+    },
+    {
+      "name": "仍然零第三方依赖",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "新增源码不引入任何第三方 URL",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "profile 返回 >=18 人（当前 19）",
+      "ok": true,
+      "detail": "count=19"
+    },
+    {
+      "name": "profile 顶层缺件清单齐全",
+      "ok": true,
+      "detail": "['asset_url_base', 'count', 'employees', 'missing_intro', 'missing_photo', 'missing_video']"
+    },
+    {
+      "name": "introVideo 覆盖率达标（19/19 已生成）",
+      "ok": true,
+      "detail": "缺：[]"
+    },
+    {
+      "name": "introReady 覆盖率达标（19/19）",
+      "ok": true,
+      "detail": "未就绪：[]"
+    },
+    {
+      "name": "已生成介绍视频的人都有 introText",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "已生成介绍视频的人 introDuration>0",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "每人 liveCall.supported=true",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "liveCall.protocol=hls 且 segment_sec=1.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "introVideo 全部是服务端同源绝对路径（已生成的）",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "CEO 介绍视频指向 intro/ceo.mp4",
+      "ok": true,
+      "detail": "/conring/asr/assets/intro/ceo.mp4"
+    },
+    {
+      "name": "CEO 介绍时长在 5–120s 合理区间",
+      "ok": true,
+      "detail": "19.64"
+    },
+    {
+      "name": "已生成的介绍视频都可 Range 取流（19 个）",
+      "ok": true,
+      "detail": "broken=[]"
+    },
+    {
+      "name": "CEO 介绍视频含视频轨 avc1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CEO 介绍视频含音轨 mp4a（音画合一）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "live_call 在线检查（会话已满，跳过）",
+      "ok": true,
+      "detail": "执行失败：实时通话会话已达上限 8，请先挂断"
+    }
+  ]
+}

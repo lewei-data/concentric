@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 正式端点 https://ai.boraydata.com/conring/asr/mcp 使用系统信任的 CA 证书（Let's Encrypt），
+     默认禁止明文流量；仅内网应急端点（192.168.31.206 / .208）允许 HTTP 明文。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">192.168.31.206</domain>
+        <domain includeSubdomains="true">192.168.31.208</domain>
+    </domain-config>
+</network-security-config>

@@ -7,3 +7,19 @@ logs/
 .env
 .remotion/
 video-remotion/node_modules/
+
+# ---- Android 客户端工程（android/）----
+# 构建缓存与 IDE 产物：跨平台无效，任何人 clone 后由 Gradle 重建
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/captures/
+android/.cxx/
+# 本机路径与签名凭据：绝不入库
+android/local.properties
+android/keystore.properties
+android/signing/*.jks
+android/signing/*.keystore
+# 交付二进制（APK）走 Releases / 服务器留存，不入 git 历史
+android/dist/*.apk
