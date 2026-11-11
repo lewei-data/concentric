@@ -21,7 +21,7 @@ export const OVERLAP = 26;
 export const CHARACTERS: Character[] = [
   {
     id: "boss",
-    name: "蒿色莫",
+    name: "蒿瑟莫",
     role: "老板",
     accent: "#8FA8C8",
     line: "先想清楚要什么，再让别人动手。",

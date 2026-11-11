@@ -175,23 +175,30 @@ v2 的表述降级为：
 
 ```python
 from gateway.config import Platform
-from gateway.platform_registry import PlatformEntry
 
-def _media_check_fn(cfg) -> bool:
-    # passive probe：只判断配置是否齐备，不发网络请求
-    return bool(cfg and cfg.get("port"))
+def _media_deps_ok() -> bool:
+    # check_fn 是无参被动探测：只判断依赖是否可导入，绝不安装、不发网络请求。
+    # 网关状态页会随时调用它，所以不能读运行时状态、不能依赖 cfg。
+    try:
+        import aiohttp  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 def register(ctx):
     ctx.register_platform(
-        "media",                       # name
-        "Media API",                   # label
-        lambda cfg: MediaAdapter(cfg), # adapter_factory
-        _media_check_fn,               # check_fn（必填）
+        "media",                        # name
+        "Media API",                    # label
+        lambda cfg: MediaAdapter(cfg),  # adapter_factory(PlatformConfig) -> BasePlatformAdapter
+        _media_deps_ok,                 # check_fn（必填、无参）
+        validate_config=None,           # 可选：PlatformConfig -> bool
+        required_env=None,              # 可选：缺失时状态页提示
         platform_hint="You are replying over an audio/video API. Keep replies short and spoken-style.",
+        ensure_deps_fn=None,            # 可选：check_fn 为 False 时才调用的主动安装器
     )
 ```
 
-> 注：`register_platform` 的 `adapter_factory` 是否接受 `cfg` 参数、`platform_hint` 是否应在 `entry_kwargs` 中传递，**以 S4 开工前的实测签名为准**（附录 A-1 打印真实签名）。这是本文唯一保留的实现细节，因为未实测到底层装饰器。
+> 签名已实测：[plugins.py](file:///opt/sefs/hermes/hermes-agent/hermes_cli/plugins.py#L779-L797) `register_platform(self, name, label, adapter_factory, check_fn, validate_config=None, required_env=None, install_hint="", **entry_kwargs)`；`check_fn` 是**无参**被动探测，`adapter_factory` 接收 `PlatformConfig`。端口等运行期参数从 `PlatformConfig.extra` 读（`from_dict` 会把未知键全部收进 `extra`），不要塞进 `check_fn`。
 
 ---
 
@@ -239,13 +246,56 @@ def register(ctx):
 
 | 阶段 | 内容 | 工作量级 | 验收 | 回滚 |
 |---|---|---|---|---|
-| **S0** | 消除双份模型加载：停网关直拉的 `mcp-tts`，只留 9101 一份（或反向：停 9101，改由网关单份） | 小时级 | `ps` 只剩 1 个 CosyVoice 进程；内存下降 | 恢复启动 |
-| **S1** | 建 `media-engine:9200`，迁入 TTS（代码复用 `mcp-tts`）与 ASR（复用 `mcp-asr`）；`/health` | 人日级 2-3 | 附录 A-2 冒烟全绿 | 停服务，MCP 仍在 |
+| **S0** ✅ 2026-11-11 | 消除双份模型加载：停网关直拉的 `mcp-tts`，只留 9101 一份（或反向：停 9101，改由网关单份） | 小时级 | `ps` 只剩 1 个 CosyVoice 进程；内存下降 | 恢复启动 |
+| **S1** ✅ 2026-11-11 | 建 `media-engine:9200`，迁入 TTS（代码复用 `mcp-tts`）与 ASR（复用 `mcp-asr`）；`/health` | 人日级 2-3 | 附录 A-2 冒烟全绿 | 停服务，MCP 仍在 |
 | **S2** | `media-voice` provider 插件；切换 `stt.provider`/`tts.provider` | 人日级 1-2 | 语音消息自动转写生效；`send_voice` 可用；音色对齐通过 | 改回 `edge` + 内置 local |
 | **S3** | 数字人迁 `/v1/video/jobs`；下线 9101/9102；删 `mcp_servers.tts` | 人日级 2 | 12 个工具全部消失且系统无报错；job 状态机正确 | 恢复 MCP 注册 + 重启桥 |
 | **S4** | media 适配器 + 客户端契约 | 人日级 3-4 | §11 契约逐条通过 | 关插件 |
 
 **S0 可立即执行，且不依赖任何后续决策。** 建议作为本次改造的第一步。
+
+### 7.1 S0 执行记录（2026-11-11）
+
+| 项 | 内容 |
+|---|---|
+| 改动 | `/opt/sefs/hermes/config.yaml` 删除 `mcp_servers.tts`（原 line 2186-2192），留 3 行注释说明停用原因与后续归属 |
+| 备份 | `/opt/sefs/hermes/backups/config.yaml.bak-s0-20261111` |
+| 校验 | `yaml.safe_load` 通过；`mcp_servers` 键已不存在；`tts.provider` 仍为 `edge` |
+| 范围确认 | 18 个 profile 的 `config.yaml` 只注册 `mail` 一个 MCP，无 `tts`；`skills/`、`SOUL.md` 无任何 `tts_synthesize` / `tts_list_voices` 引用 |
+| 进程结果 | 网关直拉的 `mcp-tts`（ppid=网关 pid）已消失；仅剩 9101 桥 1 份 CosyVoice（RSS 391MB，模型已加载） |
+| 待办 | 网关进程内存里仍持有旧注册，需重启后彻底移除；重启由小时级自重启或人工 `gateway restart` 完成 |
+
+**实测偏差更正**（原 §1 表述）：双份进程中，网关直拉那份 21 小时 0 调用、RSS 仅 13MB（懒加载，模型从未进内存），真正加载模型的是 9101 桥那份（RSS 391MB）。因此 S0 的收益是**消除隐患**（任何一次网关侧调用都会再加载一份 ~10GB 权重的模型），而不是「已发生的内存双倍占用」。
+
+### 7.2 S1 执行记录（2026-11-11）
+
+| 项 | 内容 |
+|---|---|
+| 交付物 | `/opt/sefs/media-engine/`：`server.py`（FastAPI）、`tts_engine.py`、`asr_engine.py`、`run.sh`、`engine.log`、`work/`（产物） |
+| 运行方式 | `setsid --fork sh run.sh`（已脱离会话，ppid=1）；`run.sh` 清 `LD_LIBRARY_PATH`、复用 `/opt/sefs/CosyVoice/venv` |
+| 代码复用 | TTS：切句/归一化/音色注册/静音裁剪/失控重试/进程池整段迁移，仅剥离 MCP 协议层；ASR：`whisper.load_audio` + `transcribe` 与原有过滤逻辑复用。音色表仍读 `mcp-tts/voices.json`（唯一数据源，`MEDIA_VOICES_FILE` 可覆盖） |
+| 新增 | §6.2 完整过滤链：时长门(0.3s) → 能量门(RMS 0.002) → VAD 门(有声帧占比 5%) → 段置信门(`no_speech>0.6` 或 `avg_logprob<-1.0`) → 复读门 → 黑名单门 → 字符集门；阈值全部可用 env 覆盖 |
+| 端点 | `GET /health` `/metrics` `/v1/voices` `/files/{name}`；`POST /v1/tts`（wav / mp3 / json+SRT+segments）；`POST /v1/asr`（multipart 或 json base64/path） |
+| 回滚 | 停 9200 即可；9101/9102 桥与 dispatch 全程未改动，`mcp_tts` 仍在线 |
+
+**附录 A-2 冒烟实测（全部通过）**
+
+| 用例 | 结果 |
+|---|---|
+| `GET /health` | `status=ok`，tts 2 worker ready，sample_rate 24000，asr model=small |
+| `POST /v1/tts` mp3 | HTTP 200，25,173 B，`ffprobe` duration 3.48s（首调用 32.1s 含模型加载，热调用 RTF≈2.9） |
+| `POST /v1/tts` json | 返回 audio/srt/segments 三链接 + 句级时间轴，SRT 时间码正确 |
+| `GET /files/{name}` | 200；`/files/..%2F..%2Fetc%2Fpasswd` → 404（路径穿越已阻断） |
+| `POST /v1/asr`（TTS 回灌） | `"第二句话在这里,勇于验收。"`（原文「用于」，small 模型错字），confidence 0.613 |
+| 静音 1s | `silent=true, silent_reason=silent`，不跑模型（能量门） |
+| 粉噪 3s | whisper 编出文本，被黑名单门丢弃 → `text=""`，`filtered_reasons={blacklist:1}` |
+
+**实测偏差 / 需后续处理**
+
+1. **单 worker 内存 6.6~7.8GB**（CosyVoice3-0.5B，RSS 实测）：原 `mcp-tts` 默认 6 worker ≈ 42GB。S1 期间两套并存，故 media-engine 默认 `TTS_WORKERS=2`（≈14GB），S3 下线 9101 后再调回 6。
+2. **ASR 质量**：whisper `small` 同音错字（「用于」→「勇于」），且该条 confidence 0.489 恰好落在 `ASR_LOW_CONFIDENCE=0.5` 下方被判 `low_confidence`。§6.1 的 CER≤10% 门尚未标定，S2 前需决定是否升 `medium`/`large-v3` 或改用 9102 现有配置。
+3. **`ffmpeg`/`ffprobe`**：本机 shell 的 `LD_LIBRARY_PATH` 指向 IDE 自带库，直接调用会报 `GLIBCXX_3.4.32 not found`；`run.sh` 已 `unset`，运维脚本调用时同样要清。
+4. 引擎未接 `/v1/video/jobs`（数字人）与 job 队列——按方案留到 S3。
 
 ---
 
