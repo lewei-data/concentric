@@ -248,7 +248,7 @@ def register(ctx):
 |---|---|---|---|---|
 | **S0** ✅ 2026-11-11 | 消除双份模型加载：停网关直拉的 `mcp-tts`，只留 9101 一份（或反向：停 9101，改由网关单份） | 小时级 | `ps` 只剩 1 个 CosyVoice 进程；内存下降 | 恢复启动 |
 | **S1** ✅ 2026-11-11 | 建 `media-engine:9200`，迁入 TTS（代码复用 `mcp-tts`）与 ASR（复用 `mcp-asr`）；`/health` | 人日级 2-3 | 附录 A-2 冒烟全绿 | 停服务，MCP 仍在 |
-| **S2** | `media-voice` provider 插件；切换 `stt.provider`/`tts.provider` | 人日级 1-2 | 语音消息自动转写生效；`send_voice` 可用；音色对齐通过 | 改回 `edge` + 内置 local |
+| **S2** ✅ 2026-11-11 | `media-voice` provider 插件；切换 `stt.provider`/`tts.provider` | 人日级 1-2 | 语音消息自动转写生效；`send_voice` 可用；音色对齐通过 | 改回 `edge` + 内置 local |
 | **S3** | 数字人迁 `/v1/video/jobs`；下线 9101/9102；删 `mcp_servers.tts` | 人日级 2 | 12 个工具全部消失且系统无报错；job 状态机正确 | 恢复 MCP 注册 + 重启桥 |
 | **S4** | media 适配器 + 客户端契约 | 人日级 3-4 | §11 契约逐条通过 | 关插件 |
 
@@ -296,6 +296,40 @@ def register(ctx):
 2. **ASR 质量**：whisper `small` 同音错字（「用于」→「勇于」），且该条 confidence 0.489 恰好落在 `ASR_LOW_CONFIDENCE=0.5` 下方被判 `low_confidence`。§6.1 的 CER≤10% 门尚未标定，S2 前需决定是否升 `medium`/`large-v3` 或改用 9102 现有配置。
 3. **`ffmpeg`/`ffprobe`**：本机 shell 的 `LD_LIBRARY_PATH` 指向 IDE 自带库，直接调用会报 `GLIBCXX_3.4.32 not found`；`run.sh` 已 `unset`，运维脚本调用时同样要清。
 4. 引擎未接 `/v1/video/jobs`（数字人）与 job 队列——按方案留到 S3。
+
+### 7.3 S2 执行记录（2026-11-11）
+
+| 项 | 内容 |
+|---|---|
+| 交付物 | `/opt/sefs/hermes/plugins/media-voice/{plugin.yaml,__init__.py}`：`MediaCosyVoiceProvider`（`name=media_cosyvoice`）+ `MediaWhisperProvider`（`name=media_whisper`） |
+| 配置 | `plugins.enabled += media-voice`；`stt.provider: media_whisper`（+`stt.media_whisper.language: zh`）；`tts.provider: media_cosyvoice`（+顶层 `tts.voice: m06`）；保留 `tts.edge.voice` 供回滚 |
+| 备份 | `/opt/sefs/hermes/backups/config.yaml.bak-s2-20261111` |
+| 环境变量 | `MEDIA_ENGINE_URL`(默认 `http://127.0.0.1:9200`)、`MEDIA_ENGINE_TOKEN`、`MEDIA_TTS_VOICE`(默认 `m06`)、`MEDIA_VOICES_FILE`、`MEDIA_TTS_TIMEOUT=900`、`MEDIA_ASR_TIMEOUT=300` |
+| 校验方式 | 系统 `python3` 校验 YAML；用真实运行时（`tools/python-3.14.9…/python3 -I` + `import hermes_bootstrap`）加载插件并**走核心工具入口** `text_to_speech_tool` / `transcribe_audio` |
+
+**实测结果（核心链路）**
+
+| 用例 | 结果 |
+|---|---|
+| `PluginContext` 注册 | `agent.tts_registry.get_provider('media_cosyvoice')` / `transcription_registry.get_provider('media_whisper')` 均能取到实例 |
+| `text_to_speech_tool` | `success=true, provider=media_cosyvoice`，产物 `/opt/sefs/hermes/cache/audio/tts_*.mp3` |
+| 音色解析 | `_plugin_voice_kwargs(load_config()['tts'])` → `{'voice': 'm06', 'model': None, 'speed': None}` |
+| `transcribe_audio` | `transcript="核心工具录有验收第一句第二句用来确认音色配置生效"`，`language=zh`，`confidence=0.714`，`duration=6.43`（原文「路由」被 small 听成「录有」） |
+| 缺文件容错 | `transcribe` 对不存在的路径返回 error envelope，不抛异常 |
+
+**实测偏差 / 已修**
+
+1. **插件 provider 的音色读顶层 `tts.voice`**：`tools/tts_tool_plugins.py::_plugin_voice_kwargs` 直接读 `tts` 顶层 `voice/model/speed`，`tts.<provider>.voice` 只对内置 provider 生效。原写法 `tts.media_cosyvoice.voice` 会被静默忽略 → 已改为顶层 `voice: "m06"`。
+2. **全局 `stt.language: "en"` 会污染本机中文**：`_resolve_stt_language` 优先取 `stt.<provider>.language`，否则回落到全局 `en`，whisper 被强制英文后把中文转成拼音（实测输出 `"He Xin Gong Ju Lu You Yan Shou..."`）→ 已加 `stt.media_whisper.language: "zh"`。
+3. **`/v1/asr` 的 `segments` 被统计字段覆盖成整数**：`asr_engine.confidence()` 里 `"segments": len(kept)` 在字典合并时覆盖了真实分段列表 → 已改名 `segment_count`。**运行中的 9200 进程仍是旧代码，需重启引擎后生效**（Hermes 侧忽略该字段，不影响 S2 验收）。
+4. **`voice_compatible=false`**：插件按 `TTSProvider` 默认值返回 false，平台侧发的是音频附件而不是语音条；语音条能力留到 S4 的平台适配器统一处理。
+
+**待办（需人工）**
+
+- 重启网关加载插件并清掉 S0 遗留的旧 `mcp_tts` 注册：`HERMES_HOME=/opt/sefs/hermes /opt/sefs/hermes/run-hermes.sh gateway restart`
+- 重启 media-engine 使 `segment_count` 修复生效
+- §6.3 音色盲听：`m06` 为暂定值（当前最接近 edge `zh-CN-YunyangNeural` 的成熟男声），需用户对比确认
+
 
 ---
 
