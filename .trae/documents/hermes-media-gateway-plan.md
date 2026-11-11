@@ -271,7 +271,7 @@ def register(ctx):
 
 | 项 | 内容 |
 |---|---|
-| 交付物 | `/opt/sefs/media-engine/`：`server.py`（FastAPI）、`tts_engine.py`、`asr_engine.py`、`run.sh`、`engine.log`、`work/`（产物） |
+| 交付物 | `/opt/sefs/opc-workbench/media-engine/`：`server.py`（FastAPI）、`tts_engine.py`、`asr_engine.py`、`run.sh`、`engine.log`、`work/`（产物） |
 | 运行方式 | `setsid --fork sh run.sh`（已脱离会话，ppid=1）；`run.sh` 清 `LD_LIBRARY_PATH`、复用 `/opt/sefs/CosyVoice/venv` |
 | 代码复用 | TTS：切句/归一化/音色注册/静音裁剪/失控重试/进程池整段迁移，仅剥离 MCP 协议层；ASR：`whisper.load_audio` + `transcribe` 与原有过滤逻辑复用。音色表仍读 `mcp-tts/voices.json`（唯一数据源，`MEDIA_VOICES_FILE` 可覆盖） |
 | 新增 | §6.2 完整过滤链：时长门(0.3s) → 能量门(RMS 0.002) → VAD 门(有声帧占比 5%) → 段置信门(`no_speech>0.6` 或 `avg_logprob<-1.0`) → 复读门 → 黑名单门 → 字符集门；阈值全部可用 env 覆盖 |
@@ -357,7 +357,7 @@ def register(ctx):
 **待办**
 
 - §6.3 音色盲听：`m06` 为暂定值（当前最接近 edge `zh-CN-YunyangNeural` 的成熟男声），需用户对比确认
-- 重启引擎的常规入口已落为 `/opt/sefs/media-engine/restart.sh`（含孤儿清理等待）
+- 重启引擎的常规入口已落为 `/opt/sefs/opc-workbench/media-engine/restart.sh`（含孤儿清理等待）
 - S3 前 `mcp-tts`(9101)/`mcp-asr`(9102) 两个桥进程仍在运行（已无数据面调用方），下线时一并回收
 
 

@@ -355,7 +355,7 @@ def synthesize(text, voice=None, speed=1.0, out_dir=None, stem=None):
     if voice not in cfg["voices"]:
         raise ValueError("未知音色：%s（可用：%s）" % (voice, ", ".join(cfg["voices"])))
     speed = float(speed or 1.0)
-    out_dir = out_dir or os.environ.get("MEDIA_WORK_DIR", "/opt/sefs/media-engine/work")
+    out_dir = out_dir or os.environ.get("MEDIA_WORK_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "work"))
     stem = stem or "tts_%d_%s" % (int(time.time()), uuid.uuid4().hex[:6])
     os.makedirs(out_dir, exist_ok=True)
 
