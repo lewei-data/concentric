@@ -321,14 +321,44 @@ def register(ctx):
 
 1. **插件 provider 的音色读顶层 `tts.voice`**：`tools/tts_tool_plugins.py::_plugin_voice_kwargs` 直接读 `tts` 顶层 `voice/model/speed`，`tts.<provider>.voice` 只对内置 provider 生效。原写法 `tts.media_cosyvoice.voice` 会被静默忽略 → 已改为顶层 `voice: "m06"`。
 2. **全局 `stt.language: "en"` 会污染本机中文**：`_resolve_stt_language` 优先取 `stt.<provider>.language`，否则回落到全局 `en`，whisper 被强制英文后把中文转成拼音（实测输出 `"He Xin Gong Ju Lu You Yan Shou..."`）→ 已加 `stt.media_whisper.language: "zh"`。
-3. **`/v1/asr` 的 `segments` 被统计字段覆盖成整数**：`asr_engine.confidence()` 里 `"segments": len(kept)` 在字典合并时覆盖了真实分段列表 → 已改名 `segment_count`。**运行中的 9200 进程仍是旧代码，需重启引擎后生效**（Hermes 侧忽略该字段，不影响 S2 验收）。
+3. **`/v1/asr` 的 `segments` 被统计字段覆盖成整数**：`asr_engine.confidence()` 里 `"segments": len(kept)` 在字典合并时覆盖了真实分段列表 → 已改名 `segment_count`。重启引擎后实测 `/v1/asr` 返回 `segments=[{start,end,text}×2]`、`segment_count=2`，已生效。
 4. **`voice_compatible=false`**：插件按 `TTSProvider` 默认值返回 false，平台侧发的是音频附件而不是语音条；语音条能力留到 S4 的平台适配器统一处理。
+5. **引擎池首次拉起时出现过一次 worker 静默退出**（16:55:06，2 个 spawn 子进程打印 crashpad 警告后消失，父进程一直 `ready=false`，直到 600s 超时返回 500）。同一份配置在同一台机器上重启后（17:13）实测正常：冷启动 47s、`ready_workers=2`、`/v1/tts` 200。**未能复现**，暂记为一次性异常；如再出现需用 `PYTHONFAULTHANDLER=1` 抓原生栈。
+6. **重启会留下孤儿 worker**：旧引擎被 `SIGTERM` 后其 spawn 子进程被 init 收养继续占内存（本次累积 11 个 × ≈6.6GB）。已按 `ppid=1` 精确清理，只保留 9101 桥（ppid=4192061）与当前引擎（ppid=675290）的子进程。
 
-**待办（需人工）**
+**S2 重启验证（2026-11-11 17:13-17:16）**
 
-- 重启网关加载插件并清掉 S0 遗留的旧 `mcp_tts` 注册：`HERMES_HOME=/opt/sefs/hermes /opt/sefs/hermes/run-hermes.sh gateway restart`
-- 重启 media-engine 使 `segment_count` 修复生效
+| 项 | 结果 |
+|---|---|
+| media-engine 重启 | 新进程 675290，`/health` → `tts ready_workers=2 / sample_rate=24000` |
+| `/v1/tts`（mp3, m06） | 200，冷启动 47.1s，38925 字节 |
+| `/v1/asr` | 200，5.2s，`segments` 为 list（2 段），`segment_count=2`，`confidence=0.724` |
+| 插件核心链路 | `text_to_speech_tool` → `success=true, provider=media_cosyvoice`；`transcribe_audio` → 中文文本 + 3 段 `segments` |
+| 音色解析 | `{'voice': 'm06', 'model': None, 'speed': None}` |
+| 孤儿 worker 清理 | 11 个 ppid=1 子进程已回收，可用内存回到 225GB |
+| 网关重启 | ✅ 2026-11-11 17:36:36，新进程 717680（旧 3463001 已退出），`gateway-starts.log` 新增 1794389796.44 |
+
+**S2 网关侧验证（2026-11-11 17:36-17:38）**
+
+| 项 | 结果 |
+|---|---|
+| 重启方式 | `sudo env HERMES_HOME=/opt/sefs/hermes /home/boray/.local/bin/hermes gateway restart --yes` |
+| 旧进程直拉的第二份 stdio `mcp-tts` | ✅ 已消失；`gateway status` 子树只剩 `mcp-mail`（S0 的双份加载缺陷不再复现） |
+| 插件加载 | `agent.log` 17:36:36：`Plugin 'media-voice' registered TTS provider: media_cosyvoice` / `registered transcription provider: media_whisper`，`Plugin discovery complete: 65 found, 61 enabled`，无报错 |
+| 核心入口复跑（网关同款解释器 + 新进程） | `registry tts = media_cosyvoice | stt = media_whisper`；`text_to_speech_tool` → `success=true, provider=media_cosyvoice`；`transcribe_audio` → 中文文本、`segments` 为 list×3、`confidence=0.736`、`language=zh` |
+| 网关自身健康 | `hermes gateway status` → `✓ System gateway service is running`（PID 717680） |
+
+**注意事项（重启路径）**
+
+- `run-hermes.sh` 在 **sudo 下会走 `unshare -Umr` 分支并 `mount --bind /etc/resolv.conf`，本机该 mount 被拒（`mount ... 失败`），脚本 `exit 1`**；因此 sudo 重启必须直接调用 `/home/boray/.local/bin/hermes` 并显式带 `HERMES_HOME`。
+- 网关有防误伤守卫：存在活跃会话时 `gateway restart` 会拒绝（`Refusing to restart the gateway: 1 live session(s)`），需 `--yes` 才强制中断。
+- `--yes` 使用优雅重启：先等 in-flight turn 收尾再 drain（本次输出 `waiting up to 1885s`），不是立刻 kill。
+
+**待办**
+
 - §6.3 音色盲听：`m06` 为暂定值（当前最接近 edge `zh-CN-YunyangNeural` 的成熟男声），需用户对比确认
+- 重启引擎的常规入口已落为 `/opt/sefs/media-engine/restart.sh`（含孤儿清理等待）
+- S3 前 `mcp-tts`(9101)/`mcp-asr`(9102) 两个桥进程仍在运行（已无数据面调用方），下线时一并回收
 
 
 ---
