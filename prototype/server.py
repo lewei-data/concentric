@@ -88,7 +88,7 @@ ROSTER_FILE = os.path.join(VAULT, "公司", "员工名册.md")
 # 登录凭据放在 Obsidian 公司目录，每次登录实时读取（改文件即生效，不用重启服务）
 CRED_FILE = os.path.join(VAULT, "公司", "登录凭据.md")
 # 素材库：首页卡片的数据源 + 只读文件发布目录（materials.json 里写相对路径即可）
-MATERIALS_FILE = os.path.join(BASE_DIR, "materials.json")
+MATERIALS_FILE = os.environ.get("OPC_MATERIALS_FILE", os.path.join(BASE_DIR, "materials.json"))
 MATERIALS_ROOT = os.environ.get("OPC_MATERIALS_ROOT", "/mnt/sefs/github-hotspots")
 SESSION_COOKIE = "opc_sess"
 SESSION_TTL = 7 * 24 * 3600          # 7 天免登录
@@ -455,7 +455,8 @@ AGENT_SPEC = _load_agent_spec()
 # 写入全部走白名单 + 路径校验 + 审计日志（logs/org-changes.jsonl），仅老板可写
 # =============================================================================
 ORG_PROFILES = os.environ.get("OPC_PROFILES", "/opt/sefs/hermes/profiles")
-ORG_AUDIT = os.path.normpath(os.path.join(BASE_DIR, "..", "logs", "org-changes.jsonl"))
+ORG_AUDIT = os.environ.get("OPC_ORG_AUDIT",
+                           os.path.normpath(os.path.join(BASE_DIR, "..", "logs", "org-changes.jsonl")))
 ORG_LOCK = threading.Lock()
 # key → (相对 VAULT 的路径, 标题, 是否允许编辑)；登录凭据永不开放
 POLICY_FILES = {
@@ -1579,7 +1580,7 @@ class Kernel:
         return self.fallback(aid, what)
 
     def _coerce_topics(self, data, pid, hotspot):
-        """PM 选题卡：每项目恰好 3 条（CCO 有 9 选 6 的筛选空间），模型漏项时规则兜底。"""
+        """PM 选题卡：每项目恰好 4 条（CCO 有 12 选 9 的淘汰空间），模型漏项时规则兜底。"""
         raw = (data or {}).get("topics")
         out = []
         if isinstance(raw, list):
@@ -1595,14 +1596,14 @@ class Kernel:
                             "durationSec": _to_int(t.get("durationSec"), 45),
                             "reason": str(t.get("reason") or "")[:120]})
         forms = ("热点解读", "延伸视角", "互动话题", "反常识问答")
-        while len(out) < 3:
+        while len(out) < 4:
             i = len(out)
             base = PROJECTS[pid]["name"]
             angle = (hotspot.get("title") or "今日热点").strip()
             out.append({"projectId": pid, "title": f"{angle}｜{base}{forms[i]}",
                         "angle": f"从{base}定位切入{forms[i]}", "form": forms[i],
                         "durationSec": 45, "reason": "规则兜底选题"})
-        return out[:3]
+        return out[:4]
 
     def _coerce_mgmt_topics(self, data):
         raw = (data or {}).get("topics")
@@ -1619,7 +1620,7 @@ class Kernel:
         return out[:3]
 
     def _coerce_selection(self, data, pm_topics):
-        """CCO 选 6 条：每个项目 2 条（从 3 条池中筛选），缺项从 PM 池补齐。"""
+        """CCO 选 9 条：每个项目 3 条（从 4 条池中淘汰 1 条），缺项从 PM 池补齐。"""
         raw = (data or {}).get("selected")
         picked = {pid: [] for pid in self.PIDS}
         if isinstance(raw, list):
@@ -1638,13 +1639,13 @@ class Kernel:
                                     "durationSec": _to_int(t.get("durationSec"), 45),
                                     "reason": str(t.get("reason") or "")[:120]})
         for pid in self.PIDS:
-            if len(picked[pid]) < 2:
-                picked[pid] += pm_topics[pid][:2 - len(picked[pid])]
-            picked[pid] = picked[pid][:2]
+            if len(picked[pid]) < 3:
+                picked[pid] += pm_topics[pid][:3 - len(picked[pid])]
+            picked[pid] = picked[pid][:3]
         return picked
 
     def _coerce_final(self, data, selected):
-        """评审会定 6 条：每个项目强制 2 条，缺项从 CCO 6 条中补齐。"""
+        """评审会定 6 条：每个项目强制 2 条，缺项从 CCO 9 条中补齐。"""
         raw = (data or {}).get("final")
         final = {pid: [] for pid in self.PIDS}
         if isinstance(raw, list):
@@ -1857,22 +1858,22 @@ class Kernel:
                       "angle": "老板注入选题", "form": "老板指定", "durationSec": 45,
                       "reason": "老板直接指定"}
 
-        # 2. CCO 汇总 9 条池 → 筛选 6 条（每项目 2 条），抄送 CEO、CTO
+        # 2. CCO 从 12 条池中淘汰 3 条 → 选 9 条（每项目 3 条），抄送 CEO、CTO
         pool = {pid: pm_topics[pid] for pid in self.PIDS}
         pool["_management"] = {"ceo": ceo_topics, "cto": cto_topics, "boss": [boss_topic]}
         pool_size = sum(len(pm_topics[p]) for p in self.PIDS) + len(ceo_topics) + len(cto_topics) + 1
         data, meta = self.call_agent(
             "cco",
             f"汇总 3 名产品经理的 {sum(len(pm_topics[p]) for p in self.PIDS)} 条创意，叠加 CEO/CTO/老板指定选题与自选创意，"
-            "按项目调性、匹配度、差异化去重，每个项目选出 2 条（共 6 条），"
-            "并给出未入选条目与理由。",
+            "按项目调性、匹配度、差异化去重，每个项目必须淘汰至少 1 条，最终选出 9 条（每项目恰好 3 条），"
+            "并给出被淘汰条目与理由。",
             json.dumps(pool, ensure_ascii=False),
-            "额外 JSON 字段：selected(数组，恰好 6 条，每条 {projectId, title, angle, form, durationSec, reason})；"
+            "额外 JSON 字段：selected(数组，恰好 9 条，每条 {projectId, title, angle, form, durationSec, reason})；"
             "eliminated(数组，每条 {title, projectId, reason}，不得少于 3 条)。",
             "summary, evidence, confidence, tools, selected, eliminated")
         data = data or self._deg("cco", "选题汇总")
         selected = self._coerce_selection(data, pm_topics)
-        # 未入选记录必须可核：模型漏填时，用「PM 池 − 入选」补足，保证可追溯
+        # 淘汰记录必须可核：模型漏填时，用「PM 池 − 入选」补足，保证每项目至少 1 条可追溯
         eliminated = [x for x in (data.get("eliminated") or []) if isinstance(x, dict)]
         seen = {t.get("title") for v in selected.values() for t in v}
         known = {str(x.get("title") or "") for x in eliminated}
@@ -1880,7 +1881,7 @@ class Kernel:
             for t in pm_topics[pid]:
                 if t["title"] not in seen and t["title"] not in known:
                     eliminated.append({"projectId": pid, "title": t["title"],
-                                       "reason": "三选二未入选（按调性/匹配度/差异化筛选，规则补记）"})
+                                       "reason": "四选三未入选（按调性/匹配度/差异化淘汰，规则补记）"})
                     known.add(t["title"])
         self.send("topic.select", "cco", "ceo", trace,
                   {"selected": selected, "eliminated": eliminated,
@@ -1891,13 +1892,13 @@ class Kernel:
         self.emit("engine-meta", trace, {"agent": "cco", **meta})
         picked = [t.get("title", "") for pid in self.PIDS for t in selected.get(pid, [])]
         self.meeting_say("cco", (data.get("summary") or
-                                 f"候选池共 {pool_size} 条，按调性与差异化去重后选出 6 条。") +
+                                 f"候选池共 {pool_size} 条，按调性与差异化去重后选出 9 条。") +
                          (" 入选：" + "；".join(picked) if picked else ""), "decision", trace)
-        self.meeting_end(trace, f"每日选题会结束：候选池 {pool_size} 条，CCO 筛出 6 条（每项目 2 条），"
-                                "转入选题评审会定稿。")
+        self.meeting_end(trace, f"每日选题会结束：候选池 {pool_size} 条，CCO 筛出 9 条（每项目 3 条），"
+                                "转入选题评审会定稿 6 条。")
 
         # 3. CEO 召集选题评审会：CEO/CTO/CCO + 涉及项目 PM，最终定 6 条（每项目 2 条）
-        agenda2 = ["复核 CCO 6 条", "逐项目定 2 条", "形成会议纪要"]
+        agenda2 = ["复核 CCO 9 条", "逐项目定 2 条", "形成会议纪要"]
         self.meeting_begin(trace, "选题评审会", participants, agenda2)
         self.set_scene("MEETING", trace, title="选题评审会", participants=participants, agenda=agenda2)
         for aid in ("cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"):
@@ -3331,12 +3332,6 @@ class Handler(BaseHTTPRequestHandler):
             if not re.fullmatch(r"[a-z_]+\.png", name):
                 return self._json({"error": "not found"}, 404)
             return self._static(os.path.join("assets", "faces", name), "image/png")
-        # 数字人仿真人视频素材（可插拔：assets/videos/<id>[.talk|.idle].mp4）
-        if path.startswith("/videos/"):
-            name = path[len("/videos/"):]
-            if not re.fullmatch(r"[a-z_]+(?:\.(?:talk|idle))?\.mp4", name):
-                return self._json({"error": "not found"}, 404)
-            return self._static(os.path.join("assets", "videos", name), "video/mp4")
         if path.startswith("/vault/"):
             return self._vault(path[len("/vault/"):])
         # 新版前端（Refine）外壳与构建资源公开：页面本身不含数据，数据接口仍在 /api 层鉴权
@@ -3535,11 +3530,16 @@ class Handler(BaseHTTPRequestHandler):
             ".css": "text/css; charset=utf-8",
             ".json": "application/json; charset=utf-8",
             ".md": "text/plain; charset=utf-8",
+            ".txt": "text/plain; charset=utf-8",
+            ".srt": "text/plain; charset=utf-8",
             ".svg": "image/svg+xml",
             ".png": "image/png",
             ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp", ".gif": "image/gif",
             ".ttf": "font/ttf", ".otf": "font/otf", ".woff2": "font/woff2",
             ".mp4": "video/mp4",
+            ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav",
+            ".pdf": "application/pdf",
         }.get(ext, "application/octet-stream")
         try:
             with open(full, "rb") as f:

@@ -8,11 +8,15 @@
   :root{
     --ink:#111827; --muted:#6B7280; --line:#E5E7EB; --primary:#4F46E5;
     --wenren:#2563EB; --gou:#EA580C; --tong:#7C3AED; --mid:#0D9488;
+    --rail:326px;                 /* 右侧会议记录侧栏占用的宽度 */
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;overflow:hidden;background:#E9EEF7;color:var(--ink);
     font-family:ui-sans-serif,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
-  #stage{position:fixed;inset:0}
+  /* 3D 场景独占左侧主视区，右侧留给记录侧栏，避免画面被面板压住 */
+  #stage{position:fixed;top:0;left:0;bottom:0;right:var(--rail);overflow:hidden}
+  #stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 100px rgba(30,41,59,.09)}
   canvas{display:block}
 
   .hud{position:fixed;top:14px;left:14px;right:14px;display:flex;align-items:center;gap:12px;
@@ -119,14 +123,19 @@
   @keyframes spin{to{transform:rotate(360deg)}}
 
   @media (max-width:1080px){
+    :root{--rail:296px}
     .mtitle{display:none}
     .records{width:270px}
   }
   @media (max-width:860px){
+    :root{--rail:0px}
     .records{display:none}
     .chips{display:none}
     .emp{width:236px}
   }
+  /* 新版工作台内嵌模式：外层头部已展示品牌，避免双层 LOGO */
+  .embedded .hud{top:8px;left:8px;right:8px;padding:8px 12px}
+  .embedded .mark,.embedded .brand{display:none}
 </style>
 <script type="importmap">
 { "imports": { "three": "/vendor/three.module.js" } }
@@ -152,8 +161,8 @@
     <span class="chip">发言 <b id="cSpeak">0</b></span>
   </div>
   <button class="go" id="startBtn">召开选题会</button>
-  <a class="back" href="/office3d">← 3D 办公区</a>
-  <a class="back" href="/">工作台</a>
+  <a class="back" href="/app/office" target="_top">← 3D 办公区</a>
+  <a class="back" href="/app" target="_top">工作台</a>
 </header>
 
 <aside class="records">
@@ -187,16 +196,34 @@
 
 <script>
   window.__meetingBooted = false;
+  if (window.self !== window.top) {
+    document.documentElement.classList.add('embedded');
+    function markLinks() { document.querySelectorAll('a.back').forEach(function (a) { a.target = '_top'; }); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', markLinks);
+    else markLinks();
+  }
   setTimeout(function(){
     if (!window.__meetingBooted) {
       var el = document.getElementById('loading');
-      if (el) el.innerHTML = '<div class="box"><div>加载超时：请确认服务可访问（/vendor/three.module.js 与 /api/meeting）</div></div>';
+      if (el) el.innerHTML = '<div class="box"><div>场景加载超时，请刷新页面重试（需已登录，且 /vendor/three.module.js 与 /api/meeting 可访问）</div></div>';
     }
-  }, 8000);
+  }, 15000);
 </script>
 
 <script type="module">
 import * as THREE from 'three';
+/* 名册新增员工若缺头像，回退通用脸，避免 404 造成空白贴图 */
+function loadFace(id) {
+  const tex = new THREE.TextureLoader().load(`/faces/${id}.png`, undefined, undefined, () => {
+    new THREE.TextureLoader().load('/faces/scout.png', t => {
+      tex.image = t.image;
+      tex.needsUpdate = true;
+    });
+  });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 
 /* ================= 基础常量 ================= */
 const PROJECT_COLOR = { wenren: '#2563EB', gou: '#EA580C', tongxinyuan: '#7C3AED', all: '#0D9488' };
@@ -244,7 +271,7 @@ const SEATS = [
 const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(stage.clientWidth || window.innerWidth, stage.clientHeight || window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.appendChild(renderer.domElement);
@@ -253,9 +280,9 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xE9EEF7);
 scene.fog = new THREE.Fog(0xE9EEF7, 32, 62);
 
-const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(42, (stage.clientWidth || window.innerWidth) / (stage.clientHeight || window.innerHeight), 0.1, 200);
 const target = new THREE.Vector3(0, 1.1, -0.6);
-const cam = { theta: 0.5, phi: 0.92, radius: 17.6 };
+const cam = { theta: 0.5, phi: 0.92, radius: 18.6 };
 
 function placeCamera() {
   const sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
@@ -405,6 +432,28 @@ SEATS.forEach(s => {
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.42, 10), mat.metal);
   pole.position.set(s.x, 0.24, s.z);
   scene.add(pole);
+  /* 扶手 + 五星脚轮：更接近真实会议椅 */
+  [-0.36, 0.36].forEach(dx2 => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.045, 0.42), mat.dark);
+    arm.position.set(s.x + dx2, 0.66, s.z);
+    scene.add(arm);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.19, 0.04), mat.dark);
+    post.position.set(s.x + dx2, 0.565, s.z + (dz > 0 ? 0.10 : -0.10));
+    scene.add(post);
+  });
+  const star = new THREE.Group();
+  for (let i = 0; i < 5; i++) {
+    const a = i * Math.PI * 2 / 5;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.038, 0.30), mat.metal);
+    spoke.position.set(Math.sin(a) * 0.15, 0.055, Math.cos(a) * 0.15);
+    spoke.rotation.y = a;
+    star.add(spoke);
+    const wheel = new THREE.Mesh(new THREE.SphereGeometry(0.042, 8, 6), mat.dark);
+    wheel.position.set(Math.sin(a) * 0.30, 0.045, Math.cos(a) * 0.30);
+    star.add(wheel);
+  }
+  star.position.set(s.x, 0, s.z);
+  scene.add(star);
 });
 
 /* 桌上：笔记本 / 杯子 / 资料 / 中间绿植 */
@@ -471,6 +520,348 @@ scene.add(board);
 const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(0.10, 1.62, 3.12), mat.metal);
 boardFrame.position.set(ROOM.w / 2 - 0.05, 1.85, -2.2);
 scene.add(boardFrame);
+
+/* ================= 真实会议室装饰 =================
+   参考中型会议室：木格栅背景墙、玻璃百叶隔断、吊顶灯槽、设备地柜、
+   桌下地毯、桌面麦克风/瓶装水、网布座椅、挂钟与角落绿植。
+   天花板刻意不封闭，保留俯视视角以便看清所有座位。                  */
+const detailMats = {
+  slatWood: new THREE.MeshStandardMaterial({ color: 0xDFC19C, roughness: 0.74 }),
+  frame:    new THREE.MeshStandardMaterial({ color: 0x8C97A8, roughness: 0.42, metalness: 0.55 }),
+  darkWood: new THREE.MeshStandardMaterial({ color: 0x6B4E3A, roughness: 0.68 }),
+  cabinet:  new THREE.MeshStandardMaterial({ color: 0xE7EBF2, roughness: 0.60 }),
+  leaf:     new THREE.MeshStandardMaterial({ color: 0x2F7D55, roughness: 0.78 }),
+  leafDark: new THREE.MeshStandardMaterial({ color: 0x256546, roughness: 0.80 }),
+  pot:      new THREE.MeshStandardMaterial({ color: 0xD9DEE6, roughness: 0.72 }),
+  led:      new THREE.MeshBasicMaterial({ color: 0xE8F1FF, toneMapped: false }),
+  downlit:  new THREE.MeshBasicMaterial({ color: 0xFFF4DC, toneMapped: false })
+};
+
+/* 程序化贴图：不依赖外部图片资源 */
+function texCanvas(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+function woodGrain() {
+  return texCanvas(512, 512, (g, W, H) => {
+    g.fillStyle = '#E3CAA6'; g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 130; i++) {
+      const x = Math.random() * W;
+      g.strokeStyle = `rgba(122,84,52,${0.04 + Math.random() * 0.14})`;
+      g.lineWidth = 1 + Math.random() * 4;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.bezierCurveTo(x + 14, H * 0.3, x - 16, H * 0.7, x + 5, H);
+      g.stroke();
+    }
+    for (let i = 0; i < 45; i++) {
+      g.fillStyle = `rgba(255,248,232,${0.02 + Math.random() * 0.06})`;
+      g.fillRect(Math.random() * W, Math.random() * H, 3 + Math.random() * 28, 1);
+    }
+  });
+}
+function fabricGrain() {
+  return texCanvas(256, 256, (g, W, H) => {
+    g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(90,105,130,.16)'; g.lineWidth = 1;
+    for (let i = 0; i < W; i += 5) {
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i, H); g.stroke();
+      g.beginPath(); g.moveTo(0, i); g.lineTo(W, i); g.stroke();
+    }
+    for (let i = 0; i < 420; i++) {
+      g.fillStyle = `rgba(60,75,100,${Math.random() * 0.10})`;
+      g.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+    }
+  });
+}
+const WOOD = woodGrain();
+const FABRIC = fabricGrain();
+
+/* 桌面与座椅换成木纹 / 网布，避免整块纯色塑料感 */
+const deskWood = WOOD.clone();
+deskWood.wrapS = deskWood.wrapT = THREE.RepeatWrapping;
+deskWood.repeat.set(2.4, 1);
+deskWood.needsUpdate = true;
+mat.deskTop.map = deskWood;
+mat.deskTop.color.set(0xFFFFFF);
+mat.deskTop.needsUpdate = true;
+detailMats.slatWood.map = WOOD;
+detailMats.slatWood.needsUpdate = true;
+chairMat.map = FABRIC;
+chairMat.color.set(0x71809B);
+chairMat.needsUpdate = true;
+
+/* --- 桌下地毯 --- */
+const rugTex = FABRIC.clone();
+rugTex.wrapS = rugTex.wrapT = THREE.RepeatWrapping;
+rugTex.repeat.set(9, 6);
+rugTex.needsUpdate = true;
+const rug = new THREE.Mesh(new THREE.PlaneGeometry(9.4, 5.8),
+  new THREE.MeshStandardMaterial({ map: rugTex, color: 0x6B7A96, roughness: 0.98 }));
+rug.rotation.x = -Math.PI / 2;
+rug.position.set(0, 0.014, 0.35);
+rug.receiveShadow = true;
+scene.add(rug);
+const rugEdgeMat = new THREE.MeshStandardMaterial({ color: 0x44526C, roughness: 0.95 });
+[0.35 - 2.9, 0.35 + 2.9].forEach(z => {
+  const e = new THREE.Mesh(new THREE.BoxGeometry(9.4, 0.008, 0.055), rugEdgeMat);
+  e.position.set(0, 0.021, z); scene.add(e);
+});
+
+/* --- 吊顶边框 + LED 灯槽 + 嵌入式筒灯（不封顶） --- */
+const ceilMat = new THREE.MeshStandardMaterial({ color: 0xF3F6FC, roughness: 0.90 });
+function ceilingBand(w, d, x, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), ceilMat);
+  m.position.set(x, ROOM.h - 0.06, z);
+  m.receiveShadow = true;
+  scene.add(m);
+}
+ceilingBand(ROOM.w, 0.66, 0, ROOM.z0 + 0.33);
+ceilingBand(0.66, ROOM.d - 0.66, -ROOM.w / 2 + 0.33, (ROOM.z0 + ROOM.z1) / 2);
+ceilingBand(0.66, ROOM.d - 0.66, ROOM.w / 2 - 0.33, (ROOM.z0 + ROOM.z1) / 2);
+function ledBar(w, d, x, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.03, d), detailMats.led);
+  m.position.set(x, ROOM.h - 0.135, z);
+  scene.add(m);
+}
+ledBar(ROOM.w - 1.0, 0.055, 0, ROOM.z0 + 0.62);
+ledBar(0.055, ROOM.d - 1.2, -ROOM.w / 2 + 0.62, (ROOM.z0 + ROOM.z1) / 2);
+ledBar(0.055, ROOM.d - 1.2, ROOM.w / 2 - 0.62, (ROOM.z0 + ROOM.z1) / 2);
+for (let i = -2; i <= 2; i++) {
+  const d = new THREE.Mesh(new THREE.CircleGeometry(0.075, 16), detailMats.downlit);
+  d.position.set(i * 2.3, ROOM.h - 0.06, ROOM.z0 + 0.67);
+  scene.add(d);
+}
+
+/* --- 投屏墙：两侧竖向木格栅 + 收边 --- */
+for (const side of [-1, 1]) {
+  for (let i = 0; i < 8; i++) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.105, 2.55, 0.09), detailMats.slatWood);
+    slat.position.set(side * (3.98 + i * 0.245), 2.12, ROOM.z0 + 0.10);
+    slat.castShadow = true;
+    scene.add(slat);
+  }
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.07, 0.13), detailMats.darkWood);
+  rail.position.set(side * 4.84, 3.40, ROOM.z0 + 0.12);
+  scene.add(rail);
+}
+
+/* --- 大屏下方设备地柜 --- */
+const cab = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.66, 0.44), detailMats.cabinet);
+cab.position.set(0, 0.33, ROOM.z0 + 0.34);
+cab.castShadow = true; cab.receiveShadow = true;
+scene.add(cab);
+for (let i = -2; i <= 2; i++) {
+  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.60, 0.012), detailMats.frame);
+  seam.position.set(i * 1.24, 0.33, ROOM.z0 + 0.566);
+  scene.add(seam);
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.018, 0.02), detailMats.frame);
+  handle.position.set(i * 1.24 + 0.42, 0.48, ROOM.z0 + 0.572);
+  scene.add(handle);
+}
+const powerDot = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6),
+  new THREE.MeshBasicMaterial({ color: 0x34D399, toneMapped: false }));
+powerDot.position.set(2.85, 0.48, ROOM.z0 + 0.575);
+scene.add(powerDot);
+
+/* --- 西墙玻璃隔断：窗外天光 + 百叶 + 铝合金分格 --- */
+const WIN = { z: -1.0, w: 5.2, y: 2.0, h: 1.85 };
+const skyTex = texCanvas(1024, 512, (g, W, H) => {
+  const grd = g.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#BBD9F5'); grd.addColorStop(0.55, '#DDEBF8'); grd.addColorStop(1, '#F2F6FA');
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(120,150,180,.28)';
+  for (let i = 0; i < 22; i++) {
+    const bw = 24 + Math.random() * 60, bh = 60 + Math.random() * 150;
+    g.fillRect(i * 48 + Math.random() * 12, H - bh - 62, bw, bh);
+  }
+  for (let y = 0; y < H; y += 22) {
+    g.fillStyle = 'rgba(255,255,255,.30)'; g.fillRect(0, y, W, 12);
+    g.fillStyle = 'rgba(90,110,135,.10)'; g.fillRect(0, y + 12, W, 2);
+  }
+});
+const glass = new THREE.Mesh(new THREE.PlaneGeometry(WIN.w, WIN.h),
+  new THREE.MeshStandardMaterial({ map: skyTex, roughness: 0.24, metalness: 0.05,
+    emissive: 0x6E9BC9, emissiveIntensity: 0.28 }));
+glass.rotation.y = Math.PI / 2;
+glass.position.set(-ROOM.w / 2 + 0.04, WIN.y, WIN.z);
+scene.add(glass);
+const wx = -ROOM.w / 2 + 0.09;
+[-WIN.h / 2, WIN.h / 2].forEach(dy => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.09, WIN.w + 0.14), detailMats.frame);
+  m.position.set(wx, WIN.y + dy, WIN.z);
+  scene.add(m);
+});
+for (let i = 0; i <= 4; i++) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.10, WIN.h, 0.07), detailMats.frame);
+  m.position.set(wx, WIN.y, WIN.z - WIN.w / 2 + i * WIN.w / 4);
+  scene.add(m);
+}
+const sill = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, WIN.w + 0.2), detailMats.cabinet);
+sill.position.set(wx + 0.05, WIN.y - WIN.h / 2 - 0.05, WIN.z);
+scene.add(sill);
+
+/* --- 西墙木门 + 门牌 + 把手 --- */
+const DOOR = { z: 2.75, w: 1.05, h: 2.18 };
+const dx = -ROOM.w / 2 + 0.07;
+const door = new THREE.Mesh(new THREE.BoxGeometry(0.07, DOOR.h, DOOR.w), detailMats.darkWood);
+door.position.set(dx, DOOR.h / 2, DOOR.z);
+door.castShadow = true;
+scene.add(door);
+[-DOOR.w / 2 - 0.045, DOOR.w / 2 + 0.045].forEach(dz => {
+  const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.11, DOOR.h + 0.10, 0.09), detailMats.frame);
+  jamb.position.set(dx + 0.01, (DOOR.h + 0.10) / 2, DOOR.z + dz);
+  scene.add(jamb);
+});
+const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.09, DOOR.w + 0.18), detailMats.frame);
+lintel.position.set(dx + 0.01, DOOR.h + 0.05, DOOR.z);
+scene.add(lintel);
+const doorSign = texCanvas(512, 220, (g, W, H) => {
+  g.fillStyle = '#1F2A3D'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#EEF2FF'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `700 68px ${FONT}`; g.fillText('会议室 A', W / 2, 84);
+  g.fillStyle = '#A5B4FC'; g.font = `500 26px ${FONT}`;
+  g.fillText('MEETING ROOM · CONCENTRIC', W / 2, 164);
+});
+const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.27),
+  new THREE.MeshBasicMaterial({ map: doorSign, toneMapped: false }));
+sign.rotation.y = Math.PI / 2;
+sign.position.set(dx + 0.042, 1.72, DOOR.z);
+scene.add(sign);
+const handle = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.03, 0.17), detailMats.frame);
+handle.position.set(dx + 0.075, 1.02, DOOR.z + 0.36);
+scene.add(handle);
+
+/* --- 北墙挂钟 --- */
+const clockTex = texCanvas(256, 256, (g, W, H) => {
+  g.fillStyle = '#FCFDFE'; g.beginPath(); g.arc(128, 128, 120, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#C7D2E2'; g.lineWidth = 6; g.stroke();
+  for (let i = 0; i < 12; i++) {
+    const a = i * Math.PI / 6, r1 = 100, r2 = i % 3 === 0 ? 84 : 93;
+    g.strokeStyle = '#334155'; g.lineWidth = i % 3 === 0 ? 5 : 2;
+    g.beginPath();
+    g.moveTo(128 + Math.sin(a) * r1, 128 - Math.cos(a) * r1);
+    g.lineTo(128 + Math.sin(a) * r2, 128 - Math.cos(a) * r2);
+    g.stroke();
+  }
+  const hand = (a, len, w, col) => {
+    g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(128, 128);
+    g.lineTo(128 + Math.sin(a) * len, 128 - Math.cos(a) * len); g.stroke();
+  };
+  hand(-Math.PI / 3, 62, 7, '#1F2937');
+  hand(Math.PI / 3, 88, 4, '#4F46E5');
+  g.fillStyle = '#4F46E5'; g.beginPath(); g.arc(128, 128, 7, 0, Math.PI * 2); g.fill();
+});
+const clock = new THREE.Mesh(new THREE.CircleGeometry(0.30, 40),
+  new THREE.MeshBasicMaterial({ map: clockTex, toneMapped: false }));
+clock.position.set(4.95, 2.95, ROOM.z0 + 0.21);
+scene.add(clock);
+const clockRim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.022, 8, 40), detailMats.frame);
+clockRim.position.copy(clock.position);
+scene.add(clockRim);
+
+/* --- 东墙白板补上手写议程（旋转视角时可见） --- */
+const boardTex = texCanvas(1024, 512, (g, W, H) => {
+  g.fillStyle = '#FDFFFE'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#1D4ED8'; g.font = `700 46px ${FONT}`;
+  g.fillText('今日议程 / AGENDA', 48, 66);
+  g.strokeStyle = '#93C5FD'; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(48, 86); g.lineTo(W - 48, 86); g.stroke();
+  const lines = ['01  热点复盘与选题', '02  内容排期确认', '03  交付风险同步', '04  行动项 & Owner'];
+  g.font = `500 34px ${FONT}`; g.fillStyle = '#334155';
+  lines.forEach((s, i) => g.fillText(s, 60, 160 + i * 78));
+  g.strokeStyle = '#EA580C'; g.lineWidth = 6;
+  g.beginPath(); g.arc(810, 300, 78, 0.2, Math.PI * 1.7); g.stroke();
+});
+const boardFace = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 1.42),
+  new THREE.MeshBasicMaterial({ map: boardTex, toneMapped: false }));
+boardFace.rotation.y = -Math.PI / 2;
+boardFace.position.set(ROOM.w / 2 - 0.15, 1.85, -2.2);
+scene.add(boardFace);
+
+/* --- 桌面：木纹包边、会议麦克风、瓶装水 --- */
+const edgeMat = new THREE.MeshStandardMaterial({ color: 0x9A7553, roughness: 0.58 });
+[TABLE.z + TABLE.d / 2 + 0.015, TABLE.z - TABLE.d / 2 - 0.015].forEach(z => {
+  const e = new THREE.Mesh(new THREE.BoxGeometry(TABLE.w, 0.035, 0.035), edgeMat);
+  e.position.set(TABLE.x, 0.80, z);
+  scene.add(e);
+});
+function addMic(x, z) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.025, 18), mat.dark);
+  const dot = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.004, 10),
+    new THREE.MeshBasicMaterial({ color: 0x34D399, toneMapped: false }));
+  dot.position.y = 0.014;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.18, 10), detailMats.frame);
+  stem.position.y = 0.10;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.032, 12, 10), mat.dark);
+  head.position.y = 0.20;
+  g.add(base, dot, stem, head);
+  g.position.set(x, 0.83, z);
+  scene.add(g);
+}
+addMic(-0.62, 0.30);
+addMic(0.62, 0.30);
+function addBottle(x, z) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.19, 14),
+    new THREE.MeshStandardMaterial({ color: 0xA9CFEC, roughness: 0.15,
+      transparent: true, opacity: 0.72 }));
+  body.position.y = 0.095;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.032, 0.045, 12),
+    new THREE.MeshStandardMaterial({ color: 0xA9CFEC, roughness: 0.2, transparent: true, opacity: 0.8 }));
+  neck.position.y = 0.212;
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.028, 12),
+    new THREE.MeshStandardMaterial({ color: 0x2F6FB5, roughness: 0.50 }));
+  cap.position.y = 0.248;
+  const label = new THREE.Mesh(new THREE.CylinderGeometry(0.049, 0.049, 0.055, 14, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0xF8FAFC, roughness: 0.85, side: THREE.DoubleSide }));
+  label.position.y = 0.10;
+  g.add(body, neck, cap, label);
+  g.position.set(x, 0.83, z);
+  scene.add(g);
+}
+addBottle(-3.0, 0.92);
+addBottle(3.0, 0.92);
+addBottle(1.7, -0.55);
+
+/* --- 北墙两角的落地绿植 --- */
+function addBigPlant(x, z, scale) {
+  const g = new THREE.Group();
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.20, 0.42, 16), detailMats.pot);
+  pot.position.y = 0.21; pot.castShadow = true;
+  g.add(pot);
+  const soil = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 16),
+    new THREE.MeshStandardMaterial({ color: 0x4A3A2C, roughness: 1 }));
+  soil.position.y = 0.42;
+  g.add(soil);
+  for (let i = 0; i < 9; i++) {
+    const a = i * Math.PI * 2 / 9, h = 0.70 + Math.random() * 0.50;
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.10, h, 6),
+      i % 2 ? detailMats.leaf : detailMats.leafDark);
+    leaf.position.set(Math.cos(a) * 0.16, 0.42 + h / 2, Math.sin(a) * 0.16);
+    leaf.rotation.z = Math.cos(a) * 0.35;
+    leaf.rotation.x = -Math.sin(a) * 0.35;
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  g.position.set(x, 0, z);
+  g.scale.setScalar(scale);
+  scene.add(g);
+}
+addBigPlant(-5.35, -5.05, 1.0);
+addBigPlant(5.35, -5.05, 0.9);
+
+/* --- 窗侧补光，让木格栅与桌面有自然明暗层次 --- */
+const windowLight = new THREE.PointLight(0xD6E8FF, 4.2, 13, 2);
+windowLight.position.set(-5.0, 2.3, -1.0);
+scene.add(windowLight);
 
 /* ================= 铭牌 / 工牌贴图 ================= */
 function roundRect(g, x, y, w, h, r) {
@@ -661,8 +1052,7 @@ function buildSeatedActor(p, seat) {
   scene.add(g);
   pickables.push(g);
 
-  const faceTex = new THREE.TextureLoader().load(`/faces/${p.id}.png`);
-  faceTex.colorSpace = THREE.SRGBColorSpace;
+  const faceTex = loadFace(p.id);
   const face = new THREE.Mesh(
     new THREE.CircleGeometry(0.305, 36),
     new THREE.MeshBasicMaterial({ map: faceTex, transparent: true, depthWrite: false, toneMapped: false })
@@ -1201,7 +1591,9 @@ function renderEmp() {
   const rec = (M.active && M.current) ? M.current : (M.last || null);
   const says = ((rec && rec.speeches) || []).filter(sp => sp.speakerId === a.id);
   box.style.display = 'block';
-  document.getElementById('empAva').src = `/avatars/${a.id}.png`;
+  const ava = document.getElementById('empAva');
+  ava.onerror = () => { ava.onerror = null; ava.src = '/avatars/scout.png'; };
+  ava.src = `/avatars/${a.id}.png`;
   document.getElementById('empSw').style.background = PROJECT_COLOR[a.projectId] || PROJECT_COLOR.all;
   document.getElementById('empName').textContent = a.name;
   document.getElementById('empRole').textContent = `${a.role} · ${PROJECT_NAME[a.projectId] || '全公司'}`;
@@ -1269,8 +1661,9 @@ renderer.domElement.addEventListener('pointermove', e => {
 renderer.domElement.addEventListener('pointerup', e => {
   dragging = false;
   if (moved >= 6) return;
-  const ndc = new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1,
-                                -(e.clientY / window.innerHeight) * 2 + 1);
+  const box = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1,
+                                -((e.clientY - box.top) / box.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const hits = raycaster.intersectObjects(pickables, true);
   let id = null;
@@ -1291,11 +1684,14 @@ renderer.domElement.addEventListener('wheel', e => {
   placeCamera();
 }, { passive: false });
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+function fitRenderer() {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', fitRenderer);
+if (window.ResizeObserver) new ResizeObserver(fitRenderer).observe(stage);
 
 /* ================= 发起会议 ================= */
 const startBtn = document.getElementById('startBtn');

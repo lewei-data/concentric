@@ -9,6 +9,7 @@ import { HotspotsPage } from "./pages/HotspotsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OrgPage } from "./pages/OrgPage";
+import { ScenePage } from "./pages/ScenePage";
 import { WorksPage } from "./pages/WorksPage";
 
 export default function App() {
@@ -39,6 +40,8 @@ export default function App() {
             <Route path="/hotspots" element={<HotspotsPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/org" element={<OrgPage />} />
+            <Route path="/office" element={<ScenePage scene="office" />} />
+            <Route path="/meeting" element={<ScenePage scene="meeting" />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
