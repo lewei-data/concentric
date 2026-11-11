@@ -30,6 +30,8 @@ android/dist/*.apk
 video-remotion/out/
 android/dist/
 prototype/assets/live/
+# media-engine 合成产物（TTS 音频/srt/segments），按 TTL 自动清理
+media-engine/work/
 
 # ---- 备份包 / 探测残留 ----
 *.tar.gz
