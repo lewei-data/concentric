@@ -23,6 +23,8 @@ function ConcentricLogo() {
 export function Layout() {
   const { data: identity } = useGetIdentity<OpcUser>();
   const location = useLocation();
+  // 统一消息只对老板开放，后端 /api/chat/* 对其他角色返回 403，这里同步隐藏入口
+  const isOwner = String(identity?.role ?? "").includes("老板");
   const isScene =
     location.pathname.startsWith("/office") || location.pathname.startsWith("/meeting");
 
@@ -46,6 +48,7 @@ export function Layout() {
           <NavLink to="/works">作品档案</NavLink>
           <NavLink to="/hotspots">热点</NavLink>
           <NavLink to="/knowledge">知识库</NavLink>
+          {isOwner && <NavLink to="/messages">消息中心</NavLink>}
           <NavLink to="/org">组织配置</NavLink>
           <span className="nav-divider" aria-hidden="true" />
           <NavLink to="/office" className="nav-3d">Office 3D</NavLink>

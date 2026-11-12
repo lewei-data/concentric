@@ -8,6 +8,7 @@ import { HomePage } from "./pages/HomePage";
 import { HotspotsPage } from "./pages/HotspotsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LoginPage } from "./pages/LoginPage";
+import { MessagesPage } from "./pages/MessagesPage";
 import { OrgPage } from "./pages/OrgPage";
 import { ScenePage } from "./pages/ScenePage";
 import { WorksPage } from "./pages/WorksPage";
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/works" element={<WorksPage />} />
             <Route path="/hotspots" element={<HotspotsPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
+            <Route path="/messages" element={<MessagesPage />} />
             <Route path="/org" element={<OrgPage />} />
             <Route path="/office" element={<ScenePage scene="office" />} />
             <Route path="/meeting" element={<ScenePage scene="meeting" />} />

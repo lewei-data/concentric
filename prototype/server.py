@@ -3732,22 +3732,31 @@ class Handler(BaseHTTPRequestHandler):
         with KERNEL.lock:
             msgs = [m for m in KERNEL.messages if m.get("traceId") == trace]
             contents = [c for c in KERNEL.contents if c.get("traceId") == trace]
+            meta = dict(KERNEL.traces.get(trace) or {})
             if trace not in KERNEL.traces and not msgs and not contents:
                 if KERNEL.db:
                     return self._trace_from_db(trace)
                 return None
-            return {"traceId": trace, "meta": KERNEL.traces.get(trace, {}),
-                    "messages": msgs, "contents": contents,
-                    "approvals": [a for a in KERNEL.approvals if a.get("traceId") == trace],
-                    "reports": [r for r in KERNEL.reports if r.get("traceId") == trace],
-                    "knowledge": [k for k in KERNEL.knowledge if k.get("traceId") == trace],
-                    "messageCount": len(msgs)}
+            out = {"traceId": trace, "meta": meta,
+                   "messages": msgs, "contents": contents,
+                   "approvals": [a for a in KERNEL.approvals if a.get("traceId") == trace],
+                   "reports": [r for r in KERNEL.reports if r.get("traceId") == trace],
+                   "knowledge": [k for k in KERNEL.knowledge if k.get("traceId") == trace],
+                   "messageCount": len(msgs)}
+        # 内存里没有这条 trace 的元数据（重启后）或事件：从过程库补齐
+        if KERNEL.db:
+            db_meta, events = self._db_trace_parts(trace)
+            if not out["meta"] and db_meta:
+                out["meta"] = db_meta
+            if events:
+                out["events"] = events
+                out["source"] = "db+mem" if msgs else "db"
+        return out
 
-    def _trace_from_db(self, trace):
-        """内存已随重启清空的历史 trace：从过程库还原骨架 + 事件序列。"""
+    def _db_trace_parts(self, trace):
         row = KERNEL.db.trace_row(trace)
         if not row:
-            return None
+            return None, []
 
         def dec(value):
             try:
@@ -3765,7 +3774,13 @@ class Handler(BaseHTTPRequestHandler):
                 meta[dst] = dec(row[src])
         if row.get("abort_reason"):
             meta["abortReason"] = row["abort_reason"]
-        events = KERNEL.db.trace_events(trace, 500)
+        return meta, KERNEL.db.trace_events(trace, 500)
+
+    def _trace_from_db(self, trace):
+        """内存已随重启清空的历史 trace：从过程库还原骨架 + 事件序列。"""
+        meta, events = self._db_trace_parts(trace)
+        if meta is None:
+            return None
         return {"traceId": trace, "meta": meta, "events": events,
                 "messages": [e["data"] for e in events
                              if e.get("kind") == "message" and isinstance(e.get("data"), dict)],

@@ -1,7 +1,7 @@
 # 过程数据入库方案（调研 + 说明）
 
 > 目标：把 OPC 工作台里「过程类数据」（trace、事件流、审批、报告、会议发言、消息、token 消耗等）从内存 + 单个 JSON 全量重写，改为落 SQLite。
-> 状态：**待批准**。未改动任何代码与数据结构。
+> 状态：**P0 已获批准并实施**（2026-11-12），实施与验收记录见 §13。P1（前端消息中心）待排期。
 
 ---
 
@@ -432,4 +432,114 @@ FTS 用 `AFTER INSERT/DELETE/UPDATE` 触发器同步（照抄 Hermes `state.db` 
 - **P1**：前端「消息中心」页（列表 + 筛选 + 搜索 + SSE 实时）。
 - **P2**：飞书 modality 精确化（网关 hook，需改上游）；受控音频播放。
 
-> 本章所有数字均为 2026-11-12 本机 SQLite 只读查询所得（`state.db` / `dispatch.db` / `runtime.json`），非外部统计。
+---
+
+## 13. 实施记录（P0 影子期 + §12 统一消息）
+
+实施完成时间：2026-11-12；开关：systemd drop-in `/etc/systemd/system/opc-workbench.service.d/db.conf` 写入 `OPC_DB=1`、`OPC_INGEST=1`。
+
+新增文件：
+- `prototype/db.py`：§4/§12.3 DDL、WAL、200ms/200 条缓冲批写、单写连接、只读查询连接、FTS(trigram) 与触发器。
+- `prototype/ingest.py`：飞书/APP 双源只读轮询（30s）、`ingest_cursor` 水位线、`UNIQUE(source,origin_table,origin_id)` 去重。
+- `prototype/import_runtime.py`：runtime.json + 会议/交付 + 飞书/APP 一次性回填（幂等）。
+
+`server.py` 改造：`emit()` 事件落库并按类型 upsert（report/approval/hotspot/knowledge/pipeline）；`send()` 落 `messages` 且 owner 相关消息进 `chat_messages`；trace 创建/评审/收口/token 用量/会议开始-发言-结束均落库；新增 `/api/chat/threads|messages|stats|export`（仅老板）；`/api/trace/<id>` 内存缺失时用库补齐（`source='db'|'db+mem'`）；`OPC_DB=0` 时完全走旧逻辑。
+
+回填结果（2026-11-12 11:11 实测）：
+
+| 表 | 行数 |
+|---|---|
+| traces | 24（全部 `legacy`，仅骨架） |
+| trace_events | 435 |
+| messages | 120 |
+| approvals | 22 |
+| reports | 3 |
+| hotspots / knowledge | 20 / 80 |
+| contents | 165 |
+| meetings / meeting_speeches | 80 / 199 |
+| chat_messages | 635（feishu 240 / app 395） |
+| chat_threads | 19 |
+
+验收对照（§7 + §12.8）：
+
+1. 审批行数 22 = 当时 `runtime.json` 审批数 22 ✅
+2. 重启后 `/api/trace/tr_ad892190` 返回 200，`meta.status=legacy`，事件 165 条 ✅（改造前重启即 404）
+3. 完整跑一轮选题会：**未执行**（单轮实测 12.4M token，需专门安排）
+4. `runtime.json` mtime 仍为 08:37:30（重启与 Web 指令后未重写）✅
+5. `/api/state` 键集合保持 19 项不变 ✅
+6. 1000 条事件缓冲写入：put P95 = 0.012 ms，max 0.149 ms ✅
+7. 库路径不可写时 `db.store()` 返回 None、仅打日志、服务照常 ✅
+8. 飞书回填 240 条（user 22 / assistant 218），其中 `modality='voice'` 2 条 —— 与源库当前 `content LIKE '%voice message could not be transcribed%'` 的 2 条一致（§12.8 原写 3 条，为 11-12 复核后的修正值）✅
+9. APP 回填 395 条 = tasks 176 + utterances 派生 219；utterances 唯一 `origin_id` 115 条（与源表一致）✅
+10. Web 指令落库耗时 0.02s，立即可查；`chat.message` 经 SSE 推送 ✅
+11. 中文三字 `q=口型合成` 命中 FTS；两字 `q=选题` 走 LIKE 兜底命中 3 条 ✅
+12. 两次重启后 `chat_messages` 恒为 636、线程 20，无重复 ✅
+
+补充验证（2026-11-12 11:30–11:32，隔离环境，不写生产源库）：
+
+13. 新消息 30s 可见性 ✅：复制 `profiles/secretary/state.db` 到临时目录并在副本插入探针消息，跑真实 `Ingestor`（interval=30s）→ **DB 可见延迟 29.9s**，`on_event` 回调同步触发，水位线推进到探针 id，落库行 `modality=text / direction=inbound / ingested_at` 正确。生产库同时核对：`ingest_cursor` 8715 = 源库 feishu user/assistant 最大 id，无积压。
+14. `token_usage` 字段 ✅：真实最小调用（secretary / deepseek-v4.1-flash，10,663 tokens）经 `Kernel.record_usage` 落库一行，字段映射正确（`prompt_tokens`=inputTokens 9932、`completion_tokens`=outputTokens 151、`total_tokens`=totalTokens 10663、`cost`=costUsd 0.0、`model` 落库）。
+   两个口径注意：① `total_tokens` 含辅助调用，故 prompt+completion ≠ total（10083 vs 10663）为正常；② provider 返回 `cost_status=unknown`，`cost` 目前恒为 0，成本只能按 token 计，不能按金额。
+15. APP（dispatch）消息 ✅：复制 `dispatch.db` 到临时目录，插入 1 条 `tasks` + 1 条 `utterances`（interval=30s）→ **DB 可见延迟 30.02s**，派生 3 行 `rt_verify_30s` / `116:in` / `116:out`，`on_event` 命中 3/3，线程 `app:secretary` 的 `msg_count` 自增到 261，水位线推进到 tasks 177 / utterances 116。
+
+### 13.1 飞书 / APP 消息验证步骤（可重复执行）
+
+原则：**只读复制源库到临时目录，在副本里造消息，跑真实 `Ingestor`**；全程不写 `/opt/sefs/hermes` 生产库。所有命令前置 `env -u LD_LIBRARY_PATH`（本机 Trae 注入的 `LD_LIBRARY_PATH` 会导致 python 加载失败）。
+
+公共准备：
+
+```python
+os.environ.update(OPC_DB="1", OPC_DB_PATH="<tmp>/opc.db",
+                  OPC_HERMES_PROFILES="<tmp>/profiles",        # 飞书：放 state.db 副本；APP 测则指向空目录
+                  OPC_DISPATCH_DB="<tmp>/dispatch.db")          # 飞书：指向不存在路径；APP 测则放 dispatch.db 副本
+sys.path.insert(0, "/opt/sefs/opc-workbench/prototype")
+import db, ingest
+store = db.Store()
+ing = ingest.Ingestor(store, on_event=lambda t, m: events.append((time.time(), m["origin_id"]))).start()
+```
+
+复制源库用 SQLite backup API（不要 `cp`，避免读到写入中的中间态）：
+`src = sqlite3.connect("file:<源库>?mode=ro", uri=True); src.backup(sqlite3.connect("<副本>"))`
+
+**飞书（`profiles/*/state.db`，当前仅 secretary 有数据）**
+
+1. 等首轮同步完成：`store.get_cursor("feishu", "messages:secretary")` 追上源库
+   `SELECT MAX(m.id) FROM messages m JOIN sessions s ON s.id=m.session_id WHERE s.source='feishu' AND m.role IN ('user','assistant')`。
+2. 往副本插一条探针：`INSERT INTO messages(session_id, role, content, timestamp, platform_message_id) VALUES(<现有 feishu session_id>, 'user', '【验收探针】…', <epoch>, 'verify-probe-…')`，记下 `lastrowid = mid`。
+3. 每 50ms 轮询 `SELECT COUNT(*) FROM chat_messages WHERE origin_id='<mid>'`，首个命中即延迟。
+4. 断言（全部满足才算通过）：
+   - 延迟 ≈ 30s + 处理开销（>30s 说明有积压或轮询异常）；
+   - `thread_id='feishu:<session_id>'`、`direction='inbound'`（assistant 行是 `outbound`、`sender_name='小秘书'`）；
+   - `modality='voice'` 仅当内容含 `voice message could not be transcribed`，同时 `content_kind='transcript'`；
+   - `on_event` 收到该条（对应生产里 `_ingest_event` → SSE `chat.message`）；
+   - 水位线 `ingest_cursor` 前进到 `mid`。
+
+**APP（`dispatch.db` 的 `tasks` + `utterances`）**
+
+1. 等 `app/tasks`、`app/utterances` 两条水位线追上源库 `MAX(rowid)` / `MAX(id)`。
+2. 插 1 条 `tasks`（`task_id=rt_verify_30s, priority, lane, modality='voice', profile='secretary', text, status='done', created_at`）+ 1 条 `utterances`（`task_id` 同上，`asr_text` / `reply_text` / `voice_text` / `ts`），记 `utterances` 的 `lastrowid = uid`。
+3. 同时轮询 3 个 `origin_id`：`rt_verify_30s`、`<uid>:in`、`<uid>:out`。
+4. 断言：
+   - tasks 行 → `origin_table='dispatch.tasks'`、`content_kind='task'`、`direction='inbound'`、`thread_id='app:<profile>'`；
+   - utterances 拆两行 → `:in` 为 `inbound/transcript`（老板原话）、`:out` 为 `outbound/text`（小秘书回复），`modality` 继承 `tasks.modality`；
+   - 线程 `chat_threads.msg_count` 按新插入行数自增，`last_at` 前移；
+   - `app/tasks` 与 `app/utterances` 水位线分别前进到 `rowid` / `uid`。
+
+**生产侧旁证（不造数据，只核对）**
+
+```sql
+-- 有没有积压：三个水位线应等于源库对应最大 id
+SELECT source, table_name, watermark, updated_at FROM ingest_cursor;
+-- 落库总量与最后一条
+SELECT source, COUNT(*), MAX(ingested_at) FROM chat_messages GROUP BY source;
+```
+
+水位线的 `updated_at` 只在**有新数据**时前进（无新行时循环直接 break，不写水位线），所以它停在旧时间是正常现象，不能据此判定轮询失效；判据以「`watermark` = 源库最大 id」为准。
+
+尚未验证/遗留：
+- ~~真实新消息 30s 可见性~~ → 见验证 13（已通过，隔离库；生产新消息实测需等真实飞书/APP 消息）。
+- ~~`token_usage` 0 行~~ → 见验证 14（已通过；下一轮完整选题会仍需确认多员工多轮累加）。
+- ~~APP（dispatch tasks/utterances）~~ → 见验证 15（已通过，隔离库；生产水位线 176/115 = 源库最大值，无积压）。
+- 会议实时写入（meeting_begin/say/end）随下一场会议验证。
+- P1 前端「消息中心」页未做（本次范围外）。
+

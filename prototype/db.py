@@ -340,13 +340,11 @@ class Store:
 
     def flush(self):
         """同步刷盘，供摄取水位线/验收使用。"""
-        with self._lock:
-            self._cv.acquire()
+        with self._cv:
             batch = self._batch
             self._batch = []
-            self._cv.release()
-            if batch:
-                self._write(batch)
+        if batch:
+            self._write(batch)
 
     def close(self):
         with self._cv:
@@ -612,10 +610,15 @@ class Store:
         limit = max(1, min(int(limit or 50), 500))
         where, params = ["1=1"], []
         if q:
-            sql = """SELECT m.* FROM chat_messages_fts f
-                     JOIN chat_messages m ON m.id=f.rowid
-                     WHERE chat_messages_fts MATCH ?"""
-            params.append('"' + q.replace('"', '') + '"')
+            if len(q) >= 3:
+                sql = """SELECT m.* FROM chat_messages_fts f
+                         JOIN chat_messages m ON m.id=f.rowid
+                         WHERE chat_messages_fts MATCH ?"""
+                params.append('"' + q.replace('"', '') + '"')
+            else:
+                # trigram 索引最短 3 字：更短的查询退回 LIKE，避免“两字查不到”
+                sql = "SELECT m.* FROM chat_messages m WHERE m.content LIKE ?"
+                params.append(f"%{q}%")
         else:
             sql = "SELECT m.* FROM chat_messages m WHERE 1=1"
         if thread:
@@ -651,6 +654,7 @@ class Store:
 
     def chat_stats(self, days=7):
         days = max(1, min(int(days or 7), 90))
+        cutoff = (datetime.now(TZ) - timedelta(days=days)).isoformat(timespec="seconds")
         conn = self.read_conn()
         try:
             by_source = [dict(r) for r in conn.execute(
@@ -659,8 +663,8 @@ class Store:
                 "SELECT source, modality, COUNT(*) AS n FROM chat_messages GROUP BY 1,2")]
             by_day = [dict(r) for r in conn.execute(
                 """SELECT substr(created_at,1,10) AS day, source, COUNT(*) AS n
-                   FROM chat_messages WHERE created_at >= datetime('now','-? day','localtime')
-                   GROUP BY day, source ORDER BY day DESC""", (days,))]
+                   FROM chat_messages WHERE created_at >= ?
+                   GROUP BY day, source ORDER BY day DESC""", (cutoff,))]
             return {"bySource": by_source, "byModality": by_modality, "byDay": by_day}
         finally:
             conn.close()
