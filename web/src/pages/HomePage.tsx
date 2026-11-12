@@ -81,6 +81,57 @@ function daysSince(value?: string): number {
   return Math.floor((Date.now() - t) / 86400000);
 }
 
+// 头像等静态资源在「服务根」，公网需要带 /workbench 前缀
+function assetUrl(path?: string): string {
+  if (!path) return "";
+  if (!path.startsWith("/")) return path;
+  return `${appRoot().replace(/\/$/, "")}${path}`;
+}
+
+// 按岗位给工位做差异化装饰
+type DeskRole = { key: string; label: string };
+
+function deskRole(role: string, isMgmt: boolean): DeskRole {
+  const r = role || "";
+  if (isMgmt) return { key: "lead", label: "管理" };
+  if (/视频|剪辑|分镜|渲染|摄影|摄像|拍摄/.test(r)) return { key: "video", label: "视频" };
+  if (/设计|美术|视觉|ui|ux/i.test(r)) return { key: "design", label: "设计" };
+  if (/技术|工程|开发|运维|数据|算法|后端|前端/.test(r)) return { key: "tech", label: "技术" };
+  if (/运营|发布|增长|市场|渠道|投放/.test(r)) return { key: "ops", label: "运营" };
+  if (/创意|文案|选题|策划|灵感|编辑|编剧/.test(r)) return { key: "creative", label: "创意" };
+  return { key: "support", label: "支撑" };
+}
+
+function DeskProp({ kind }: { kind: string }) {
+  const base = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  if (kind === "lead") {
+    return <svg {...base}><path d="M3 18h18M4 8l4 3 4-5 4 5 4-3-1.4 8H5.4L4 8Z" /></svg>;
+  }
+  if (kind === "video") {
+    return <svg {...base}><rect x="3" y="6" width="18" height="12" rx="2.5" /><path d="m10 9.8 4.6 2.7L10 15.2V9.8Z" /></svg>;
+  }
+  if (kind === "design") {
+    return <svg {...base}><path d="M14.5 4.5 19.5 9.5 9 20H4v-5L14.5 4.5Z" /><path d="m13 6-4 4" /></svg>;
+  }
+  if (kind === "tech") {
+    return <svg {...base}><path d="m9 8-4 4 4 4M15 8l4 4-4 4" /></svg>;
+  }
+  if (kind === "ops") {
+    return <svg {...base}><path d="M4 20h16M6 20v-6M11 20V8M16 20v-9M21 20v-4" /></svg>;
+  }
+  if (kind === "creative") {
+    return <svg {...base}><path d="M4 20l4.5-1 10-10-3.5-3.5-10 10L4 20Z" /><path d="m13.5 6.5 3.5 3.5" /></svg>;
+  }
+  return <svg {...base}><rect x="4" y="4" width="16" height="6.5" rx="1.8" /><rect x="4" y="13.5" width="16" height="6.5" rx="1.8" /><path d="M8 7.2h.01M8 16.7h.01" /></svg>;
+}
+
 // 短视频架构原则（依据 ep2/ep3 制作记录里的口播时间轴与固定镜头结构）
 const VIDEO_PRINCIPLES = [
   { t: "口播先行", d: "先定语音时间轴，画面跟着语音走，避免字幕与口播错位。" },
@@ -396,41 +447,91 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 4. 人员与分配 */}
-      <section className="card ceo-block">
+      {/* 4. 工位图：俯视 3D 工位区 */}
+      <section className="card ceo-block floor-block">
         <div className="block-head">
           <div>
-            <h2>人员编制 · 任务分配</h2>
+            <h2>工位图 · 任务分配</h2>
             <p className="muted">
-              执行中 {statusSummary.working} · 会议中 {statusSummary.meeting} · 待命 {statusSummary.idle} · 已交付 {statusSummary.done}
+              在岗 {agents.length} 人 · 执行中 {statusSummary.working} · 会议中 {statusSummary.meeting} · 待命 {statusSummary.idle} · 已交付 {statusSummary.done}
             </p>
           </div>
-          <Link to="/org" className="ceo-more">组织配置 →</Link>
+          <div className="floor-legend">
+            {Object.entries(STATUS_TEXT).map(([k, label]) => (
+              <span key={k} className={`floor-legend-item is-${k}`}>
+                <i />{label}
+              </span>
+            ))}
+            <Link to="/org" className="ceo-more">组织配置 →</Link>
+          </div>
         </div>
-        <div className="ceo-people">
-          {people.map((group) => (
-            <div key={group.key} className="ceo-people-group">
-              <div className="ceo-people-head" style={{ borderColor: group.color }}>
-                <span className="ceo-dot" style={{ background: group.color }} />
-                {group.name}
-                <span className="muted"> · {group.members.length} 人</span>
-              </div>
-              {group.members.map((a) => (
-                <div key={a.id} className="ceo-person">
-                  <div className="ceo-person-main">
-                    <b>{a.name}</b>
-                    <span className="muted">{a.role}</span>
+
+        <div className="floor-stage">
+          <div className="floor-room">
+            {people.map((group) => {
+              const zoneTier = group.key === "mgmt" ? "is-mgmt" : group.key === "mid" ? "is-mid" : "is-project";
+              return (
+                <div
+                  key={group.key}
+                  className={`floor-zone ${zoneTier}`}
+                  style={{ "--zone": group.color } as React.CSSProperties}
+                >
+                  <div className="floor-zone-label">
+                    <span className="ceo-dot" style={{ background: group.color }} />
+                    {group.name}
+                    <em>{group.members.length} 工位</em>
                   </div>
-                  <span className={`ceo-pill ceo-pill-${a.status || "idle"}`}>
-                    {STATUS_TEXT[a.status || "idle"] || a.status}
-                  </span>
-                  <span className="ceo-person-task" title={a.task || "暂无在执行的任务"}>
-                    {a.task || "暂无任务"}
-                  </span>
+                  <div className="floor-desks">
+                    {group.members.map((a, i) => {
+                      const dr = deskRole(a.role, group.key === "mgmt");
+                      return (
+                        <article
+                          key={a.id}
+                          className={`desk is-${a.status || "idle"} role-${dr.key}`}
+                          style={{ "--d": `${(i % 6) * 0.06}s` } as React.CSSProperties}
+                          title={`${a.name} · ${a.role} · ${a.task || "暂无任务"}`}
+                        >
+                          <div className="desk-scene">
+                            <span className="desk-monitor" aria-hidden="true"><i /></span>
+                            <span className="desk-surface" aria-hidden="true" />
+                            <span className="desk-front" aria-hidden="true" />
+                            <span className="desk-prop" aria-hidden="true"><DeskProp kind={dr.key} /></span>
+                            <span className="desk-lamp" aria-hidden="true" />
+                            <span className="desk-avatar-wrap">
+                              <span className="desk-avatar desk-avatar-fallback">{(a.name || "?").slice(0, 1)}</span>
+                              <img
+                                className="desk-avatar desk-avatar-img"
+                                src={assetUrl(a.avatar || `/avatars/${a.id}.png`)}
+                                alt={`${a.name} 头像`}
+                                loading="lazy"
+                                decoding="async"
+                                onError={(e) => {
+                                  const img = e.currentTarget;
+                                  if (img.dataset.fb !== "1") {
+                                    img.dataset.fb = "1";
+                                    img.src = assetUrl("/avatars/scout.png");
+                                  } else {
+                                    img.style.display = "none";
+                                  }
+                                }}
+                              />
+                            </span>
+                          </div>
+                          <div className="desk-meta">
+                            <b>{a.name}</b>
+                            <small>{a.role}</small>
+                            <span className="desk-task">{a.task || "暂无任务"}</span>
+                            <span className="desk-tag">{dr.label}</span>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
                 </div>
-              ))}
-            </div>
-          ))}
+              );
+            })}
+            {!people.length && <p className="muted floor-empty">员工名册加载中…</p>}
+          </div>
         </div>
       </section>
 

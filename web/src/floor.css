@@ -1,0 +1,468 @@
+/* =========================================================
+   首页 · 工位图（管理层 / 三个项目部 / 中台支持）
+   平面分区 + 每个工位独立的 3D 办公桌
+   ========================================================= */
+
+.floor-block { overflow: hidden; }
+
+.floor-block .block-head { flex-wrap: wrap; }
+
+.floor-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.floor-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.floor-legend-item i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b7bfcf;
+  box-shadow: 0 0 0 3px rgba(183, 191, 207, 0.22);
+}
+
+.floor-legend-item.is-working i { background: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.16); }
+.floor-legend-item.is-meeting i { background: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.16); }
+.floor-legend-item.is-done i { background: #059669; box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.16); }
+.floor-legend-item.is-idle i { background: #94a3b8; }
+
+/* 平面地板：不再整体倾斜 */
+.floor-stage {
+  position: relative;
+  margin: 4px 0 0;
+  padding: 16px 14px 20px;
+  border-radius: 16px;
+  background:
+    radial-gradient(760px 200px at 50% 0%, rgba(58, 111, 242, 0.08), transparent 72%),
+    linear-gradient(180deg, #f2f5fc 0%, #e9eef7 100%);
+  overflow: hidden;
+}
+
+.floor-stage::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 12px;
+  background:
+    repeating-linear-gradient(90deg, rgba(58, 111, 242, 0.045) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, rgba(58, 111, 242, 0.045) 0 1px, transparent 1px 64px),
+    linear-gradient(170deg, #fbfcff, #eef2fa);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+}
+
+.floor-room {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.floor-zone {
+  position: relative;
+  min-width: 0;
+  padding: 12px 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 12px 22px -18px rgba(28, 42, 84, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.floor-zone::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  background: var(--zone, var(--accent));
+  opacity: 0.9;
+}
+
+/* 三区：管理层在上、三个项目部并排、中台支撑在下 */
+.floor-zone.is-mgmt,
+.floor-zone.is-mid { grid-column: 1 / -1; }
+
+.floor-zone.is-mgmt {
+  background:
+    radial-gradient(440px 110px at 50% 0%, rgba(79, 70, 229, 0.07), transparent 70%),
+    rgba(255, 255, 255, 0.86);
+}
+
+.floor-zone-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.floor-zone-label em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--muted);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+}
+
+.floor-desks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(134px, 1fr));
+  gap: 12px 10px;
+}
+
+.floor-zone.is-mgmt .floor-desks {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 164px));
+  justify-content: center;
+  gap: 14px 12px;
+}
+
+/* ---------- 单个工位：一张带岗位装饰的 3D 办公桌 ---------- */
+.desk {
+  position: relative;
+  min-width: 0;
+  padding: 7px 7px 9px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f2f6fd 100%);
+  border: 1px solid rgba(208, 219, 238, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 10px 16px -14px rgba(32, 48, 96, 0.5),
+    0 2px 0 #d6e0f0;
+  perspective: 520px;
+  perspective-origin: 50% 78%;
+  animation: desk-in 0.5s var(--ease) both;
+  animation-delay: var(--d, 0s);
+  transition: transform 0.24s var(--ease), box-shadow 0.24s var(--ease), border-color 0.22s ease;
+}
+
+.desk:hover {
+  transform: translateY(-4px);
+  border-color: rgba(184, 200, 228, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 20px 26px -16px rgba(32, 48, 96, 0.55),
+    0 2px 0 #ccd8ec;
+  z-index: 2;
+}
+
+.desk-scene {
+  position: relative;
+  height: 92px;
+  transform-style: preserve-3d;
+}
+
+/* 桌下投影 */
+.desk-scene::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 2px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(36, 55, 110, 0.22), transparent 72%);
+  pointer-events: none;
+}
+
+/* 桌面：向后退的 3D 平面 */
+.desk-surface {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 12px;
+  height: 34px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #fbf1e2 0%, #efdfc6 60%, #e6d3b3 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  transform: rotateX(52deg);
+  transform-origin: center bottom;
+  z-index: 1;
+}
+
+.desk-surface::before {
+  content: "";
+  position: absolute;
+  inset: 5px 7px auto;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* 桌面前沿：厚度 */
+.desk-front {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 4px;
+  height: 11px;
+  border-radius: 3px 3px 7px 7px;
+  background: linear-gradient(180deg, #e6d3b0 0%, #d8c19a 55%, #c8ad83 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 5px 10px -5px rgba(90, 70, 40, 0.55);
+  z-index: 4;
+}
+
+/* 显示器 */
+.desk-monitor {
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  width: 44px;
+  height: 27px;
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(180deg, #202b47, #0d1527);
+  box-shadow: 0 7px 11px -7px rgba(14, 21, 40, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  z-index: 1;
+}
+
+.desk-monitor::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 13px;
+  height: 4px;
+  transform: translateX(-50%);
+  border-radius: 0 0 3px 3px;
+  background: #b9c6dd;
+}
+
+.desk-monitor i {
+  position: absolute;
+  inset: 3px 3px 5px;
+  border-radius: 2px;
+  background: linear-gradient(160deg, #9dbdff, #5b7cf0 55%, #7b5cf0);
+  opacity: 0.32;
+}
+
+.desk.is-working .desk-monitor i,
+.desk.is-meeting .desk-monitor i {
+  opacity: 1;
+  animation: screen-glow 2.6s ease-in-out infinite;
+}
+
+/* 岗位装饰：桌面上 + 右上角岗位图标 */
+.desk-prop {
+  position: absolute;
+  right: 2px;
+  top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  color: var(--role, #64748b);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(214, 224, 240, 0.95);
+  box-shadow: 0 5px 9px -7px rgba(32, 48, 96, 0.85);
+  z-index: 1;
+}
+
+.desk-prop svg { width: 14px; height: 14px; }
+
+/* 状态灯：放在桌面上 */
+.desk-lamp {
+  position: absolute;
+  left: 8px;
+  bottom: 30px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b7bfcf;
+  box-shadow: 0 0 0 3px rgba(183, 191, 207, 0.22);
+  z-index: 5;
+}
+
+.desk.is-working .desk-lamp { background: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18), 0 0 9px rgba(14, 165, 233, 0.75); }
+.desk.is-meeting .desk-lamp { background: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18), 0 0 9px rgba(124, 58, 237, 0.7); }
+.desk.is-done .desk-lamp { background: #059669; box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18); }
+.desk.is-idle .desk-lamp { background: #94a3b8; }
+
+/* 头像：站在桌后，下半身被桌沿遮住，形成前后层次 */
+.desk-avatar-wrap {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 50px;
+  height: 50px;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.desk-avatar {
+  position: absolute;
+  inset: 0;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(160deg, #e8eefc, #d3ddf2);
+  border: 3px solid #ffffff;
+  box-shadow:
+    0 8px 14px -7px rgba(32, 48, 96, 0.6),
+    0 2px 5px rgba(32, 48, 96, 0.1);
+}
+
+.desk-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  pointer-events: none;
+}
+
+.desk-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  min-width: 0;
+  text-align: center;
+}
+
+.desk-meta b {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desk-meta small {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desk-task {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desk-tag {
+  align-self: center;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--role, #64748b);
+  background: var(--role-soft, rgba(100, 116, 139, 0.1));
+}
+
+/* 岗位主题色 + 屏幕内容 */
+.role-lead { --role: #b7791f; --role-soft: rgba(183, 121, 31, 0.12); }
+.role-creative { --role: #d97706; --role-soft: rgba(217, 119, 6, 0.12); }
+.role-video { --role: #7c3aed; --role-soft: rgba(124, 58, 237, 0.12); }
+.role-design { --role: #db2777; --role-soft: rgba(219, 39, 119, 0.12); }
+.role-tech { --role: #0ea5e9; --role-soft: rgba(14, 165, 233, 0.12); }
+.role-ops { --role: #059669; --role-soft: rgba(5, 150, 105, 0.12); }
+.role-support { --role: #64748b; --role-soft: rgba(100, 116, 139, 0.12); }
+
+.role-lead .desk-monitor i {
+  background: linear-gradient(160deg, #ffe6a8, #d9a441 60%, #b7791f);
+  opacity: 0.9;
+}
+
+.role-tech .desk-monitor i {
+  background:
+    repeating-linear-gradient(180deg, rgba(120, 255, 196, 0.85) 0 2px, transparent 2px 6px),
+    #0b1a16;
+  opacity: 0.9;
+}
+
+.role-video .desk-monitor i {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.9) 0 22%, transparent 23%),
+    linear-gradient(160deg, #b28bff, #6d3df0);
+  opacity: 0.9;
+}
+
+.role-ops .desk-monitor i {
+  background:
+    repeating-linear-gradient(90deg, rgba(167, 243, 208, 0.9) 0 3px, transparent 3px 8px),
+    #0b1f19;
+  opacity: 0.85;
+}
+
+.role-creative .desk-monitor i {
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0 1px, transparent 1px 5px),
+    linear-gradient(160deg, #ffd48a, #f59e0b);
+  opacity: 0.85;
+}
+
+.role-design .desk-monitor i {
+  background:
+    radial-gradient(circle at 28% 32%, #fbcfe8 0 20%, transparent 21%),
+    radial-gradient(circle at 68% 60%, #c4b5fd 0 20%, transparent 21%),
+    linear-gradient(160deg, #f9a8d4, #a78bfa);
+  opacity: 0.9;
+}
+
+.floor-empty { margin: 8px; }
+
+@keyframes desk-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes screen-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.3); }
+}
+
+@media (max-width: 1240px) {
+  .floor-room { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .floor-zone.is-project { grid-column: span 1; }
+}
+
+@media (max-width: 920px) {
+  .floor-room { grid-template-columns: minmax(0, 1fr); }
+  .floor-zone.is-project { grid-column: auto; }
+  .floor-stage { padding: 12px 10px 16px; }
+  .floor-desks { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); }
+}
+
+@media (max-width: 480px) {
+  .floor-desks { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 8px; }
+  .desk-scene { height: 86px; }
+  .desk-avatar-wrap,
+  .desk-avatar { width: 46px; height: 46px; }
+  .desk-avatar-fallback { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desk { animation: none; }
+  .desk:hover { transform: none; }
+}

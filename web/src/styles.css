@@ -2711,10 +2711,10 @@ a:hover {
 .ceo-grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 18px;
+  margin-bottom: 0;
 }
-.ceo-block { margin-bottom: 16px; }
+.ceo-block { margin-bottom: 0; }
 .ceo-more { font-size: 12px; white-space: nowrap; }
 
 .ceo-list { display: flex; flex-direction: column; }
