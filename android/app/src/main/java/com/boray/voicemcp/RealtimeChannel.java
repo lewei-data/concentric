@@ -195,8 +195,9 @@ public final class RealtimeChannel {
         final byte[] data = wav;
         try {
             senderIo.execute(() -> sendUtteranceNow(data));
-        } catch (java.util.concurrent.RejectedExecutionException ignored) {
-            // 已 close
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // 通道已 close：必须回调，让上层把这一句转存待发队列，不能静默丢
+            listener.onStatus("通道已关闭，这句没发出去");
         }
     }
 

@@ -1,0 +1,31 @@
+name: hermes-telemetry
+label: Hermes Telemetry
+kind: standalone
+version: 0.1.0
+author: local
+homepage: ""
+description: >
+  运行时遥测采集器：把 agent 轮次、LLM 请求、工具调用、会话/子代理、kanban 调度事件
+  以追加写 JSONL 的方式落到 spool 目录，由 telemetryd.py 汇总进 DuckDB。
+  hook 回调只做内存入队（微秒级），绝不阻塞对话循环，也绝不因自身异常阻断工具。
+requires_hermes: ">=0.22.0"
+provides_tools: []
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+  - pre_llm_call
+  - post_llm_call
+  - pre_api_request
+  - post_api_request
+  - api_request_error
+  - on_session_start
+  - on_session_end
+  - on_session_finalize
+  - subagent_start
+  - subagent_stop
+  - on_kanban_dispatch_tick
+  - kanban_task_claimed
+  - kanban_task_completed
+  - kanban_task_blocked
+  - on_kanban_worker_spawned
+  - on_kanban_worker_exited

@@ -1,0 +1,21 @@
+name: media-platform
+label: Media Platform
+kind: standalone
+version: 0.1.0
+author: local
+homepage: ""
+description: >
+  数字人与媒体能力（媒体引擎 192.168.21.206:9200）：员工自我介绍视频 intro_video、
+  数字人档案 voice_avatars/profile、TTS/ASR、老板上线汇报，以及异步任务查询。
+  推理与视频合成都在 media-engine 独立进程里，本插件只做 HTTP 客户端。
+requires_hermes: ">=0.22.0"
+provides_tools:
+  - media_intro_video
+  - media_intro_status
+  - media_profile
+  - media_avatars
+  - media_tts
+  - media_asr
+  - media_boss_briefing
+  - media_job_status
+provides_hooks: []

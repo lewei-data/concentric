@@ -256,6 +256,17 @@ except Exception as _om_err:
     OMR = None
     print(f"[boot] 真实渲染不可用：{type(_om_err).__name__}: {_om_err}", flush=True)
 
+# 过程数据落库（SQLite/WAL）+ 多渠道消息摄取；OPC_DB 未开启时整体降级为旧路径
+try:
+    import db as DBX
+    import ingest as ING
+except Exception as _db_err:
+    DBX = None
+    ING = None
+    print(f"[boot] 过程数据入库不可用：{type(_db_err).__name__}: {_db_err}", flush=True)
+DB_ON = bool(DBX and DBX.ENABLED)
+INGEST_ON = DB_ON and os.environ.get("OPC_INGEST", "0") == "1"
+
 DEFAULT_PROJECTS = {
     "wenren": {"id": "wenren", "name": "文人莫克", "kind": "自媒体账号", "color": "#2563EB",
                "kpi": {"views": 0, "completion": 0.0, "fans": 0, "engagement": 0.0}},
@@ -960,7 +971,25 @@ class Kernel:
         self.last_hotspot = None
         self.startedAt = iso_now()          # 本次进程启动时间：快照用它区分“内存态归零”
         self.journal_file = os.path.join(VAULT, "动态", "runtime.json")
+        self.db = None
         self._restore_history()
+        # 过程数据入库：影子期双写，内存仍是读路径；库不可用时全部跳过
+        self.db = DBX.store() if DBX else None
+        self._run_id = uid("run")
+        if self.db:
+            try:
+                self.db.run_start(self._run_id, os.getpid(), MODEL)
+                self.db.chat_upsert_thread("web:workbench", "web", "工作台 · 老板指令",
+                                           [{"id": "owner", "name": "老板"}],
+                                           self.startedAt, self.startedAt)
+            except Exception as e:
+                print(f"[boot] 过程库初始化失败：{type(e).__name__}: {e}", flush=True)
+        self.ingestor = None
+        if INGEST_ON and ING:
+            try:
+                self.ingestor = ING.Ingestor(self.db, on_event=self._ingest_event).start()
+            except Exception as e:
+                print(f"[boot] 消息摄取启动失败：{type(e).__name__}: {e}", flush=True)
         self._sync_stop = threading.Event()
         threading.Thread(target=self._background_sync, daemon=True).start()
 
@@ -1084,6 +1113,35 @@ class Kernel:
         self.emit("config-reload", "", info)
         return info
 
+    # ---------- 过程数据落库 ----------
+    def _persist_trace(self, trace):
+        if not self.db:
+            return
+        with self.lock:
+            t = self.traces.get(trace)
+        if t:
+            self.db.upsert_trace(t)
+
+    def _ingest_event(self, thread_id, msg):
+        """摄取线程回调：把新消息推进 SSE，前端免轮询。"""
+        self.emit("chat.message", "", {"threadId": thread_id, "message": msg})
+
+    def _web_chat(self, direction, text, kind, sender, sender_name, origin_id, trace=""):
+        """Web 侧消息同进程直写（§12.4）。"""
+        if not self.db or not str(text or "").strip():
+            return
+        try:
+            self.db.chat_insert({
+                "thread_id": "web:workbench", "source": "web", "modality": "text",
+                "direction": direction, "sender_id": sender, "sender_name": sender_name,
+                "content": str(text)[:4000], "content_kind": kind or "text",
+                "origin_table": "opc.kernel", "origin_id": origin_id,
+                "trace_id": trace or None, "meta": {"type": kind},
+                "created_at": iso_now(),
+            })
+        except Exception as e:
+            print(f"[chat] Web 消息入库失败：{type(e).__name__}: {e}", flush=True)
+
     # ---------- 总线 ----------
     def emit(self, kind, trace, data):
         env = {"kind": kind, "traceId": trace, "at": iso_now(), "data": data}
@@ -1094,8 +1152,20 @@ class Kernel:
                     q.put_nowait(env)
                 except queue.QueueFull:
                     pass
-        if kind in ("hotspot", "report", "approval", "knowledge"):
-            self.save_runtime()     # 低频关键事件落盘，重启后可恢复
+        if self.db:
+            self.db.append_event(kind, trace, data, at=env["at"])
+            if kind == "report" and isinstance(data, dict):
+                self.db.upsert_report(data)
+            elif kind == "approval" and isinstance(data, dict):
+                self.db.upsert_approval(data)
+            elif kind == "hotspot" and isinstance(data, dict):
+                self.db.upsert_hotspot(data)
+            elif kind == "knowledge" and isinstance(data, dict):
+                self.db.upsert_knowledge(data)
+            elif kind == "pipeline" and isinstance(data, dict) and data.get("id"):
+                self.db.upsert_content(data)
+        elif kind in ("hotspot", "report", "approval", "knowledge"):
+            self.save_runtime()     # 旧路径：低频关键事件落盘，重启后可恢复
         return env
 
     def send(self, mtype, sender, recipient, trace, payload=None, project=None, priority=1):
@@ -1107,6 +1177,17 @@ class Kernel:
             if len(self.messages) > 4000:
                 self.messages = self.messages[-2000:]
         self.emit("message", trace, msg)
+        if self.db:
+            self.db.insert_message(msg)
+            if "owner" in (sender, recipient):
+                payload = payload or {}
+                text = (payload.get("text") or payload.get("task") or payload.get("title")
+                        or payload.get("message") or "")
+                self._web_chat("inbound" if sender == "owner" else "outbound",
+                               text, mtype, sender,
+                               "老板" if sender == "owner"
+                               else (self.agents.get(sender) or {}).get("name", sender),
+                               msg["id"], trace)
         return msg
 
     def set_agent(self, aid, status, task=""):
@@ -1137,6 +1218,8 @@ class Kernel:
             self.meeting.update({"active": True, "title": title,
                                  "participants": list(participants),
                                  "agenda": list(agenda or []), "startedAt": rec["startedAt"]})
+        if self.db:
+            self.db.upsert_meeting(rec)
         self.emit("meeting.start", trace, rec)
         return rec
 
@@ -1153,6 +1236,8 @@ class Kernel:
                     "role": a.get("role", ""), "projectId": a.get("projectId", "all"),
                     "kind": kind, "text": text[:1200], "at": iso_now()}
             rec["speeches"].append(item)
+        if self.db:
+            self.db.add_speech(rec.get("id"), len(rec["speeches"]), item)
         self.emit("meeting.speech", trace or rec.get("traceId", ""), item)
         return item
 
@@ -1180,6 +1265,8 @@ class Kernel:
                             r.update({k: v for k, v in urls.items() if v})
             except Exception as e:
                 print(f"[meeting] 会议记录落盘失败：{type(e).__name__}: {e}", flush=True)
+        if self.db:
+            self.db.upsert_meeting(out)
         self.emit("meeting.end", trace, out)
         return out
 
@@ -1259,6 +1346,8 @@ class Kernel:
                 alerts.add("call")
             if missing:
                 alerts.add("missing")
+        if self.db:
+            self.db.insert_usage(trace, agent_id, (meta or {}).get("model") or MODEL, usage)
         if trace_hit or cost_hit:
             self._cto_alert(
                 f"成本熔断：trace {trace or '—'} 累计 {snapshot['totalTokens']} tokens / "
@@ -1528,6 +1617,7 @@ class Kernel:
             self.stats["traces"] += 1
             self.traces[trace] = {"traceId": trace, "hotspot": hotspot, "startedAt": iso_now(),
                                   "status": "running", "engine": MODE}
+        self._persist_trace(trace)
         self.emit("hotspot", trace, hotspot)
         threading.Thread(target=self.run_pipeline, args=(trace, hotspot), daemon=True).start()
         return trace, hotspot
@@ -1547,6 +1637,7 @@ class Kernel:
                             "published", "archived"):
                         item["stage"] = "blocked"
                         item["blockedBy"] = "cost-gate"
+            self._persist_trace(trace)
             self.send("escalation", "cto", "owner", trace,
                       {"text": f"任务已在阶段边界停止：{exc}", "aborted": True}, priority=2)
         except Exception as exc:
@@ -1554,6 +1645,7 @@ class Kernel:
             with self.lock:
                 self.traces[trace]["status"] = "error"
                 self.traces[trace]["closedAt"] = iso_now()
+            self._persist_trace(trace)
         finally:
             if self.active_trace == trace:
                 self.active_trace = ""
@@ -1570,6 +1662,7 @@ class Kernel:
                 if t and t.get("status") == "running":
                     t["status"] = "incomplete"
                     t["closedAt"] = iso_now()
+            self._persist_trace(trace)
             self.export_trace_docs(trace)   # 收口之后再落盘，交付文档才能记录到最终状态
             self.save_runtime()             # 本轮报告/消息/知识入库，重启后可恢复
 
@@ -2380,6 +2473,7 @@ class Kernel:
             self.traces[trace]["reviewHistory"] = review_history
             self.traces[trace]["reviewGate"] = {"passed": len(passed_items),
                                                 "blocked": len(items) - len(passed_items)}
+        self._persist_trace(trace)
         self.export_trace_docs(trace)
 
         if not passed_items:
@@ -2389,6 +2483,7 @@ class Kernel:
             with self.lock:
                 self.traces[trace]["status"] = "blocked"
                 self.traces[trace]["closedAt"] = iso_now()
+            self._persist_trace(trace)
             return
 
         # 11. 审批门（仅放行审核通过的内容）
@@ -2426,6 +2521,7 @@ class Kernel:
                     self._schedule_export(trace, item)
                 self.traces[trace]["status"] = "rejected" if appr["status"] == "rejected" else "timeout"
                 self.traces[trace]["closedAt"] = iso_now()
+            self._persist_trace(trace)
             for item in passed_items.values():
                 self.emit("pipeline", trace, item)
             self.send("escalation", "ceo", "owner", trace,
@@ -2527,6 +2623,7 @@ class Kernel:
             self.traces[trace]["status"] = "completed"
             self.traces[trace]["closedAt"] = iso_now()
             self.traces[trace]["hermes"] = HERMES.stats()
+        self._persist_trace(trace)
         self.set_scene("WORK", trace, title="归档完成，回到生产")
 
     def mgmt_delegate(self, sender, recipient, text):
@@ -3157,6 +3254,14 @@ class Handler(BaseHTTPRequestHandler):
                 return None
             return dict(rec["user"])
 
+    def _owner_only(self):
+        """统一消息只对老板开放：其他角色 403。"""
+        user = self._session_user() or {}
+        if "老板" in str(user.get("role") or ""):
+            return True
+        self._json({"ok": False, "error": "forbidden"}, 403)
+        return False
+
     def _need_login(self, path):
         """未登录：API 回 401，页面 302 到登录页（带 next 回跳地址）。"""
         if self._session_user():
@@ -3405,6 +3510,36 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/reports":
             kind = (parse_qs(urlparse(self.path).query).get("kind") or [""])[0]
             return self._json({"reports": [r for r in KERNEL.reports if (not kind or r["kind"] == kind)]})
+        # ---------- 统一消息（飞书 / APP / Web，只读） ----------
+        if path.startswith("/api/chat/"):
+            if not self._owner_only():
+                return
+            qs = parse_qs(urlparse(self.path).query)
+            arg = lambda k, d="": (qs.get(k) or [d])[0]
+            if not KERNEL.db:
+                return self._json({"ok": False, "enabled": False, "error": "过程库未启用"}, 503)
+            try:
+                if path == "/api/chat/threads":
+                    rows = KERNEL.db.chat_threads(arg("source"), _to_int(arg("limit", "50"), 50),
+                                                  arg("before"))
+                    return self._json({"ok": True, "enabled": True, "threads": rows})
+                if path == "/api/chat/messages":
+                    rows = KERNEL.db.chat_messages(
+                        thread=arg("thread"), source=arg("source"), modality=arg("modality"),
+                        direction=arg("direction"), q=arg("q"),
+                        before_id=_to_int(arg("before", "0"), 0),
+                        limit=_to_int(arg("limit", "50"), 50))
+                    return self._json({"ok": True, "enabled": True, "messages": rows})
+                if path == "/api/chat/stats":
+                    return self._json({"ok": True, "enabled": True,
+                                       "stats": KERNEL.db.chat_stats(_to_int(arg("days", "7"), 7))})
+                if path == "/api/chat/export":
+                    rows = KERNEL.db.chat_export(arg("start"), arg("end"),
+                                                 _to_int(arg("limit", "10000"), 10000))
+                    return self._json({"ok": True, "enabled": True, "count": len(rows), "messages": rows})
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": False, "error": "not found"}, 404)
         # ---------- 组织配置（制度 / 岗位 / 人员 / 性格 / 技能 / 记忆） ----------
         if path == "/api/org":
             try:
@@ -3598,6 +3733,8 @@ class Handler(BaseHTTPRequestHandler):
             msgs = [m for m in KERNEL.messages if m.get("traceId") == trace]
             contents = [c for c in KERNEL.contents if c.get("traceId") == trace]
             if trace not in KERNEL.traces and not msgs and not contents:
+                if KERNEL.db:
+                    return self._trace_from_db(trace)
                 return None
             return {"traceId": trace, "meta": KERNEL.traces.get(trace, {}),
                     "messages": msgs, "contents": contents,
@@ -3605,6 +3742,36 @@ class Handler(BaseHTTPRequestHandler):
                     "reports": [r for r in KERNEL.reports if r.get("traceId") == trace],
                     "knowledge": [k for k in KERNEL.knowledge if k.get("traceId") == trace],
                     "messageCount": len(msgs)}
+
+    def _trace_from_db(self, trace):
+        """内存已随重启清空的历史 trace：从过程库还原骨架 + 事件序列。"""
+        row = KERNEL.db.trace_row(trace)
+        if not row:
+            return None
+
+        def dec(value):
+            try:
+                return json.loads(value) if value else None
+            except (TypeError, ValueError):
+                return value
+
+        meta = {"traceId": row.get("trace_id"), "status": row.get("status"),
+                "startedAt": row.get("started_at"), "closedAt": row.get("closed_at"),
+                "engine": row.get("engine"),
+                "hotspot": {"id": row.get("hotspot_id"), "title": row.get("hotspot_title")}}
+        for src, dst in (("review_gate", "reviewGate"), ("review_history", "reviewHistory"),
+                         ("hermes", "hermes"), ("meta", "meta")):
+            if row.get(src):
+                meta[dst] = dec(row[src])
+        if row.get("abort_reason"):
+            meta["abortReason"] = row["abort_reason"]
+        events = KERNEL.db.trace_events(trace, 500)
+        return {"traceId": trace, "meta": meta, "events": events,
+                "messages": [e["data"] for e in events
+                             if e.get("kind") == "message" and isinstance(e.get("data"), dict)],
+                "contents": [], "approvals": [], "reports": [], "knowledge": [],
+                "messageCount": sum(1 for e in events if e.get("kind") == "message"),
+                "source": "db"}
 
     def _sse(self):
         self.send_response(200)
@@ -3713,6 +3880,7 @@ class Handler(BaseHTTPRequestHandler):
             text = (body.get("text") or "").strip()
             if not text:
                 return self._json({"ok": False, "error": "空指令"}, 400)
+            KERNEL._web_chat("inbound", text, "command", "owner", "老板", uid("web"))
             m = re.match(r"@(\S+)\s*([\s\S]*)", text)
             if m:
                 key, rest = m.group(1), m.group(2).strip()
@@ -3768,6 +3936,9 @@ def main():
         print("\nbye")
     finally:
         srv.server_close()
+        if KERNEL.db:
+            KERNEL.db.run_end(KERNEL._run_id)
+            KERNEL.db.close()
 
 
 if __name__ == "__main__":

@@ -507,15 +507,19 @@ public class LiveCallActivity extends Activity {
             if (heard.isEmpty()) {
                 ui.post(() -> {
                     setMicState("没听清 · 继续聆听");
-                    notice("这一句没识别出来，再说一次即可。");
+                    notice("这一句没识别出来，已提示重说。");
                 });
+                // 以前只弹一条提示，老板在通话里听不到任何声音；这里补一句有声澄清
+                say("老板，这句我没听清，麻烦您再说一遍。");
                 return;
             }
             logMsg(SessionStore.ROLE_USER, SessionStore.KIND_VOICE, heard);
             ui.post(() -> caption("我听到：「" + heard + "」"));
             String result = DispatchApi.ask(app, emp.id, "video", heard, 180_000);
             if (result.isEmpty()) {
-                ui.post(() -> notice("这一句没拿到回复（调度中心未返回），不影响后续。"));
+                // 调度中心没接住：不能只提示一句就永久丢，转存待发队列由 voice_chat 重发
+                keepForRetry(wav);
+                ui.post(() -> notice("调度中心没接住，已转存待发，稍后自动重发。"));
                 return;
             }
             logMsg(SessionStore.ROLE_AGENT, SessionStore.KIND_VOICE, result);
@@ -525,6 +529,25 @@ public class LiveCallActivity extends Activity {
                 setMicState("已回复 · 继续聆听");
             });
         });
+    }
+
+    /** 调度中心没接住时把这段录音转存待发队列，由后台 voice_chat 重发（按 client_id 幂等）。 */
+    private void keepForRetry(byte[] wav) {
+        if (wav == null || wav.length < 2000) return;
+        try {
+            java.io.File tmp = new java.io.File(getCacheDir(),
+                    "retry_" + System.currentTimeMillis() + ".wav");
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+                out.write(wav);
+                out.flush();
+            }
+            VoiceOutbox.enqueue(this, tmp, "", "");
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            ListenService.start(this);
+        } catch (Exception e) {
+            notice("这句录音转存失败：" + e.getMessage());
+        }
     }
 
     /** 本地 ASR：兜底链路需要先把语音变成文字，才能提交给调度中心 */

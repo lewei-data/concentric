@@ -29,12 +29,13 @@ from starlette.concurrency import run_in_threadpool
 
 import asr_engine
 import tts_engine
+import video_engine
 
 SERVICE = "media-engine"
 VERSION = "0.1.0"
 STARTED_AT = time.time()
 
-HOST = os.environ.get("MEDIA_HOST", "127.0.0.1")
+HOST = os.environ.get("MEDIA_HOST", "192.168.21.206")
 PORT = int(os.environ.get("MEDIA_PORT", "9200"))
 WORK_DIR = os.environ.get("MEDIA_WORK_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "work"))
 TOKEN = os.environ.get("MEDIA_ENGINE_TOKEN", "").strip()
@@ -50,6 +51,7 @@ app = FastAPI(title=SERVICE, version=VERSION, docs_url=None, redoc_url=None)
 _METRICS = {
     "tts_requests": 0, "tts_fail": 0, "tts_ms": 0.0,
     "asr_requests": 0, "asr_fail": 0, "asr_ms": 0.0, "asr_empty": 0,
+    "video_jobs": 0, "video_fail": 0,
 }
 _METRICS_LOCK = threading.Lock()
 
@@ -123,6 +125,7 @@ def health():
             "tts": tts,
             "asr": {"loaded": bool(asr), "models": list(asr), "default_model": asr_engine.MODEL_NAME,
                     "default_language": asr_engine.DEFAULT_LANG},
+            "video": video_engine.capabilities(),
             "work_dir": WORK_DIR}
 
 
@@ -139,6 +142,9 @@ def metrics():
              "media_engine_failures_total{op=\"asr\"} %d" % m["asr_fail"],
              "# TYPE media_engine_asr_empty_total counter",
              "media_engine_asr_empty_total %d" % m["asr_empty"],
+             "# TYPE media_engine_video_jobs_total counter",
+             "media_engine_video_jobs_total %d" % m["video_jobs"],
+             "media_engine_video_failures_total %d" % m["video_fail"],
              "# TYPE media_engine_latency_ms_total counter",
              "media_engine_latency_ms_total{op=\"tts\"} %.1f" % m["tts_ms"],
              "media_engine_latency_ms_total{op=\"asr\"} %.1f" % m["asr_ms"],
@@ -210,6 +216,7 @@ async def tts(payload: TTSRequest, request: Request):
 
     return {"job_id": result["stem"], "voice": payload.voice or "default",
             "audio_url": _file_url(os.path.basename(wav_path)),
+            "audio_path": wav_path,
             "srt_url": _file_url(os.path.basename(result["srt_path"])),
             "segments_url": _file_url(os.path.basename(result["segments_path"])),
             "sample_rate": result["sample_rate"], "duration": result["duration"],
@@ -290,6 +297,160 @@ async def asr(request: Request):
     finally:
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
+
+
+# ---------------------------------------------------------------- 数字人与视频
+class IntroRequest(BaseModel):
+    employee_id: str | None = None
+    all: bool = False
+    force: bool = False
+    refresh_text: bool = True
+    wait: bool = True
+    wait_sec: float = 300.0
+    text: str | None = None
+    voice: str | None = None
+
+
+def _job_view(job, wait_sec=0.0):
+    """等任务（可选）并返回统一视图；result 里是各 kind 的业务结果。"""
+    return video_engine.JOBS.get(job["job_id"], wait_sec if wait_sec > 0 else 0.0)
+
+
+@app.post("/v1/video/jobs")
+async def video_jobs(payload: IntroRequest, request: Request):
+    """提交自我介绍视频任务；wait=true 时同步等到出片（长任务建议 wait=false）。"""
+    if not _authorized(request):
+        return _forbidden()
+    try:
+        ids = video_engine.resolve_ids(payload.employee_id, payload.all)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    _count("video_jobs")
+    job = video_engine.JOBS.submit(
+        "intro",
+        lambda: video_engine.intro_job(ids, force=payload.force,
+                                       refresh_text=payload.refresh_text,
+                                       text=payload.text, voice=payload.voice),
+        meta={"ids": ids, "force": payload.force})
+    view = await run_in_threadpool(_job_view, job, payload.wait_sec if payload.wait else 0.0)
+    if view.get("status") == "failed":
+        _count("video_fail")
+    return view
+
+
+@app.get("/v1/video/{employee_id}")
+def video_status(employee_id: str, request: Request):
+    """查单个员工的成片状态（不触发生成）。"""
+    if not _authorized(request):
+        return _forbidden()
+    aid = os.path.basename(employee_id)
+    path = os.path.join(video_engine.INTRO_DIR, "%s.mp4" % aid) if video_engine.INTRO_DIR else ""
+    ready = bool(path and os.path.exists(path))
+    meta = video_engine.intro_meta_of(aid) if ready else {}
+    url = video_engine._asset_url("intro", "%s.mp4" % aid) if ready else ""
+    return {"id": aid, "ready": ready, "video": url,
+            "video_full": video_engine._asset_url_full("intro", "%s.mp4" % aid) if ready else "",
+            "text": video_engine._read_intro_text(aid) if ready else "",
+            "duration": meta.get("duration") or 0, "size": meta.get("size") or 0,
+            "source": meta.get("source"), "generated_at": meta.get("generated_at")}
+
+
+@app.post("/v1/jobs")
+async def create_job(request: Request):
+    """通用异步任务入口：kind=intro（同 /v1/video/jobs）或 briefing（老板上线汇报）。"""
+    if not _authorized(request):
+        return _forbidden()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "请求体必须是 JSON"}, status_code=400)
+    kind = (body.get("kind") or "").strip()
+    wait_sec = float(body.get("wait_sec") or 0)
+    if kind == "intro":
+        try:
+            ids = video_engine.resolve_ids(body.get("employee_id"), bool(body.get("all")))
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        _count("video_jobs")
+        job = video_engine.JOBS.submit(
+            "intro",
+            lambda: video_engine.intro_job(ids, force=bool(body.get("force")),
+                                           refresh_text=body.get("refresh_text", True),
+                                           text=body.get("text"), voice=body.get("voice")),
+            meta={"ids": ids, "force": bool(body.get("force"))})
+    elif kind == "briefing":
+        _count("video_jobs")
+        job = video_engine.JOBS.submit(
+            "briefing",
+            lambda: video_engine.boss_briefing(voice=body.get("voice"),
+                                               emotion=body.get("emotion") or "calm"),
+            meta={"scene": "boss_online"})
+    else:
+        return JSONResponse({"error": "kind 只支持 intro / briefing"}, status_code=400)
+    view = await run_in_threadpool(_job_view, job,
+                                   wait_sec if body.get("wait", True) and wait_sec else 0.0)
+    if view.get("status") == "failed":
+        _count("video_fail")
+    return view
+
+
+@app.get("/v1/jobs/{job_id}")
+def get_job(job_id: str, request: Request, wait_sec: float = 0):
+    """按 job_id 取结果；wait_sec 可长轮询（最多 300s），避免高频轮询。"""
+    if not _authorized(request):
+        return _forbidden()
+    view = video_engine.JOBS.get(job_id, min(max(wait_sec, 0.0), 300.0))
+    if not view:
+        return JSONResponse({"error": "任务不存在或已过期：%s" % job_id}, status_code=404)
+    return view
+
+
+@app.get("/v1/jobs")
+def list_jobs(request: Request, limit: int = 20):
+    if not _authorized(request):
+        return _forbidden()
+    jobs = video_engine.JOBS.list(limit)
+    return {"count": len(jobs), "jobs": jobs, "queue": video_engine.JOBS.status()}
+
+
+@app.get("/v1/avatars")
+def avatars(request: Request):
+    """可插拔的数字人档案（照片 + 可选仿真人视频素材）。"""
+    if not _authorized(request):
+        return _forbidden()
+    return video_engine.list_avatars()
+
+
+@app.get("/v1/profiles")
+def profiles(request: Request, id: str | None = None, dept: str | None = None,
+             project: str | None = None, include_assets: bool = True):
+    """员工档案：可按 id / dept / project 过滤。"""
+    if not _authorized(request):
+        return _forbidden()
+    return video_engine.list_profiles(id, dept, project, include_assets)
+
+
+_MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg", ".mp3": "audio/mpeg", ".wav": "audio/wav",
+                ".m3u8": "application/vnd.apple.mpegurl", ".txt": "text/plain; charset=utf-8",
+                ".json": "application/json", ".srt": "text/plain; charset=utf-8"}
+
+
+@app.get("/v1/assets/{subdir}/{name}")
+def assets(subdir: str, name: str):
+    """素材与成片下载（支持 Range，客户端可边下边播 mp4）。"""
+    safe_sub = os.path.basename(subdir)
+    safe = os.path.basename(name)
+    if safe_sub not in ("avatars", "faces", "videos", "portraits", "intro", "live"):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    for root in video_engine.asset_roots():
+        root_real = os.path.realpath(root)
+        path = os.path.realpath(os.path.join(root_real, safe_sub, safe))
+        if path.startswith(root_real + os.sep) and os.path.isfile(path):
+            media = _MEDIA_TYPES.get(os.path.splitext(safe)[1].lower(),
+                                     "application/octet-stream")
+            return FileResponse(path, media_type=media)
+    return JSONResponse({"error": "not found"}, status_code=404)
 
 
 # ---------------------------------------------------------------- 产物下载

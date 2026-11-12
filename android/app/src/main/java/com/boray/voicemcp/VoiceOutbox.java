@@ -317,9 +317,15 @@ public final class VoiceOutbox {
                         fail(c, it.id, parsed.bestText());
                         continue;
                     }
+                    if (parsed.jobId.isEmpty()) {
+                        // 服务端已处理但没建任务（澄清/仅回执）：直接出队。
+                        // 以前 markSent(id, "") 会让 due() 每 15s 再发一次同一段录音，重复触发澄清。
+                        done(c, it.id);
+                        continue;
+                    }
                     markSent(c, it.id, parsed.jobId);
                     PushProcessor.save(c, parsed);
-                    if (!parsed.jobId.isEmpty()) ListenService.addJob(c, parsed.jobId);
+                    ListenService.addJob(c, parsed.jobId);
                 } catch (Exception e) {
                     if (client != null) {
                         client.invalidate();

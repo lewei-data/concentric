@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   - 说话前保留 300ms 预录，避免吞字
  *   - 停顿超过 700ms 且累计说话 ≥ 400ms → 认为一句话说完，回调一段 WAV
  *   - 单句最长 12s 强制截断，防止一直说不停导致上传过大
+ *   - 下行播报期间阈值抬高、最短语音拉长，抑制扬声器回声被当成老板说话
  *   - WAV 为 16kHz / 16bit / 单声道，服务端 ASR 直接可用
  *
  * 回调在录音线程上，调用方自己切线程发网络请求。
@@ -38,6 +39,13 @@ public final class LiveMic {
     private static final long SILENCE_END_MS = 700;
     private static final long MIN_SPEECH_MS = 400;
     private static final long MAX_UTTERANCE_MS = 12_000;
+    /**
+     * 正在播放下行语音时，扬声器回声会进麦克风。AEC 只能压低不能清零，
+     * 所以播报期间把判定门槛整体抬高：阈值 ×2.8（约 +9dB），最短语音也拉长，
+     * 只有明显高于回声残留的持续人声才当成老板插话。
+     */
+    private static final float PLAYBACK_THRESHOLD_SCALE = 2.8f;
+    private static final long PLAYBACK_MIN_SPEECH_MS = 800;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private AudioRecord record;
@@ -47,6 +55,13 @@ public final class LiveMic {
     private Listener listener;
     private volatile float level = 0f;
     private volatile boolean speaking = false;
+    /** 下行语音正在播放：抬高 VAD 门槛，避免把扬声器回声当成老板在说话 */
+    private volatile boolean playbackActive = false;
+
+    /** 由通话层在播放开始/结束时同步；只读 volatile，可在任意线程调用 */
+    public void setPlaybackActive(boolean active) {
+        playbackActive = active;
+    }
 
     public void start(Listener l) {
         if (!running.compareAndSet(false, true)) return;
@@ -167,9 +182,11 @@ public final class LiveMic {
             }
             float rms = rms(frame, n);
             level = Math.min(1f, rms / 6000f);          // 0..1 显示用
-            // 底噪自适应：没人说话时慢慢跟随环境噪声
-            if (rms < noise * 1.6f) noise = noise * 0.98f + rms * 0.02f;
+            // 底噪自适应：没人说话时慢慢跟随环境噪声（播报期间不跟，免得把回声吃进底噪）
+            boolean playing = playbackActive;
+            if (!playing && rms < noise * 1.6f) noise = noise * 0.98f + rms * 0.02f;
             float threshold = Math.max(420f, noise * 2.6f);
+            if (playing) threshold *= PLAYBACK_THRESHOLD_SCALE;
             boolean voiced = rms > threshold;
 
             long now = System.currentTimeMillis();
@@ -207,7 +224,9 @@ public final class LiveMic {
                 silenceMs += FRAME_MS;
             }
 
-            boolean done = silenceMs >= SILENCE_END_MS && speechMs >= MIN_SPEECH_MS;
+            // 播报期间要求更长的持续人声，回声很难连成 800ms
+            long minSpeech = playing ? PLAYBACK_MIN_SPEECH_MS : MIN_SPEECH_MS;
+            boolean done = silenceMs >= SILENCE_END_MS && speechMs >= minSpeech;
             boolean tooLong = utter.size() >= SAMPLE_RATE * 2 * MAX_UTTERANCE_MS / 1000;
             boolean almostSilent = silenceMs >= 1800;   // 一直没声（可能只是噪声抖动）
             if (done || tooLong || almostSilent) {
@@ -217,7 +236,7 @@ public final class LiveMic {
                 speaking = false;
                 preCount = 0;
                 preIdx = 0;
-                if (speechMs >= MIN_SPEECH_MS && pcm.length > 0) {
+                if (speechMs >= minSpeech && pcm.length > 0) {
                     byte[] wav = wav(pcm);
                     if (listener != null) listener.onUtterance(wav, (int) (pcm.length / 32));
                 }

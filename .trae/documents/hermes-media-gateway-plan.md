@@ -304,7 +304,7 @@ def register(ctx):
 | 交付物 | `/opt/sefs/hermes/plugins/media-voice/{plugin.yaml,__init__.py}`：`MediaCosyVoiceProvider`（`name=media_cosyvoice`）+ `MediaWhisperProvider`（`name=media_whisper`） |
 | 配置 | `plugins.enabled += media-voice`；`stt.provider: media_whisper`（+`stt.media_whisper.language: zh`）；`tts.provider: media_cosyvoice`（+顶层 `tts.voice: m06`）；保留 `tts.edge.voice` 供回滚 |
 | 备份 | `/opt/sefs/hermes/backups/config.yaml.bak-s2-20261111` |
-| 环境变量 | `MEDIA_ENGINE_URL`(默认 `http://127.0.0.1:9200`)、`MEDIA_ENGINE_TOKEN`、`MEDIA_TTS_VOICE`(默认 `m06`)、`MEDIA_VOICES_FILE`、`MEDIA_TTS_TIMEOUT=900`、`MEDIA_ASR_TIMEOUT=300` |
+| 环境变量 | `MEDIA_ENGINE_URL`(默认 `http://192.168.21.206:9200`)、`MEDIA_ENGINE_TOKEN`、`MEDIA_TTS_VOICE`(默认 `m06`)、`MEDIA_VOICES_FILE`、`MEDIA_TTS_TIMEOUT=900`、`MEDIA_ASR_TIMEOUT=300` |
 | 校验方式 | 系统 `python3` 校验 YAML；用真实运行时（`tools/python-3.14.9…/python3 -I` + `import hermes_bootstrap`）加载插件并**走核心工具入口** `text_to_speech_tool` / `transcribe_audio` |
 
 **实测结果（核心链路）**

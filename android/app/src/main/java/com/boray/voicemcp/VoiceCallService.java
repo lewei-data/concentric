@@ -331,6 +331,14 @@ public class VoiceCallService extends Service {
     private LiveMic mic;
     private AudioManager audioManager;
     private int prevAudioMode = -1;
+    /**
+     * 本地抢先打断的持续门限：VAD 连续判到人声超过这个时长才停播。
+     * 原来一帧（20ms）就停，扬声器回声的瞬时尖峰会被当成插话，
+     * 变成「小秘书自己把自己掐掉」；与服务端 BARGE_MIN_MS=240 对齐并留点余量。
+     */
+    private static final long LOCAL_BARGE_MS = 320;
+    /** 本轮「疑似插话」的起始时刻，0 表示当前没在累计 */
+    private long bargeStartAt = 0;
 
     private Employee emp;
     private volatile String sessionId = "";
@@ -923,10 +931,22 @@ public class VoiceCallService extends Service {
                 public void onLevel(float l, boolean sp) {
                     level = l;
                     speaking = sp;
-                    // 本地抢先打断：VAD 一判到人声就停播，不用等服务端 barge_in 回来
-                    if (sp && "ws".equals(transport) && wsPlayer != null && wsPlayer.isPlaying()) {
-                        wsPlayer.stopAndFlush();
-                        subtitle = "（我在听）";
+                    boolean playing = "ws".equals(transport) && wsPlayer != null && wsPlayer.isPlaying();
+                    // 播放期间抬高 VAD 门槛：让 LiveMic 把回声和真插话区分开
+                    LiveMic m = mic;
+                    if (m != null) m.setPlaybackActive(playing);
+                    // 本地抢先打断：必须连续判到人声 LOCAL_BARGE_MS 才停播，
+                    // 单帧回声不至于把自己的播报掐掉；仍比等服务端 barge_in 快
+                    if (sp && playing) {
+                        long now = System.currentTimeMillis();
+                        if (bargeStartAt == 0) bargeStartAt = now;
+                        if (now - bargeStartAt >= LOCAL_BARGE_MS) {
+                            bargeStartAt = 0;
+                            wsPlayer.stopAndFlush();
+                            subtitle = "（我在听）";
+                        }
+                    } else {
+                        bargeStartAt = 0;
                     }
                 }
             });
@@ -1015,7 +1035,10 @@ public class VoiceCallService extends Service {
         postIo.execute(() -> {
             String heard = asrText(wav);
             if (heard.isEmpty()) {
-                ui.post(() -> setLine(mine, "（没听清）", false));
+                // 识别为空也要「有声」回应：以前只写一行「（没听清）」，老板听不到任何声音，
+                // 体感就是这句指令被丢了。这里用直播流回一句澄清语，并保留屏幕记录。
+                ui.post(() -> setLine(mine, "（没听清，已提示重说）", false));
+                say("老板，这句我没听清，麻烦您再说一遍。");
                 return;
             }
             ui.post(() -> {
