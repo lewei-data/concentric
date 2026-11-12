@@ -22,10 +22,12 @@ function ConcentricLogo() {
 
 const PRIMARY_NAV = [
   { to: "/", label: "总览", end: true },
+  { to: "/inspiration", label: "创意灵感" },
   { to: "/works", label: "作品档案" },
   { to: "/hotspots", label: "热点" },
   { to: "/knowledge", label: "知识库" },
   { to: "/org", label: "组织配置" },
+  { to: "/ops", label: "运维监控" },
 ];
 
 export function Layout() {
@@ -45,7 +47,11 @@ export function Layout() {
   };
 
   const navItems = [...PRIMARY_NAV];
-  if (isOwner) navItems.splice(4, 0, { to: "/messages", label: "消息中心", end: false });
+  if (isOwner) {
+    const at = navItems.findIndex((i) => i.to === "/org");
+    navItems.splice(at < 0 ? navItems.length : at, 0,
+      { to: "/messages", label: "消息中心", end: false });
+  }
 
   return (
     <div className="app">

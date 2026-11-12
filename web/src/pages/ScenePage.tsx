@@ -64,10 +64,12 @@ type MeetingView = {
   active: boolean;
   current: MeetingRecord | null;
   last: MeetingRecord | null;
+  focus: MeetingRecord | null;
   history: MeetingRecord[];
   participants: number;
   speechCount: number;
   lastSpeech: Speech | null;
+  conclusion: string;
 };
 
 type StateView = {
@@ -123,15 +125,22 @@ function toMeetingView(raw: Record<string, any>): MeetingView {
   const current: MeetingRecord | null = raw.current || null;
   const last: MeetingRecord | null = raw.last || null;
   const history: MeetingRecord[] = Array.isArray(raw.history) ? raw.history : [];
-  const speeches = current?.speeches || [];
+  const currentSpeeches = current?.speeches || [];
+  // /api/meeting 在空闲时仍返回 status=idle 的空 current，真实数据在 last 里
+  const hasLive = !!raw.active && !!current && current.status !== "idle" &&
+    (currentSpeeches.length > 0 || (current.participants || []).length > 0);
+  const focus = hasLive ? current : (last || current);
+  const focusSpeeches = focus?.speeches || [];
   return {
     active: !!raw.active,
     current,
     last,
+    focus,
     history,
-    participants: (current?.participants || last?.participants || []).length,
-    speechCount: current?.speechCount ?? speeches.length ?? last?.speechCount ?? 0,
-    lastSpeech: speeches.length ? speeches[speeches.length - 1] : null,
+    participants: (focus?.participants || []).length,
+    speechCount: focus?.speechCount ?? focusSpeeches.length ?? 0,
+    lastSpeech: hasLive && currentSpeeches.length ? currentSpeeches[currentSpeeches.length - 1] : null,
+    conclusion: String(focus?.conclusion || ""),
   };
 }
 
@@ -331,19 +340,19 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
                 {meetingView?.active ? "进行中" : "当前无会议"}
               </div>
               <h3 className="meeting-title">
-                {meetingView?.current?.title || meetingView?.last?.title || "暂无会议"}
+                {meetingView?.focus?.title || "暂无会议"}
               </h3>
-              <div className="scene-stat-grid">
+              <div className="scene-stat-grid three">
                 <div className="scene-stat"><b>{meetingView?.participants ?? "-"}</b><span>参会人</span></div>
                 <div className="scene-stat accent"><b>{meetingView?.speechCount ?? "-"}</b><span>发言</span></div>
                 <div className="scene-stat violet"><b>{meetingView?.history.length ?? "-"}</b><span>历史会议</span></div>
               </div>
               <div className="speech-box">
-                <span>最新发言</span>
+                <span>{meetingView?.lastSpeech ? "最新发言" : "最近会议结论"}</span>
                 <p>
                   {meetingView?.lastSpeech
                     ? `${meetingView.lastSpeech.speaker || "员工"}：${meetingView.lastSpeech.text || ""}`
-                    : "暂无逐条发言记录"}
+                    : meetingView?.conclusion || "暂无会议结论"}
                 </p>
               </div>
               <h4 className="panel-sub">最近会议</h4>

@@ -185,6 +185,17 @@ const MEET_SEATS = [
 ];
 const MEET_TABLE = { x: 2, z: -9.5, w: 6.6, d: 2.0 };
 
+/* 后来加入、没有预置工位的员工（例如 secretary）：按稳定顺序安排到后排待命位。
+   否则 actor.seat / actor.target 为 null，渲染循环每帧抛 TypeError，人物也无法移动。 */
+const SPARE_SEATS = [[-14.5, 13.5], [-9.5, 13.5], [-4.5, 13.5], [0.5, 13.5],
+                     [5.5, 13.5], [10.5, 13.5], [15.5, 13.5], [-14.5, 16.5]];
+const spareSeats = new Map();
+function seatOf(agentId) {
+  if (DESKS[agentId]) return DESKS[agentId];
+  if (!spareSeats.has(agentId)) spareSeats.set(agentId, SPARE_SEATS[spareSeats.size % SPARE_SEATS.length]);
+  return spareSeats.get(agentId);
+}
+
 /* ================= 渲染器 / 场景 / 相机 ================= */
 const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1399,8 +1410,8 @@ function makeDeskPlate(agent) {
 }
 
 const actor = (agent) => {
-  const seat = DESKS[agent.id] || null;
-  const start = seat ? { x: seat[0], z: seat[1] + 0.95 } : { x: 0, z: 6.5 };
+  const seat = seatOf(agent.id);
+  const start = { x: seat[0], z: seat[1] + 0.95 };
   const av = buildAvatar(agent);
   av.group.position.set(start.x, 0, start.z);
   makeDeskPlate(agent);
@@ -1411,7 +1422,7 @@ const actor = (agent) => {
     status: agent.status || 'idle', task: agent.task || '', inMeeting: false,
     mode: null, target: null, walking: false, phase: Math.random() * 10,
     errand: null,
-    seat: seat ? { x: seat[0], z: seat[1] + 0.95 } : null,
+    seat: { x: seat[0], z: seat[1] + 0.95 },
     meetSeat: null
   };
 };
@@ -1792,6 +1803,8 @@ function updateActor(a, dt, t) {
   }
 
   const p = a.group.position;
+  /* 兜底：任何原因导致 target 缺失时停在原地，不能让整帧循环抛错 */
+  if (!a.target) a.target = a.seat ? { ...a.seat } : { x: p.x, z: p.z };
   /* 差事总时长封顶：留够走路回去的时间就立刻返程，保证“不会长时间不在工位” */
   if (a.errand) {
     a.errand.left -= dt;

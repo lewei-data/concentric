@@ -258,6 +258,14 @@ except Exception as _om_err:
     OMR = None
     print(f"[boot] 真实渲染不可用：{type(_om_err).__name__}: {_om_err}", flush=True)
 
+# CCO 创意灵感 / CTO 运维监控：只读聚合，失败不影响主服务其它接口
+try:
+    import insights
+    import ops_monitor
+except Exception as _panel_err:
+    insights = ops_monitor = None
+    print(f"[boot] 灵感/运维聚合不可用：{type(_panel_err).__name__}: {_panel_err}", flush=True)
+
 # 过程数据落库（SQLite/WAL）+ 多渠道消息摄取；OPC_DB 未开启时整体降级为旧路径
 try:
     import db as DBX
@@ -3431,6 +3439,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", "/app")
             self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", "0")
             self.end_headers()
             return
         # 静态资源与交付物不拦登录（交付链接要能在外部浏览器直接打开）
@@ -3456,6 +3465,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", "/legacy")
             self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", "0")
             self.end_headers()
             return
         if path == "/app":
@@ -3511,6 +3521,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(rec) if rec else self._json({"error": "hotspot not found"}, 404)
         if path == "/api/state":
             return self._json(KERNEL.snapshot())
+        # ---------- CCO 创意灵感 / CTO 运维监控（只读聚合） ----------
+        if path == "/api/inspiration":
+            if insights is None:
+                return self._json({"ok": False, "error": "灵感聚合模块未加载"}, 500)
+            try:
+                refresh = (parse_qs(urlparse(self.path).query).get("refresh") or [""])[0] == "1"
+                return self._json(insights.build(KERNEL, refresh=refresh))
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/ops":
+            if ops_monitor is None:
+                return self._json({"ok": False, "error": "运维聚合模块未加载"}, 500)
+            try:
+                health = {"ok": True, "version": "3.0", "engine": MODE,
+                          "hermes": HERMES.stats(), "time": iso_now()}
+                return self._json(ops_monitor.build(KERNEL.snapshot(), health))
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/events":
             return self._sse()
         if path.startswith("/api/trace/"):
@@ -3896,6 +3924,35 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **KERNEL.reload_config()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
+        # ---------- CTO 运维处置：把巡检派单 / 热加载 / 审批收敛到一处（仅老板） ----------
+        if path == "/api/ops/recover":
+            if user.get("role") != "老板":
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅老板可执行运维恢复动作"}, 403)
+            action = str(body.get("action") or "patrol")
+            who = user.get("name") or user.get("user") or ""
+            try:
+                if action == "patrol":
+                    result = KERNEL.patrol()
+                elif action == "reload":
+                    result = KERNEL.reload_config()
+                elif action in ("approve", "reject"):
+                    aid = str(body.get("id") or "")
+                    if not aid:
+                        return self._json({"ok": False, "error": "缺少审批 id"}, 400)
+                    appr = KERNEL.decide_approval(aid, action, who)
+                    if not appr:
+                        return self._json({"ok": False, "error": "approval not found"}, 404)
+                    result = {"approval": appr}
+                else:
+                    return self._json({"ok": False, "error": "invalid action",
+                                       "expected": "patrol|reload|approve|reject"}, 400)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": True, "action": action, "result": result,
+                               "by": who, "at": iso_now()})
         if path == "/api/delegate":
             try:
                 return self._json({"ok": True, **KERNEL.mgmt_delegate(

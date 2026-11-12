@@ -6,9 +6,11 @@ import { dataProvider } from "./dataProvider";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
 import { HotspotsPage } from "./pages/HotspotsPage";
+import { InspirationPage } from "./pages/InspirationPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LoginPage } from "./pages/LoginPage";
 import { MessagesPage } from "./pages/MessagesPage";
+import { OpsPage } from "./pages/OpsPage";
 import { OrgPage } from "./pages/OrgPage";
 import { ScenePage } from "./pages/ScenePage";
 import { WorksPage } from "./pages/WorksPage";
@@ -37,6 +39,8 @@ export default function App() {
             }
           >
             <Route path="/" element={<HomePage />} />
+            <Route path="/inspiration" element={<InspirationPage />} />
+            <Route path="/ops" element={<OpsPage />} />
             <Route path="/works" element={<WorksPage />} />
             <Route path="/hotspots" element={<HotspotsPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />

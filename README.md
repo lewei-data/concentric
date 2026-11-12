@@ -83,12 +83,12 @@ chmod +x opc.sh
 
 | 路径 | 说明 |
 | --- | --- |
-| `/`、`/index.html` | 旧版工作台控制台（需登录，首页顶部有「新版界面」入口） |
+| `/` | **默认 302 → `/app`**（新版工作台）；设 `OPC_HOME_LEGACY=1` 并重启可直接回退为旧版控制台 |
+| `/legacy`、`/index.html`、`/app/legacy` | 旧版工作台控制台（需登录）；新版顶栏「旧版控制台」与 `/app/legacy` 都指向 `/legacy`，旧版右上角「新版界面 →」回 `/app` |
 | `/app` | 新版界面（React + Refine，页面公开、数据接口需登录）：首页 / 作品档案 / 热点 / 知识库 / 消息中心 / 组织配置 / Office 3D / Meeting 3D；SPA 深链回退 `web/dist/index.html` |
 | `/app/assets/...` | 新版前端静态资源（带内容哈希，长缓存）；`web/` 下 `npm run build` 产物由服务端托管 |
-| `/login` | 登录页 |
-| `/office3d` | 3D 办公区（需登录） |
-| `/meeting3d` | 3D 会议室（需登录） |
+| `/login` | 旧版登录页；未带 `next` 时默认回跳 `/app`，带 `next=/legacy` 等则回原页面 |
+| `/office3d`、`/meeting3d` | 3D 办公区 / 会议室（需登录）；`?embed=1` 为新版 iframe 内嵌模式，隐藏重复 HUD 并通过 `postMessage` 通知父页就绪、跳转与会话过期 |
 | `/vault/...` | Obsidian 交付物文件（公开访问） |
 | `/api/health` | 健康检查 |
 | `/api/state` | 全量状态快照 |
@@ -108,6 +108,14 @@ chmod +x opc.sh
 | `/api/delegate`、`/api/commands` | 人工派单与指令 |
 | `/api/login`、`/api/logout`、`/api/session` | 会话管理 |
 | `/api/config/reload` | 热加载 Obsidian 配置 |
+
+## 首页版本与 3D 场景
+
+- 访问 `http://<host>:8848/` 默认 302 到 `/app`；需要整站回退旧版时，在 systemd drop-in 里设 `OPC_HOME_LEGACY=1` 再 `systemctl restart opc-workbench`，根路径直接返回旧版控制台，`/app` 仍保留可访问。
+- `/app/office`、`/app/meeting` 用 iframe 内嵌 3D 页面：顶层先校验 `/api/session`，iframe 启动成功后 `postMessage` 通知移除加载遮罩；场景内的会议室指示牌也用 `postMessage` 交给 React Router 切换，不再整页刷新或跳到顶层。会话过期由顶层统一跳 `/app/login`。
+- 内嵌模式隐藏 3D 页自带的 HUD / 会议记录栏 / 发起会议按钮，避免双层界面；3D 画面铺满 iframe。
+- 右侧数据栏接真实接口：办公区读 `/api/state`（员工总数、执行/会议/待命人数、员工状态列表），会议室读 `/api/meeting`（活跃状态、参会人、发言数、最新发言或最近会议结论、历史会议）；两者都订阅 `/api/events` 做增量刷新，并每 10–15s 兜底轮询。
+- 独立窗口打开 `/office3d`、`/meeting3d` 仍保留完整 3D 页 UI（含会议记录与「召开选题会」）。
 
 ## 样片渲染
 

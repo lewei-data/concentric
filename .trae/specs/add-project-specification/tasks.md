@@ -71,9 +71,18 @@
   - [x] SubTask 12.5: 同步 `checklist.md` 的规模数字与新增验收项；登记「数据访问已改成 db」的真实边界为待办 P1，而非宣称全站已切换
   - [x] SubTask 12.6: 同步 `README.md` 的 `/app` 页面清单、配置来源与接口表，以及 `PROCESS-DATA-DB-PLAN.md` 的头部状态与 §13 遗留清单（消息中心已完成）
 
+- [x] Task 13: 首页默认跳转 /app、顶栏改版、3D 场景修复与真实数据对接（2026-11-12，运行代码改动）
+  - [x] SubTask 13.1: `server.py` 根路径 302 → `/app`，新增 `/legacy` 与 `OPC_HOME_LEGACY=1` 回退开关，`/app/legacy` 改指 `/legacy`，302 补齐 `Content-Length`；`login.html` 默认 next 改 `/app`
+  - [x] SubTask 13.2: `Layout.tsx` / `styles.css` 重做深蓝渐变顶栏：LOGO + 分组胶囊导航 + 3D 入口 + 旧版回退 + 用户身份卡，响应式
+  - [x] SubTask 13.3: `ScenePage.tsx` 增加 `/api/session` 预检、`opc:scene-ready|navigate|unauthorized` 握手、SPA 切换、真实数据侧栏（`/api/state` / `/api/meeting` + SSE + 轮询）
+  - [x] SubTask 13.4: `office3d.html` / `meeting3d.html` 支持 `?embed=1`、隐藏重复 UI、401 上报、指示牌 postMessage；修复 `secretary` 无工位导致 `target=null` 每帧 TypeError
+  - [x] SubTask 13.5: `npm run build` + `systemctl restart opc-workbench` + playwright-cli 实测（根路径、`/legacy`、Office/Meeting 3D，控制台 0 报错、侧栏真实数据）
+  - [x] SubTask 13.6: 同步 `README.md` 与规格文档（`modules/web.md`、`spec.md`、`checklist.md`）
+
 # Task Dependencies
 
 - Task 9 依赖 Task 1~8
 - Task 10 依赖 Task 9
 - Task 11 依赖 Task 1~10（复用已核实的系统级事实，避免重复取证）
 - Task 12 依赖 Task 11 的 `modules/web.md`；仅改规格文档，不改运行代码
+- Task 13 依赖 Task 12 的 web 契约；改运行代码，需构建与重启服务后实测

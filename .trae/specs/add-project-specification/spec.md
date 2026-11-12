@@ -26,7 +26,7 @@
 | 项 | 说明 |
 | --- | --- |
 | 事实源优先级 | 运行代码 > 代码内注释 > README / IMPROVEMENT-PLAN / `.trae/documents` |
-| 取证方式 | 逐文件阅读 + `grep`/`wc` 统计 + 线上 `http://192.168.31.206:8848/app` 接口实测；行号以当前**工作区** HEAD `4399383` 为准（C9 前端、C12 路由、C4 事件与 DB 相关条目已按新版复核，其余能力域仍以初版基线 `7e07433` 为准） |
+| 取证方式 | 逐文件阅读 + `grep`/`wc` 统计 + 线上 `http://192.168.31.206:8848/app` 接口与 playwright-cli 浏览器实测；行号以当前**工作区** HEAD `6445703` 为准（C9 前端、C12 路由、C4 事件与 DB 相关条目已按新版复核，其余能力域仍以初版基线 `7e07433` 为准） |
 | 标注约定 | 「已核实」＝本次直接读到代码；「推断」＝由代码逻辑推导但未实跑；「未验证」＝仓库外系统 |
 | 数据源分工 | Obsidian Vault＝业务配置与人读产物真源；`prototype/opc.db`＝过程数据真源（统一消息、trace、事件、token 等）；`KERNEL` 内存＝热态。详见 [modules/web.md §4.5](./modules/web.md) |
 
@@ -353,15 +353,16 @@ media-engine SHALL 作为媒体能力的单实例推理宿主，默认监听 `19
 - 数据契约：首屏 `GET /api/state`（`index.html:919,1122`）+ `EventSource('/api/events')` 增量（`index.html:1128`）；审批 `POST /api/approvals/<id>`（`:750`）、指令 `POST /api/commands`（`:1026`）、素材 `GET /api/materials`（`:1105`）。
 
 ### Requirement: Refine 新版（2026-11-12 线上 `/app` 新版本）
-完整契约见 [modules/web.md](./modules/web.md)。本版共 16 个 `.ts/.tsx` + 1 CSS、4,495 行（新增「消息中心」489 行、「3D 场景」97 行）。本地 `npm run build` 重建的三个资源与线上 `/app/assets/*` 文件名及 MD5 逐一相等，源码与线上版本一致（已核实）。
+完整契约见 [modules/web.md](./modules/web.md)。本版共 16 个 `.ts/.tsx` + 1 CSS、5,173 行（新增「消息中心」489 行、「3D 场景」374 行）。本地 `npm run build` 重建的资源与线上 `/app/assets/*` 文件名一致，源码与线上版本一致（已核实）；2026-11-12 功能改动后线上哈希为 `index-BDPN3rhf.js` / `index-yvsrD8mC.css`。
 
 - 技术栈：React 18 + Refine v4 + Vite，`basename="/app"`（`web/src/App.tsx:18`）。
 - 资源：`works / hotspots / knowledge / org`（`web/src/App.tsx:23-28`）。
-- 路由：9 条显式路径 `/login / /works /hotspots /knowledge /messages /org /office /meeting` + 1 条 `*` 兜底，另有一条无 `path` 的布局包裹路由；未登录重定向 `/login`（`web/src/App.tsx:30-49`）。`/office`、`/meeting` 是 `ScenePage` 用 iframe 嵌入 3D 页面（`web/src/pages/ScenePage.tsx:14-29, 87-93`）。
+- 路由：9 条显式路径 `/login / /works /hotspots /knowledge /messages /org /office /meeting` + 1 条 `*` 兜底，另有一条无 `path` 的布局包裹路由；未登录重定向 `/login`（`web/src/App.tsx:30-49`）。`/office`、`/meeting` 是 `ScenePage` 用 iframe 嵌入 3D 页面：顶层 `/api/session` 预检、`postMessage` 就绪/跳转/会话过期握手、`?embed=1` 隐藏 3D 页重复 UI，右侧真实数据侧栏分别读 `/api/state`、`/api/meeting` 并订阅 SSE（`web/src/pages/ScenePage.tsx`、`prototype/office3d.html`、`prototype/meeting3d.html`）。
+- 首页入口：根路径 `/` 302 → `/app`；`/legacy` 与 `/app/legacy` 回退旧控制台，`OPC_HOME_LEGACY=1` 可整站回退（`prototype/server.py:3425-3435, 3456-3462`）。顶栏为深蓝渐变分组导航，含 3D 快捷入口与「旧版控制台」链接（`web/src/components/Layout.tsx`）。
 - 数据契约：`GET /api/{resource}?page&size[&q&project&stage&status&sort]`、`GET /api/{resource}/{id}`；写操作在前端一律 reject（`web/src/dataProvider.ts:34-48, 50-80, 86-90`）。
 - **DB 数据访问**：新增「消息中心」直连 `GET /api/chat/threads|messages|stats|export`，全部读 `prototype/opc.db`（snake_case 行、FTS trigram 搜索、`before` 游标分页）；仅老板可见/可访问，后端 403 / 503（`server.py:3257-3263, 3513-3542`、`db.py:585-687`、`Layout.tsx:27,51`、`MessagesPage.tsx:3-34, 289-306`）。`/api/trace/<id>` 在内存缺失时由库补齐（`server.py:3756-3789`），但前端暂无调用方。
 - 实时：`/api/state` 10s 轮询（`HomePage.tsx:163`）+ `EventSource('/api/events')`；消息中心另消费 `chat.message` 增量刷新（`MessagesPage.tsx:195-232`）。
-- 部署：构建产物 `web/dist` 由 `prototype/server.py` 托管；`/app/assets/*` 长缓存 immutable，其余 `no-cache`，未命中回退 SPA `index.html`（`server.py:3442-3454, 3605-3624`）。线上当前哈希 `index-mEJE7U3r.js` / `index-BYw8UZ10.css` / 懒加载 `MarkdownBody-DPx5uPki.js`。
+- 部署：构建产物 `web/dist` 由 `prototype/server.py` 托管；`/app/assets/*` 长缓存 immutable，其余 `no-cache`，未命中回退 SPA `index.html`（`server.py:3442-3454, 3605-3624`）。线上当前哈希 `index-BDPN3rhf.js` / `index-yvsrD8mC.css` / 懒加载 `MarkdownBody-DdXjBN7k.js`。
 - **读路径边界**：`/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存/文件（`server.py:3472-3512`），DB 只是影子双写；重启后页面数据可能少于库内行数（见 D12）。
 
 #### Scenario: 未构建新版前端
@@ -444,20 +445,21 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 | `/login`、`/login.html` | 公开 | 返回 `login.html` | server.py:3311-3312 |
 | `/api/logininfo` | 公开 | `{ok, ready, file}`，`ready` 表示凭据表是否可读 | server.py:3313-3315 |
 | `/api/session` | 公开路径、仍校验会话 | 已登录 `200 {ok,user}`；未登录 `401 {ok:false, login:"/login"}` | server.py:3316-3320 |
+| `/` | 公开 | **默认 `302 → /app`**（`Content-Length: 0`）；`OPC_HOME_LEGACY=1` 时不在此分支，落到登录后的旧版分支 | server.py:3430-3437 |
 | `/vendor/three.module.js` | 公开 | 3D 依赖 | server.py:3322-3323 |
 | `/avatars/<name>.png` | 公开 | 仅 `[a-z_]+\.png`，否则 404 | server.py:3324-3328 |
 | `/faces/<name>.png` | 公开 | 同上 | server.py:3329-3333 |
 | `/videos/<id>[.talk\|.idle].mp4` | 公开 | 数字人素材 | server.py:3335-3339 |
 | `/vault/*` | 公开 | 交付物/纪要/邮件静态文件；`realpath` 越界 404，隐藏目录与 `公司/登录凭据.md` 不发布；支持 `Range`（206） | server.py:3340-3341, 3556-3572 |
 | `/app/assets/*` | 公开 | `web/dist` 带哈希资源，长缓存（`immutable`） | server.py:3444-3445, 3605-3624 |
-| `/app/legacy` | 公开 | `302 → /` | server.py:3446-3450 |
+| `/app/legacy` | 公开 | `302 → /legacy`（避免与根路径 `/app` 重定向成环） | server.py:3456-3462 |
 | `/app`、`/app/*` | 公开 | Refine 外壳与 SPA 回退（页面无数据，数据仍走 `/api` 鉴权） | server.py:3451-3454, 3606-3614 |
 | `/materials/*` | 公开 | 素材库只读文件 | server.py:3356-3357 |
 | `/api/materials` | 公开 | 素材库索引 JSON | server.py:3358-3359 |
 | `/api/health` | 登录 | `{ok, version:"3.0", engine, hermes, time}` | server.py:3363-3365 |
-| `/`、`/index.html` | 登录 | 旧版控制台 | server.py:3366-3367 |
-| `/office3d`、`/office3d.html` | 登录 | 3D 办公场景 | server.py:3368-3369 |
-| `/meeting3d`、`/meeting3d.html` | 登录 | 3D 会议室 | server.py:3370-3371 |
+| `/`、`/legacy`、`/index.html` | 登录 | 旧版控制台；默认只有 `/legacy`、`/index.html` 可达（`/` 已 302 到 `/app`），`OPC_HOME_LEGACY=1` 时 `/` 也返回旧版 | server.py:3479-3480 |
+| `/office3d`、`/office3d.html` | 登录 | 3D 办公场景；`?embed=1` 隐藏重复 UI 并与父页 `postMessage` 握手 | server.py:3481-3482 |
+| `/meeting3d`、`/meeting3d.html` | 登录 | 3D 会议室；同上，内嵌时 3D 画面铺满 iframe | server.py:3483-3484 |
 | `/api/meeting` | 登录 | 会议室实时快照 | server.py:3372-3373 |
 | `/api/meeting/<id>` | 登录 | 单场会议详情；缺失 404 | server.py:3374-3376 |
 | `/api/knowledge?<query>` | 登录 | 知识归档分页 | server.py:3377-3378 |
@@ -574,8 +576,12 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 本变更 SHALL 不修改 `prototype/`、`media-engine/`、`web/src/`、`android/`、`video-remotion/` 下任何文件。
 
 #### Scenario: 变更范围审计
-- **WHEN** 变更（含 2026-11-12 新版本校对）完成后执行 `git status`
-- **THEN** 仅新增/修改规格文档（`.trae/specs/add-project-specification/` 下 `spec.md` / `tasks.md` / `checklist.md` + `modules/web.md`）与 `README.md` / `PROCESS-DATA-DB-PLAN.md` 的 web、状态条目，不触碰运行代码
+- **WHEN** Task 1~12（规格撰写与 web 校对）完成后执行 `git status`
+- **THEN** 仅新增/修改规格文档与 `README.md` / `PROCESS-DATA-DB-PLAN.md` 的 web、状态条目，不触碰运行代码
+
+#### Scenario: 功能改动阶段（Task 13）
+- **WHEN** 2026-11-12 执行「首页跳 /app、顶栏改版、3D 修复与数据对接」
+- **THEN** 允许改运行代码（`prototype/server.py`、`prototype/login.html`、两个 3D HTML、`web/src/**`），但必须 `npm run build` + 重启服务 + playwright-cli 实测，并同步回规格文档
 
 ---
 
@@ -587,7 +593,7 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 | --- | --- | --- | --- |
 | `prototype/` | [modules/prototype-server.md](./modules/prototype-server.md) | HTTP 路由、会话鉴权、SSE、编排内核、交付物、配置项 | `server.py` 3,960 行 + 子模块（过程库 `db.py` / `ingest.py` / `import_runtime.py` 见 `PROCESS-DATA-DB-PLAN.md`） |
 | `media-engine/` | [modules/media-engine.md](./modules/media-engine.md) | TTS/ASR/视频任务接口、鉴权、TTL、指标、环境变量 | 4 个 Python 文件 2,005 行 |
-| `web/` | [modules/web.md](./modules/web.md) | Refine 路由、dataProvider/authProvider、页面直连接口、**消息中心 DB 契约**、3D iframe、构建托管 | 4,495 行 |
+| `web/` | [modules/web.md](./modules/web.md) | Refine 路由、dataProvider/authProvider、页面直连接口、**消息中心 DB 契约**、深蓝顶栏、3D iframe 握手与真实数据侧栏、构建托管 | 5,173 行 |
 | `android/` | [modules/android.md](./modules/android.md) | 构建产物、MCP/dispatch/WS 契约、配置项、权限、离线降级 | 52 个 Java 文件 16,272 行 |
 | `hermes-plugins/` | [modules/hermes-plugins.md](./modules/hermes-plugins.md) | 插件注册契约、8 个工具到引擎接口的映射、错误语义 | `__init__.py` 323 行 |
 

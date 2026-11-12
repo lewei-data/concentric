@@ -1,31 +1,32 @@
 # 模块规格 · web（Refine 新版控制台 `/app`）
 
 > 上级文档：[spec.md](../spec.md)。本文件只描述 `web/`。
-> 校对基准：2026-11-12 线上 `http://192.168.31.206:8848/app`（本机 `:8848`，`web/dist` 构建于 11:44，产物 `index-mEJE7U3r.js` / `index-BYw8UZ10.css` / `MarkdownBody-DPx5uPki.js`），工作区 HEAD `4399383`；运行进程实测 `OPC_DB=1`、`OPC_INGEST=1`（`/etc/systemd/system/opc-workbench.service.d/db.conf`）。
-> 规模：`web/src` 下 16 个 `.ts/.tsx` + 1 个 CSS，共 4,495 行（`wc -l`）：页面 2,442 行、组件/数据/鉴权/入口 465 行、样式 1,588 行。
-> 本版补齐内容：新增「消息中心」「3D 场景」两页与三条路由（`/messages`、`/office`、`/meeting`）、统一消息的 **DB 数据访问契约**、老板权限与降级、3D iframe 嵌入、构建产物哈希与线上验收手段。
+> 校对基准：2026-11-12 线上 `http://192.168.31.206:8848/app`（本机 `:8848`，`web/dist` 于本次功能改动后重建，当前产物 `index-BDPN3rhf.js` / `index-yvsrD8mC.css` / `MarkdownBody-DdXjBN7k.js`），工作区 HEAD `6445703`；运行进程实测 `OPC_DB=1`、`OPC_INGEST=1`（`/etc/systemd/system/opc-workbench.service.d/db.conf`）。
+> 规模：`web/src` 下 16 个 `.ts/.tsx` + 1 个 CSS，共 5,173 行（`wc -l`）：页面 2,719 行、组件/数据/鉴权/入口 492 行、样式 1,962 行。
+> 本版补齐内容：新增「消息中心」「3D 场景」两页与三条路由（`/messages`、`/office`、`/meeting`）、统一消息的 **DB 数据访问契约**、老板权限与降级、深蓝渐变顶栏、3D iframe 的会话预检/postMessage 握手/真实数据侧栏、构建产物哈希与线上验收手段。
 
 ## 0. 校对结论（与上一版规格的差异）
 
 | 项 | 上一版规格（HEAD `7e07433`） | 线上新版本（HEAD `4399383`） | 证据 |
 | --- | --- | --- | --- |
-| 源码规模 | 13 个 `.ts/.tsx` + 1 CSS，3,488 行 | 16 个 `.ts/.tsx` + 1 CSS，4,495 行（+1,007） | `wc -l web/src/**` |
-| 新增页面 | 无 | `MessagesPage.tsx` 489 行（消息中心，读 SQLite）、`ScenePage.tsx` 97 行（3D iframe） | `web/src/pages/` |
+| 源码规模 | 13 个 `.ts/.tsx` + 1 CSS，3,488 行 | 16 个 `.ts/.tsx` + 1 CSS，5,173 行（+1,685） | `wc -l web/src/**` |
+| 新增页面 | 无 | `MessagesPage.tsx` 489 行（消息中心，读 SQLite）、`ScenePage.tsx` 374 行（3D 场景 + 真实数据侧栏） | `web/src/pages/` |
 | 显式路由 | 6 条 + `*` 兜底 | 9 条 + `*` 兜底（新增 `/messages`、`/office`、`/meeting`） | `App.tsx:30-49` |
-| 导航 | 侧边导航壳 38 行 | 顶栏 72 行；新增按 `role` 隐藏「消息中心」入口 | `Layout.tsx:23-72` |
+| 导航 | 侧边导航壳 38 行 | 深蓝渐变顶栏 99 行：分组胶囊导航、3D 快捷入口、旧版回退、用户身份卡；按 `role` 隐藏「消息中心」 | `Layout.tsx:1-99`、`styles.css` |
 | 数据访问 | 全部 `/api/*` 走内存 / Obsidian 文件 | **统一消息与过程数据改读 `prototype/opc.db`**；其余页面仍走内存 / 文件（影子双写） | `server.py:3513-3542`、`db.py:585-687`、`server.py:1155-1168` |
-| 实时通道 | 仅首页 SSE | 消息中心也订阅 `/api/events`，处理 `chat.message` | `MessagesPage.tsx:195-232` |
-| 构建产物 | 未登记哈希 | `index-mEJE7U3r.js`（502,823 B）、`index-BYw8UZ10.css`（18,250 B）、懒加载 `MarkdownBody-DPx5uPki.js`（167,533 B） | `web/dist/index.html`、`web/dist/assets/` |
+| 实时通道 | 仅首页 SSE | 消息中心订阅 `chat.message`；3D 场景侧栏订阅 `/api/events` 刷新 `/api/state` 或 `/api/meeting` | `MessagesPage.tsx:195-232`、`ScenePage.tsx` |
+| 首页入口 | 根路径返回旧控制台 | `/` 302 → `/app`；`/legacy` 与 `/app/legacy` 回退旧版；`OPC_HOME_LEGACY=1` 可整站回退 | `server.py:3425-3435, 3456-3462`、`README.md` |
+| 构建产物 | 未登记哈希 | 当前 `index-BDPN3rhf.js` / `index-yvsrD8mC.css` / 懒加载 `MarkdownBody-DdXjBN7k.js`（每次代码变更哈希会变，以 `web/dist/index.html` 为准） | `web/dist/index.html`、`web/dist/assets/` |
 
 > **口径校正（重要）**：「数据访问已经改成了 db」适用于**过程数据 / 统一消息**（`chat_threads`、`chat_messages`、`trace_events` 等），不是整个前端的所有列表。实测 `/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存快照、Obsidian md 或交付物目录；`server.py:1155-1168` 是「DB 影子双写」，`_restore_history()` 仍以 `runtime.json` / md 恢复，读切换（P1）尚未完成。详见 §4.5 与 §8。
 
-> **一致性核验（已核实）**：`web/src` 重新执行 `npm run build`（`tsc --noEmit && vite build`）得到与线上完全相同的三个资源文件名，且 MD5 逐一相等：`index-mEJE7U3r.js` = `cebba70bf56ceb3e01736b86fc9e7b73`、`index-BYw8UZ10.css` = `d8814929a04c7822f69210f1a6c6abc0`、`MarkdownBody-DPx5uPki.js` = `1dbe9204b958c1306dedd3f0be0c1fb2`。因此线上 `/app` 就是当前 `web/src` 构建产物，**不存在「线上有、仓库里缺」的前端代码**；本次补齐的是规格文档的数据契约与页面清单。
+> **一致性核验（已核实）**：`web/src` 重新执行 `npm run build`（`tsc --noEmit && vite build`）得到与线上完全相同的资源文件名，改动前三个文件 MD5 逐一相等；本次功能改动后线上已切到新哈希 `index-BDPN3rhf.js` / `index-yvsrD8mC.css`，本地 `web/dist` 与线上一致。因此 `/app` 始终由当前 `web/src` 构建产物托管，**不存在「线上有、仓库里缺」的前端代码**。
 
 ## 1. 模块定位
 
 `web/` 是工作台的**新版单页控制台**：Refine v4 提供资源列表/详情，React 18 + Vite 5 构建，产物由 `prototype/server.py` 以 `/app` 路径托管（`server.py:3442-3454, 3605-3624`）。
 
-- 与旧版 `prototype/index.html`（`/`）并存，`/app/legacy` 302 回旧版（`server.py:3446-3450`）。
+- 根路径 `/` 默认 302 跳 `/app`；旧版 `prototype/index.html` 由 `/legacy`、`/index.html` 提供，`/app/legacy` 302 → `/legacy`；`OPC_HOME_LEGACY=1` 重启后根路径直接回退旧版（`server.py:3425-3435, 3456-3462`）。
 - 页面共 8 个业务页 + 1 个登录页：驾驶舱、作品档案、热点、知识库、消息中心、组织配置、Office 3D、Meeting 3D。
 - **只读为主**：`dataProvider` 的 `create/update/deleteOne` 一律 reject；写操作只存在于组织配置页与首页指令/审批（`dataProvider.ts:86-90`）。
 - **两套数据后端并存**：业务列表/快照走 `KERNEL` 内存与 Vault 文件；消息中心与 trace 回放补齐走 SQLite（`opc.db`）。
@@ -40,7 +41,7 @@
 | `src/dataProvider.ts` | 90 | 列表/详情数据适配，写操作拒绝 |
 | `src/types.ts` | 151 | 领域类型（Agent / Work / Hotspot / Knowledge / OpcState / 事件等） |
 | `src/vite-env.d.ts` | 1 | Vite 类型声明 |
-| `src/components/Layout.tsx` | 72 | 顶栏导航壳、老板可见性、退出登录 |
+| `src/components/Layout.tsx` | 99 | 深蓝渐变顶栏、分组导航、老板可见性、旧版回退、用户身份卡 |
 | `src/components/MarkdownBody.tsx` | 11 | Markdown 渲染（`react-markdown` + `remark-gfm`），按需懒加载 |
 | `src/pages/HomePage.tsx` | 656 | 驾驶舱：状态快照、SSE 事件流、指令、审批 |
 | `src/pages/WorksPage.tsx` | 388 | 作品档案列表 + 详情 |
@@ -48,9 +49,9 @@
 | `src/pages/MessagesPage.tsx` | **489** | **消息中心：飞书 / APP / Web 三源统一消息（DB 只读）** |
 | `src/pages/HotspotsPage.tsx` | 157 | 热点列表 + 详情 |
 | `src/pages/KnowledgePage.tsx` | 165 | 知识库列表 + 详情 |
-| `src/pages/ScenePage.tsx` | **97** | **3D 办公区 / 会议室 iframe 嵌入、20s 超时与重试** |
+| `src/pages/ScenePage.tsx` | **374** | **3D 办公区 / 会议室 iframe 嵌入、会话预检、postMessage 握手、真实数据侧栏（`/api/state` / `/api/meeting` + SSE）、20s 超时与重试** |
 | `src/pages/LoginPage.tsx` | 62 | 登录表单 |
-| `src/styles.css` | 1,588 | 全站样式（含新增消息中心 / 3D 场景样式） |
+| `src/styles.css` | 1,962 | 全站样式（含消息中心 / 深蓝顶栏 / 3D 场景数据侧栏） |
 
 ## 3. 技术栈与构建
 
@@ -78,11 +79,13 @@
 | `/app/knowledge` | `KnowledgePage` | 同上 | `/api/knowledge`（内存 / md） | `App.tsx:42` |
 | `/app/messages` | `MessagesPage` | 同上 + **仅老板可见入口** | **`/api/chat/*`（SQLite）** | `App.tsx:43`、`Layout.tsx:27,51` |
 | `/app/org` | `OrgPage` | 同上 | `/api/org*`（profile / md） | `App.tsx:44` |
-| `/app/office` | `ScenePage scene="office"` | 同上 | iframe `/office3d?embed=1` | `App.tsx:45`、`ScenePage.tsx:14-21` |
-| `/app/meeting` | `ScenePage scene="meeting"` | 同上 | iframe `/meeting3d?embed=1` | `App.tsx:46`、`ScenePage.tsx:22-29` |
+| `/app/office` | `ScenePage scene="office"` | 同上 | iframe `/office3d?embed=1` + `/api/state` 侧栏 | `App.tsx:45`、`ScenePage.tsx` |
+| `/app/meeting` | `ScenePage scene="meeting"` | 同上 | iframe `/meeting3d?embed=1` + `/api/meeting` 侧栏 | `App.tsx:46`、`ScenePage.tsx` |
 | `/app/*` 其他 | 重定向到 `/` | — | — | `App.tsx:48` |
 
-未登录时 `Authenticated` 以 `<Navigate to="/login" replace />` 回登录页（`App.tsx:32-37`）。3D 页面以 iframe 嵌入，同源继承会话 Cookie；加载 20s 超时给出「重试 / 独立窗口打开」（`ScenePage.tsx:38-49, 65-93`）。
+未登录时 `Authenticated` 以 `<Navigate to="/login" replace />` 回登录页（`App.tsx:32-37`）。
+
+**3D 嵌入契约（2026-11-12 修复）**：顶层先 `GET /api/session` 预检，通过后挂载 iframe；3D 页 `?embed=1` 隐藏自带 HUD/记录栏/发起会议按钮并铺满画面，`window.parent.postMessage({source:'opc-3d',type:'opc:scene-ready'|'opc:navigate'|'opc:unauthorized'})` 与父页握手；父页按 `event.origin` 校验同源，收到就绪才移除加载遮罩，收到 `opc:navigate` 用 React Router 切场景（避免 `top.location.href` 整页刷新），收到 `opc:unauthorized` 跳 `/app/login`。3D 页 `/api/state`、`/api/meeting` 的 401 不再被当成空数据。右侧数据栏直接读真实接口并订阅 SSE，10–15s 兜底轮询；20s 未就绪给出重试。独立窗口打开（不带 `embed=1`）仍保留完整 3D UI。
 
 ### 4.2 数据提供者（`dataProvider.ts`）
 
@@ -171,7 +174,7 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 - 构建产物由后端 `_web_dist` 提供：`/app/assets/*` 走 `public, max-age=31536000, immutable`；`index.html` 与其他路径 `no-cache`（`server.py:3444-3445, 3605-3624`）。
 - 未命中文件回退 `web/dist/index.html`，支持 SPA 深链（`server.py:3606-3614`）。
 - `web/dist` 未构建时返回 404「web/dist 未构建，先在 web/ 执行 npm run build」（`server.py:3613-3614`）。
-- 当前线上 `index.html` 引用 `/app/assets/index-mEJE7U3r.js` 与 `index-BYw8UZ10.css`；`MarkdownBody-DPx5uPki.js` 为知识详情懒加载 chunk（`web/dist/index.html`、`KnowledgePage.tsx:5-6`）。`web/dist` 不入 git（`.gitignore`），由服务端目录直接托管。
+- 当前线上 `index.html` 引用 `/app/assets/index-BDPN3rhf.js` 与 `index-yvsrD8mC.css`；`MarkdownBody-DdXjBN7k.js` 为知识详情懒加载 chunk（`web/dist/index.html`、`KnowledgePage.tsx:5-6`）。`web/dist` 不入 git（`.gitignore`），由服务端目录直接托管，每次 `npm run build` 后线上立即换新哈希。
 
 ## 7. 失败与降级
 
@@ -181,8 +184,9 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 | 非老板访问 `/api/chat/*` | 403 → 消息中心整页「仅「老板」角色可查看统一消息」；导航入口也不显示 | `server.py:3257-3263`、`MessagesPage.tsx:289-306`、`Layout.tsx:27,51` |
 | `OPC_DB=0` / 库不可用 | `/api/chat/*` 统一 503 `{ok:false,enabled:false}` → 整页「过程数据库未启用」；其余页面照常 | `server.py:3519-3520`、`db.py:737-750` |
 | DB 写失败 | 记日志并降级，不中断主流程 | `server.py:1142-1143, 1155-1168` |
-| SSE 断开 | 仅关闭连接，无自定义 `onerror` 重连（浏览器 `EventSource` 默认行为除外） | `HomePage.tsx:176-202`、`MessagesPage.tsx:195-232` |
-| 3D iframe 20s 未 load | 显示超时提示 + 重试 / 独立窗口 | `ScenePage.tsx:38-49, 76-93` |
+| SSE 断开 | 仅关闭连接，无自定义 `onerror` 重连（浏览器 `EventSource` 默认行为除外）；3D 侧栏另有 10–15s 轮询兜底 | `HomePage.tsx:176-202`、`MessagesPage.tsx:195-232`、`ScenePage.tsx` |
+| 3D iframe 会话失效 | 顶层 `/api/session` 401 或 iframe `opc:unauthorized` → 跳 `/app/login`；`onLoad` 检测到旧登录页同样跳登录 | `ScenePage.tsx`、`office3d.html` / `meeting3d.html` |
+| 3D iframe 20s 未就绪 | 显示超时提示 + 重试 / 独立窗口（以 `opc:scene-ready` 握手为准，不再把 302 登录页当成加载成功） | `ScenePage.tsx` |
 | 后端不可达 | 登录 `catch` 提示失败；登出仍清本地 | `authProvider.ts:27-36, 61-67` |
 | 作品档案模块未加载 | `/api/works` 500，页面展示空列表 | `server.py:3483-3485` |
 | 无 `dist` | `/app` 404 提示构建 | `server.py:3613-3614` |
@@ -194,7 +198,7 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 3. **命名双轨**：消息中心用 snake_case DB 行，其余页面用 camelCase 业务对象；`types.ts` 未收录 `ChatThread/ChatMessage/ChatStats`（定义在 `MessagesPage.tsx:3-34`），跨页复用需先统一。
 4. `org` 已注册为 Refine resource，但 `/api/org` 不返回 `{items,total}`；若未来换成通用列表组件会静默得到空列表（`App.tsx:27`、`dataProvider.ts:63-69`）。
 5. `dataProvider` 只实现读，热点/知识无写接口；页面按钮若依赖写操作会直接 reject（`dataProvider.ts:86-90`）。
-6. 首页与消息中心 SSE 均未处理 `onerror`，网络抖动后不主动重建连接。
+6. 首页、消息中心与 3D 侧栏的 SSE 均未处理 `onerror`，网络抖动后不主动重建连接（浏览器 `EventSource` 默认重连与 3D 侧栏轮询兜底除外）。
 7. 组织页为直连 `fetch`，错误处理各自实现，与 Refine 通知体系不统一；写操作由后端 403 兜底。
 8. `types.ts` 的 151 行领域类型未做运行时校验，`OpcState` 只声明 7 个键而 `/api/state` 实测返回 18 个键，字段漂移只能靠 TS 编译期发现。
 9. 消息中心导出为一次性 JSON 下载（`limit=20000` 上限），无服务端流式导出与导出审计记录（`MessagesPage.tsx:257-280`）。
@@ -204,8 +208,10 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 ```bash
 # 构建与本地托管
 cd web && npm ci && npm run build       # 生成 web/dist/index.html + assets/*
-curl -s http://127.0.0.1:8848/app | head          # 应返回 index.html（带哈希资源）
+curl -s -D - -o /dev/null http://127.0.0.1:8848/ | head   # 302 Location: /app，且 Content-Length: 0（不挂起）
+curl -s http://127.0.0.1:8848/app | head                  # 应返回 index.html（带哈希资源）
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8848/app/messages   # 深链 200（SPA 回退）
+curl -s -b /tmp/opc.cookies -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8848/legacy  # 200 旧控制台
 
 # 登录态与数据接口（线上新版本）
 curl -s -c /tmp/opc.cookies -H 'Content-Type: application/json' \
@@ -220,4 +226,4 @@ print(c.execute("select count(*) from chat_messages").fetchone())'
 tr '\0' '\n' < /proc/$(pgrep -f 'prototype/server.py' | head -1)/environ | grep '^OPC_'
 ```
 
-人工回归：清 Cookie 访问 `/app/works` 应跳 `/app/login`；非老板登录后不应出现「消息中心」入口；`OPC_DB=0` 重启后消息中心应显示「过程数据库未启用」；3D 页 iframe 20s 超时后可点「重试」恢复。
+人工回归：清 Cookie 访问 `/app/works` 应跳 `/app/login`；非老板登录后不应出现「消息中心」入口；`OPC_DB=0` 重启后消息中心应显示「过程数据库未启用」；根路径应跳 `/app`，顶栏「旧版控制台」应进入 `/legacy` 且旧版「新版界面 →」可切回；`/app/office`、`/app/meeting` 应显示 3D 画面 + 真实数据侧栏，控制台 0 报错，点击 3D 会议室指示牌应在 SPA 内切换而非整页刷新；`OPC_HOME_LEGACY=1` 重启后根路径应直接返回旧版控制台。
