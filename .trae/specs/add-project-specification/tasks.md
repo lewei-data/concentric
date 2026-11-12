@@ -63,8 +63,17 @@
   - [x] SubTask 11.5: 勘察 `hermes-plugins/media-platform`（注册契约、8 工具映射、错误语义）
   - [x] SubTask 11.6: 在 `spec.md` 增加「17. 模块规格索引」，并在各模块文档补齐验收手段与已知限制
 
+- [x] Task 12: 按 2026-11-12 线上 `/app` 新版本校对并补齐 web 部分（**不改运行代码**）
+  - [x] SubTask 12.1: 抓取 `http://192.168.31.206:8848/app` 的 `index.html` 与带哈希 bundle，核对 `web/dist` 与 `web/src` 一致、无「线上有而源码没有」的页面
+  - [x] SubTask 12.2: 登录后实测 `/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/chat/*` 的响应键与总数，并只读查 `prototype/opc.db` 表行数
+  - [x] SubTask 12.3: 重写 `modules/web.md`：补齐消息中心 / 3D 场景两页、9 条显式路由、DB 数据契约（chat 四接口、SSE `chat.message`、trace 补齐、snake_case 字段、FTS 与游标）、老板权限、降级与验收命令
+  - [x] SubTask 12.4: 同步 `spec.md` 的拓扑、C2 数据源、C4 事件枚举、C9 前端、C12 路由表、D5/D12/D13、追溯表与模块索引
+  - [x] SubTask 12.5: 同步 `checklist.md` 的规模数字与新增验收项；登记「数据访问已改成 db」的真实边界为待办 P1，而非宣称全站已切换
+  - [x] SubTask 12.6: 同步 `README.md` 的 `/app` 页面清单、配置来源与接口表，以及 `PROCESS-DATA-DB-PLAN.md` 的头部状态与 §13 遗留清单（消息中心已完成）
+
 # Task Dependencies
 
 - Task 9 依赖 Task 1~8
 - Task 10 依赖 Task 9
 - Task 11 依赖 Task 1~10（复用已核实的系统级事实，避免重复取证）
+- Task 12 依赖 Task 11 的 `modules/web.md`；仅改规格文档，不改运行代码

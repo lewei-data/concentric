@@ -1,7 +1,7 @@
 # 过程数据入库方案（调研 + 说明）
 
 > 目标：把 OPC 工作台里「过程类数据」（trace、事件流、审批、报告、会议发言、消息、token 消耗等）从内存 + 单个 JSON 全量重写，改为落 SQLite。
-> 状态：**P0 已获批准并实施**（2026-11-12），实施与验收记录见 §13。P1（前端消息中心）待排期。
+> 状态：**P0 已获批准并实施**（2026-11-12），实施与验收记录见 §13。**P1 前端「消息中心」已完成并上线**（2026-11-12 11:44，`/app/messages` 读 `opc.db`）；**P1 后端读切换（`/api/state` / `/api/trace` / `/api/reports` 等改读库）仍待排期**。
 
 ---
 
@@ -541,5 +541,6 @@ SELECT source, COUNT(*), MAX(ingested_at) FROM chat_messages GROUP BY source;
 - ~~`token_usage` 0 行~~ → 见验证 14（已通过；下一轮完整选题会仍需确认多员工多轮累加）。
 - ~~APP（dispatch tasks/utterances）~~ → 见验证 15（已通过，隔离库；生产水位线 176/115 = 源库最大值，无积压）。
 - 会议实时写入（meeting_begin/say/end）随下一场会议验证。
-- P1 前端「消息中心」页未做（本次范围外）。
+- ~~P1 前端「消息中心」页未做~~ → **已完成（2026-11-12 11:44 构建上线）**：`web/src/pages/MessagesPage.tsx`（489 行）+ `/app/messages` 路由 + 顶栏老板可见入口；会话/消息/统计/导出全部走 `/api/chat/*` 读 `opc.db`，订阅 SSE `chat.message` 增量刷新，非老板 403、`OPC_DB=0` 503 时显示整页空态。前端契约与验收命令见 `.trae/specs/add-project-specification/modules/web.md`。
+- **P1 读切换仍未完成**：`/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存/文件；`emit()` 只是影子双写，`_restore_history()` 不查库。2026-11-12 线上实测 `/api/knowledge` total 178 而 `knowledge` 表 82 行、`/api/works` 171 而 `contents` 172 行，重启后页面可能少于库内行数。按 §9 的 P1 计划继续时需补 DAO 读方法与 snake→camel 映射。
 

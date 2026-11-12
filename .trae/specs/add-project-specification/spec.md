@@ -2,7 +2,7 @@
 
 ## Why
 
-本仓库已是可运行的多子系统工程（`prototype/server.py` 3,819 行、`prototype/index.html` 1,146 行、媒体引擎 `media-engine/server.py` 484 行，另有 Refine 前端、Android 客户端、Remotion 视频工程），但 `.trae/specs/` 为空，唯一的总览文档 `README.md` 只覆盖 `prototype/` 与 `web/` 的一部分：`media-engine/`、`hermes-plugins/`、`android/`、`video-remotion/`、`ep2/ep3` 均未进入任何规格。接口契约、事件类型、审批规则、配置降级逻辑只存在于代码里，导致「文档说法」与「实现行为」已经出现可证实的偏差（见第 15 节）。
+本仓库已是可运行的多子系统工程（`prototype/server.py` 3,960 行、`prototype/index.html` 1,146 行、媒体引擎 `media-engine/server.py` 484 行，另有 Refine 前端、Android 客户端、Remotion 视频工程与 SQLite 过程库 `prototype/opc.db`），但 `.trae/specs/` 为空，唯一的总览文档 `README.md` 只覆盖 `prototype/` 与 `web/` 的一部分：`media-engine/`、`hermes-plugins/`、`android/`、`video-remotion/`、`ep2/ep3` 均未进入任何规格。接口契约、事件类型、审批规则、配置降级逻辑只存在于代码里，导致「文档说法」与「实现行为」已经出现可证实的偏差（见第 15 节）。
 
 本规格以**代码为唯一事实源**，把现状逆向整理为可验收的需求条目 + 接口契约，供后续变更（Hermes 媒体网关 S0~S4、Refine 页面迁移、Android 发版）以此为基线做差异评审。
 
@@ -26,8 +26,9 @@
 | 项 | 说明 |
 | --- | --- |
 | 事实源优先级 | 运行代码 > 代码内注释 > README / IMPROVEMENT-PLAN / `.trae/documents` |
-| 取证方式 | 逐文件阅读 + `grep`/`wc` 统计；行号均指当前**工作区**（HEAD `7e07433` + 未提交改动，`git status` 已核对） |
+| 取证方式 | 逐文件阅读 + `grep`/`wc` 统计 + 线上 `http://192.168.31.206:8848/app` 接口实测；行号以当前**工作区** HEAD `4399383` 为准（C9 前端、C12 路由、C4 事件与 DB 相关条目已按新版复核，其余能力域仍以初版基线 `7e07433` 为准） |
 | 标注约定 | 「已核实」＝本次直接读到代码；「推断」＝由代码逻辑推导但未实跑；「未验证」＝仓库外系统 |
+| 数据源分工 | Obsidian Vault＝业务配置与人读产物真源；`prototype/opc.db`＝过程数据真源（统一消息、trace、事件、token 等）；`KERNEL` 内存＝热态。详见 [modules/web.md §4.5](./modules/web.md) |
 
 ---
 
@@ -36,11 +37,12 @@
 ```
 浏览器 ──► prototype/server.py :8848（标准库 HTTP + SSE，单进程多线程）
                 │  ├─ /           旧版控制台（index.html + 3D 页面）
-                │  ├─ /app        Refine 新版（web/dist 静态托管）
-                │  ├─ /api/*      REST + SSE
+                │  ├─ /app        Refine 新版（web/dist 静态托管，含消息中心 / 3D iframe）
+                │  ├─ /api/*      REST + SSE（业务列表读内存/文件；统一消息读 SQLite）
+                │  ├─ prototype/opc.db（SQLite/WAL：过程数据、统一消息、事件、token）
                 │  └─ Hermes 内核 /opt/sefs/hermes/run-hermes.sh（子进程）
                 ▼
-        Obsidian Vault /opt/sefs/obsidian（唯一配置/状态数据源）
+        Obsidian Vault /opt/sefs/obsidian（业务配置 / 人读产物真源）
                 ▲
                 │
 media-engine :9200（FastAPI，TTS/ASR/数字人视频）◄── hermes-plugins/media-platform（模型工具层）
@@ -48,6 +50,8 @@ media-engine :9200（FastAPI，TTS/ASR/数字人视频）◄── hermes-plugin
                 │ HTTPS /conring/*
 Android App（com.boray.voicemcp，MCP Streamable HTTP + WS）
 ```
+
+- **数据源不再单一**：Vault 管配置与 md，SQLite 管过程数据；`OPC_DB=1` 时 `emit()`/`send()` 影子双写 `opc.db`，但 `/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works` 等仍读内存/文件（`server.py:1155-1168, 3472-3512`；[modules/web.md §4.5](./modules/web.md)）。读切换属 P1，尚未完成。
 
 - 端口约定（已核实）：工作台 `8848`（`opc.sh:24-25`、`prototype/server.py:3756`）；media-engine `9200`（`media-engine/server.py:39`）。
 - 三者独立进程、独立重启；media-engine 故障不阻断工作台主流程（旁路设计，`media-engine/server.py:12` 注释）。
@@ -80,7 +84,7 @@ Android App（com.boray.voicemcp，MCP Streamable HTTP + WS）
 
 ---
 
-## 3. C2 配置与数据源（Obsidian 为唯一真源）
+## 3. C2 配置与数据源（Obsidian 配置真源 + SQLite 过程库）
 
 ### Requirement: 配置读取与降级
 系统 SHALL 从 `OPC_VAULT`（默认 `/opt/sefs/obsidian`）读取配置，读取失败时回退代码内置默认（`prototype/server.py:84-89`）。
@@ -91,9 +95,12 @@ Android App（com.boray.voicemcp，MCP Streamable HTTP + WS）
 | `公司/员工名册.md` | 员工编制、负责范围、工具白名单 | 回退 `DEFAULT_AGENT_SPEC`（15 条） | server.py:391-407 |
 | `公司/登录凭据.md` | 登录账号/密码 | 无凭据则无法登录（`/api/logininfo.ready=false`） | server.py:88-89, 3313-3315 |
 | `公司/.邮箱凭据.md` | 内部邮件账号（`邮箱 \| 姓名 \| 密码`） | 缺失则发信抛异常，由调用方兜底 | server.py:171, 208-240 |
-| `动态/runtime.json` | 运行时状态快照，原子写（`tmp` + `os.replace`） | 缺失时按空状态启动，首次落盘才创建 | server.py:961, 976-981, 1028-1050 |
+| `动态/runtime.json` | 运行时状态快照，原子写（`tmp` + `os.replace`）；`OPC_DB=1` 时普通事件不再重写，退为日/关机快照 | 缺失时按空状态启动；重启恢复仍只读该文件与 md，**不查过程库** | server.py:973, 996-1056, 1058-1080, 1155-1168 |
+| `prototype/opc.db` | SQLite/WAL 过程库：traces / trace_events / messages / approvals / reports / hotspots / knowledge / contents / meetings / chat_threads / chat_messages / token_usage 等 | `OPC_DB=0`（默认代码值）时 `db.store()` 返回 None，全部降级旧路径；生产由 systemd drop-in 设 `OPC_DB=1`、`OPC_INGEST=1` | db.py:18-19, 24-247, 737-750；server.py:267-268, 3513-3542 |
 | `OPC/交付物/<traceId>/` | 交付物落盘 | 目录自动创建 | README:73 |
 | `OPC/知识库/` | 归档知识页 | 自动创建 | README:74 |
+
+新增环境变量（已核实）：`OPC_DB`（开关）、`OPC_DB_PATH`（库路径，默认与 `db.py` 同目录）、`OPC_INGEST`（飞书/APP 摄取线程）、`OPC_INGEST_INTERVAL`（默认 30s）、`OPC_HERMES_PROFILES`、`OPC_DISPATCH_DB`（`db.py:18-19`、`server.py:267-268`、`ingest.py:20`）。摄入只读取上游库，水位线存 `ingest_cursor`。
 
 #### Scenario: 热加载失败保护
 - **WHEN** `POST /api/config/reload` 且新配置缺少必需项目（`wenren/gou/tongxinyuan`）或缺少内置岗位
@@ -141,14 +148,14 @@ Android App（com.boray.voicemcp，MCP Streamable HTTP + WS）
 ## 5. C4 事件总线与 SSE
 
 ### Requirement: 事件信封
-系统 SHALL 以统一信封广播事件：`{"kind","traceId","at","data"}`（`server.py:1087-1088`）。
+系统 SHALL 以统一信封广播事件：`{"kind","traceId","at","data"}`（`server.py:1146-1147`）。
 
-- 向所有订阅者队列 `put_nowait`，队列满则丢弃该订阅者本次事件（`server.py:1091-1095`）。
-- `kind ∈ {hotspot, report, approval, knowledge}` 时同步落盘 `runtime.json`（`server.py:1096-1097`）。
+- 向所有订阅者队列 `put_nowait`，队列满则丢弃该订阅者本次事件（`server.py:1148-1154`）。
+- **过程数据已改落库**：`OPC_DB=1` 时所有事件写 `trace_events`，并对 `report/approval/hotspot/knowledge/pipeline` 做表级 upsert；`OPC_DB=0` 时仅 `hotspot/report/approval/knowledge` 四类走 `save_runtime()` 重写 `runtime.json`（`server.py:1155-1168`）。这是影子双写，不改变读路径。
 
-### Requirement: 事件类型枚举（已核实）
-`agent, approval, collection, config-reload, cost-alert, engine-meta, hotspot, knowledge, meeting.end, meeting.speech, meeting.start, message, metrics, pipeline, render-gate, report, rework, sample-review, scene, tech-gate`（由 `self.emit("…")` 静态提取，共 20 种）。
-SSE 通道另有首帧 `state` 与 10s `heartbeat`（`server.py:3609-3642`）。
+### Requirement: 事件类型枚举（已核实，2026-11-12 重新静态提取）
+`agent, approval, chat.message, collection, config-reload, cost-alert, engine-meta, hotspot, knowledge, meeting.end, meeting.speech, meeting.start, message, metrics, pipeline, render-gate, report, rework, sample-review, scene, tech-gate`（`self.emit("…")` 静态提取，共 21 种；新增 `chat.message` 来自摄取线程回调 `server.py:1125-1127`）。
+SSE 通道另有首帧 `state` 与 10s `heartbeat`（`server.py:3791-3824`）；新版 `/app` 的「消息中心」消费 `chat.message` 做增量刷新（`web/src/pages/MessagesPage.tsx:195-232`）。
 
 ### Requirement: 消息对象与容量
 - 消息字段：`id/traceId/type/sender/recipient/at/ttl=20/priority/projectId/payload`（`server.py:1100-1103`）。
@@ -345,17 +352,25 @@ media-engine SHALL 作为媒体能力的单实例推理宿主，默认监听 `19
 - 部署：文件随仓库，由 `server.py` 直接托管 `/` 与 `/index.html`（需登录，`server.py:3366-3367`）；改完刷新即生效。
 - 数据契约：首屏 `GET /api/state`（`index.html:919,1122`）+ `EventSource('/api/events')` 增量（`index.html:1128`）；审批 `POST /api/approvals/<id>`（`:750`）、指令 `POST /api/commands`（`:1026`）、素材 `GET /api/materials`（`:1105`）。
 
-### Requirement: Refine 新版
-- 技术栈：React 18 + Refine v4 + Vite，`basename="/app"`（`web/src/App.tsx:16`）。
-- 资源：`works / hotspots / knowledge / org`（`web/src/App.tsx:21-26`）。
-- 路由：6 条显式路径 `/login / /works /hotspots /knowledge /org` + 1 条 `*` 兜底，另有一条无 `path` 的布局包裹路由；未登录重定向 `/login`（`web/src/App.tsx:28-43`）。
-- 数据契约：`GET /api/{resource}?page&size[&q&project&stage&status&sort]`、`GET /api/{resource}/{id}`；写操作在前端一律 reject（`web/src/dataProvider.ts:10,34,57-60,77,87-89`）。
-- 实时：`/api/state` 10s 轮询 + `EventSource('/api/events')`。
-- 部署：构建产物 `web/dist` 由 `prototype/server.py` 托管；`/app/assets/*` 长缓存 immutable，其余 `no-cache`，未命中回退 SPA `index.html`（`server.py:3342-3354, 3475-3495`）。
+### Requirement: Refine 新版（2026-11-12 线上 `/app` 新版本）
+完整契约见 [modules/web.md](./modules/web.md)。本版共 16 个 `.ts/.tsx` + 1 CSS、4,495 行（新增「消息中心」489 行、「3D 场景」97 行）。本地 `npm run build` 重建的三个资源与线上 `/app/assets/*` 文件名及 MD5 逐一相等，源码与线上版本一致（已核实）。
+
+- 技术栈：React 18 + Refine v4 + Vite，`basename="/app"`（`web/src/App.tsx:18`）。
+- 资源：`works / hotspots / knowledge / org`（`web/src/App.tsx:23-28`）。
+- 路由：9 条显式路径 `/login / /works /hotspots /knowledge /messages /org /office /meeting` + 1 条 `*` 兜底，另有一条无 `path` 的布局包裹路由；未登录重定向 `/login`（`web/src/App.tsx:30-49`）。`/office`、`/meeting` 是 `ScenePage` 用 iframe 嵌入 3D 页面（`web/src/pages/ScenePage.tsx:14-29, 87-93`）。
+- 数据契约：`GET /api/{resource}?page&size[&q&project&stage&status&sort]`、`GET /api/{resource}/{id}`；写操作在前端一律 reject（`web/src/dataProvider.ts:34-48, 50-80, 86-90`）。
+- **DB 数据访问**：新增「消息中心」直连 `GET /api/chat/threads|messages|stats|export`，全部读 `prototype/opc.db`（snake_case 行、FTS trigram 搜索、`before` 游标分页）；仅老板可见/可访问，后端 403 / 503（`server.py:3257-3263, 3513-3542`、`db.py:585-687`、`Layout.tsx:27,51`、`MessagesPage.tsx:3-34, 289-306`）。`/api/trace/<id>` 在内存缺失时由库补齐（`server.py:3756-3789`），但前端暂无调用方。
+- 实时：`/api/state` 10s 轮询（`HomePage.tsx:163`）+ `EventSource('/api/events')`；消息中心另消费 `chat.message` 增量刷新（`MessagesPage.tsx:195-232`）。
+- 部署：构建产物 `web/dist` 由 `prototype/server.py` 托管；`/app/assets/*` 长缓存 immutable，其余 `no-cache`，未命中回退 SPA `index.html`（`server.py:3442-3454, 3605-3624`）。线上当前哈希 `index-mEJE7U3r.js` / `index-BYw8UZ10.css` / 懒加载 `MarkdownBody-DPx5uPki.js`。
+- **读路径边界**：`/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存/文件（`server.py:3472-3512`），DB 只是影子双写；重启后页面数据可能少于库内行数（见 D12）。
 
 #### Scenario: 未构建新版前端
 - **WHEN** `web/dist` 不存在且访问 `/app`
-- **THEN** 返回 404 并提示「web/dist 未构建，先在 web/ 执行 npm run build」（`server.py:3483-3484`）
+- **THEN** 返回 404 并提示「web/dist 未构建，先在 web/ 执行 npm run build」（`server.py:3613-3614`）
+
+#### Scenario: 统一消息不可用
+- **WHEN** 非老板访问 `/api/chat/*`，或 `OPC_DB=0` 使 `KERNEL.db is None`
+- **THEN** 分别返回 403 / 503，消息中心显示整页空态；其余页面不受影响（`server.py:3514-3520`、`MessagesPage.tsx:289-306`）
 
 ### Requirement: 3D 场景
 - 技术栈：Three.js（`importmap` 指向 `/vendor/three.module.js`，无 CDN 依赖），单文件原生 JS（`office3d.html:70`、`meeting3d.html:132`）。
@@ -413,7 +428,7 @@ media-engine SHALL 作为媒体能力的单实例推理宿主，默认监听 `19
 - `POST /api/login`、`/api/logout` 免会话校验（`server.py:3649-3656`）。
 
 ### Requirement: 公开资源白名单
-`/login`、`/api/logininfo`、`/api/session`、`/vendor/three.module.js`、`/avatars/*.png`、`/faces/*.png`、`/videos/*.mp4`、`/vault/*`、`/app*`、`/materials/*`、`/api/materials` 绕过会话拦截（`server.py:3311-3359`）。
+`/login`、`/api/logininfo`、`/api/session`、`/vendor/three.module.js`、`/avatars/*.png`、`/faces/*.png`、`/vault/*`、`/app*`、`/materials/*`、`/api/materials` 绕过会话拦截（`server.py:3417-3459`）。`/app` 页面公开但数据接口全部经 `/api` 鉴权；消息中心接口另加「仅老板」判定（`server.py:3257-3263`）。
 - 注意：`/api/session` 只是不做会话跳转，未登录时仍返回 401（`server.py:3318-3319`）。
 
 #### Scenario: 路径穿越
@@ -434,9 +449,9 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 | `/faces/<name>.png` | 公开 | 同上 | server.py:3329-3333 |
 | `/videos/<id>[.talk\|.idle].mp4` | 公开 | 数字人素材 | server.py:3335-3339 |
 | `/vault/*` | 公开 | 交付物/纪要/邮件静态文件；`realpath` 越界 404，隐藏目录与 `公司/登录凭据.md` 不发布；支持 `Range`（206） | server.py:3340-3341, 3556-3572 |
-| `/app/assets/*` | 公开 | `web/dist` 带哈希资源，长缓存（`immutable`） | server.py:3344-3345 |
-| `/app/legacy` | 公开 | `302 → /` | server.py:3346-3350 |
-| `/app`、`/app/*` | 公开 | Refine 外壳与 SPA 回退（页面无数据，数据仍走 `/api` 鉴权） | server.py:3351-3354 |
+| `/app/assets/*` | 公开 | `web/dist` 带哈希资源，长缓存（`immutable`） | server.py:3444-3445, 3605-3624 |
+| `/app/legacy` | 公开 | `302 → /` | server.py:3446-3450 |
+| `/app`、`/app/*` | 公开 | Refine 外壳与 SPA 回退（页面无数据，数据仍走 `/api` 鉴权） | server.py:3451-3454, 3606-3614 |
 | `/materials/*` | 公开 | 素材库只读文件 | server.py:3356-3357 |
 | `/api/materials` | 公开 | 素材库索引 JSON | server.py:3358-3359 |
 | `/api/health` | 登录 | `{ok, version:"3.0", engine, hermes, time}` | server.py:3363-3365 |
@@ -454,12 +469,19 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 | `/api/state` | 登录 | 全量快照（`KERNEL.snapshot()`） | server.py:3401-3402 |
 | `/api/events` | 登录 | SSE 事件流（见 C4） | server.py:3403-3404 |
 | `/api/trace/<id>` | 登录 | trace 回放；缺失 404 | server.py:3405-3409 |
-| `/api/reports?kind=` | 登录 | 报告列表，`kind` 为空返回全部 | server.py:3410-3412 |
-| `/api/org` | 登录 | 员工 + 制度 + 画像根 + 项目清单（含虚拟项 `all/全公司`） | server.py:3414-3423 |
+| `/api/reports?kind=` | 登录 | 报告列表，`kind` 为空返回全部 | server.py:3510-3512 |
+| `/api/chat/threads?source&limit&before` | 登录 + **仅老板** | 统一会话列表（SQLite `chat_threads`）：`{ok,enabled,threads}` | server.py:3522-3525；db.py:585-606 |
+| `/api/chat/messages?thread&source&modality&direction&q&before&limit` | 登录 + **仅老板** | 统一消息流（SQLite `chat_messages` + FTS5 trigram）：`{ok,enabled,messages}`，`id DESC`，`before` 为 id 游标 | server.py:3526-3532；db.py:608-653 |
+| `/api/chat/stats?days=` | 登录 + **仅老板** | 7 天聚合：`{ok,enabled,stats:{bySource,byModality,byDay}}` | server.py:3533-3535；db.py:655-670 |
+| `/api/chat/export?start&end&limit` | 登录 + **仅老板** | 导出 JSON 对象 `{ok,enabled,count,messages}`（上限 20000） | server.py:3536-3539；db.py:672-687 |
+| `/api/chat/*` 其他 | 登录 + **仅老板** | `404 {"ok":false,"error":"not found"}` | server.py:3542 |
+| `/api/org` | 登录 | 员工 + 制度 + 画像根 + 项目清单（含虚拟项 `all/全公司`） | server.py:3544-3553 |
 | `/api/org/policy?key=` | 登录 | 制度文件正文；未知 key 404 | server.py:3424-3434 |
 | `/api/org/audit?limit=` | 登录 | 审计日志，默认 50、上限 500 | server.py:3435-3443 |
 | `/api/org/agent/<aid>[/skill?name=]` | 登录 | 员工详情 / 单技能详情；未知形态 404、参数错误 400 | server.py:3444-3455 |
-| 其余 | — | `404 {"error":"not found"}` | server.py:3456 |
+| 其余 | — | `404 {"error":"not found"}` | server.py:3586 |
+
+> 统一消息前置条件：`/api/chat/*` 先过 `_owner_only()`（非老板 403），再判 `KERNEL.db`（未启用 503 `{"ok":false,"enabled":false,"error":"过程库未启用"}`）；DAO 异常统一 500（`server.py:3514-3542`）。`POST /api/commands` 与 `Kernel.send()` 是 Web 侧写入 `chat_messages` 的唯一在线入口（`server.py:1129-1143, 1171-1190, 3894-3932`）。
 
 ### Requirement: 工作台 HTTP 路由全集（POST）
 `do_POST` 不做 `unquote`/尾斜杠归一（与 GET 不同，`server.py:3645`）。先过 Basic 层，再分「免会话 / 需登录」；未登录统一 `401 {"error":"unauthorized","login":"/login"}`（`server.py:3657-3659`）。
@@ -507,13 +529,15 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 | D2 | 内置兜底名册 15 条且无 `cco`，而流水线强依赖 `cco`；名册缺失时可能 KeyError | `server.py:391-407`、`verify.py:168` | 无 Vault 环境下启动/验收失败 | 推断（未实跑） |
 | D3 | 编制数量三处不一致：README 17 人 / 名册 19 个 id / Android 档案 18 | `README.md:8`、`公司/员工名册.md`、`android/.../employees.json` | 文档与前端展示口径不一 | 已核实 |
 | D4 | `TTS_WORKERS` 代码默认 2、`run.sh` 默认 6 | `tts_engine.py:42` vs `run.sh:13` | 并发与内存差异（每 worker 6.6–7.8GB） | 已核实 |
-| D5 | README 称新版前端「热点/知识库两页」，实际 5 个路由 | `README.md:84` vs `web/src/App.tsx:37-41` | 文档滞后 | 已核实 |
+| D5 | ~~README 称新版前端「热点/知识库两页」~~ **已修复**：2026-11-12 校对后 README 改为 8 个业务页 + 登录，并补齐 `/app/assets`、DB 接口与 SPA 回退说明；实际为 9 条显式路由（新增消息中心、Office 3D、Meeting 3D） | `README.md:86-88` vs `web/src/App.tsx:30-49` | 文档滞后已消除 | 已修复（2026-11-12） |
 | D6 | README 目录树未列 `media-engine/`、`hermes-plugins/`、`android/`、`video-remotion/`、`ep2/ep3/`、`storyboard/` | `README.md:22-39` vs 仓库根目录 | 新人不了解全貌 | 已核实 |
 | D7 | `/conring` 反代配置不在仓库内 | 仅见 Android 端路径与 media-engine 环境变量 | 外部依赖不可追溯 | 未验证（仓库外） |
 | D8 | Android 版本以 `build.gradle` 0.11.3 为准，`dist/` 内历史 APK 可能为 0.11.2 | `android/app/build.gradle:11-12` | 发版核对点 | 已核实（dist 内容未逐一核对） |
 | D9 | README 称交付物为 8 类，实现实际写 11 个文件（多 `08-assessment.md`、`09-review.md`、`05-final.mp4`，且 `04-cover.png` / `05-preview.mp4` 为条件写入） | `README.md:107-108` vs `deliverables.py:5-9, 55-61, 842-854`、`server.py:2276` | 交付物验收口径不一致 | 已核实 |
 | D10 | `opc.sh` 头部注释默认 `127.0.0.1:8848`，实际 `OPC_HOST` 默认 `0.0.0.0` | `opc.sh:5` vs `opc.sh:24` | 暴露面认知偏差（默认监听所有网卡） | 已核实 |
 | D11 | ~~媒体引擎地址三处口径不一致~~ **已修复**：统一为 `192.168.21.206:9200` —— `plugin.yaml` 文案、插件 docstring、引擎 `MEDIA_HOST` 默认值均改为该地址，与 `run.sh` 一致 | `plugin.yaml:8`、`__init__.py:1, 32`、`media-engine/server.py:38`、`media-engine/run.sh:20` | 已消除「无环境变量时连错回环」的部署风险 | 已修复（2026-11-11） |
+| D12 | 「数据访问已改成 db」只覆盖过程数据：`/api/chat/*` 与 `/api/trace/<id>` 读 `opc.db`，但 `/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存/文件；`emit()` 是影子双写，`_restore_history()` 不查库，重启后页面数据可能少于库内行数 | `server.py:1155-1168, 996-1056, 3472-3512, 3513-3542, 3756-3789`；线上实测 `/api/knowledge` total 178 vs `knowledge` 表 82 行、`/api/works` 171 vs `contents` 172 行 | 读切换（P1）未完成；按「全站已读库」做验收会得到错误结论 | 已核实（2026-11-12 线上 + 只读查库） |
+| D13 | ~~`PROCESS-DATA-DB-PLAN.md` 记「P1 前端消息中心页未做」~~ **已修复**：本次校对把该条改为「已完成并上线」，并注明 P1 后端读切换仍待排期；`MessagesPage.tsx` 489 行，11:44 构建 | `PROCESS-DATA-DB-PLAN.md` §13 遗留清单 vs `web/src/pages/MessagesPage.tsx:1-489` | 计划文档状态滞后已消除 | 已修复（2026-11-12） |
 
 ---
 
@@ -522,17 +546,17 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 | 能力域 | 主要代码位置 | 验收手段 |
 | --- | --- | --- |
 | C1 进程运维 | `opc.sh:24-160` | `./opc.sh status` / `logs` |
-| C2 配置 | `prototype/server.py:83-372, 1028-1084` | `./opc.sh reload` |
-| C3 组织 | `prototype/server.py:1073-1078, 3414-3455, 3661-3665` | `/api/org` 手工回归 |
-| C4 事件总线 | `prototype/server.py:1087-1115, 3609-3642` | `curl -N /api/events` |
-| C5 流水线 | `prototype/server.py:1793-2005, 3671-3749` | `./opc.sh verify` |
-| C6 审批门 | `prototype/server.py:2014-2054, 2393-2433, 3689-3700` | `verify.py` 审批用例 |
+| C2 配置 | `prototype/server.py:83-372, 973-1080, 1155-1168`、`db.py:18-19, 24-247` | `./opc.sh reload`；只读查 `opc.db` 表行数 |
+| C3 组织 | `prototype/server.py:1073-1078, 3544-3585, 3843-3847` | `/api/org` 手工回归 |
+| C4 事件总线 | `prototype/server.py:1125-1191, 3791-3824` | `curl -N /api/events`；观察 `chat.message` |
+| C5 流水线 | `prototype/server.py:1793-2005, 3853-3932` | `./opc.sh verify` |
+| C6 审批门 | `prototype/server.py:2014-2054, 2393-2433, 3871-3882` | `verify.py` 审批用例 |
 | C7 交付物/渲染 | `prototype/deliverables.py`、`om_render.py`、`works.py` | 交付目录人工核对 |
 | C8 媒体引擎 | `media-engine/*.py`、`hermes-plugins/media-platform/` | `/health`、`/metrics` |
-| C9 前端 | `web/src/**`、`prototype/*.html` | 页面手工回归 |
+| C9 前端 | `web/src/**`（4,495 行）、`prototype/*.html`；DB 契约 `db.py:585-687`、`server.py:3513-3542` | 页面手工回归 + 线上 `/app` 接口冒烟（见 [modules/web.md §9](./modules/web.md)） |
 | C10 Android | `android/**` | Gradle 构建 + 真机 |
-| C11 归档导出 | `vault_export.py`、`server.py:2840-2849, 3377-3400` | `./opc.sh vault` |
-| C12 安全 | `server.py:3113-3215, 3759-3760` | 未登录访问用例 |
+| C11 归档导出 | `vault_export.py`、`server.py:2840-2849, 3477-3481, 3496-3500` | `./opc.sh vault` |
+| C12 安全 | `server.py:3211-3321, 3513-3542, 3943` | 未登录 / 非老板 / `OPC_DB=0` 三类用例 |
 | C13 构建同步 | `.gitignore`、`sync-github.sh`、`verify.py` | `./opc.sh verify` |
 
 ---
@@ -550,8 +574,8 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 本变更 SHALL 不修改 `prototype/`、`media-engine/`、`web/src/`、`android/`、`video-remotion/` 下任何文件。
 
 #### Scenario: 变更范围审计
-- **WHEN** 变更完成后执行 `git status`
-- **THEN** 仅新增 `.trae/specs/add-project-specification/` 下的文档（`spec.md` / `tasks.md` / `checklist.md` + `modules/` 子目录），不触碰运行代码
+- **WHEN** 变更（含 2026-11-12 新版本校对）完成后执行 `git status`
+- **THEN** 仅新增/修改规格文档（`.trae/specs/add-project-specification/` 下 `spec.md` / `tasks.md` / `checklist.md` + `modules/web.md`）与 `README.md` / `PROCESS-DATA-DB-PLAN.md` 的 web、状态条目，不触碰运行代码
 
 ---
 
@@ -561,9 +585,9 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 
 | 模块 | 文档 | 覆盖范围 | 规模 |
 | --- | --- | --- | --- |
-| `prototype/` | [modules/prototype-server.md](./modules/prototype-server.md) | HTTP 路由、会话鉴权、SSE、编排内核、交付物、配置项 | `server.py` 3,819 行 + 9 个子模块 |
+| `prototype/` | [modules/prototype-server.md](./modules/prototype-server.md) | HTTP 路由、会话鉴权、SSE、编排内核、交付物、配置项 | `server.py` 3,960 行 + 子模块（过程库 `db.py` / `ingest.py` / `import_runtime.py` 见 `PROCESS-DATA-DB-PLAN.md`） |
 | `media-engine/` | [modules/media-engine.md](./modules/media-engine.md) | TTS/ASR/视频任务接口、鉴权、TTL、指标、环境变量 | 4 个 Python 文件 2,005 行 |
-| `web/` | [modules/web.md](./modules/web.md) | Refine 路由、dataProvider/authProvider、页面直连接口、构建托管 | 3,488 行 |
+| `web/` | [modules/web.md](./modules/web.md) | Refine 路由、dataProvider/authProvider、页面直连接口、**消息中心 DB 契约**、3D iframe、构建托管 | 4,495 行 |
 | `android/` | [modules/android.md](./modules/android.md) | 构建产物、MCP/dispatch/WS 契约、配置项、权限、离线降级 | 52 个 Java 文件 16,272 行 |
 | `hermes-plugins/` | [modules/hermes-plugins.md](./modules/hermes-plugins.md) | 插件注册契约、8 个工具到引擎接口的映射、错误语义 | `__init__.py` 323 行 |
 

@@ -24,6 +24,8 @@ import json
 import os
 import queue
 import random
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -53,7 +55,7 @@ WAN_MODEL = os.environ.get(
     "MEDIA_GEN_WAN_MODEL", "/opt/sefs/models/Wan2.1-T2V-1.3B-Diffusers")
 H3_MODEL = os.environ.get("MEDIA_GEN_H3_MODEL", "/opt/sefs/models/MiniMax-H3")
 WAN_DTYPE = os.environ.get("MEDIA_GEN_WAN_DTYPE", "bfloat16")
-FFMPEG = os.environ.get("MEDIA_GEN_FFMPEG", "/usr/bin/ffmpeg")
+FFMPEG = os.environ.get("MEDIA_GEN_FFMPEG", shutil.which("ffmpeg") or "/usr/bin/ffmpeg")
 
 os.makedirs(os.path.join(OUT_DIR, "images"), exist_ok=True)
 os.makedirs(os.path.join(OUT_DIR, "videos"), exist_ok=True)
@@ -287,6 +289,49 @@ class Wan21Engine(BaseEngine):
     name = "wan21"
     kind = "video"
 
+    @staticmethod
+    def _frame_to_bytes(f):
+        """帧转 rgb24 字节。WanPipeline 默认 output_type="np" 返回 float32 [0,1]，
+        直接 astype(uint8) 会全部截成 0（纯黑视频），必须先乘 255。"""
+        if hasattr(f, "convert"):                     # PIL.Image
+            return f.convert("RGB").tobytes()
+        import numpy as np
+
+        a = np.asarray(f)
+        if a.dtype != np.uint8:
+            a = a.astype("float32")
+            lo, hi = float(a.min()), float(a.max())
+            if lo < -0.01:                            # [-1,1] 值域
+                a = (a + 1.0) * 127.5
+            elif hi <= 1.01:                          # [0,1] 值域
+                a = a * 255.0
+            # 其余情况认为已是 0-255
+            a = np.clip(a, 0, 255).round().astype("uint8")
+        return a.tobytes()
+
+    @classmethod
+    def _write_mp4(cls, frames, path, fps):
+        """用 ffmpeg 管道写 mp4：diffusers 的 export_to_video 依赖 opencv，这里不引入。
+        WanPipeline 返回的帧可能是 PIL.Image 也可能是 numpy 数组，两种都支持。"""
+        f0 = frames[0]
+        if hasattr(f0, "shape"):              # numpy (H, W, 3)
+            h, w = f0.shape[:2]
+            log("wan21 帧：shape=%s dtype=%s min=%.3f max=%.3f"
+                % (f0.shape, f0.dtype, float(f0.min()), float(f0.max())))
+        else:                                 # PIL.Image
+            w, h = f0.size
+        cmd = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+               "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (w, h),
+               "-r", str(fps), "-i", "-", "-an",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+               "-movflags", "+faststart", path]
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        for f in frames:
+            p.stdin.write(cls._frame_to_bytes(f))
+        p.stdin.close()
+        if p.wait() != 0:
+            raise RuntimeError("ffmpeg 写 mp4 失败（退出码 %s）" % p.returncode)
+
     def _load(self):
         if self.pipe is not None:
             return self.pipe
@@ -308,9 +353,10 @@ class Wan21Engine(BaseEngine):
 
     def run(self, params, on_step):
         import torch
-        from diffusers.utils import export_to_video
 
+        t_load = time.time()
         pipe = self._load()
+        load_sec = time.time() - t_load
         self.last_used = time.time()
         seed = int(params.get("seed") or random.randint(0, 2**31 - 1))
         g = torch.Generator("cpu").manual_seed(seed)
@@ -319,6 +365,7 @@ class Wan21Engine(BaseEngine):
             on_step(step + 1, params["steps"])
             return {}  # diffusers 会对返回值做 .pop()，必须给 dict
 
+        t = time.time()
         frames = pipe(
             prompt=params["prompt"], negative_prompt=params.get("negative_prompt") or None,
             height=params["height"], width=params["width"],
@@ -326,12 +373,15 @@ class Wan21Engine(BaseEngine):
             guidance_scale=params["cfg"], generator=g,
             callback_on_step_end=cb, callback_on_step_end_tensor_inputs=[],
         ).frames[0]
+        denoise_sec = round(time.time() - t, 1)
         path = os.path.join(OUT_DIR, "videos", "%s.mp4" % params["job_id"])
-        export_to_video(frames, path, fps=int(params.get("fps") or 16))
+        self._write_mp4(frames, path, int(params.get("fps") or 16))
         self.last_used = time.time()
         return {"output_path": path, "seed": seed, "num_frames": len(frames),
                 "fps": int(params.get("fps") or 16),
-                "width": params["width"], "height": params["height"]}
+                "width": params["width"], "height": params["height"],
+                "load_sec": round(load_sec, 1), "denoise_sec": denoise_sec,
+                "sec_per_step": round(denoise_sec / max(1, params["steps"]), 1)}
 
 
 _ENGINES = {"sd15": SD15Engine(), "wan21": Wan21Engine()}

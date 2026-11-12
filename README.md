@@ -1,7 +1,7 @@
 # 同心圆（Concentric）· OPC 一人公司 AI 员工工作台
 
 17 名 AI 员工组成的「一人公司」，用真实大模型跑内容生产流水线：选题 → 文案 → 分镜/样片 → 审核 → 审批 → 发布。
-业务配置（项目、员工、阶段、高危工具）全部来自 Obsidian Markdown，过程与交付物也直接沉淀回 Obsidian。
+业务配置（项目、员工、阶段、高危工具）与人读产物仍来自 Obsidian Markdown；过程数据（事件、trace、统一消息、token 用量）改落 SQLite `prototype/opc.db`（`OPC_DB=1`，`PROCESS-DATA-DB-PLAN.md`）。
 
 ## 功能概览
 
@@ -61,17 +61,20 @@ chmod +x opc.sh
 
 无 Hermes 内核时可走离线规则模式演示：`OPC_HERMES_MODE=rule ./opc.sh start`。
 
-## 配置来源（Obsidian 为唯一数据源）
+## 配置来源（Obsidian 配置真源 + SQLite 过程库）
 
-| 文件（相对 `OPC_VAULT`） | 作用 |
+| 文件（相对 `OPC_VAULT`，或仓库内路径） | 作用 |
 | --- | --- |
 | `公司/项目配置.md` | 项目清单、调性、流水线阶段、高危工具 |
 | `公司/员工名册.md` | 员工编制、负责范围、工具白名单（当前 17 人） |
 | `公司/登录凭据.md` | 登录账号与密码，每次登录实时读取 |
 | `公司/.邮箱凭据.md` | 内部邮件账号（缺失则不发信） |
-| `动态/runtime.json` | 运行时状态，服务自动写入，重启后恢复 |
+| `动态/runtime.json` | 运行时快照；`OPC_DB=1` 时普通事件不再重写，仍是启动恢复来源之一 |
+| `prototype/opc.db` | SQLite/WAL 过程库：traces / 事件 / 审批 / 报告 / 会议 / `chat_threads` / `chat_messages` 等 |
 | `OPC/交付物/<traceId>/` | 交付物落盘目录 |
 | `OPC/知识库/` | 归档知识页 |
+
+开关：`OPC_DB=1`、`OPC_INGEST=1`（生产由 systemd drop-in 设置）；`OPC_DB_PATH` 可改库路径。统一消息由 `prototype/ingest.py` 每 30s 只读摄取飞书 / APP 源库，`/api/chat/*` 提供只读视图（仅老板）。业务列表与 `/api/state` 目前仍读内存 / 文件，DB 为影子双写，读切换属 P1。
 
 文件缺失或解析异常时回退代码内置默认（`DEFAULT_PROJECTS` / `DEFAULT_AGENT_SPEC` 等）。
 配置改完可热加载：`./opc.sh reload`（等价 `POST /api/config/reload`），无需重启。
@@ -81,22 +84,26 @@ chmod +x opc.sh
 | 路径 | 说明 |
 | --- | --- |
 | `/`、`/index.html` | 旧版工作台控制台（需登录，首页顶部有「新版界面」入口） |
-| `/app` | 新版界面（React + Refine：热点 / 知识库两页，页面公开、数据接口需登录） |
-| `/app/assets/...` | 新版前端静态资源（带内容哈希，长缓存） |
+| `/app` | 新版界面（React + Refine，页面公开、数据接口需登录）：首页 / 作品档案 / 热点 / 知识库 / 消息中心 / 组织配置 / Office 3D / Meeting 3D；SPA 深链回退 `web/dist/index.html` |
+| `/app/assets/...` | 新版前端静态资源（带内容哈希，长缓存）；`web/` 下 `npm run build` 产物由服务端托管 |
 | `/login` | 登录页 |
 | `/office3d` | 3D 办公区（需登录） |
 | `/meeting3d` | 3D 会议室（需登录） |
 | `/vault/...` | Obsidian 交付物文件（公开访问） |
 | `/api/health` | 健康检查 |
 | `/api/state` | 全量状态快照 |
-| `/api/events` | SSE 实时事件流 |
-| `/api/trace/<id>` | 单条 trace 回放 |
+| `/api/events` | SSE 实时事件流（含 `chat.message`，消息中心增量刷新） |
+| `/api/trace/<id>` | 单条 trace 回放；内存缺失时由过程库补齐 `meta` / `events` |
 | `/api/reports` | 日报 / 周报 / 风险单 |
-| `/api/meeting`、`/api/meetings` | 会议纪要查询 |
+| `/api/meeting`、`/api/meetings` | 会议纪要查询 / 发起选题会（POST） |
 | `/api/approvals/<id>` | 审批动作 |
 | `/api/patrol` | 触发 CEO 巡检 |
 | `/api/hotspots`、`/api/hotspots/<id>` | 热点分页列表（`page`/`size`/`q`）与单条详情 |
 | `/api/knowledge`、`/api/knowledge/<id>` | 知识库分页列表（`page`/`size`/`q`）与单条详情（含完整正文） |
+| `/api/works`、`/api/works/<id>` | 作品档案分页列表与详情（交付物目录） |
+| `/api/org*`、`/api/org/audit` | 组织配置读写（写操作仅老板）与变更审计 |
+| `/api/chat/threads`、`/api/chat/messages` | 统一会话 / 消息流（读 `opc.db`，`source`/`modality`/`direction`/`q`/`before`/`limit`；仅老板） |
+| `/api/chat/stats`、`/api/chat/export` | 按来源/模态/天聚合统计；消息导出（仅老板） |
 | `/api/hotspots/inject` | 注入热点 |
 | `/api/delegate`、`/api/commands` | 人工派单与指令 |
 | `/api/login`、`/api/logout`、`/api/session` | 会话管理 |

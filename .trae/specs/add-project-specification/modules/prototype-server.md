@@ -15,7 +15,7 @@
 
 | 文件 | 行数 | 职责 |
 | --- | ---: | --- |
-| `server.py` | 3,819 | HTTP 服务 + 编排内核 + 鉴权 + SSE + 组织配置 |
+| `server.py` | 3,960 | HTTP 服务 + 编排内核 + 鉴权 + SSE + 组织配置 + 过程库接线 |
 | `index.html` | 1,146 | 旧版控制台（首页 / 素材库 / 审批入口） |
 | `login.html` | 167 | 登录页 |
 | `office3d.html` | 2,139 | 3D 办公室视图 |
@@ -25,7 +25,13 @@
 | `works.py` | 352 | 作品档案：把交付物目录归一为「名称 + 时间」资产 |
 | `illustration.py` | 317 | 配图生成与插图资源保障 |
 | `verify.py` | 356 | 离线验收脚本（不依赖服务的断言集合） |
-| `materials.json` | — | 首页素材库清单（`server.py:3542-3566`） |
+| `db.py` | 750 | SQLite/WAL 过程库 schema、缓冲批写、DAO（`OPC_DB=1` 启用） |
+| `ingest.py` | 272 | 飞书 / APP 源库只读轮询摄取（30s，水位线去重） |
+| `import_runtime.py` | 119 | runtime.json / 会议 / 飞书 / APP 一次性回填（幂等） |
+| `opc.db` | — | 过程数据 SQLite 库（+ `-wal` / `-shm`），与代码同目录 |
+| `materials.json` | — | 首页素材库清单（`server.py:3627-3651`） |
+
+> 过程库相关接口契约（`/api/chat/*`、`/api/trace/<id>` 补齐）与 web 侧消费方式见 [web.md](./web.md) §4.4；方案与验收记录见 `PROCESS-DATA-DB-PLAN.md`。本模块文档其余行号仍以初版基线为准。
 
 ## 3. 内部结构分层
 
@@ -172,7 +178,7 @@
 ## 8. 已知限制
 
 1. `_static` 未做 `realpath` 越界校验，安全完全依赖各调用点的文件名正则（`server.py:3506-3518`）。
-2. `server.py` 单文件 3,819 行，HTTP 层与编排内核同文件，无法按模块独立测试。
+2. `server.py` 单文件 3,960 行，HTTP 层与编排内核同文件，无法按模块独立测试；过程库虽已独立为 `db.py` / `ingest.py`，但业务列表读路径仍留在 `server.py` 内（见 spec.md D12）。
 3. 会话与登录失败计数均为进程内存，重启即丢失（`server.py:104-109`）。
 4. `/api/events` 无鉴权之外的租户隔离，所有登录用户看到同一事件流。
 5. 交付物文件数量与 README「8 类」不一致，见 spec.md 第 15 节 D9。
@@ -180,6 +186,6 @@
 ## 9. 验收手段
 
 - 路由自检：`grep -n 'path == "/api/\|path.startswith("/api/' prototype/server.py`。
-- 事件枚举：`grep -o 'emit("[a-z.-]*"' prototype/server.py | sort -u`，应为 20 种（见 spec.md C4）。
+- 事件枚举：`grep -o 'emit("[a-z.-]*"' prototype/server.py | sort -u`，应为 21 种（含 `chat.message`，见 spec.md C4）。
 - 公开路由：未登录 `curl -i http://127.0.0.1:8848/api/state` 应 401，`/api/health` 应 200。
 - 静态托管：`curl -I http://127.0.0.1:8848/app/assets/<hash>.js` 应含 `max-age=31536000, immutable`（`server.py:3535-3536`）。
