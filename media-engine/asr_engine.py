@@ -166,27 +166,32 @@ def _empty(lang, model, duration, stats, reason):
             "filtered_reasons": {}, "low_confidence": True, **stats}
 
 
-def transcribe(path, language=None, model=None, initial_prompt=None):
-    """音频文件 → 文本 + 句级时间轴 + 置信度；命中音频级门时不跑模型。"""
+def probe(path):
+    """解码 + 音频级门（时长/能量/VAD）。返回 (audio, duration, 帧统计, 命中原因 or None)。"""
     import whisper
 
-    lang = language or DEFAULT_LANG
-    model_name = model or MODEL_NAME
     audio = whisper.load_audio(path)  # 内部走 ffmpeg，支持 wav/mp3/ogg 等
     duration = round(len(audio) / 16000.0, 2)
-    stats = confidence([])
-
     if duration < ASR_MIN_SEC:
         log("ASR 时长门：%.2fs < %.2fs，不送模型" % (duration, ASR_MIN_SEC))
-        return _empty(lang, model_name, duration, stats, "too_short")
-
+        return audio, duration, {}, "too_short"
     fs = frame_stats(audio)
     if fs["peak_rms"] < ASR_MIN_RMS:
         log("ASR 能量门：peak rms=%.5f < %.5f，不送模型" % (fs["peak_rms"], ASR_MIN_RMS))
-        return _empty(lang, model_name, duration, stats, "silent")
+        return audio, duration, fs, "silent"
     if fs["speech_ratio"] < ASR_MIN_SPEECH_RATIO:
         log("ASR VAD 门：有声帧占比 %.3f < %.3f，不送模型" % (fs["speech_ratio"], ASR_MIN_SPEECH_RATIO))
-        return _empty(lang, model_name, duration, stats, "no_speech")
+        return audio, duration, fs, "no_speech"
+    return audio, duration, fs, None
+
+
+def transcribe(path, language=None, model=None, initial_prompt=None):
+    """音频文件 → 文本 + 句级时间轴 + 置信度；命中音频级门时不跑模型。"""
+    lang = language or DEFAULT_LANG
+    model_name = model or MODEL_NAME
+    audio, duration, fs, reason = probe(path)
+    if reason:
+        return _empty(lang, model_name, duration, confidence([]), reason)
 
     kwargs = {"language": lang}
     if initial_prompt:

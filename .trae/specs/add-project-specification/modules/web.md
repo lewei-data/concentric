@@ -1,27 +1,27 @@
 # 模块规格 · web（Refine 新版控制台 `/app`）
 
 > 上级文档：[spec.md](../spec.md)。本文件只描述 `web/`。
-> 校对基准：2026-11-12 线上 `http://192.168.31.206:8848/app`（本机 `:8848`，`web/dist` 于本次功能改动后重建，当前产物 `index-C21ZRNYx.js` / `index-q43a5DfF.css` / `MarkdownBody-C9D22Bk_.js`），工作区 HEAD `71b82f5`；运行进程实测 `OPC_DB=1`、`OPC_INGEST=1`（`/etc/systemd/system/opc-workbench.service.d/db.conf`）。
-> 规模：`web/src` 下 18 个 `.ts/.tsx` + 1 个 CSS，共 6,300 行（`wc -l`）：页面 3,417 行、组件/数据/鉴权/入口 502 行、样式 2,381 行。
+> 校对基准：2026-11-12 线上 `http://192.168.31.206:8848/app`（本机 `:8848`，`web/dist` 于本次功能改动后重建，当前产物 `index-Dxl4Zq3X.js` / `index-BMJMjxz3.css` / `MarkdownBody-Cv9d5XXx.js`），工作区 HEAD `84459e1`；运行进程实测 `OPC_DB=1`、`OPC_INGEST=1`（`/etc/systemd/system/opc-workbench.service.d/db.conf`）。
+> 规模：`web/src` 下 18 个 `.ts/.tsx` + 1 个 CSS，共 6,356 行（`wc -l`）：页面 3,447 行、组件/数据/鉴权/入口 502 行、样式 2,407 行。
 > 本版补齐内容：新增「消息中心」「3D 场景」两页与三条路由（`/messages`、`/office`、`/meeting`）、统一消息的 **DB 数据访问契约**、老板权限与降级、深蓝渐变顶栏、3D iframe 的会话预检/postMessage 握手/真实数据侧栏，以及「创意灵感」（CCO）与「运维监控」（CTO）两页与配套后端聚合接口。
 
 ## 0. 校对结论（与上一版规格的差异）
 
 | 项 | 上一版规格（HEAD `7e07433`） | 线上新版本（HEAD `4399383`） | 证据 |
 | --- | --- | --- | --- |
-| 源码规模 | 13 个 `.ts/.tsx` + 1 CSS，3,488 行 | 18 个 `.ts/.tsx` + 1 CSS，6,300 行（+2,812） | `wc -l web/src/**` |
-| 新增页面 | 无 | `MessagesPage.tsx` 489 行（消息中心，读 SQLite）、`ScenePage.tsx` 374 行（3D 场景 + 数据侧栏）、`InspirationPage.tsx` 255 行、**`OpsPage.tsx` 443 行** | `web/src/pages/` |
+| 源码规模 | 13 个 `.ts/.tsx` + 1 CSS，3,488 行 | 18 个 `.ts/.tsx` + 1 CSS，6,356 行（+2,868） | `wc -l web/src/**` |
+| 新增页面 | 无 | `MessagesPage.tsx` 489 行（消息中心，读 SQLite）、`ScenePage.tsx` 404 行（3D 场景 + 数据侧栏）、`InspirationPage.tsx` 255 行、**`OpsPage.tsx` 443 行** | `web/src/pages/` |
 | 显式路由 | 6 条 + `*` 兜底 | 11 条 + `*` 兜底（新增 `/messages`、`/office`、`/meeting`、`/inspiration`、`/ops`） | `App.tsx:30-51` |
 | 导航 | 侧边导航壳 38 行 | 深蓝渐变顶栏 105 行：8 项主导航（含创意灵感 / 运维监控）、老板专属消息中心、3D 快捷入口、旧版回退、用户身份卡 | `Layout.tsx:1-105`、`styles.css` |
 | 数据访问 | 全部 `/api/*` 走内存 / Obsidian 文件 | **统一消息与过程数据改读 `prototype/opc.db`**；新增 `/api/inspiration` / `/api/ops` 只读聚合；其余页面仍走内存 / 文件（影子双写） | `server.py:3513-3542`、`insights.py`、`ops_monitor.py`、`db.py:585-687` |
 | 实时通道 | 仅首页 SSE | 消息中心订阅 `chat.message`；3D 场景、创意灵感、运维监控侧栏均订阅 `/api/events` 增量刷新 | `MessagesPage.tsx:195-232`、`ScenePage.tsx`、`InspirationPage.tsx`、`OpsPage.tsx` |
 | 首页入口 | 根路径返回旧控制台 | `/` 302 → `/app`；`/legacy` 与 `/app/legacy` 回退旧版；`OPC_HOME_LEGACY=1` 可整站回退 | `server.py:3425-3435, 3456-3462`、`README.md` |
 | 处置能力 | 仅首页指令/审批 | 运维监控页提供仅老板可用的 `POST /api/ops/recover`（巡检派单 / 热加载 / 审批），带二次确认 | `server.py` do_POST、`OpsPage.tsx` |
-| 构建产物 | 未登记哈希 | 当前 `index-C21ZRNYx.js` / `index-q43a5DfF.css` / 懒加载 `MarkdownBody-C9D22Bk_.js`（以 `web/dist/index.html` 为准） | `web/dist/index.html`、`web/dist/assets/` |
+| 构建产物 | 未登记哈希 | 当前 `index-Dxl4Zq3X.js` / `index-BMJMjxz3.css` / 懒加载 `MarkdownBody-Cv9d5XXx.js`（以 `web/dist/index.html` 为准） | `web/dist/index.html`、`web/dist/assets/` |
 
 > **口径校正（重要）**：「数据访问已经改成了 db」适用于**过程数据 / 统一消息**（`chat_threads`、`chat_messages`、`trace_events` 等），不是整个前端的所有列表。实测 `/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存快照、Obsidian md 或交付物目录；`server.py:1155-1168` 是「DB 影子双写」，`_restore_history()` 仍以 `runtime.json` / md 恢复，读切换（P1）尚未完成。详见 §4.5 与 §8。
 
-> **一致性核验（已核实）**：`web/src` 重新执行 `npm run build`（`tsc --noEmit && vite build`）得到与线上完全相同的资源文件名，改动前三个文件 MD5 逐一相等；本次功能改动后线上已切到新哈希 `index-C21ZRNYx.js` / `index-q43a5DfF.css`，本地 `web/dist` 与线上一致。因此 `/app` 始终由当前 `web/src` 构建产物托管，**不存在「线上有、仓库里缺」的前端代码**。
+> **一致性核验（已核实）**：`web/src` 重新执行 `npm run build`（`tsc --noEmit && vite build`）得到与线上完全相同的资源文件名，改动前三个文件 MD5 逐一相等；本次功能改动后线上已切到新哈希 `index-Dxl4Zq3X.js` / `index-BMJMjxz3.css`，本地 `web/dist` 与线上一致。因此 `/app` 始终由当前 `web/src` 构建产物托管，**不存在「线上有、仓库里缺」的前端代码**。
 
 ## 1. 模块定位
 
@@ -50,11 +50,11 @@
 | `src/pages/MessagesPage.tsx` | **489** | **消息中心：飞书 / APP / Web 三源统一消息（DB 只读）** |
 | `src/pages/HotspotsPage.tsx` | 157 | 热点列表 + 详情 |
 | `src/pages/KnowledgePage.tsx` | 165 | 知识库列表 + 详情 |
-| `src/pages/ScenePage.tsx` | **374** | **3D 办公区 / 会议室 iframe 嵌入、会话预检、postMessage 握手、真实数据侧栏（`/api/state` / `/api/meeting` + SSE）、20s 超时与重试** |
+| `src/pages/ScenePage.tsx` | **404** | **3D 办公区 / 会议室 iframe 嵌入、会话预检、postMessage 握手（含 `opc:scene-error`）、真实数据侧栏（`/api/state` / `/api/meeting` + SSE）、25s 超时与重试** |
 | `src/pages/InspirationPage.tsx` | **255** | **创意灵感：热点分析 / 视频分析 / 蒸馏启发三类线索，筛选、搜索、展开要点、跳原文** |
 | `src/pages/OpsPage.tsx` | **443** | **运维监控：系统状态、任务执行、视频生成、告警与恢复运行动作** |
 | `src/pages/LoginPage.tsx` | 62 | 登录表单 |
-| `src/styles.css` | 2,381 | 全站样式（含消息中心 / 深蓝顶栏 / 3D 场景 / 灵感 / 运维） |
+| `src/styles.css` | 2,407 | 全站样式（含消息中心 / 深蓝顶栏 / 3D 场景 / 灵感 / 运维） |
 
 ## 3. 技术栈与构建
 
@@ -90,7 +90,9 @@
 
 未登录时 `Authenticated` 以 `<Navigate to="/login" replace />` 回登录页（`App.tsx:32-37`）。
 
-**3D 嵌入契约（2026-11-12 修复）**：顶层先 `GET /api/session` 预检，通过后挂载 iframe；3D 页 `?embed=1` 隐藏自带 HUD/记录栏/发起会议按钮并铺满画面，`window.parent.postMessage({source:'opc-3d',type:'opc:scene-ready'|'opc:navigate'|'opc:unauthorized'})` 与父页握手；父页按 `event.origin` 校验同源，收到就绪才移除加载遮罩，收到 `opc:navigate` 用 React Router 切场景（避免 `top.location.href` 整页刷新），收到 `opc:unauthorized` 跳 `/app/login`。3D 页 `/api/state`、`/api/meeting` 的 401 不再被当成空数据。右侧数据栏直接读真实接口并订阅 SSE，10–15s 兜底轮询；20s 未就绪给出重试。独立窗口打开（不带 `embed=1`）仍保留完整 3D UI。
+**3D 嵌入契约（2026-11-12 修复）**：顶层先 `GET /api/session` 预检，通过后挂载 iframe；3D 页 `?embed=1` 隐藏自带 HUD/记录栏/发起会议按钮并铺满画面，`window.parent.postMessage({source:'opc-3d',type:'opc:scene-ready'|'opc:scene-error'|'opc:navigate'|'opc:unauthorized'})` 与父页握手；父页按 `event.origin` 校验同源，收到就绪才移除加载遮罩，收到 `opc:navigate` 用 React Router 切场景（避免 `top.location.href` 整页刷新），收到 `opc:unauthorized` 跳 `/app/login`。3D 页 `/api/state`、`/api/meeting` 的 401 不再被当成空数据。右侧数据栏直接读真实接口并订阅 SSE，10–15s 兜底轮询；25s 未就绪给出重试。独立窗口打开（不带 `embed=1`）仍保留完整 3D UI。
+
+**加载错误诊断（2026-11-12 二次修复）**：3D 页用绝对 URL `import * as THREE from '/vendor/three.module.js'`，不再依赖 importmap；`window.addEventListener('error', …, true)` 捕获脚本异常与资源加载失败，`unhandledrejection` 捕获异步失败，并把原因通过 `opc:scene-error` 上报父页。启动看门狗分两级：6s 内 `__opcModuleStarted` 未置位 → 「模块脚本未能执行（three.js 加载失败 / 不支持 ES Module / WebGL）」；15s 内未完成 boot → 「场景初始化超时（登录态 / `/api/state` 或 `/api/meeting`）」。父页错误面板显示具体原因 + 重试 / 独立窗口入口；iframe `onLoad` 还会直接读子页 `__officeBooted` / `__meetingBooted` 作为握手丢失时的兜底。头像贴图两级兜底后使用纯色纹理，`/favicon.ico` 由服务端返回 SVG（200），消除控制台 404。
 
 ### 4.2 数据提供者（`dataProvider.ts`）
 
@@ -194,7 +196,7 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 - 构建产物由后端 `_web_dist` 提供：`/app/assets/*` 走 `public, max-age=31536000, immutable`；`index.html` 与其他路径 `no-cache`（`server.py:3444-3445, 3605-3624`）。
 - 未命中文件回退 `web/dist/index.html`，支持 SPA 深链（`server.py:3606-3614`）。
 - `web/dist` 未构建时返回 404「web/dist 未构建，先在 web/ 执行 npm run build」（`server.py:3613-3614`）。
-- 当前线上 `index.html` 引用 `/app/assets/index-C21ZRNYx.js` 与 `index-q43a5DfF.css`；`MarkdownBody-C9D22Bk_.js` 为知识详情懒加载 chunk（`web/dist/index.html`、`KnowledgePage.tsx:5-6`）。`web/dist` 不入 git（`.gitignore`），由服务端目录直接托管，每次 `npm run build` 后线上立即换新哈希。
+- 当前线上 `index.html` 引用 `/app/assets/index-Dxl4Zq3X.js` 与 `index-BMJMjxz3.css`；`MarkdownBody-Cv9d5XXx.js` 为知识详情懒加载 chunk（`web/dist/index.html`、`KnowledgePage.tsx:5-6`）。`web/dist` 不入 git（`.gitignore`），由服务端目录直接托管，每次 `npm run build` 后线上立即换新哈希。
 
 ## 7. 失败与降级
 
@@ -206,7 +208,9 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 | DB 写失败 | 记日志并降级，不中断主流程 | `server.py:1142-1143, 1155-1168` |
 | SSE 断开 | 仅关闭连接，无自定义 `onerror` 重连（浏览器 `EventSource` 默认行为除外）；3D 侧栏另有 10–15s 轮询兜底 | `HomePage.tsx:176-202`、`MessagesPage.tsx:195-232`、`ScenePage.tsx` |
 | 3D iframe 会话失效 | 顶层 `/api/session` 401 或 iframe `opc:unauthorized` → 跳 `/app/login`；`onLoad` 检测到旧登录页同样跳登录 | `ScenePage.tsx`、`office3d.html` / `meeting3d.html` |
-| 3D iframe 20s 未就绪 | 显示超时提示 + 重试 / 独立窗口（以 `opc:scene-ready` 握手为准，不再把 302 登录页当成加载成功） | `ScenePage.tsx` |
+| 3D iframe 启动失败 | 子页 `opc:scene-error` 携带真实原因（模块脚本未执行 / WebGL / 资源 404 / boot 超时），父页显示具体错误 + 重试 / 独立窗口 | `office3d.html` / `meeting3d.html`、`ScenePage.tsx` |
+| 3D iframe 25s 未就绪 | 兜底显示超时提示 + 重试 / 独立窗口（以 `opc:scene-ready` 或子页 boot 标记为准，不再把 302 登录页当成加载成功） | `ScenePage.tsx` |
+| favicon 隐式请求 | 服务端 `/favicon.ico` 返回 SVG 200；3D 页显式声明 icon，不再出现 `Failed to load resource: 404` | `server.py` do_GET、`office3d.html` / `meeting3d.html` |
 | 后端不可达 | 登录 `catch` 提示失败；登出仍清本地 | `authProvider.ts:27-36, 61-67` |
 | 作品档案模块未加载 | `/api/works` 500，页面展示空列表 | `server.py:3483-3485` |
 | 无 `dist` | `/app` 404 提示构建 | `server.py:3613-3614` |

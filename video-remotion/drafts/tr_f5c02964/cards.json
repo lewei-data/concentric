@@ -1,0 +1,200 @@
+{
+  "trace": "tr_f5c02964",
+  "candidate": "tongxinyuan-c_e936e121",
+  "title": "它只写方案，动手那一步留给你",
+  "spec": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "total_frames": 1350,
+    "duration_sec": 45.0,
+    "codec": "h264",
+    "pix_fmt_final": "yuv420p",
+    "profile": "high",
+    "level": "4.1",
+    "audio": "48kHz 立体声 双声道 (aac 192k)",
+    "main_color": "#7C3AED",
+    "safe_margin_px": 108,
+    "form": "字卡＋静帧·无旁白",
+    "narration": false
+  },
+  "shots": [
+    {
+      "shot": "shot1",
+      "frames": 330,
+      "sec": 11.0
+    },
+    {
+      "shot": "shot2",
+      "frames": 345,
+      "sec": 11.5
+    },
+    {
+      "shot": "shot3",
+      "frames": 345,
+      "sec": 11.5
+    },
+    {
+      "shot": "shot4",
+      "frames": 330,
+      "sec": 11.0
+    }
+  ],
+  "cards": [
+    {
+      "no": 1,
+      "shot": "shot1",
+      "text": "它只写方案",
+      "lines": [
+        "它只写方案"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        480.0
+      ],
+      "text_onscreen": "它只写方案",
+      "net_chars": 5,
+      "bytes_found": 15836,
+      "from_frame": 0,
+      "to_frame": 164,
+      "frames": 165,
+      "sec": 5.5
+    },
+    {
+      "no": 2,
+      "shot": "shot1",
+      "text": "动手那一步留给你",
+      "lines": [
+        "动手那一步留给你"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        768.0
+      ],
+      "text_onscreen": "动手那一步留给你",
+      "net_chars": 8,
+      "bytes_found": 22969,
+      "from_frame": 165,
+      "to_frame": 329,
+      "frames": 165,
+      "sec": 5.5
+    },
+    {
+      "no": 3,
+      "shot": "shot2",
+      "text": "方案单可出",
+      "lines": [
+        "方案单可出"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        480.0
+      ],
+      "text_onscreen": "方案单可出",
+      "net_chars": 5,
+      "bytes_found": 14392,
+      "from_frame": 330,
+      "to_frame": 501,
+      "frames": 172,
+      "sec": 5.733
+    },
+    {
+      "no": 4,
+      "shot": "shot2",
+      "text": "改动必须回客户签",
+      "lines": [
+        "改动必须回客户签"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        768.0
+      ],
+      "text_onscreen": "改动必须回客户签",
+      "net_chars": 8,
+      "bytes_found": 25429,
+      "from_frame": 502,
+      "to_frame": 674,
+      "frames": 173,
+      "sec": 5.767
+    },
+    {
+      "no": 5,
+      "shot": "shot3",
+      "text": "建议，确认，执行，留痕",
+      "lines": [
+        "建议，确认，",
+        "执行，留痕"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        576.0,
+        480.0
+      ],
+      "text_onscreen": "建议，确认，执行，留痕",
+      "net_chars": 8,
+      "bytes_found": 27465,
+      "from_frame": 675,
+      "to_frame": 846,
+      "frames": 172,
+      "sec": 5.733
+    },
+    {
+      "no": 6,
+      "shot": "shot3",
+      "text": "四段卡，一步一张",
+      "lines": [
+        "四段卡，一步一张"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        768.0
+      ],
+      "text_onscreen": "四段卡，一步一张",
+      "net_chars": 7,
+      "bytes_found": 16922,
+      "from_frame": 847,
+      "to_frame": 1019,
+      "frames": 173,
+      "sec": 5.767
+    },
+    {
+      "no": 7,
+      "shot": "shot4",
+      "text": "留痕按时间戳复算",
+      "lines": [
+        "留痕按时间戳复算"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        768.0
+      ],
+      "text_onscreen": "留痕按时间戳复算",
+      "net_chars": 8,
+      "bytes_found": 24611,
+      "from_frame": 1020,
+      "to_frame": 1184,
+      "frames": 165,
+      "sec": 5.5
+    },
+    {
+      "no": 8,
+      "shot": "shot4",
+      "text": "同种子只复现参数",
+      "lines": [
+        "同种子只复现参数"
+      ],
+      "font_px": 96,
+      "line_px_width": [
+        768.0
+      ],
+      "text_onscreen": "同种子只复现参数",
+      "net_chars": 8,
+      "bytes_found": 22923,
+      "from_frame": 1185,
+      "to_frame": 1349,
+      "frames": 165,
+      "sec": 5.5
+    }
+  ],
+  "shots_total_sec": 45.0
+}

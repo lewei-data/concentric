@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>同心圆 · 3D 会议室</title>
-<link rel="icon" href="/favicon.ico" type="image/svg+xml" />
+<link rel="icon" href="./favicon.ico" type="image/svg+xml" />
 <style>
   :root{
     --ink:#111827; --muted:#6B7280; --line:#E5E7EB; --primary:#4F46E5;
@@ -141,7 +141,7 @@
   .embedded .emp{bottom:14px}
 </style>
 <script type="importmap">
-{ "imports": { "three": "/vendor/three.module.js" } }
+{ "imports": { "three": "./vendor/three.module.js" } }
 </script>
 </head>
 <body>
@@ -164,8 +164,8 @@
     <span class="chip">发言 <b id="cSpeak">0</b></span>
   </div>
   <button class="go" id="startBtn">召开选题会</button>
-  <a class="back" href="/app/office" target="_top">← 3D 办公区</a>
-  <a class="back" href="/app" target="_top">工作台</a>
+  <a class="back" href="./app/office" target="_top">← 3D 办公区</a>
+  <a class="back" href="./app" target="_top">工作台</a>
 </header>
 
 <aside class="records">
@@ -174,7 +174,7 @@
     <span class="cnt" id="recCount">0</span>
   </div>
   <div class="rlist" id="recList"></div>
-  <a class="rfoot" id="recFoot" href="/vault/OPC/会议纪要/00-会议索引.md" target="_blank" rel="noopener">打开会议索引 ↗</a>
+  <a class="rfoot" id="recFoot" href="./vault/OPC/会议纪要/00-会议索引.md" target="_blank" rel="noopener">打开会议索引 ↗</a>
 </aside>
 
 <div class="emp" id="emp">
@@ -247,8 +247,8 @@
         a.removeAttribute('target');
         a.addEventListener('click', function (e) {
           e.preventDefault();
-          var href = a.getAttribute('href') || '/app';
-          var path = href === '/app/office' ? '/office' : href === '/app/meeting' ? '/meeting' : '/';
+          var href = a.getAttribute('href') || './app';
+          var path = href === './app/office' ? '/office' : href === './app/meeting' ? '/meeting' : '/';
           window.__opcNotify('opc:navigate', { path: path });
         });
       });
@@ -270,12 +270,12 @@
 </script>
 
 <script type="module">
-import * as THREE from '/vendor/three.module.js';
+import * as THREE from './vendor/three.module.js';
 window.__opcModuleStarted = true;   // 供启动看门狗判断模块是否真的执行
 /* 名册新增员工若缺头像，回退通用脸，避免 404 造成空白贴图 */
 function loadFace(id) {
-  const tex = new THREE.TextureLoader().load(`/faces/${id}.png`, undefined, undefined, () => {
-    new THREE.TextureLoader().load('/faces/scout.png', t => {
+  const tex = new THREE.TextureLoader().load(`./faces/${id}.png`, undefined, undefined, () => {
+    new THREE.TextureLoader().load('./faces/scout.png', t => {
       tex.image = t.image;
       tex.needsUpdate = true;
     }, undefined, () => {
@@ -1538,7 +1538,7 @@ function drawIdle(g, W, H) {
 /* ================= 数据 ================= */
 async function loadMeeting() {
   try {
-    const r = await fetch('/api/meeting', { cache: 'no-store' });
+    const r = await fetch('./api/meeting', { cache: 'no-store' });
     if (r.status === 401 || r.status === 403) {
       window.__opcNotify('opc:unauthorized');   // 顶层统一处理登录，避免 iframe 内显示旧登录页
       return false;
@@ -1679,7 +1679,7 @@ async function openRecord(id) {
   let rec = (M.history || []).find(r => r.id === id) || null;
   if (rec && !rec.speeches) {
     try {
-      const r = await fetch(`/api/meeting/${encodeURIComponent(id)}`, { cache: 'no-store' });
+      const r = await fetch(`./api/meeting/${encodeURIComponent(id)}`, { cache: 'no-store' });
       if (r.ok) rec = await r.json();
     } catch (e) { /* 保持摘要 */ }
   }
@@ -1771,7 +1771,7 @@ startBtn.onclick = async () => {
   const old = startBtn.textContent;
   startBtn.textContent = '正在召集…';
   try {
-    const r = await fetch('/api/meetings', {
+    const r = await fetch('./api/meetings', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
     });
     if (!r.ok) {
@@ -1801,7 +1801,7 @@ function toast(text) {
 /* ================= SSE / 轮询 ================= */
 function bootLive() {
   try {
-    const es = new EventSource('/api/events');
+    const es = new EventSource('./api/events');
     es.onmessage = m => {
       let env;
       try { env = JSON.parse(m.data); } catch (e) { return; }

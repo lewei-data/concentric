@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+// 应用根：内网 SPA 在 /app/ → 服务根 "/"，公网挂在 /workbench/app/ → "/workbench/"
+// 3D 页面与 /vendor、/faces、/api 都位于「服务根」（SPA 的 /app 的上一层）。
+// 直接按浏览器真实 URL 推导，避免依赖构建期 base 或网关对 JS 的重写。
+function computeAppRoot(): string {
+  const parts = window.location.pathname.split("/");
+  parts.length = Math.max(1, parts.length - 2); // 去掉末尾路由段与 /app 段
+  return parts.join("/") + "/";
+}
+const APP_ROOT = computeAppRoot();
+
 type SceneKey = "office" | "meeting";
 
 interface SceneConfig {
@@ -16,7 +26,7 @@ const SCENES: Record<SceneKey, SceneConfig> = {
   office: {
     title: "3D 办公区",
     desc: "员工工位、实时状态与会议指示牌；点击人物查看任务，拖拽旋转视角。",
-    src: "/office3d?embed=1",
+    src: `${APP_ROOT}office3d?embed=1`,
     other: "/meeting",
     otherLabel: "前往 3D 会议室",
     endpoint: "/api/state",
@@ -24,7 +34,7 @@ const SCENES: Record<SceneKey, SceneConfig> = {
   meeting: {
     title: "3D 会议室",
     desc: "选题会实时投影、逐条发言与会议纪要索引，数据来自 /api/meeting 与 SSE。",
-    src: "/meeting3d?embed=1",
+    src: `${APP_ROOT}meeting3d?embed=1`,
     other: "/office",
     otherLabel: "返回 3D 办公区",
     endpoint: "/api/meeting",
@@ -97,7 +107,7 @@ function fmtTime(value?: string): string {
 async function apiGet<T>(url: string): Promise<T> {
   const res = await fetch(url, { credentials: "include", cache: "no-store" });
   if (res.status === 401) {
-    window.location.assign("/app/login");
+    window.location.assign(`${APP_ROOT}app/login`);
     throw new Error("unauthorized");
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -174,7 +184,7 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
     fetch("/api/session", { credentials: "include" })
       .then((res) => {
         if (res.status === 401) {
-          window.location.assign("/app/login");
+          window.location.assign(`${APP_ROOT}app/login`);
           return;
         }
         if (!cancelled) setSessionReady(true);
@@ -209,7 +219,7 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
       } else if (data.type === "opc:navigate" && typeof data.path === "string" && data.path.startsWith("/")) {
         navigate(data.path);
       } else if (data.type === "opc:unauthorized") {
-        window.location.assign("/app/login");
+        window.location.assign(`${APP_ROOT}app/login`);
       }
     };
     window.addEventListener("message", onMessage);

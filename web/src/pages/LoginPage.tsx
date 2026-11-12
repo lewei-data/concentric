@@ -30,7 +30,20 @@ export function LoginPage() {
   return (
     <div className="login-wrap">
       <form className="card login-card" onSubmit={handleSubmit}>
-        <h1>登录工作台</h1>
+        <div className="login-brand">
+          <span className="login-logo" aria-hidden="true">
+            <svg viewBox="0 0 48 48" width="44" height="44">
+              <circle cx="24" cy="24" r="22" fill="none" stroke="#2f6fed" strokeWidth="2.5" opacity="0.25" />
+              <circle cx="24" cy="24" r="14" fill="none" stroke="#2f6fed" strokeWidth="2.5" opacity="0.55" />
+              <circle cx="24" cy="24" r="6" fill="#2f6fed" />
+            </svg>
+          </span>
+          <div>
+            <div className="login-brand-name">同心圆</div>
+            <div className="login-brand-tag">一人公司 · AI 员工工作台</div>
+          </div>
+        </div>
+        <p className="login-sub">登录以进入工作台</p>
         <label className="field">
           <span>账号</span>
           <input

@@ -15,6 +15,11 @@ export TTS_WORKERS=${TTS_WORKERS:-6}
 # 与 mcp-asr 保持一致，客户端不用改；视频接口本身另走 /v1/assets。
 export ASR_ASSET_URL_BASE=${ASR_ASSET_URL_BASE:-/conring/asr/assets}
 export ASR_PUBLIC_BASE=${ASR_PUBLIC_BASE:-https://ai.boraydata.com}
+# Qwen3 旁路引擎（/v1/tts、/v1/asr 传 engine=qwen3 才走）：本机常驻的 9311/9312，
+# CPU 推理 RTF 约 1~30，只用于离线批量转写/配音，不进实时通话链路
+export QWEN_ASR_URL=${QWEN_ASR_URL:-http://127.0.0.1:9312}
+export QWEN_TTS_URL=${QWEN_TTS_URL:-http://127.0.0.1:9311}
+export QWEN_TIMEOUT=${QWEN_TIMEOUT:-1800}
 # 监听地址：206 的 21 网段是万兆直连（ens2f1np1 192.168.21.206/24），208 反代固定走这条链路。
 # 只绑 21 网段，不再绑 31 网段/回环；本机调用方（插件、mcp-tts）必须用 192.168.21.206:9200。
 export MEDIA_HOST=${MEDIA_HOST:-192.168.21.206}

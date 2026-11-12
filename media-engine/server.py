@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 import asr_engine
+import qwen_engine
 import tts_engine
 import video_engine
 
@@ -125,6 +126,7 @@ def health():
             "tts": tts,
             "asr": {"loaded": bool(asr), "models": list(asr), "default_model": asr_engine.MODEL_NAME,
                     "default_language": asr_engine.DEFAULT_LANG},
+            "qwen": qwen_engine.health(),
             "video": video_engine.capabilities(),
             "work_dir": WORK_DIR}
 
@@ -158,7 +160,12 @@ def metrics():
 def voices(request: Request):
     if not _authorized(request):
         return _forbidden()
-    return tts_engine.list_voices()
+    out = tts_engine.list_voices()
+    out["engines"] = ["cosyvoice", "qwen3"]
+    out["qwen3"] = {"speakers": list(qwen_engine.SPEAKERS),
+                    "default": qwen_engine.DEFAULT_SPEAKER,
+                    "note": "CPU 上 RTF 约 24~38，仅适合离线配音，非实时"}
+    return out
 
 
 # ---------------------------------------------------------------- TTS
@@ -168,6 +175,10 @@ class TTSRequest(BaseModel):
     speed: float = 1.0
     format: str = "wav"      # wav | mp3 | json
     stem: str | None = None
+    engine: str = "cosyvoice"   # cosyvoice（默认，实时）| qwen3（离线，高质量）
+    speaker: str | None = None  # engine=qwen3 时的音色（Vivian/Serena/...）
+    language: str | None = None
+    instruct: str | None = None  # engine=qwen3 时的情绪指令，如「兴奋地说」
 
 
 def _to_mp3(wav_path, out_path):
@@ -188,20 +199,29 @@ async def tts(payload: TTSRequest, request: Request):
     fmt = (payload.format or "wav").lower()
     if fmt not in ("wav", "mp3", "json"):
         return JSONResponse({"error": "format 只支持 wav/mp3/json"}, status_code=400)
+    engine = (payload.engine or "cosyvoice").lower()
+    if engine not in ("cosyvoice", "qwen3"):
+        return JSONResponse({"error": "engine 只支持 cosyvoice / qwen3"}, status_code=400)
     _count("tts_requests")
     try:
         with _Timer("tts_ms"):
-            result = await run_in_threadpool(
-                tts_engine.synthesize, payload.text, payload.voice, payload.speed,
-                WORK_DIR, payload.stem)
+            if engine == "qwen3":
+                result = await run_in_threadpool(
+                    qwen_engine.synthesize, payload.text, payload.speaker or payload.voice,
+                    payload.language, payload.instruct, WORK_DIR, payload.stem)
+            else:
+                result = await run_in_threadpool(
+                    tts_engine.synthesize, payload.text, payload.voice, payload.speed,
+                    WORK_DIR, payload.stem)
     except Exception as e:
         _count("tts_fail")
-        log("TTS 失败：%s" % e)
+        log("TTS 失败（%s）：%s" % (engine, e))
         return JSONResponse({"error": str(e)}, status_code=500)
 
     wav_path = result["audio_path"]
     headers = {"X-Media-Duration": str(result["duration"]),
                "X-Media-Sample-Rate": str(result["sample_rate"]),
+               "X-Media-Engine": result.get("engine", "cosyvoice"),
                "X-Media-Srt": _file_url(os.path.basename(result["srt_path"]))}
     if fmt == "wav":
         return FileResponse(wav_path, media_type="audio/wav", headers=headers)
@@ -215,6 +235,8 @@ async def tts(payload: TTSRequest, request: Request):
         return FileResponse(mp3_path, media_type="audio/mpeg", headers=headers)
 
     return {"job_id": result["stem"], "voice": payload.voice or "default",
+            "engine": result.get("engine", "cosyvoice"),
+            "speaker": result.get("speaker"),
             "audio_url": _file_url(os.path.basename(wav_path)),
             "audio_path": wav_path,
             "srt_url": _file_url(os.path.basename(result["srt_path"])),
@@ -226,14 +248,15 @@ async def tts(payload: TTSRequest, request: Request):
 
 # ---------------------------------------------------------------- ASR
 async def _asr_input(request: Request):
-    """multipart 或 json 两种入参，统一落到临时文件。返回 (path, tmp?, language, model, prompt)。"""
+    """multipart 或 json 两种入参，统一落到临时文件。返回 (path, tmp?, language, model, prompt, engine)。"""
     ctype = request.headers.get("content-type", "")
-    lang = model = prompt = None
+    lang = model = prompt = engine = None
     audio_path = tmp = None
     if ctype.startswith("application/json"):
         body = await request.json()
         lang, model = body.get("language"), body.get("model")
         prompt = body.get("initial_prompt")
+        engine = body.get("engine")
         if body.get("audio_path"):
             audio_path = body["audio_path"]
             if not os.path.exists(audio_path):
@@ -256,6 +279,7 @@ async def _asr_input(request: Request):
             raise ValueError("需要 file 字段")
         lang, model = form.get("language"), form.get("model")
         prompt = form.get("initial_prompt")
+        engine = form.get("engine")
         fd, tmp = tempfile.mkstemp(prefix="asr_", suffix=".bin", dir=WORK_DIR)
         size = 0
         with os.fdopen(fd, "wb") as f:
@@ -270,7 +294,7 @@ async def _asr_input(request: Request):
                     raise ValueError("音频超过 %.0fMB 上限" % MAX_BODY_MB)
                 f.write(chunk)
         audio_path = tmp
-    return audio_path, tmp, lang, model, prompt
+    return audio_path, tmp, lang, model, prompt, engine
 
 
 @app.post("/v1/asr")
@@ -279,14 +303,36 @@ async def asr(request: Request):
         return _forbidden()
     _count("asr_requests")
     try:
-        audio_path, tmp, lang, model, prompt = await _asr_input(request)
+        audio_path, tmp, lang, model, prompt, engine = await _asr_input(request)
     except Exception as e:
         _count("asr_fail")
         return JSONResponse({"error": str(e)}, status_code=400)
+    engine = (engine or "whisper").lower()
+    if engine not in ("whisper", "qwen3"):
+        _count("asr_fail")
+        return JSONResponse({"error": "engine 只支持 whisper / qwen3"}, status_code=400)
     try:
         with _Timer("asr_ms"):
-            result = await run_in_threadpool(
-                asr_engine.transcribe, audio_path, lang, model, prompt)
+            if engine == "qwen3":
+                # 先过音频级门（毫秒级），避免把静音送给 Qwen 让它幻觉出文本
+                _, duration, _, reason = await run_in_threadpool(asr_engine.probe, audio_path)
+                if reason:
+                    result = qwen_engine.empty_result(lang or asr_engine.DEFAULT_LANG,
+                                                      duration, reason)
+                else:
+                    result = await run_in_threadpool(qwen_engine.transcribe, audio_path, lang)
+                    kept, reasons = asr_engine.filter_segments(
+                        [{"text": result["text"], "start": 0.0, "end": result["duration"],
+                          "avg_logprob": 0.0, "no_speech_prob": 0.0, "compression_ratio": 1.0}],
+                        lang or asr_engine.DEFAULT_LANG)
+                    if reasons:
+                        result.update({"text": "", "segments": [], "silent": True,
+                                       "silent_reason": "blacklist",
+                                       "filtered": sum(reasons.values()),
+                                       "filtered_reasons": reasons})
+            else:
+                result = await run_in_threadpool(
+                    asr_engine.transcribe, audio_path, lang, model, prompt)
         if result.get("silent"):
             _count("asr_empty")
         return result

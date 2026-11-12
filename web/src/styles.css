@@ -387,19 +387,58 @@ a:hover {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 12% -10%, rgba(47, 111, 237, 0.10), transparent 60%),
+    radial-gradient(900px 520px at 112% 118%, rgba(47, 111, 237, 0.12), transparent 55%),
+    linear-gradient(135deg, #eef3ff 0%, #f6f8fc 50%, #eaf1ff 100%);
 }
 
 .login-card {
   width: 100%;
-  max-width: 360px;
+  max-width: 384px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 32px 28px;
+  border-radius: 16px;
+  box-shadow: 0 14px 44px rgba(47, 111, 237, 0.14);
 }
 
-.login-card h1 {
-  margin: 0 0 4px;
-  font-size: 20px;
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.login-logo {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
+.login-brand-name {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.login-brand-tag {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.login-sub {
+  margin: -4px 0 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.login-card .btn {
+  padding: 10px 14px;
+  font-size: 15px;
+  margin-top: 4px;
 }
 
 .field {

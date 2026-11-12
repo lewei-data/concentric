@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>同心圆 · 3D 办公区</title>
-<link rel="icon" href="/favicon.ico" type="image/svg+xml" />
+<link rel="icon" href="./favicon.ico" type="image/svg+xml" />
 <style>
   :root{
     --ink:#111827; --muted:#6B7280; --line:#E5E7EB; --primary:#4F46E5;
@@ -71,7 +71,7 @@
   .embedded .emp{bottom:14px}
 </style>
 <script type="importmap">
-{ "imports": { "three": "/vendor/three.module.js" } }
+{ "imports": { "three": "./vendor/three.module.js" } }
 </script>
 </head>
 <body>
@@ -94,8 +94,8 @@
     <span class="chip"><i class="d" style="background:#7C3AED"></i>开会 <b id="cMeet">0</b></span>
     <span class="chip"><i class="d" style="background:#94A3B8"></i>空闲 <b id="cIdle">0</b></span>
   </div>
-  <a class="back meet" href="/app/meeting" target="_top">3D 会议室 ↗</a>
-  <a class="back" href="/app" target="_top">← 返回工作台</a>
+  <a class="back meet" href="./app/meeting" target="_top">3D 会议室 ↗</a>
+  <a class="back" href="./app" target="_top">← 返回工作台</a>
 </div>
 
 <div class="legend">
@@ -166,8 +166,8 @@
         a.removeAttribute('target');
         a.addEventListener('click', function (e) {
           e.preventDefault();
-          var href = a.getAttribute('href') || '/app';
-          var path = href === '/app/meeting' ? '/meeting' : href === '/app/office' ? '/office' : '/';
+          var href = a.getAttribute('href') || './app';
+          var path = href === './app/meeting' ? '/meeting' : href === './app/office' ? '/office' : '/';
           window.__opcNotify('opc:navigate', { path: path });
         });
       });
@@ -191,12 +191,12 @@
 </script>
 
 <script type="module">
-import * as THREE from '/vendor/three.module.js';
+import * as THREE from './vendor/three.module.js';
 window.__opcModuleStarted = true;   // 供启动看门狗判断模块是否真的执行
 /* 名册新增员工若缺头像，回退通用脸，避免 404 造成空白贴图 */
 function loadFace(id) {
-  const tex = new THREE.TextureLoader().load(`/faces/${id}.png`, undefined, undefined, () => {
-    new THREE.TextureLoader().load('/faces/scout.png', t => {
+  const tex = new THREE.TextureLoader().load(`./faces/${id}.png`, undefined, undefined, () => {
+    new THREE.TextureLoader().load('./faces/scout.png', t => {
       tex.image = t.image;
       tex.needsUpdate = true;
     }, undefined, () => {
@@ -1501,7 +1501,7 @@ function seatsForMeeting(list) {
 
 async function loadState() {
   try {
-    const r = await fetch('/api/state', { cache: 'no-store' });
+    const r = await fetch('./api/state', { cache: 'no-store' });
     if (r.status === 401 || r.status === 403) {
       window.__opcNotify('opc:unauthorized');   // 让顶层工作台统一跳登录，而不是在 iframe 里显示登录页
       return false;
@@ -2049,7 +2049,7 @@ document.getElementById('empClose').onclick = () => { selected = null; renderEmp
 /* ================= 数据订阅 ================= */
 function bootLive() {
   try {
-    const es = new EventSource('/api/events');
+    const es = new EventSource('./api/events');
     es.onmessage = (m) => {
       let env;
       try { env = JSON.parse(m.data); } catch (e) { return; }

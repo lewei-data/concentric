@@ -2,7 +2,7 @@
 
 ## Why
 
-本仓库已是可运行的多子系统工程（`prototype/server.py` 4,028 行、`prototype/index.html` 1,146 行、媒体引擎 `media-engine/server.py` 484 行，另有 Refine 前端、Android 客户端、Remotion 视频工程与 SQLite 过程库 `prototype/opc.db`），但 `.trae/specs/` 为空，唯一的总览文档 `README.md` 只覆盖 `prototype/` 与 `web/` 的一部分：`media-engine/`、`hermes-plugins/`、`android/`、`video-remotion/`、`ep2/ep3` 均未进入任何规格。接口契约、事件类型、审批规则、配置降级逻辑只存在于代码里，导致「文档说法」与「实现行为」已经出现可证实的偏差（见第 15 节）。
+本仓库已是可运行的多子系统工程（`prototype/server.py` 4,045 行、`prototype/index.html` 1,146 行、媒体引擎 `media-engine/server.py` 484 行，另有 Refine 前端、Android 客户端、Remotion 视频工程与 SQLite 过程库 `prototype/opc.db`），但 `.trae/specs/` 为空，唯一的总览文档 `README.md` 只覆盖 `prototype/` 与 `web/` 的一部分：`media-engine/`、`hermes-plugins/`、`android/`、`video-remotion/`、`ep2/ep3` 均未进入任何规格。接口契约、事件类型、审批规则、配置降级逻辑只存在于代码里，导致「文档说法」与「实现行为」已经出现可证实的偏差（见第 15 节）。
 
 本规格以**代码为唯一事实源**，把现状逆向整理为可验收的需求条目 + 接口契约，供后续变更（Hermes 媒体网关 S0~S4、Refine 页面迁移、Android 发版）以此为基线做差异评审。
 
@@ -26,7 +26,7 @@
 | 项 | 说明 |
 | --- | --- |
 | 事实源优先级 | 运行代码 > 代码内注释 > README / IMPROVEMENT-PLAN / `.trae/documents` |
-| 取证方式 | 逐文件阅读 + `grep`/`wc` 统计 + 线上 `http://192.168.31.206:8848/app` 接口与 playwright-cli 浏览器实测；行号以当前**工作区** HEAD `71b82f5` 为准（C9 前端、C12 路由、C4 事件与 DB 相关条目已按新版复核，其余能力域仍以初版基线 `7e07433` 为准） |
+| 取证方式 | 逐文件阅读 + `grep`/`wc` 统计 + 线上 `http://192.168.31.206:8848/app` 接口与 playwright-cli 浏览器实测；行号以当前**工作区** HEAD `84459e1` 为准（C9 前端、C12 路由、C4 事件与 DB 相关条目已按新版复核，其余能力域仍以初版基线 `7e07433` 为准） |
 | 标注约定 | 「已核实」＝本次直接读到代码；「推断」＝由代码逻辑推导但未实跑；「未验证」＝仓库外系统 |
 | 数据源分工 | Obsidian Vault＝业务配置与人读产物真源；`prototype/opc.db`＝过程数据真源（统一消息、trace、事件、token 等）；`KERNEL` 内存＝热态。详见 [modules/web.md §4.5](./modules/web.md) |
 
@@ -353,18 +353,18 @@ media-engine SHALL 作为媒体能力的单实例推理宿主，默认监听 `19
 - 数据契约：首屏 `GET /api/state`（`index.html:919,1122`）+ `EventSource('/api/events')` 增量（`index.html:1128`）；审批 `POST /api/approvals/<id>`（`:750`）、指令 `POST /api/commands`（`:1026`）、素材 `GET /api/materials`（`:1105`）。
 
 ### Requirement: Refine 新版（2026-11-12 线上 `/app` 新版本）
-完整契约见 [modules/web.md](./modules/web.md)。本版共 18 个 `.ts/.tsx` + 1 CSS、6,300 行（新增「消息中心」489 行、「3D 场景」374 行、「创意灵感」255 行、「运维监控」443 行）。本地 `npm run build` 重建的资源与线上 `/app/assets/*` 文件名一致，源码与线上版本一致（已核实）；2026-11-12 功能改动后线上哈希为 `index-C21ZRNYx.js` / `index-q43a5DfF.css`。
+完整契约见 [modules/web.md](./modules/web.md)。本版共 18 个 `.ts/.tsx` + 1 CSS、6,356 行（新增「消息中心」489 行、「3D 场景」404 行、「创意灵感」255 行、「运维监控」443 行）。本地 `npm run build` 重建的资源与线上 `/app/assets/*` 文件名一致，源码与线上版本一致（已核实）；2026-11-12 功能改动后线上哈希为 `index-Dxl4Zq3X.js` / `index-BMJMjxz3.css`。
 
 - 技术栈：React 18 + Refine v4 + Vite，`basename="/app"`（`web/src/App.tsx:18`）。
 - 资源：`works / hotspots / knowledge / org`（`web/src/App.tsx:23-28`）。
-- 路由：11 条显式路径 `/login / /inspiration /ops /works /hotspots /knowledge /messages /org /office /meeting` + 1 条 `*` 兜底，另有一条无 `path` 的布局包裹路由；未登录重定向 `/login`（`web/src/App.tsx:32-52`）。`/office`、`/meeting` 是 `ScenePage` 用 iframe 嵌入 3D 页面：顶层 `/api/session` 预检、`postMessage` 就绪/跳转/会话过期握手、`?embed=1` 隐藏 3D 页重复 UI，右侧真实数据侧栏分别读 `/api/state`、`/api/meeting` 并订阅 SSE（`web/src/pages/ScenePage.tsx`、`prototype/office3d.html`、`prototype/meeting3d.html`）。
+- 路由：11 条显式路径 `/login / /inspiration /ops /works /hotspots /knowledge /messages /org /office /meeting` + 1 条 `*` 兜底，另有一条无 `path` 的布局包裹路由；未登录重定向 `/login`（`web/src/App.tsx:32-52`）。`/office`、`/meeting` 是 `ScenePage` 用 iframe 嵌入 3D 页面：顶层 `/api/session` 预检、`postMessage` 就绪/错误/跳转/会话过期握手、`?embed=1` 隐藏 3D 页重复 UI，右侧真实数据侧栏分别读 `/api/state`、`/api/meeting` 并订阅 SSE（`web/src/pages/ScenePage.tsx`、`prototype/office3d.html`、`prototype/meeting3d.html`）。3D 页改用绝对 URL 导入 three.js 并上报启动错误，父页错误面板显示具体原因与重试入口；`/favicon.ico` 由服务端返回 SVG，消除 404。
 - **创意灵感（CCO）**：`/app/inspiration` 读 `/api/inspiration`（`prototype/insights.py` 只读聚合，60s 缓存），把热点线索 / 热点简报「分项目可用角度」、视频拆解文档、知识库归档结论与评审会定稿清单收敛成「热点分析 / 视频分析 / 蒸馏启发」三类；支持筛选、搜索、展开要点与 `/vault` 原文链接。
 - **运维监控（CTO）**：`/app/ops` 读 `/api/ops`（`prototype/ops_monitor.py`），聚合 `/api/state`、`/api/health`、`media-gen/output/jobs.json` 与 `:9200` / `:9103` 健康探测；展示系统状态、任务阶段分布、视频生成链路（落盘任务 / 待出片 / 出片结果）、告警与「一键恢复运行 / 热加载配置 / 审批」动作。恢复动作走 `POST /api/ops/recover`，仅老板，前端二次确认；进程重启仍限运维脚本。
 - 首页入口：根路径 `/` 302 → `/app`；`/legacy` 与 `/app/legacy` 回退旧控制台，`OPC_HOME_LEGACY=1` 可整站回退（`prototype/server.py:3425-3435, 3456-3462`）。顶栏为深蓝渐变分组导航，含 3D 快捷入口与「旧版控制台」链接（`web/src/components/Layout.tsx`）。
 - 数据契约：`GET /api/{resource}?page&size[&q&project&stage&status&sort]`、`GET /api/{resource}/{id}`；写操作在前端一律 reject（`web/src/dataProvider.ts:34-48, 50-80, 86-90`）。
 - **DB 数据访问**：新增「消息中心」直连 `GET /api/chat/threads|messages|stats|export`，全部读 `prototype/opc.db`（snake_case 行、FTS trigram 搜索、`before` 游标分页）；仅老板可见/可访问，后端 403 / 503（`server.py:3257-3263, 3513-3542`、`db.py:585-687`、`Layout.tsx:27,51`、`MessagesPage.tsx:3-34, 289-306`）。`/api/trace/<id>` 在内存缺失时由库补齐（`server.py:3756-3789`），但前端暂无调用方。
 - 实时：`/api/state` 10s 轮询（`HomePage.tsx:163`）+ `EventSource('/api/events')`；消息中心另消费 `chat.message` 增量刷新（`MessagesPage.tsx:195-232`）。
-- 部署：构建产物 `web/dist` 由 `prototype/server.py` 托管；`/app/assets/*` 长缓存 immutable，其余 `no-cache`，未命中回退 SPA `index.html`（`server.py:3442-3454, 3605-3624`）。线上当前哈希 `index-C21ZRNYx.js` / `index-q43a5DfF.css` / 懒加载 `MarkdownBody-C9D22Bk_.js`。
+- 部署：构建产物 `web/dist` 由 `prototype/server.py` 托管；`/app/assets/*` 长缓存 immutable，其余 `no-cache`，未命中回退 SPA `index.html`（`server.py:3442-3454, 3605-3624`）。线上当前哈希 `index-Dxl4Zq3X.js` / `index-BMJMjxz3.css` / 懒加载 `MarkdownBody-Cv9d5XXx.js`。
 - **读路径边界**：`/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存/文件（`server.py:3472-3512`），DB 只是影子双写；重启后页面数据可能少于库内行数（见 D12）。
 
 #### Scenario: 未构建新版前端
@@ -448,7 +448,8 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 | `/api/logininfo` | 公开 | `{ok, ready, file}`，`ready` 表示凭据表是否可读 | server.py:3313-3315 |
 | `/api/session` | 公开路径、仍校验会话 | 已登录 `200 {ok,user}`；未登录 `401 {ok:false, login:"/login"}` | server.py:3316-3320 |
 | `/` | 公开 | **默认 `302 → /app`**（`Content-Length: 0`）；`OPC_HOME_LEGACY=1` 时不在此分支，落到登录后的旧版分支 | server.py:3430-3437 |
-| `/vendor/three.module.js` | 公开 | 3D 依赖 | server.py:3322-3323 |
+| `/vendor/three.module.js` | 公开 | 3D 依赖；两个 3D 页以绝对 URL `import`，不再依赖 importmap | server.py:3446-3447 |
+| `/favicon.ico` | 公开 | 返回内联 SVG（`image/svg+xml`，24h 缓存），避免 3D / 旧版 / 登录页控制台 404 | server.py do_GET |
 | `/avatars/<name>.png` | 公开 | 仅 `[a-z_]+\.png`，否则 404 | server.py:3324-3328 |
 | `/faces/<name>.png` | 公开 | 同上 | server.py:3329-3333 |
 | `/videos/<id>[.talk\|.idle].mp4` | 公开 | 数字人素材 | server.py:3335-3339 |
@@ -584,8 +585,8 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 - **WHEN** Task 1~12（规格撰写与 web 校对）完成后执行 `git status`
 - **THEN** 仅新增/修改规格文档与 `README.md` / `PROCESS-DATA-DB-PLAN.md` 的 web、状态条目，不触碰运行代码
 
-#### Scenario: 功能改动阶段（Task 13~14）
-- **WHEN** 2026-11-12 执行「首页跳 /app、顶栏改版、3D 修复与数据对接」以及「创意灵感 / 运维监控两页」
+#### Scenario: 功能改动阶段（Task 13~15）
+- **WHEN** 2026-11-12 执行「首页跳 /app、顶栏改版、3D 修复与数据对接」「创意灵感 / 运维监控两页」以及「3D 加载错误修复」
 - **THEN** 允许改运行代码（`prototype/server.py`、`prototype/login.html`、两个 3D HTML、`prototype/insights.py`、`prototype/ops_monitor.py`、`web/src/**`），但必须 `npm run build` + `py_compile` + 重启服务 + playwright-cli 实测，并同步回规格文档
 
 ---
@@ -596,9 +597,9 @@ GET 先过 Basic 层（`_require_auth`，`server.py:3113-3134`），再做尾斜
 
 | 模块 | 文档 | 覆盖范围 | 规模 |
 | --- | --- | --- | --- |
-| `prototype/` | [modules/prototype-server.md](./modules/prototype-server.md) | HTTP 路由、会话鉴权、SSE、编排内核、交付物、配置项、灵感/运维聚合 | `server.py` 4,028 行 + 子模块（过程库 `db.py` / `ingest.py` / `import_runtime.py` 见 `PROCESS-DATA-DB-PLAN.md`；`insights.py` / `ops_monitor.py` 见 [modules/web.md §4.6](./modules/web.md)） |
+| `prototype/` | [modules/prototype-server.md](./modules/prototype-server.md) | HTTP 路由、会话鉴权、SSE、编排内核、交付物、配置项、灵感/运维聚合 | `server.py` 4,045 行 + 子模块（过程库 `db.py` / `ingest.py` / `import_runtime.py` 见 `PROCESS-DATA-DB-PLAN.md`；`insights.py` / `ops_monitor.py` 见 [modules/web.md §4.6](./modules/web.md)） |
 | `media-engine/` | [modules/media-engine.md](./modules/media-engine.md) | TTS/ASR/视频任务接口、鉴权、TTL、指标、环境变量 | 4 个 Python 文件 2,005 行 |
-| `web/` | [modules/web.md](./modules/web.md) | Refine 路由、dataProvider/authProvider、页面直连接口、**消息中心 DB 契约**、深蓝顶栏、3D iframe 握手、**创意灵感 / 运维监控聚合契约与恢复动作**、构建托管 | 6,300 行 |
+| `web/` | [modules/web.md](./modules/web.md) | Refine 路由、dataProvider/authProvider、页面直连接口、**消息中心 DB 契约**、深蓝顶栏、3D iframe 握手、**创意灵感 / 运维监控聚合契约与恢复动作**、构建托管 | 6,356 行 |
 | `android/` | [modules/android.md](./modules/android.md) | 构建产物、MCP/dispatch/WS 契约、配置项、权限、离线降级 | 52 个 Java 文件 16,272 行 |
 | `hermes-plugins/` | [modules/hermes-plugins.md](./modules/hermes-plugins.md) | 插件注册契约、8 个工具到引擎接口的映射、错误语义 | `__init__.py` 323 行 |
 

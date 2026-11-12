@@ -87,6 +87,14 @@
   - [x] SubTask 14.5: `py_compile` + `npm run build` + 重启服务 + playwright-cli 实测（两页真实数据、筛选、展开、热加载动作、0 控制台报错）
   - [x] SubTask 14.6: 同步 `README.md`、`modules/web.md`、`modules/prototype-server.md`、`spec.md`、`checklist.md`
 
+- [x] Task 15: 3D 部分加载错误检查与修复（2026-11-12）
+  - [x] SubTask 15.1: 浏览器复现六个 3D 入口，汇总控制台/网络错误；确认唯一稳定错误是 `/favicon.ico` 404，且模块脚本失败会静默退化成笼统「场景加载超时」
+  - [x] SubTask 15.2: `server.py` 新增 `/favicon.ico` SVG 路由；3D/登录/旧版页显式声明 icon
+  - [x] SubTask 15.3: 两个 3D 页改用绝对 URL 导入 three.js，去掉 importmap 依赖；头像贴图增加纯色二级兜底
+  - [x] SubTask 15.4: 两个 3D 页新增启动错误捕获（error 捕获阶段 / unhandledrejection / 6s 模块看门狗 / 15s boot 看门狗）并 `opc:scene-error` 上报
+  - [x] SubTask 15.5: `ScenePage.tsx` 处理 `opc:scene-error`、显示具体原因 + 重试/独立窗口，握手兜底读子页 boot 标记，超时延长到 25s
+  - [x] SubTask 15.6: `py_compile` + `npm run build` + 重启服务 + playwright-cli 六入口回归、模拟 three.js 失败与恢复
+
 # Task Dependencies
 
 - Task 9 依赖 Task 1~8
@@ -95,3 +103,4 @@
 - Task 12 依赖 Task 11 的 `modules/web.md`；仅改规格文档，不改运行代码
 - Task 13 依赖 Task 12 的 web 契约；改运行代码，需构建与重启服务后实测
 - Task 14 依赖 Task 13 的顶栏与路由结构；新增两个后端聚合模块与两个前端页面，需构建、重启与浏览器实测
+- Task 15 依赖 Task 13 的 3D iframe 握手；改 3D HTML / `server.py` / `ScenePage.tsx`，需构建、重启与浏览器实测
