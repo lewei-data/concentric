@@ -6,7 +6,7 @@
   POST /v1/tts          文本 → wav/mp3 音频流，或 json（含 srt/segments 链接）
   POST /v1/asr          multipart(file) 或 json(audio_base64/audio_path) → 文本 + 时间轴
   GET  /v1/audio/jobs        qwen3 语音作业列表（含队列统计）
-  GET  /v1/audio/jobs/{id}   轮询 qwen3 作业状态与结果
+  GET  /v1/audio/jobs/{id}   轮询 qwen3 作业状态与结果（wait_sec 长轮询，上限 300s）
   GET  /files/{name}    取回合成产物（srt / segments.json / mp3）
   GET  /metrics         Prometheus 文本格式
 
@@ -435,10 +435,12 @@ def audio_jobs_list(request: Request, limit: int = 20, kind: str | None = None):
 
 
 @app.get("/v1/audio/jobs/{job_id}")
-def audio_jobs_get(job_id: str, request: Request):
+async def audio_jobs_get(job_id: str, request: Request, wait_sec: float = 0):
+    """取作业结果；wait_sec>0 走长轮询（上限 300s，作业结束立即返回）。"""
     if not _authorized(request):
         return _forbidden()
-    job = qwen_engine.get_job(job_id)
+    wait_sec = min(max(wait_sec, 0.0), 300.0)
+    job = await run_in_threadpool(qwen_engine.get_job, job_id, wait_sec)
     if job is None:
         return JSONResponse({"error": "作业不存在或已过期", "job_id": job_id},
                             status_code=404)

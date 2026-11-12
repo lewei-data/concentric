@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { appRoot } from "../appRoot";
 import type { Agent, Approval, OpcState, Work } from "../types";
 
-// 公网挂在 /workbench/ 子路径：登录跳转按真实 URL 推导应用根，内网/公网都正确
-function appRoot(): string {
-  const parts = window.location.pathname.split("/");
-  parts.length = Math.max(1, parts.length - 2);
-  return parts.join("/") + "/";
-}
+// 公网挂在 /workbench/app（无尾斜杠）下：用 appRoot() 统一推导，避免算成 "/"
 
 const STATUS_TEXT: Record<string, string> = {
   working: "执行中",

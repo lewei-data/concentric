@@ -1,15 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { appRoot } from "../appRoot";
 
-// 应用根：内网 SPA 在 /app/ → 服务根 "/"，公网挂在 /workbench/app/ → "/workbench/"
-// 3D 页面与 /vendor、/faces、/api 都位于「服务根」（SPA 的 /app 的上一层）。
-// 直接按浏览器真实 URL 推导，避免依赖构建期 base 或网关对 JS 的重写。
-function computeAppRoot(): string {
-  const parts = window.location.pathname.split("/");
-  parts.length = Math.max(1, parts.length - 2); // 去掉末尾路由段与 /app 段
-  return parts.join("/") + "/";
-}
-const APP_ROOT = computeAppRoot();
+// 应用根：内网 /app → "/"，公网 /workbench/app → "/workbench/"。
+// 3D 页面与 /vendor、/faces、/api 都在服务根（/app 的上一层），必须用同一个前缀，
+// 否则公网下会请求 /office3d 而被网关落到 sefs-mcp（返回未携带 Token 的 401 JSON）。
+const APP_ROOT = appRoot();
 
 type SceneKey = "office" | "meeting";
 

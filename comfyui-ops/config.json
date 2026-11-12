@@ -1,0 +1,51 @@
+{
+  "host": "192.168.21.157",
+  "ssh": {
+    "alias": "comfyui-21-157",
+    "user": "rpdsql",
+    "port": 22,
+    "key": "~/.ssh/opc_comfy_ed25519",
+    "connect_timeout": 8
+  },
+  "endpoints": {
+    "image": {
+      "url": "http://127.0.0.1:8188",
+      "port": 8188,
+      "remote": {
+        "output_dir": "/conring/ComfyUI/app/output",
+        "input_dir": "/conring/ComfyUI/app/input",
+        "log": "/conring/ComfyUI/comfyui.log"
+      },
+      "service": {
+        "start": "cd {app_dir} && setsid nohup {python} main.py --cpu --listen 0.0.0.0 --port 8188 >> /conring/ComfyUI/comfyui.log 2>&1 < /dev/null & echo started:8188",
+        "stop": "pkill -f 'main.py.*--port 8188' && sleep 2; pgrep -af 'main.py.*--port 8188' || echo stopped:8188"
+      }
+    },
+    "video": {
+      "url": "http://127.0.0.1:8189",
+      "port": 8189,
+      "remote": {
+        "output_dir": "/data",
+        "input_dir": "/conring/ComfyUI/input",
+        "log": "/conring/ComfyUI/comfyui_8189.log"
+      },
+      "service": {
+        "start": "cd {app_dir} && OMP_NUM_THREADS=24 MKL_NUM_THREADS=24 setsid nohup {python} main.py --cpu --port 8189 --output-directory /data --temp-directory /tmp/comfy_temp2 --user-directory /tmp/comfy_user2 --input-directory /conring/ComfyUI/input --disable-auto-launch >> /conring/ComfyUI/comfyui_8189.log 2>&1 < /dev/null & echo started:8189",
+        "stop": "pkill -f 'main.py.*--port 8189' && sleep 2; pgrep -af 'main.py.*--port 8189' || echo stopped:8189"
+      }
+    }
+  },
+  "remote": {
+    "comfy_root": "/conring/ComfyUI",
+    "app_dir": "/conring/ComfyUI/app",
+    "python": "/conring/ComfyUI/.venv/bin/python",
+    "output_dir": "/conring/ComfyUI/app/output",
+    "input_dir": "/conring/ComfyUI/app/input",
+    "log": "/conring/ComfyUI/comfyui.log",
+    "service": {
+      "extra_args": "--cpu",
+      "start": "cd {app_dir} && setsid nohup {python} main.py {extra_args} --listen 0.0.0.0 --port {port} >> {log} 2>&1 < /dev/null & echo started:{port}",
+      "stop": "pkill -f 'main.py.*--port {port}' && sleep 2; pgrep -af 'main.py.*--port {port}' || echo stopped:{port}"
+    }
+  }
+}

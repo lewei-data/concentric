@@ -1672,8 +1672,8 @@ function renderEmp() {
   const says = ((rec && rec.speeches) || []).filter(sp => sp.speakerId === a.id);
   box.style.display = 'block';
   const ava = document.getElementById('empAva');
-  ava.onerror = () => { ava.onerror = null; ava.src = '/avatars/scout.png'; };
-  ava.src = `/avatars/${a.id}.png`;
+  ava.onerror = () => { ava.onerror = null; ava.src = './avatars/scout.png'; };
+  ava.src = `./avatars/${a.id}.png`;
   document.getElementById('empSw').style.background = PROJECT_COLOR[a.projectId] || PROJECT_COLOR.all;
   document.getElementById('empName').textContent = a.name;
   document.getElementById('empRole').textContent = `${a.role} · ${PROJECT_NAME[a.projectId] || '全公司'}`;

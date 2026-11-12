@@ -1,0 +1,14 @@
+{
+  "voice": "default",
+  "speed": 1.0,
+  "sample_rate": 24000,
+  "duration": 1.268,
+  "segments": [
+    {
+      "index": 0,
+      "text": "巡检语音测试。",
+      "start": 0.0,
+      "end": 1.268
+    }
+  ]
+}

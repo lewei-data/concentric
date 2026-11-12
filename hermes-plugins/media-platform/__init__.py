@@ -213,6 +213,7 @@ def job_status(args):
         return _request("GET", "/v1/jobs", params={"limit": int(args.get("limit") or 20)})
     if job_id.startswith(_AUDIO_JOB_PREFIXES):
         return _request("GET", "/v1/audio/jobs/%s" % urllib.parse.quote(job_id, safe=""),
+                        params={"wait_sec": float(args.get("wait_sec") or 0)},
                         timeout=JOB_TIMEOUT)
     return _request("GET", "/v1/jobs/%s" % urllib.parse.quote(job_id, safe=""),
                     params={"wait_sec": float(args.get("wait_sec") or 0)},
@@ -333,13 +334,15 @@ TOOLS = [
         "description": (
             "查询异步任务：job_xxx（自我介绍视频 / 老板汇报）走视频作业；asr-xxx / tts-xxx"
             "（qwen3 异步语音）走语音作业，按前缀自动路由。给 job_id 取结果，不给则列出最近任务。"
+            "传 wait_sec 可长轮询，作业结束立即返回，不必自己 sleep 等待。"
         ),
         "emoji": "⏳",
         "schema": {"type": "object", "properties": {
             "job_id": {"type": "string", "description": "任务 ID（job_xxx / asr-xxx / tts-xxx）"},
             "kind": {"type": "string", "enum": ["asr", "tts"],
                      "description": "不带 job_id 时按类型列语音作业"},
-            "wait_sec": {"type": "number", "description": "长轮询秒数，最多 300（仅视频作业）"},
+            "wait_sec": {"type": "number",
+                         "description": "长轮询秒数，最多 300（视频作业与语音作业均支持）"},
             "limit": {"type": "integer", "description": "列出任务条数，默认 20"},
         }, "required": []},
     },

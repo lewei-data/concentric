@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useGetIdentity } from "@refinedev/core";
+import { appRoot } from "../appRoot";
 import { authProvider } from "../authProvider";
 import type { OpcUser } from "../types";
 
@@ -77,7 +78,11 @@ export function Layout() {
             <span className="nav-divider" aria-hidden="true" />
             <NavLink to="/office" className="nav-3d">Office 3D</NavLink>
             <NavLink to="/meeting" className="nav-3d">Meeting 3D</NavLink>
-            <a href="/legacy" className="nav-legacy" title="回到旧版控制台（仍可随时切回新版）">
+            <a
+              href={`${appRoot()}legacy`}
+              className="nav-legacy"
+              title="回到旧版控制台（仍可随时切回新版）"
+            >
               旧版控制台
             </a>
           </nav>

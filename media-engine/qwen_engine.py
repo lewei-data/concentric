@@ -191,6 +191,8 @@ class JobQueue:
         self._order = collections.deque()
         self._q = queue.Queue()
         self._lock = threading.Lock()
+        # 长轮询：作业状态变化时唤醒等待中的 GET，避免调用方自己 sleep 轮询
+        self._cond = threading.Condition(self._lock)
         self._seq = 0
         self._done = self._failed = 0
         for i in range(workers):
@@ -233,6 +235,7 @@ class JobQueue:
                     continue
                 job["status"] = "running"
                 job["started_at"] = round(time.time(), 3)
+                self._cond.notify_all()
             t0 = time.time()
             result = err = None
             try:
@@ -250,6 +253,7 @@ class JobQueue:
                     self._done += 1
                 else:
                     self._failed += 1
+                self._cond.notify_all()
 
     # ---- 对外
     def submit(self, fn, meta=None):
@@ -277,10 +281,19 @@ class JobQueue:
             out["queue_position"] = 0
         return out
 
-    def get(self, jid):
-        with self._lock:
+    def get(self, jid, wait_sec=0.0):
+        """取作业视图；wait_sec>0 时阻塞到作业结束（长轮询），最长等 wait_sec 秒。"""
+        deadline = time.time() + max(0.0, float(wait_sec or 0))
+        with self._cond:
             self._prune()
             job = self._jobs.get(jid)
+            while job is not None and job["status"] in ("queued", "running"):
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    break
+                self._cond.wait(min(remaining, 1.0))
+                self._prune()
+                job = self._jobs.get(jid)
             return self._view(job) if job else None
 
     def list(self, limit=20):
@@ -305,7 +318,12 @@ def job_stats():
     return {"asr": ASR_JOBS.stats(), "tts": TTS_JOBS.stats()}
 
 
-def get_job(jid):
+def get_job(jid, wait_sec=0.0):
+    # 按前缀只等对应队列，避免不存在的 job_id 在两条队列上各等一遍
+    if jid.startswith("asr-"):
+        return ASR_JOBS.get(jid, wait_sec)
+    if jid.startswith("tts-"):
+        return TTS_JOBS.get(jid, wait_sec)
     return ASR_JOBS.get(jid) or TTS_JOBS.get(jid)
 
 

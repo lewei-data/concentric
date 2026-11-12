@@ -2044,8 +2044,8 @@ function renderEmp() {
   sw.style.background = '#' + ac.color.toString(16).padStart(6, '0');
   document.getElementById('empName').textContent = ac.name;
   const ava = document.getElementById('empAva');
-  ava.onerror = () => { ava.onerror = null; ava.src = '/avatars/scout.png'; };
-  ava.src = '/avatars/' + selected + '.png';
+  ava.onerror = () => { ava.onerror = null; ava.src = './avatars/scout.png'; };
+  ava.src = './avatars/' + selected + '.png';
   const proj = { wenren: '文人莫克', gou: '狗大人', tongxinyuan: '同心圆', all: '全公司' };
   document.getElementById('empRole').textContent = ac.role + ' · ' + (proj[ac.projectId] || '全公司');
   document.getElementById('empTask').innerHTML =
