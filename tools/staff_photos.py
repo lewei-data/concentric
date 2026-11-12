@@ -6,6 +6,7 @@
   python staff_photos.py ids   <emp_id|all>   由现有肖像生成白底证件照到 assets/idphoto/
   python staff_photos.py swap  <emp_id|all>   用现有肖像做人脸替换，输出 assets/fullbody/
 """
+import hashlib
 import json
 import os
 import sys
@@ -250,7 +251,8 @@ def main():
                 continue
             name = upload(portrait(eid), f"staff_ref_{eid}.png")
             t0 = time.time()
-            pid = submit(graph(name, full_prompt(e), f"staff_full_{eid}"))
+            seed = 20261112 + int(hashlib.md5(eid.encode()).hexdigest()[:6], 16) % 100000
+            pid = submit(graph(name, full_prompt(e), f"staff_full_{eid}", seed))
             v = wait(pid)
             if v["status"]["status_str"] != "success":
                 log(f"FAIL {eid}: {json.dumps(v['status'], ensure_ascii=False)[:400]}")

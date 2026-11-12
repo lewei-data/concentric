@@ -190,6 +190,17 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status, updated_at DESC);
 
+-- 发布回执：断点续跑重跑 release 阶段时，按 (trace, 内容单) 判重，避免重复发布/重复计数
+CREATE TABLE IF NOT EXISTS release_ledger (
+  trace_id     TEXT NOT NULL,
+  item_id      TEXT NOT NULL,
+  project_id   TEXT,
+  title        TEXT,
+  published_at TEXT,
+  PRIMARY KEY (trace_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_release_ledger_trace ON release_ledger(trace_id);
+
 
 CREATE TABLE IF NOT EXISTS stats_daily (
   day                  TEXT PRIMARY KEY,
@@ -570,6 +581,30 @@ class Store:
     def pipeline_run(self, trace_id):
         rows = self._rows("SELECT * FROM pipeline_runs WHERE trace_id=?", (trace_id,))
         return rows[0] if rows else None
+
+    def release_mark(self, trace_id, item_id, project_id="", title=""):
+        """登记发布回执，返回 True 表示首次登记（应真正发布）。
+
+        写失败时返回 True：宁可重复一次（旧行为），也不能把该发的内容吞掉。
+        """
+        if not trace_id or not item_id:
+            return False
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    """INSERT OR IGNORE INTO release_ledger
+                       (trace_id,item_id,project_id,title,published_at) VALUES(?,?,?,?,?)""",
+                    (trace_id, item_id, project_id or "", title or "", now_iso()))
+                self._conn.commit()
+                return cur.rowcount > 0
+        except sqlite3.Error as e:
+            _log(f"发布回执写入失败（按未发布处理）：{e}")
+            return True
+
+    def released_items(self, trace_id):
+        """某 trace 已登记发布的内容单 id 集合（幂等判重）。"""
+        rows = self._rows("SELECT item_id FROM release_ledger WHERE trace_id=?", (trace_id,))
+        return {r.get("item_id") for r in rows if r.get("item_id")}
 
     def approval_for(self, trace_id, action):
         """取某 trace 指定动作的最新审批单（含已决状态），用于重启后幂等复用。"""

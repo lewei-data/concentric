@@ -165,10 +165,10 @@ def main():
         per = {}
         for a in agents:
             per[a["projectId"]] = per.get(a["projectId"], 0) + 1
-        record("17 名员工编制", len(agents) == 17, f"agents={len(agents)}")
+        record("19 名员工编制", len(agents) == 19, f"agents={len(agents)}")
         record("三项目各 3 人", all(per.get(p) == 3 for p in ("wenren", "gou", "tongxinyuan")),
                json.dumps({k: per.get(k, 0) for k in ("wenren", "gou", "tongxinyuan")}, ensure_ascii=False))
-        record("中台/管理层 8 人", per.get("all") == 8, f"all={per.get('all')}")
+        record("中台/管理层 10 人", per.get("all") == 10, f"all={per.get('all')}")
         record("项目 KPI 齐全", len(st.get("projects", [])) == 3, f"projects={len(st.get('projects', []))}")
 
         # 2. SSE

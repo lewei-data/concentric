@@ -2889,22 +2889,44 @@ class Kernel:
 
 
     def _stage_release(self, c):
-        """12. release_ops 发布"""
-        # 12. release_ops 发布
-        c.pub_ctx = json.dumps({i["title"]: i["projectId"] for i in c.passed_items.values()}, ensure_ascii=False)
-        data, meta = self.call_agent("release_ops", f"按排期发布 {len(c.passed_items)} 条内容并给出监控口径。",
+        """12. release_ops 发布（幂等：同一 trace 的每条内容只发布一次）"""
+        # 断点续跑会重跑 release，靠发布回执判重，避免重复发消息/重复计数
+        done = set()
+        if self.db:
+            try:
+                done = self.db.released_items(c.trace)
+            except Exception as e:
+                print(f"[release] 读发布回执失败，按未发布处理：{type(e).__name__}: {e}", flush=True)
+        fresh = {iid: it for iid, it in c.passed_items.items() if iid not in done}
+        for iid in done:
+            if iid in c.passed_items:
+                c.passed_items[iid]["stage"] = "published"      # 续跑回填，不重复广播
+        if not fresh:
+            print(f"[release] {c.trace} 无新增待发布内容（已有回执 {len(done)} 条），跳过重复执行",
+                  flush=True)
+            return
+        c.pub_ctx = json.dumps({i["title"]: i["projectId"] for i in fresh.values()}, ensure_ascii=False)
+        data, meta = self.call_agent("release_ops", f"按排期发布 {len(fresh)} 条内容并给出监控口径。",
                                      c.pub_ctx, "", "summary, evidence, confidence, tools")
         data = data or {"summary": "内容已发布并进入监控", "evidence": ["平台回执 200"],
                         "confidence": 0.9, "tools": ["publish.execute"]}
-        for iid, item in c.passed_items.items():
+        for iid, item in fresh.items():
             item["stage"] = "published"
+            if self.db:
+                try:
+                    self.db.release_mark(c.trace, iid, item.get("projectId"), item.get("title"))
+                except Exception as e:
+                    print(f"[release] 发布回执登记失败（继续发布）：{type(e).__name__}: {e}", flush=True)
             self.send("result", "release_ops", "ceo", c.trace,
                       {"result": data, "engine": meta["engine"], "itemId": iid},
                       project=item["projectId"])
             self.items_emit(c.trace, item)
+        # KPI 按项目上调；续跑时只补此前一条都没发布过的项目，避免重复累计
+        released_pids = {c.passed_items[iid]["projectId"] for iid in done if iid in c.passed_items}
+        pids = {i["projectId"] for i in fresh.values()} - released_pids
         with self.lock:
-            self.stats["published"] += len(c.passed_items)
-            for pid in {i["projectId"] for i in c.passed_items.values()}:
+            self.stats["published"] += len(fresh)
+            for pid in pids:
                 k = self.projects[pid]["kpi"]
                 if "views" in k:
                     k["views"] += 1200
@@ -2914,8 +2936,8 @@ class Kernel:
                 else:
                     k["tickets"] = 2
                     k["delivery_hours"] = 36.0
-        self.emit("metrics", c.trace, {p: self.projects[p]["kpi"]
-                                     for p in {i["projectId"] for i in c.passed_items.values()}})
+        if pids:
+            self.emit("metrics", c.trace, {p: self.projects[p]["kpi"] for p in pids})
 
 
     def _stage_archive(self, c):
@@ -3252,11 +3274,39 @@ class Kernel:
             pass
         if decision != "approve" and appr.get("action") == "publish.execute":
             self.stats["blockedPublish"] += 1
+        with self.lock:      # 从库补出来的单此前不在内存里，补进去让续跑逻辑能看到最新状态
+            if not any(a["id"] == appr["id"] for a in self.approvals):
+                self.approvals.append(appr)
         self.emit("approval", appr["traceId"], appr)
         ev = self.approval_events.get(approval_id)
         if ev:
             ev.set()
+        elif decision == "approve":
+            # 没有等待线程 = 进程重启后恢复的审批单，run 仍停在断点，放行后自动续跑
+            self._resume_if_interrupted(appr["traceId"])
         return appr
+
+    def _resume_if_interrupted(self, trace):
+        """审批放行后自动续跑：仅当该 trace 在过程库里是 interrupted（重启留下的断点）。"""
+        if not self.db or not trace:
+            return False
+        try:
+            run = self.db.pipeline_run(trace)
+        except Exception as e:
+            print(f"[approval] 读运行态失败，跳过自动续跑：{type(e).__name__}: {e}", flush=True)
+            return False
+        if not run or run.get("status") != "interrupted":
+            return False
+        with self.lock:
+            if self.traces.get(trace, {}).get("status") == "running":
+                return False                     # 已经在续跑，避免重复拉起
+        try:
+            info = self.resume_pipeline(trace, auto=True)
+        except Exception as e:
+            print(f"[approval] 自动续跑失败 {trace}：{type(e).__name__}: {e}", flush=True)
+            return False
+        print(f"[approval] {trace} 审批放行后自动续跑：从阶段 {info.get('from')} 恢复", flush=True)
+        return True
 
     def _approval_from_db(self, approval_id):
         """从过程库补一张待决审批单到内存（进程重启后审批仍可被处理）。"""
