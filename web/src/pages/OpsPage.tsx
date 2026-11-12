@@ -49,6 +49,16 @@ type PendingApproval = {
   status: string;
   createdAt: string;
 };
+type OpsRun = {
+  traceId: string;
+  status: string;
+  stage: string;
+  stageIndex: number | null;
+  startedAt: string;
+  updatedAt: string;
+  closedAt: string;
+  resumeTries: number;
+};
 type NodeService = {
   id: number;
   name: string;
@@ -116,6 +126,7 @@ type OpsData = {
     pendingRender: { id: string; title: string; stage: string; blockedBy: string }[];
   };
   alerts?: OpsAlert[];
+  runs?: OpsRun[];
   actions?: {
     pendingApprovals: PendingApproval[];
     supported: { action: string; label: string; detail: string }[];
@@ -160,6 +171,7 @@ function duration(sec?: number) {
 const STATUS_CN: Record<string, string> = {
   succeeded: "成功", failed: "失败", running: "执行中", queued: "排队中",
   interrupted: "已中断", unknown: "未知", ok: "通过", pending: "待出片",
+  timeout: "审批超时", completed: "已完成", aborted: "已熔断",
 };
 
 const LEVEL_CN: Record<string, string> = { critical: "严重", warning: "告警", info: "提示" };
@@ -228,6 +240,8 @@ export function OpsPage() {
         label = `配置热加载：${result.agents ?? "?"} 人 / ${result.projects ?? "?"} 项目`;
       } else if (action === "approve" || action === "reject") {
         label = `审批 ${id} 已${action === "approve" ? "批准" : "驳回"}`;
+      } else if (action === "resume") {
+        label = `${String(result.traceId || id)} 已从阶段「${String(result.from || "断点")}」续跑`;
       }
       setFeedback({ ok: true, text: `已执行 · ${label}` });
       await load();
@@ -246,6 +260,7 @@ export function OpsPage() {
   const renders = data?.video?.pipelineRender || [];
   const pendingRender = data?.video?.pendingRender || [];
   const approvals = data?.actions?.pendingApprovals || [];
+  const breakRuns = (data?.runs || []).filter((r) => r.status === "interrupted" || r.status === "timeout");
   const nodes = data?.nodes;
   const history = nodes?.history || [];
   const stageCounts = Object.entries(data?.pipeline?.stageCounts || {}).sort((a, b) => b[1] - a[1]);
@@ -299,7 +314,10 @@ export function OpsPage() {
         <div className="ops-status-item">
           <span>流水线 / 阻塞</span>
           <b>{stats.pipelineTotal ?? "-"} / <em className="ops-bad">{stats.blockedTotal ?? "-"}</em></b>
-          <small>活跃 trace {service?.activeTrace || "无"}</small>
+          <small>
+            活跃 trace {service?.activeTrace || "无"} · 断点{" "}
+            <em className={breakRuns.length ? "ops-bad" : undefined}>{stats.runsInterrupted ?? 0}</em>
+          </small>
         </div>
         <div className="ops-status-item">
           <span>视频任务</span>
@@ -508,6 +526,27 @@ export function OpsPage() {
           </div>
           <p className="muted ops-hint">
             巡检会按「待审批 → 有任务在跑 → 派单复工」顺序判断；配置热加载校验失败会保留旧值。
+          </p>
+
+          <h3>运行断点 <small className="muted">（{breakRuns.length}）</small></h3>
+          {breakRuns.length === 0 && <p className="muted">没有停在断点的 trace。</p>}
+          {breakRuns.map((r) => (
+            <div key={r.traceId} className="ops-approval">
+              <div>
+                <b>{STATUS_CN[r.status] || r.status} · 停在「{r.stage || "—"}」</b>
+                <small>{r.traceId} · 更新于 {shortTime(r.updatedAt)} · 已自动重试 {r.resumeTries || 0} 次</small>
+              </div>
+              <div className="ops-approval-btns">
+                <button className="btn btn-ghost" disabled={!!busy}
+                  onClick={() => void recover("resume", r.traceId,
+                    `确认从阶段「${r.stage || "断点"}」续跑 ${r.traceId}？续跑会继续调用 AI 员工，可能产生模型费用。`)}>
+                  {busy === `resume:${r.traceId}` ? "续跑中…" : "续跑"}
+                </button>
+              </div>
+            </div>
+          ))}
+          <p className="muted ops-hint">
+            断点来自过程库 pipeline_runs：进程重启会留下 interrupted，审批超时留下 timeout；续跑按该阶段快照恢复，不会重跑已完成阶段。
           </p>
 
           <h3>待处理审批 <small className="muted">（{approvals.length}）</small></h3>

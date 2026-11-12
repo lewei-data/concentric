@@ -186,7 +186,8 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
   state       TEXT,
   started_at  TEXT,
   updated_at  TEXT,
-  closed_at   TEXT
+  closed_at   TEXT,
+  resume_tries INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status, updated_at DESC);
 
@@ -322,6 +323,11 @@ class Store:
                 except sqlite3.Error as e:
                     _log(f"PRAGMA {pragma} 失败：{e}")
             self._conn.executescript(SCHEMA)
+            # 老库补列：续跑尝试次数，用于给反复失败的断点设上限（避免每次重启无限重试）
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(pipeline_runs)")}
+            if "resume_tries" not in cols:
+                self._conn.execute("ALTER TABLE pipeline_runs "
+                                   "ADD COLUMN resume_tries INTEGER NOT NULL DEFAULT 0")
             row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (1)")
@@ -578,9 +584,32 @@ class Store:
         sql += " ORDER BY updated_at DESC LIMIT 50"
         return self._rows(sql, params)
 
+    def pipeline_runs_recent(self, limit=12):
+        """最近的流水线运行记录（含断点阶段），供运维页展示与续跑入口。"""
+        return self._rows("SELECT * FROM pipeline_runs ORDER BY updated_at DESC LIMIT ?",
+                          (_int(limit),))
+
     def pipeline_run(self, trace_id):
         rows = self._rows("SELECT * FROM pipeline_runs WHERE trace_id=?", (trace_id,))
         return rows[0] if rows else None
+
+    def pipeline_runs_resumable(self, max_tries=3):
+        """可自动续跑的运行记录：仍有断点阶段，且续跑次数未超上限。
+
+        running（上次进程直接挂掉）与 interrupted（已标记但当时没续成）都算，
+        这样多断点、续跑被抢占/失败的情况下次重启还能再试。
+        """
+        return self._rows("""SELECT * FROM pipeline_runs
+                             WHERE status IN ('running','interrupted')
+                               AND stage IS NOT NULL AND stage != ''
+                               AND COALESCE(resume_tries,0) < ?
+                             ORDER BY updated_at ASC""", (_int(max_tries),))
+
+    def pipeline_resume_try(self, trace_id):
+        """记一次续跑尝试：给反复失败的断点设上限，避免每次重启都无意义重试。"""
+        self.put("""UPDATE pipeline_runs SET resume_tries=COALESCE(resume_tries,0)+1, updated_at=?
+                    WHERE trace_id=?""", (now_iso(), trace_id))
+        self.flush()
 
     def release_mark(self, trace_id, item_id, project_id="", title=""):
         """登记发布回执，返回 True 表示首次登记（应真正发布）。

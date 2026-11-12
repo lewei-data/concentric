@@ -94,6 +94,37 @@ def write(rel, title, tags, body):
 
 # ---------------------------------------------------------------- 公司配置页
 
+ROLE_RECORDS = [("secretary", "小秘书"), ("ceo", "CEO"), ("cto", "CTO"), ("cco", "CCO")]
+
+
+def _stamp(path):
+    """文件最后修改时间（导出时采样）；文件不存在返回空串，由调用方显示「未创建」。"""
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path), TZ).strftime("%m-%d %H:%M")
+    except OSError:
+        return "未创建"
+
+
+def role_record_rows():
+    """首页的岗位记录引用：每岗位给出 latest 与当日记录的直链 + 修改时间。
+
+    链接按真实文件存在与否生成，缺文件写「未创建」而不是死链；时间只是导出时的采样值。
+    """
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    rows = []
+    for role, cn in ROLE_RECORDS:
+        base = os.path.join(VAULT, "OPC/岗位记录", role)
+        latest = os.path.join(base, "latest.md")
+        daily = os.path.join(base, f"{today}.md")
+        latest_cell = (f"[[OPC/岗位记录/{role}/latest|latest]]"
+                       if os.path.exists(latest) else "latest（未创建）")
+        daily_cell = (f"[[OPC/岗位记录/{role}/{today}|{today}]]"
+                      if os.path.exists(daily) else f"{today}（未创建）")
+        rows.append(f"| {cn} | {latest_cell} | {daily_cell} | "
+                    f"{_stamp(latest)} | {_stamp(daily)} |")
+    return "\n".join(rows)
+
+
 def page_home():
     body = f"""# OPC 一人公司 · 工作台知识库
 
@@ -112,9 +143,17 @@ def page_home():
 - [[事件流]] —— 最近一条 trace 的类型化消息
 - [[审批与报告]] —— 审批门记录与 CEO/CTO/项目报告
 - [[知识与KPI]] —— 知识库条目与三项目指标
-- [[OPC/岗位记录/00-索引|岗位记录]] —— 小秘书/CEO/CTO/CCO 每日记录索引；各岗位 `latest.md` 是跨岗位交接入口
 - [[OPC/创意规格/00-索引|创意规格]] —— CCO 给每个在制作品定的亮点卡（钩子/结构/运镜/音色/封面），下游施工唯一规格来源
 - [[OPC/技术研究/00-索引|技术研究]] —— CTO 的技术验证课题与「可用/不可用/待定」结论
+
+## 岗位记录（四岗位留痕，人人可读）
+规则见 [[OPC/岗位记录/00-索引|岗位记录索引]]：各岗位只写自己目录，跨岗位交接以对方 `latest.md` 的「交接」为准。
+
+| 岗位 | 固定入口 | 今日记录 | latest 更新 | 今日记录更新 |
+| --- | --- | --- | --- | --- |
+{role_record_rows()}
+
+> 更新时间为导出时采样；「未创建」＝该岗位当天还没落记录。汇报成品（md/PDF/语音）在 `OPC/汇报/<role>/`，最新一份是 `latest.md` 与 `latest.pdf`。
 
 ## 更新方式
 ```bash

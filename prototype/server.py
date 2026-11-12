@@ -16,6 +16,7 @@ JSON 结果写入原有类型化总线。规则仅保留“结构性护栏”（
 
 import base64
 import concurrent.futures
+import hashlib
 import hmac
 import json
 import os
@@ -1145,32 +1146,62 @@ class Kernel:
         if added:
             print(f"[boot] 从过程库恢复 {added} 条待审批单", flush=True)
 
+    AUTO_RESUME_MAX_TRIES = 3
+
     def _mark_interrupted_runs(self):
-        """启动时把上次进程留下的 running 运行态标成 interrupted；按需自动续跑。"""
+        """启动时把上次进程留下的 running 标成 interrupted；按需串行自动续跑。
+
+        续跑候选同时包含 running（上次进程直接挂掉）与 interrupted（已标记但当时
+        没续成，比如多条断点抢不到执行位）：只要还有断点阶段、且续跑次数未超上限，
+        这次重启就再试一次。续跑必须串行——内核同一时刻只允许一条 trace 运行。
+        """
         if not self.db:
             return
         try:
-            rows = self.db.pipeline_runs("running")
+            rows = self.db.pipeline_runs_resumable(self.AUTO_RESUME_MAX_TRIES)
         except Exception as e:
             print(f"[boot] 读取运行态失败：{type(e).__name__}: {e}", flush=True)
             return
+        pending = []
         for row in rows:
             trace = row.get("trace_id")
-            try:
-                self.db.pipeline_run_end(trace, "interrupted")
-            except Exception:
-                pass
-            with self.lock:
-                if self.traces.get(trace, {}).get("status") == "running":
-                    self.traces[trace]["status"] = "interrupted"
-                    self.traces[trace]["closedAt"] = iso_now()
-            print(f"[boot] 上次未跑完：{trace} 停在阶段 {row.get('stage')}（已标记 interrupted）", flush=True)
-        if rows and os.environ.get("OPC_RESUME_AUTO", "0") == "1":
-            for row in rows:
+            if not trace:
+                continue
+            if row.get("status") == "running":
                 try:
-                    self.resume_pipeline(row.get("trace_id"), auto=True)
-                except Exception as e:
-                    print(f"[boot] 自动续跑失败 {row.get('trace_id')}：{type(e).__name__}: {e}", flush=True)
+                    self.db.pipeline_run_end(trace, "interrupted")
+                except Exception:
+                    pass
+                with self.lock:
+                    if self.traces.get(trace, {}).get("status") == "running":
+                        self.traces[trace]["status"] = "interrupted"
+                        self.traces[trace]["closedAt"] = iso_now()
+                print(f"[boot] 上次未跑完：{trace} 停在阶段 {row.get('stage')}（已标记 interrupted）",
+                      flush=True)
+            pending.append(trace)
+        if pending and os.environ.get("OPC_RESUME_AUTO", "0") == "1":
+            threading.Thread(target=self._auto_resume_loop, args=(pending,), daemon=True).start()
+
+    def _auto_resume_loop(self, traces):
+        """按顺序逐条续跑：一条收口后再拉下一条，避免 active_trace 互斥导致静默失败。"""
+        for trace in traces:
+            try:
+                self.db.pipeline_resume_try(trace)
+                info = self.resume_pipeline(trace, auto=True)
+                print(f"[boot] 自动续跑 {trace}：从阶段 {info.get('from')} 恢复", flush=True)
+            except Exception as e:
+                print(f"[boot] 自动续跑失败 {trace}：{type(e).__name__}: {e}", flush=True)
+                continue
+            self._wait_run_done(trace)
+        print(f"[boot] 自动续跑队列处理完毕（{len(traces)} 条）", flush=True)
+
+    def _wait_run_done(self, trace, poll=2.0):
+        """等这条 trace 收口再处理下一条（先等线程起来，再等它退出）。"""
+        deadline = time.time() + 30
+        while time.time() < deadline and self.active_trace != trace:
+            time.sleep(poll)
+        while self.active_trace == trace:
+            time.sleep(poll)
 
     def resume_pipeline(self, trace, auto=False):
         """按过程库里的断点阶段续跑（至少一次：重启时该阶段会重跑一次）。"""
@@ -2388,21 +2419,34 @@ class Kernel:
     def _stage_create_items(self, c):
         """4. 建 6 条内容（每项目 2 条）"""
         # 4. 建 6 条内容（每项目 2 条）
+        # 内容单 id 由 trace+项目+序号+标题 决定：阶段中途被打断、续跑重建时复用同一条，
+        # 既有内容不会变成孤儿，发布回执（release_ledger 按 item_id 判重）也不会失效。
         c.items = {}
         for pid in self.PIDS:
-            for t in c.final[pid]:
-                item = {"id": uid("c"), "projectId": pid, "traceId": c.trace, "stage": "topic",
+            for idx, t in enumerate(c.final[pid]):
+                iid = self._content_id(c.trace, pid, idx, t["title"])
+                item = {"id": iid, "projectId": pid, "traceId": c.trace, "stage": "topic",
                         "title": t["title"], "angle": t.get("angle", ""),
                         "owner": f"pm_{pid}", "toneProfile": TONE[pid], "assets": [],
                         "reviewNote": "", "durationSec": t.get("durationSec", 45)}
                 with self.lock:
-                    self.contents.append(item)
+                    existing = next((x for x in self.contents if x.get("id") == iid), None)
+                    if existing is not None:
+                        item = existing            # 断点续跑：复用已有内容单，不重复登记
+                    else:
+                        self.contents.append(item)
                 c.items[item["id"]] = item
                 self.emit("pipeline", c.trace, item)
             self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
                       {"task": f"承接本项目 {len(c.final[pid])} 条定稿选题，先出制作评估再写稿"}, project=pid)
             self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
                       {"task": f"承接本项目 {len(c.final[pid])} 条定稿选题，先出制作评估再制作样片"}, project=pid)
+
+    @staticmethod
+    def _content_id(trace, pid, idx, title):
+        """内容单稳定 id：同一 trace 下同样一条选题，重跑也得到同一个 id。"""
+        raw = f"{trace}|{pid}|{idx}|{title}".encode("utf-8")
+        return "c_" + hashlib.sha1(raw).hexdigest()[:12]
 
 
     def _open_approval(self, c, draft):
@@ -3262,7 +3306,9 @@ class Kernel:
         if not appr:
             return None
         if appr["status"] != "pending":
-            return appr
+            # 超时挂起的单允许老板迟到补批：补批后从断点续跑，不用整轮重来
+            if not (appr["status"] == "timeout" and decision == "approve"):
+                return appr
         appr["status"] = "approved" if decision == "approve" else "rejected"
         appr["decidedAt"] = iso_now()
         appr["decidedBy"] = decided_by or appr.get("approver", "")
@@ -3287,7 +3333,7 @@ class Kernel:
         return appr
 
     def _resume_if_interrupted(self, trace):
-        """审批放行后自动续跑：仅当该 trace 在过程库里是 interrupted（重启留下的断点）。"""
+        """审批放行后自动续跑：仅当该 trace 在过程库里停在断点（interrupted / 审批超时）。"""
         if not self.db or not trace:
             return False
         try:
@@ -3295,7 +3341,7 @@ class Kernel:
         except Exception as e:
             print(f"[approval] 读运行态失败，跳过自动续跑：{type(e).__name__}: {e}", flush=True)
             return False
-        if not run or run.get("status") != "interrupted":
+        if not run or run.get("status") not in ("interrupted", "timeout"):
             return False
         with self.lock:
             if self.traces.get(trace, {}).get("status") == "running":
@@ -3617,6 +3663,21 @@ class Kernel:
                              "usage": {k: v for k, v in list(self.token_usage.items())[-5:]}},
                     "eventsList": self.messages[-40:],
                     "engine": MODE, "serverTime": iso_now(), "serverStartedAt": self.startedAt}
+
+    def pipeline_runs_view(self, limit=12):
+        """运维页用：最近流水线运行记录（含断点阶段），不带 state 大字段。"""
+        if not self.db:
+            return []
+        try:
+            rows = self.db.pipeline_runs_recent(limit)
+        except Exception as e:
+            print(f"[ops] 读取运行记录失败：{type(e).__name__}: {e}", flush=True)
+            return []
+        return [{"traceId": r.get("trace_id"), "status": r.get("status"),
+                 "stage": r.get("stage"), "stageIndex": r.get("stage_index"),
+                 "startedAt": r.get("started_at"), "updatedAt": r.get("updated_at"),
+                 "closedAt": r.get("closed_at"), "resumeTries": r.get("resume_tries") or 0}
+                for r in rows]
 
 
 KERNEL = Kernel()
@@ -3986,7 +4047,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 health = {"ok": True, "version": "3.0", "engine": MODE,
                           "hermes": HERMES.stats(), "time": iso_now()}
-                return self._json(ops_monitor.build(KERNEL.snapshot(), health))
+                return self._json(ops_monitor.build(KERNEL.snapshot(), health,
+                                                    runs=KERNEL.pipeline_runs_view()))
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/events":

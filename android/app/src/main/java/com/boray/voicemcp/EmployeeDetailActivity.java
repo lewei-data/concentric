@@ -121,6 +121,7 @@ public class EmployeeDetailActivity extends Activity {
         photo.setImageResource(R.drawable.ic_people);
         EmployeeStore.applyPhoto(this, emp, photo,
                 () -> { }, () -> photo.setImageResource(R.drawable.ic_people));
+        setupPhotoCard();
 
         dhvStage.setEmployee(emp);
         dhvStage.setAnimated(true);
@@ -301,6 +302,41 @@ public class EmployeeDetailActivity extends Activity {
     private String introSignature() {
         return introSpec() + "|" + Math.round(emp.introDuration * 100) + "|"
                 + (emp.introText == null ? "" : emp.introText.hashCode());
+    }
+
+    /** 员工形象照卡片：全身照 + 证件照 + 生成说明；服务端没给素材就整块隐藏 */
+    private void setupPhotoCard() {
+        View card = findViewById(R.id.cardPhotos);
+        ImageView full = findViewById(R.id.ivFullBody);
+        ImageView idp = findViewById(R.id.ivIdPhoto);
+        TextView note = findViewById(R.id.tvPhotoNote);
+        if (card == null || full == null || idp == null) return;
+        boolean hasFull = emp.fullBody != null && !emp.fullBody.trim().isEmpty();
+        boolean hasId = emp.idPhoto != null && !emp.idPhoto.trim().isEmpty();
+        if (!hasFull && !hasId) {
+            card.setVisibility(View.GONE);
+            return;
+        }
+        card.setVisibility(View.VISIBLE);
+        if (hasFull) {
+            EmployeeStore.loadPhotoBitmap(this, emp.fullBody, bmp -> {
+                if (!isFinishing() && bmp != null) full.setImageBitmap(bmp);
+            });
+        } else {
+            full.setVisibility(View.GONE);
+        }
+        if (hasId) {
+            EmployeeStore.loadPhotoBitmap(this, emp.idPhoto, bmp -> {
+                if (!isFinishing() && bmp != null) idp.setImageBitmap(bmp);
+            });
+        } else {
+            idp.setVisibility(View.GONE);
+        }
+        String n = emp.photoNote == null ? "" : emp.photoNote.trim();
+        if (note != null) {
+            note.setText(n);
+            note.setVisibility(n.isEmpty() ? View.GONE : View.VISIBLE);
+        }
     }
 
     private void loadPoster() {
@@ -547,6 +583,7 @@ public class EmployeeDetailActivity extends Activity {
                     + "|" + (fresh.introText == null ? "" : fresh.introText.hashCode());
             emp = fresh;
             loadPoster();
+            setupPhotoCard();
             refreshStreamState();
             if (!after.equals(before)) {
                 final boolean sound = voiceEnabled;

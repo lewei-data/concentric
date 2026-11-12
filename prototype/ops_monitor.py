@@ -350,9 +350,11 @@ def _render_view(pipeline):
     return out[-20:]
 
 
-def build(state, health, force_probe=False):
-    """返回 /api/ops 的响应体；state 为 Kernel.snapshot()。"""
+def build(state, health, force_probe=False, runs=None):
+    """返回 /api/ops 的响应体；state 为 Kernel.snapshot()，runs 为流水线运行记录。"""
     state = state or {}
+    runs = runs or []
+    break_runs = [r for r in runs if r.get("status") in ("interrupted", "timeout")]
     pipeline = state.get("pipeline") or []
     approvals = state.get("approvals") or []
     reports = state.get("reports") or []
@@ -466,6 +468,15 @@ def build(state, health, force_probe=False):
                 "source": "/api/state.approvals", "at": a.get("createdAt") or "",
                 "action": "可在下方「待处理审批」直接处理" if a.get("status") == "pending" else "超时单据需重新发起审批",
             })
+    for r in break_runs[:3]:
+        alerts.append({
+            "id": f"run-{r.get('traceId')}", "level": "warning",
+            "title": f"运行断点：{r.get('traceId')} 停在 {r.get('stage') or '—'}",
+            "detail": f"状态 {r.get('status')} · 更新于 {r.get('updatedAt') or ''}"
+                      f" · 已自动重试 {r.get('resumeTries') or 0} 次",
+            "source": "/api/ops.runs", "at": r.get("updatedAt") or "",
+            "action": "可在下方「运行断点」点「续跑」从该阶段恢复",
+        })
     if hermes.get("failures"):
         alerts.append({
             "id": "hermes-failures", "level": "warning",
@@ -517,7 +528,10 @@ def build(state, health, force_probe=False):
             "mediaJobsStuck": len(stuck_jobs),
             "nodesTotal": (node_view.get("summary") or {}).get("nodes", 0),
             "nodesFailed": (node_view.get("summary") or {}).get("failed", 0),
+            "runsTotal": len(runs),
+            "runsInterrupted": len(break_runs),
         },
+        "runs": runs,
         "pipeline": {
             "stageCounts": dict(stage_counts),
             "blockedBy": dict(blocked_by),
@@ -553,6 +567,7 @@ def build(state, health, force_probe=False):
                 {"action": "reload", "label": "热加载配置", "detail": "重读 Obsidian 项目配置与员工名册，校验失败保留旧值，不重启服务"},
                 {"action": "approve", "label": "批准待审", "detail": "解除 approval 阻塞（仅老板）"},
                 {"action": "reject", "label": "驳回待审", "detail": "驳回审批单（仅老板）"},
+                {"action": "resume", "label": "断点续跑", "detail": "按过程库断点阶段恢复指定 trace（仅老板）；中断/超时的运行记录见「运行断点」"},
             ],
             "manualOnly": "重启主服务 / 媒体引擎需运维执行 opc.sh restart 或 systemctl restart，前端不直接触发进程重启",
         },

@@ -62,6 +62,11 @@ public final class Employee {
     public boolean hasPhoto = false;
     public boolean hasVideo = false;
 
+    /** 员工形象照：全身形象照 / 白底证件照（服务端由本人肖像生成） + 生成说明 */
+    public String fullBody = "";
+    public String idPhoto = "";
+    public String photoNote = "";
+
     /** v2.5：服务端生成的自我介绍视频 / 文案 / 时长（同源流式播放，可缺省） */
     public String introVideo = "";
     public String introAudio = "";
@@ -114,6 +119,9 @@ public final class Employee {
         e.videoIdle = pick(j, "videoIdle", "video_idle");
         e.videoTalk = pick(j, "videoTalk", "video_talk");
         e.faceUrl = pick(j, "faceUrl", "face_url");
+        e.fullBody = pick(j, "fullBody", "full_body", "fullbody");
+        e.idPhoto = pick(j, "idPhoto", "id_photo", "idphoto");
+        e.photoNote = j.optString("photoNote", j.optString("photo_note", ""));
         JSONObject assets = j.optJSONObject("assets");
         if (assets != null) {
             if (e.photo.isEmpty()) e.photo = pick(assets, "photo");

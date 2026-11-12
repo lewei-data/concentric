@@ -213,6 +213,20 @@ def employee_profile(aid, include_assets=True):
         prof["videoIdle"] = (videos.get("idle") or {}).get("url") or ""
         prof["has_photo"] = bool(prof["photo"])
         prof["has_video"] = bool(prof["videoTalk"] or prof["videoIdle"])
+        full_body = ""
+        for ext in ("png", "jpg"):
+            if _asset_path("fullbody", "%s.%s" % (asset_aid, ext)):
+                full_body = _asset_url("fullbody", "%s.%s" % (asset_aid, ext))
+                break
+        id_photo = ""
+        for ext in ("png", "jpg"):
+            if _asset_path("idphoto", "%s.%s" % (asset_aid, ext)):
+                id_photo = _asset_url("idphoto", "%s.%s" % (asset_aid, ext))
+                break
+        prof["fullBody"] = full_body
+        prof["idPhoto"] = id_photo
+        prof["photoNote"] = ("全身形象照与证件照均由本人肖像生成：全身照先由 Qwen-Image 扩展，"
+                             "再用 InsightFace 还原本人面部特征；证件照为抠图换白底。仅用于内部员工档案。")
         prof["assets"] = {"photo": photo, "face_url": face or None,
                           "video_talk": videos.get("talk"), "video_idle": videos.get("idle")}
         intro_file = os.path.join(INTRO_DIR, "%s.mp4" % aid) if INTRO_DIR else ""
@@ -332,6 +346,8 @@ INTRO_LLM_TIMEOUT = float(_cfg("INTRO_LLM_TIMEOUT", "180"))
 INTRO_MAX_CHARS = int(_cfg("INTRO_MAX_CHARS", "140"))
 INTRO_LOCK_WAIT = float(_cfg("INTRO_LOCK_WAIT", "600"))
 INTRO_PIPELINE = "wav2lip-gan-v1"
+# 自我介绍视频开头先放 INTRO_OPEN_SEC 秒全身照（慢推），再切半身口型；配音延后同样时长保证口型对齐
+INTRO_OPEN_SEC = max(0.0, float(_cfg("INTRO_OPEN_SEC", "2.4")))
 LIPSYNC_ENABLE = _cfg("LIPSYNC", "1") not in ("0", "false", "False", "no")
 LIPSYNC_RUNNER = _cfg("LIPSYNC_RUNNER", os.path.join("/opt/sefs/mcp-asr/lipsync", "run_lipsync.py"))
 LIPSYNC_PYTHON = _cfg("LIPSYNC_PYTHON", "/opt/sefs/CosyVoice/venv/bin/python")
@@ -469,6 +485,17 @@ def lipsync_ready():
                 and os.path.exists(LIPSYNC_RUNNER) and os.path.exists(LIPSYNC_WEIGHTS))
 
 
+def _intro_fullbody(aid):
+    """开头全身照：assets/fullbody/<id>.png（已换脸，身份与肖像一致），没有则空。"""
+    prof = load_profiles().get(aid) or {}
+    asset_aid = prof.get("assetId") or aid
+    for ext in ("png", "jpg"):
+        path = _asset_path("fullbody", "%s.%s" % (asset_aid, ext))
+        if path:
+            return path
+    return ""
+
+
 def _intro_photo(aid):
     """口型视频的底图：优先 portraits/ 的 3:4 写实半身像，其次 App 头像。"""
     prof = load_profiles().get(aid) or {}
@@ -498,6 +525,14 @@ def _intro_lipsync(aid, photo, wav_path, out_path):
     summary = (proc.stdout or "").strip().splitlines()
     log("口型视频已合成：%s（%s）" % (aid, summary[-1] if summary else "ok"))
     return out_path
+
+
+def _intro_open_filter():
+    """开头全身照：极慢推近 INTRO_OPEN_SEC 秒，和半身段无缝拼接。"""
+    return ("scale=1080:1440:force_original_aspect_ratio=increase,crop=1080:1440,"
+            "zoompan=z='min(zoom+0.0008,1.08)':d=1:x='iw/2-(iw/zoom/2)'"
+            ":y='ih/2-(ih/zoom/2)':s=720x960:fps=25,"
+            "trim=duration=%.3f,setpts=PTS-STARTPTS,setsar=1" % INTRO_OPEN_SEC)
 
 
 def _intro_filter(kind):
@@ -575,19 +610,42 @@ def intro_build(aid, force=False, refresh_text=True, text=None, voice=None):
             raise RuntimeError("员工 %s 既没有 talk 视频也没有照片，无法生成画面" % aid)
         duration = _probe_duration(wav_path)
         tmp_out = os.path.join(INTRO_DIR, ".%s.intro.mp4" % aid)
-        if kind in ("video", "lipsync"):
+        open_img = _intro_fullbody(aid) if INTRO_OPEN_SEC > 0 else ""
+        if open_img:
+            # 全身照推镜 → 半身口型：音轨整体延后 INTRO_OPEN_SEC，口型与配音仍然逐帧对齐
+            total = INTRO_OPEN_SEC + max(1.0, duration)
             inputs = [FFMPEG_BIN, "-y", "-loglevel", "error",
-                      "-stream_loop", "-1", "-i", source, "-i", wav_path]
+                      "-loop", "1", "-framerate", "25", "-i", open_img]
+            if kind in ("video", "lipsync"):
+                inputs += ["-stream_loop", "-1", "-i", source]
+            else:
+                inputs += ["-loop", "1", "-framerate", "25", "-i", source]
+            inputs += ["-i", wav_path]
+            fg = ("[0:v]%s[v0];[1:v]%s[v1];"
+                  "[v0][v1]concat=n=2:v=1:a=0,format=yuv420p[v];"
+                  "[2:a]adelay=%d:all=1,apad[a]"
+                  % (_intro_open_filter(), _intro_filter(kind), int(INTRO_OPEN_SEC * 1000)))
+            cmd = inputs + [
+                "-filter_complex", fg, "-map", "[v]", "-map", "[a]",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-r", "25",
+                "-c:a", "aac", "-b:a", "96k", "-ar", "24000", "-ac", "1",
+                "-t", "%.3f" % total,
+                "-movflags", "+faststart", tmp_out]
         else:
-            inputs = [FFMPEG_BIN, "-y", "-loglevel", "error",
-                      "-loop", "1", "-framerate", "25", "-i", source, "-i", wav_path]
-        cmd = inputs + [
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-            "-pix_fmt", "yuv420p", "-r", "25", "-vf", _intro_filter(kind),
-            "-c:a", "aac", "-b:a", "96k", "-ar", "24000", "-ac", "1",
-            "-t", "%.3f" % max(1.0, duration),
-            "-movflags", "+faststart", tmp_out]
+            if kind in ("video", "lipsync"):
+                inputs = [FFMPEG_BIN, "-y", "-loglevel", "error",
+                          "-stream_loop", "-1", "-i", source, "-i", wav_path]
+            else:
+                inputs = [FFMPEG_BIN, "-y", "-loglevel", "error",
+                          "-loop", "1", "-framerate", "25", "-i", source, "-i", wav_path]
+            cmd = inputs + [
+                "-map", "0:v:0", "-map", "1:a:0",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-r", "25", "-vf", _intro_filter(kind),
+                "-c:a", "aac", "-b:a", "96k", "-ar", "24000", "-ac", "1",
+                "-t", "%.3f" % max(1.0, duration),
+                "-movflags", "+faststart", tmp_out]
         try:
             subprocess.run(cmd, check=True, timeout=300, env=FF_ENV, capture_output=True)
             if not os.path.exists(tmp_out) or os.path.getsize(tmp_out) < 4096:
@@ -632,7 +690,7 @@ def intro_stale(aid):
     out_m = os.path.getmtime(out)
     photo = _intro_photo(aid)
     script = os.path.join(INTRO_DIR, "%s.txt" % aid)
-    for p in (photo, script):
+    for p in (photo, _intro_fullbody(aid), script):
         if p and os.path.exists(p) and os.path.getmtime(p) > out_m:
             return True
     return False
