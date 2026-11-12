@@ -37,7 +37,27 @@ TTS_VOICE = os.environ.get("OPC_TTS_VOICE", "female-zh-short")
 TTS_SPEED = float(os.environ.get("OPC_TTS_SPEED", "0.7"))  # CosyVoice2 语速偏快，压到 0.7
 NODE_BIN = os.environ.get("OPC_NODE_BIN", "/opt/sefs/tools/node22/bin")
 
-W, H, FPS = 1080, 1920, 30
+# 交付规格：正常由 server 传入《项目配置》的交付合同（DELIVERY[pid]）；
+# 这里只作为单独调用 om_render 时的兜底，渲染参数不再写死在业务代码里。
+DEFAULT_SPEC = {"width": 1080, "height": 1920, "fps": "30/1", "video_codec": "h264",
+                "sample_rate": 48000, "channels": 2, "duration_tolerance": 2.5,
+                "min_mean_db": -45.0, "max_peak_db": -1.0}
+
+
+def _spec(spec=None):
+    """合并交付合同与兜底值；空值不覆盖兜底。"""
+    s = dict(DEFAULT_SPEC)
+    s.update({k: v for k, v in (spec or {}).items() if v not in (None, "", [])})
+    return s
+
+
+def _fps_int(value):
+    """'30/1' / 30 / '29.97' → Remotion 需要的整数帧率。"""
+    try:
+        return max(1, int(float(str(value).split("/")[0])))
+    except (TypeError, ValueError):
+        return 30
+
 RENDER_VERSION = "om-7"   # 场景规则/字幕规则变化时递增，避免命中旧缓存
 RENDER_TIMEOUT = int(os.environ.get("OPC_RENDER_TIMEOUT", "900"))
 TTS_TIMEOUT = int(os.environ.get("OPC_TTS_TIMEOUT", "300"))
@@ -338,12 +358,13 @@ def _caption_words(line, start, end):
     return out
 
 
-def _hash(item, project):
+def _hash(item, project, spec=None):
+    sp = _spec(spec)
     payload = json.dumps({
         "storyboard": item.get("storyboard"), "copy": item.get("copy"),
         "cover": item.get("cover"), "color": project.get("color"),
         "tone": item.get("toneProfile"), "voice": TTS_VOICE,
-        "w": W, "h": H, "fps": FPS, "version": RENDER_VERSION,
+        "w": sp["width"], "h": sp["height"], "fps": sp["fps"], "version": RENDER_VERSION,
     }, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
@@ -472,12 +493,15 @@ def _concat_audio(parts, out_path, work):
 
 
 # ---------------------------------------------------------------- 画面验收门
-def validate(path, expected_sec, sample_dir):
+def validate(path, expected_sec, sample_dir, spec=None):
     """验收门：分辨率、音轨、音量、时长、画面动态、色彩丰富度。
 
+    精确门槛（分辨率/时长容差/静音下限）来自交付合同 spec，不再写死。
     纯文字分镜卡会同时死在「无音轨」和「画面无动态」两项上，
     这正是旧样片被拦下的原因。
     """
+    sp = _spec(spec)
+    w, h = sp["width"], sp["height"]
     _ff()
     checks, reasons = {}, []
     size = os.path.getsize(path) if os.path.isfile(path) else 0
@@ -492,16 +516,16 @@ def validate(path, expected_sec, sample_dir):
     if not info["has_video"]:
         reasons.append("没有视频流")
     else:
-        if (info["width"], info["height"]) != (W, H):
-            reasons.append(f"分辨率 {info['width']}x{info['height']}，要求 {W}x{H}")
+        if (info["width"], info["height"]) != (w, h):
+            reasons.append(f"分辨率 {info['width']}x{info['height']}，要求 {w}x{h}")
     if not info["has_audio"]:
         reasons.append("没有音轨（旁白缺失）")
     else:
         vol = _mean_volume(path)
         checks["meanVolumeDb"] = round(vol, 1)
-        if vol <= -45:
+        if vol <= sp["min_mean_db"]:
             reasons.append(f"音轨近乎静音（mean_volume {vol:.1f} dB）")
-    if expected_sec and abs(info["duration"] - expected_sec) > 2.5:
+    if expected_sec and abs(info["duration"] - expected_sec) > sp["duration_tolerance"]:
         reasons.append(f"时长 {info['duration']:.1f}s 与分镜 {expected_sec:.1f}s 偏差过大")
 
     # 动态与色彩：按 3 秒抽帧比较相邻帧
@@ -550,16 +574,21 @@ def validate(path, expected_sec, sample_dir):
 
 
 # ---------------------------------------------------------------- 主流程
-def produce(item, project, tone=""):
-    """为一条内容出真实样片；成功返回 ok=True，失败不覆盖已通过验收的旧片。"""
+def produce(item, project, tone="", spec=None):
+    """为一条内容出真实样片；成功返回 ok=True，失败不覆盖已通过验收的旧片。
+
+    spec 为交付合同（宽/高/帧率/时长容差/静音下限），由 server 从
+    《项目配置》读取后传入；缺省时用 DEFAULT_SPEC。
+    """
     import deliverables as DL
+    sp = _spec(spec)
     files = DL.plan(item["traceId"], item["projectId"], item["id"])
     item_dir = DL._local(files["dir"])
     work = os.path.join(item_dir, "_render")
     os.makedirs(work, exist_ok=True)
     video_path = DL._local(files["video"])
     manifest_path = os.path.join(work, "manifest.json")
-    digest = _hash(item, project)
+    digest = _hash(item, project, sp)
 
     def result(ok, reason="", check=None, video="", duration=0, scenes=None):
         return {"ok": ok, "reason": reason, "check": check or {},
@@ -574,7 +603,7 @@ def produce(item, project, tone=""):
             man = json.load(f)
         if man.get("hash") == digest and os.path.isfile(video_path):
             check = validate(video_path, man.get("duration") or 0,
-                             os.path.join(work, "check"))
+                             os.path.join(work, "check"), sp)
             if check["pass"]:
                 return result(True, check=check, video=video_path,
                               duration=man.get("duration") or 0,
@@ -705,8 +734,9 @@ def produce(item, project, tone=""):
         t_remotion = time.time()
         code, out = _run([os.path.join(NODE_BIN, "npx"), "remotion", "render",
                           "src/index.tsx", "Explainer", tmp_video,
-                          "--props", props_path, "--width", str(W), "--height", str(H),
-                          "--fps", str(FPS), "--codec", "h264", "--crf", "23",
+                          "--props", props_path, "--width", str(sp["width"]),
+                          "--height", str(sp["height"]),
+                          "--fps", str(_fps_int(sp["fps"])), "--codec", "h264", "--crf", "23",
                           "--x264-preset", "veryfast",
                           "--concurrency", str(RENDER_CONCURRENCY), "--overwrite"],
                          cwd=REMOTION_DIR)
@@ -715,7 +745,7 @@ def produce(item, project, tone=""):
         _log(f"{item['id']} Remotion 渲染完成，耗时 {time.time() - t_remotion:.1f}s"
              f"（并发 {RENDER_CONCURRENCY}）")
 
-        check = validate(tmp_video, duration, os.path.join(work, "check"))
+        check = validate(tmp_video, duration, os.path.join(work, "check"), sp)
         if not check["pass"]:
             bad = os.path.join(work, f"rejected-{_now().replace(':', '')}.mp4")
             shutil.move(tmp_video, bad)

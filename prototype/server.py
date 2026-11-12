@@ -266,6 +266,9 @@ except Exception as _panel_err:
     insights = ops_monitor = None
     print(f"[boot] 灵感/运维聚合不可用：{type(_panel_err).__name__}: {_panel_err}", flush=True)
 
+# 内容流水线定义（声明式）：阶段顺序/门禁/轮次以 config/pipeline.yaml 为准
+import pipeline_defs as PIPE
+
 # 过程数据落库（SQLite/WAL）+ 多渠道消息摄取；OPC_DB 未开启时整体降级为旧路径
 try:
     import db as DBX
@@ -286,7 +289,6 @@ DEFAULT_PROJECTS = {
                     "kpi": {"uptime": 99.95, "tickets": 0, "delivery_hours": 48.0}},
 }
 DEFAULT_TONE = {"wenren": "克制·书卷气", "gou": "幽默·松弛", "tongxinyuan": "专业·可信"}
-DEFAULT_STAGES = ["topic", "copy", "video", "review", "approved", "published", "archived"]
 DEFAULT_HIGH_RISK = ["publish.execute", "deploy.prod", "customer.reply", "ad.spend"]
 
 
@@ -391,22 +393,34 @@ def _parse_project_cfg(path):
 
 
 def _load_project_cfg():
+    """项目/调性/高危工具来自 Obsidian；阶段名以流程定义 pipeline.yaml 为准。
+
+    项目配置里的「内容流水线阶段」仅作历史视图保留，不再参与流程控制，
+    避免代码实际使用的 sample/final/blocked 与配置里的 video 长期漂移。
+    """
     try:
         p, t, s, h = _parse_project_cfg(PROJECT_FILE)
-        if p and t and s and h:
-            print(f"[boot] 项目配置 {PROJECT_FILE} → {len(p)} 个项目 / {len(s)} 阶段 / {len(h)} 高危工具",
-                  flush=True)
-            return p, t, s, h
-        print(f"[boot] 项目配置不完整(项目{len(p)} 调性{len(t)} 阶段{len(s)} 高危{len(h)})，回退内置默认",
+        if p and t and h:
+            if s and list(s) != PIPE.PIPELINE.item_stages:
+                print(f"[boot] 提示：项目配置的阶段列表与流程定义不一致，已以 pipeline.yaml 为准"
+                      f"（配置 {s} → 实际 {PIPE.PIPELINE.item_stages}）", flush=True)
+            print(f"[boot] 项目配置 {PROJECT_FILE} → {len(p)} 个项目 / {len(h)} 高危工具；"
+                  f"流程阶段以 {PIPE.PIPELINE.source} 为准（{len(PIPE.PIPELINE.stages)} 段）", flush=True)
+            return p, t, h
+        print(f"[boot] 项目配置不完整(项目{len(p)} 调性{len(t)} 高危{len(h)})，回退内置默认",
               flush=True)
     except FileNotFoundError:
         print(f"[boot] 未找到 {PROJECT_FILE}，回退内置默认", flush=True)
     except Exception as e:
         print(f"[boot] 解析项目配置失败({e})，回退内置默认", flush=True)
-    return dict(DEFAULT_PROJECTS), dict(DEFAULT_TONE), list(DEFAULT_STAGES), list(DEFAULT_HIGH_RISK)
+    return dict(DEFAULT_PROJECTS), dict(DEFAULT_TONE), list(DEFAULT_HIGH_RISK)
 
 
-PROJECTS, TONE, STAGES, HIGH_RISK_TOOLS = _load_project_cfg()
+PIPELINE = PIPE.PIPELINE
+if PIPE.LOAD_NOTE:
+    print(f"[boot] 流程定义：{PIPE.LOAD_NOTE}", flush=True)
+PROJECTS, TONE, HIGH_RISK_TOOLS = _load_project_cfg()
+STAGES = PIPELINE.item_stages          # 对外暴露的内容单状态名，唯一来源是流程定义
 DELIVERY = _load_delivery_cfg()
 
 DEFAULT_AGENT_SPEC = [
@@ -939,6 +953,40 @@ class BusyError(Exception):
         self.traceId = trace
 
 
+_PIPELINE_STOP = object()
+
+
+class PipelineContext:
+    """流水线阶段之间的共享状态（字段即阶段契约，不承载业务逻辑）。
+
+    容器字段一律原地修改，避免阶段间出现“改了副本但没写回”的隐性 bug；
+    需要提前收口的阶段返回 _PIPELINE_STOP，由 runner 决定停止后续阶段。
+    """
+
+    def __init__(self, kernel, trace, hotspot):
+        self.kernel = kernel
+        self.trace = trace
+        self.hotspot = hotspot
+        self.stage = None                 # 当前阶段定义（pipeline_defs.Stage）
+        self.pms = [("wenren", "pm_wenren"), ("gou", "pm_gou"),
+                    ("tongxinyuan", "pm_tongxinyuan")]
+        self.items = {}                   # itemId -> 内容单
+        self.selected = {}                # pid -> 选题
+        self.final = {}                   # pid -> 定稿列表
+        self.eliminated = []              # CCO 未入选记录
+        self.pool_size = 0
+        self.meeting_doc = {}             # 选题会纪要（归档 + 汇报）
+        self.participants = []            # 选题会参会人（两场会议共用）
+        self.conclusion = ""              # 评审会结论正文
+        self.render_blocked = set()       # 真实出片失败的 itemId
+        self.sample_blocked = set()       # 样片评审未过的 itemId
+        self.review_ids = []              # 待终审 itemId
+        self.passed_items = {}            # 终审通过 itemId -> 结论
+        self.review_history = []
+        self.pending = []                 # 已挂起的发布审批
+        self.pub_ctx = ""                 # 发布结论（归档/汇报引用）
+
+
 class Kernel:
     def __init__(self):
         self.lock = threading.RLock()
@@ -1091,8 +1139,8 @@ class Kernel:
 
     def reload_config(self):
         """热加载 Obsidian 里的项目配置与员工名册，不重启服务"""
-        global PROJECTS, TONE, STAGES, HIGH_RISK_TOOLS, AGENT_SPEC, PROJECT_BY_NAME
-        p, t, s, h = _load_project_cfg()
+        global PROJECTS, TONE, STAGES, HIGH_RISK_TOOLS, AGENT_SPEC, PROJECT_BY_NAME, PIPELINE
+        p, t, h = _load_project_cfg()
         missing_proj = {"wenren", "gou", "tongxinyuan"} - set(p)
         if missing_proj:
             raise ValueError(f"项目配置缺少必需项目: {sorted(missing_proj)}")
@@ -1101,7 +1149,10 @@ class Kernel:
         missing_ids = [a[0] for a in DEFAULT_AGENT_SPEC if a[0] not in known]
         if missing_ids:
             raise ValueError(f"员工名册缺少必需岗位: {missing_ids}")
-        PROJECTS, TONE, STAGES, HIGH_RISK_TOOLS = p, t, s, h
+        # 流程定义也支持热加载（改 pipeline.yaml 后无需重启）；校验失败会回退内置默认
+        PIPELINE = PIPE.load()[0]
+        PROJECTS, TONE, HIGH_RISK_TOOLS = p, t, h
+        STAGES = PIPELINE.item_stages
         PROJECT_BY_NAME = {v["name"]: k for k, v in PROJECTS.items()}
         PROJECT_BY_NAME["全公司"] = "all"
         AGENT_SPEC = spec
@@ -1894,28 +1945,49 @@ class Kernel:
             },
         }
 
+    def _stage_timeout(self, c):
+        """审批超时：流程定义优先，未配置时沿用 OPC_APPROVAL_TIMEOUT。"""
+        return c.stage.timeout_sec or APPROVAL_TIMEOUT
+
     def _pipeline(self, trace, hotspot):
-        pms = [("wenren", "pm_wenren"), ("gou", "pm_gou"), ("tongxinyuan", "pm_tongxinyuan")]
+        """按流程定义（config/pipeline.yaml）顺序执行阶段。
+
+        每个阶段一个 _stage_<id> 方法，阶段间状态放 PipelineContext；
+        新增/调整阶段只改定义文件与对应实现，不再维护一条硬编码长函数。
+        """
+        c = PipelineContext(self, trace, hotspot)
+        for st in PIPELINE.stages:
+            if not st.enabled:
+                continue
+            fn = getattr(self, "_stage_" + st.id, None)
+            if fn is None:
+                raise RuntimeError(f"流程定义里的阶段 {st.id} 没有实现 _stage_{st.id}")
+            c.stage = st
+            if fn(c) is _PIPELINE_STOP:
+                return
+
+    def _stage_topic_meeting(self, c):
+        """1. 每日选题会：PM 各交 4 条（池 12）+ CEO/CTO 指定选题 + scout 简报，同波 6 个调用"""
         # 1. 每日选题会：PM 各交 4 条（池 12）+ CEO/CTO 指定选题 + scout 简报，同波 6 个调用
-        participants = ["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan", "scout", "kb_manager"]
-        agenda1 = [f"热点：{hotspot['title']}", "三项目各 4 条候选（池 12）", "CCO 12 选 9"]
-        self.meeting_begin(trace, "每日选题会", participants, agenda1)
-        self.set_scene("MEETING", trace, title="每日选题会", participants=participants, agenda=agenda1)
+        participants = c.participants = ["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan", "scout", "kb_manager"]
+        agenda1 = [f"热点：{c.hotspot['title']}", "三项目各 4 条候选（池 12）", "CCO 12 选 9"]
+        self.meeting_begin(c.trace, "每日选题会", participants, agenda1)
+        self.set_scene("MEETING", c.trace, title="每日选题会", participants=participants, agenda=agenda1)
         for aid in participants:
             self.set_agent(aid, "meeting", "选题会")
-            self.send("delegation", "ceo", aid, trace, {"task": "参会：按岗位职责提交/评估选题"},
+            self.send("delegation", "ceo", aid, c.trace, {"task": "参会：按岗位职责提交/评估选题"},
                       project=None if self.agents[aid]["projectId"] == "all" else self.agents[aid]["projectId"])
-        self.meeting_say("ceo", f"开会。今天的议题是热点「{hotspot['title']}」（热度 {hotspot['score']}）。"
-                                "请热点采集先报简报，三位产品经理各提 4 条候选，CCO 汇总 12 选 9。", "opening", trace)
+        self.meeting_say("ceo", f"开会。今天的议题是热点「{c.hotspot['title']}」（热度 {c.hotspot['score']}）。"
+                                "请热点采集先报简报，三位产品经理各提 4 条候选，CCO 汇总 12 选 9。", "opening", c.trace)
 
-        fit = hotspot.get("fit") or {}
-        ctx = (f"热点：{hotspot['title']}；热度 {hotspot['score']}；三项目匹配度："
+        fit = c.hotspot.get("fit") or {}
+        ctx = (f"热点：{c.hotspot['title']}；热度 {c.hotspot['score']}；三项目匹配度："
                f"文人莫克 {fit.get('wenren', '未评估')}，狗大人 {fit.get('gou', '未评估')}，"
                f"同心圆 {fit.get('tongxinyuan', '未评估')}")
         futures = {"scout": HERMES.pool.submit(
             self.call_agent, "scout", "针对给定热点产出一条业务简报，并判断素材可用性。",
-            f"热点：{hotspot['title']}；热度 {hotspot['score']}；标签 {hotspot['tags']}")}
-        for pid, pm in pms:
+            f"热点：{c.hotspot['title']}；热度 {c.hotspot['score']}；标签 {c.hotspot['tags']}")}
+        for pid, pm in c.pms:
             futures[pm] = HERMES.pool.submit(
                 self.call_agent, pm,
                 f"提交 {PROJECTS[pid]['name']} 今日 4 条候选选题，供 CCO 与 CTO 汇总。",
@@ -1935,36 +2007,36 @@ class Kernel:
         scout_data, scout_meta = futures["scout"].result()
         scout_result = scout_data or self._deg("scout", "热点简报")
         for rcpt in ("ceo", "cco", "cto"):
-            self.send("biz.event", "scout", rcpt, trace,
-                      {"hotspot": hotspot, "result": scout_result,
-                       "text": f"热点上报：{hotspot['title']}（热度 {hotspot['score']}）"}, priority=1)
-        self.emit("engine-meta", trace, {"agent": "scout", **scout_meta})
+            self.send("biz.event", "scout", rcpt, c.trace,
+                      {"hotspot": c.hotspot, "result": scout_result,
+                       "text": f"热点上报：{c.hotspot['title']}（热度 {c.hotspot['score']}）"}, priority=1)
+        self.emit("engine-meta", c.trace, {"agent": "scout", **scout_meta})
         self.meeting_say("scout", scout_result.get("summary") or
-                         f"热点「{hotspot['title']}」热度 {hotspot['score']}，素材可采集，建议三项目按匹配度跟进。",
-                         "report", trace)
+                         f"热点「{c.hotspot['title']}」热度 {c.hotspot['score']}，素材可采集，建议三项目按匹配度跟进。",
+                         "report", c.trace)
 
         pm_topics = {}
-        for pid, pm in pms:
+        for pid, pm in c.pms:
             data, meta = futures[pm].result()
             data = data or self._deg(pm, "选题卡")
-            pm_topics[pid] = self._coerce_topics(data, pid, hotspot)
-            self.send("result", pm, "cco", trace,
+            pm_topics[pid] = self._coerce_topics(data, pid, c.hotspot)
+            self.send("result", pm, "cco", c.trace,
                       {"result": data, "topics": pm_topics[pid], "engine": meta["engine"],
                        "latencyMs": meta.get("latencyMs", 0), "projectId": pid}, project=pid)
-            self.send("result", pm, "cto", trace,
+            self.send("result", pm, "cto", c.trace,
                       {"topics": pm_topics[pid], "engine": meta["engine"]}, project=pid)
             self.meeting_say(pm, "提交 4 条候选：" + "；".join(t.get("title", "") for t in pm_topics[pid]),
-                             "speech", trace)
+                             "speech", c.trace)
         ceo_topics = self._coerce_mgmt_topics(futures["ceo"].result()[0])
         cto_topics = self._coerce_mgmt_topics(futures["cto"].result()[0])
-        boss_topic = {"projectId": "all", "title": str(hotspot["title"])[:60],
+        boss_topic = {"projectId": "all", "title": str(c.hotspot["title"])[:60],
                       "angle": "老板注入选题", "form": "老板指定", "durationSec": 45,
                       "reason": "老板直接指定"}
 
         # 2. CCO 从 12 条池中淘汰 3 条 → 选 9 条（每项目 3 条），抄送 CEO、CTO
         pool = {pid: pm_topics[pid] for pid in self.PIDS}
         pool["_management"] = {"ceo": ceo_topics, "cto": cto_topics, "boss": [boss_topic]}
-        pool_size = sum(len(pm_topics[p]) for p in self.PIDS) + len(ceo_topics) + len(cto_topics) + 1
+        c.pool_size = sum(len(pm_topics[p]) for p in self.PIDS) + len(ceo_topics) + len(cto_topics) + 1
         data, meta = self.call_agent(
             "cco",
             f"汇总 3 名产品经理的 {sum(len(pm_topics[p]) for p in self.PIDS)} 条创意，叠加 CEO/CTO/老板指定选题与自选创意，"
@@ -1975,164 +2047,176 @@ class Kernel:
             "eliminated(数组，每条 {title, projectId, reason}，不得少于 3 条)。",
             "summary, evidence, confidence, tools, selected, eliminated")
         data = data or self._deg("cco", "选题汇总")
-        selected = self._coerce_selection(data, pm_topics)
+        c.selected = self._coerce_selection(data, pm_topics)
         # 淘汰记录必须可核：模型漏填时，用「PM 池 − 入选」补足，保证每项目至少 1 条可追溯
-        eliminated = [x for x in (data.get("eliminated") or []) if isinstance(x, dict)]
-        seen = {t.get("title") for v in selected.values() for t in v}
-        known = {str(x.get("title") or "") for x in eliminated}
+        c.eliminated = [x for x in (data.get("eliminated") or []) if isinstance(x, dict)]
+        seen = {t.get("title") for v in c.selected.values() for t in v}
+        known = {str(x.get("title") or "") for x in c.eliminated}
         for pid in self.PIDS:
             for t in pm_topics[pid]:
                 if t["title"] not in seen and t["title"] not in known:
-                    eliminated.append({"projectId": pid, "title": t["title"],
+                    c.eliminated.append({"projectId": pid, "title": t["title"],
                                        "reason": "四选三未入选（按调性/匹配度/差异化淘汰，规则补记）"})
                     known.add(t["title"])
-        self.send("topic.select", "cco", "ceo", trace,
-                  {"selected": selected, "eliminated": eliminated,
-                   "poolSize": pool_size, "result": data, "engine": meta["engine"]}, priority=2)
-        self.send("topic.select", "cco", "cto", trace,
-                  {"selected": selected, "eliminated": eliminated, "cc": True,
+        self.send("topic.select", "cco", "ceo", c.trace,
+                  {"selected": c.selected, "eliminated": c.eliminated,
+                   "poolSize": c.pool_size, "result": data, "engine": meta["engine"]}, priority=2)
+        self.send("topic.select", "cco", "cto", c.trace,
+                  {"selected": c.selected, "eliminated": c.eliminated, "cc": True,
                    "engine": meta["engine"]}, priority=1)
-        self.emit("engine-meta", trace, {"agent": "cco", **meta})
-        picked = [t.get("title", "") for pid in self.PIDS for t in selected.get(pid, [])]
+        self.emit("engine-meta", c.trace, {"agent": "cco", **meta})
+        picked = [t.get("title", "") for pid in self.PIDS for t in c.selected.get(pid, [])]
         self.meeting_say("cco", (data.get("summary") or
-                                 f"候选池共 {pool_size} 条，按调性与差异化去重后选出 9 条。") +
-                         (" 入选：" + "；".join(picked) if picked else ""), "decision", trace)
-        self.meeting_end(trace, f"每日选题会结束：候选池 {pool_size} 条，CCO 筛出 9 条（每项目 3 条），"
+                                 f"候选池共 {c.pool_size} 条，按调性与差异化去重后选出 9 条。") +
+                         (" 入选：" + "；".join(picked) if picked else ""), "decision", c.trace)
+        self.meeting_end(c.trace, f"每日选题会结束：候选池 {c.pool_size} 条，CCO 筛出 9 条（每项目 3 条），"
                                 "转入选题评审会定稿 6 条。")
 
+
+    def _stage_topic_review(self, c):
+        """3. CEO 召集选题评审会：CEO/CTO/CCO + 涉及项目 PM，最终定 6 条（每项目 2 条）"""
         # 3. CEO 召集选题评审会：CEO/CTO/CCO + 涉及项目 PM，最终定 6 条（每项目 2 条）
         agenda2 = ["复核 CCO 9 条", "逐项目定 2 条", "形成会议纪要"]
-        self.meeting_begin(trace, "选题评审会", participants, agenda2)
-        self.set_scene("MEETING", trace, title="选题评审会", participants=participants, agenda=agenda2)
+        self.meeting_begin(c.trace, "选题评审会", c.participants, agenda2)
+        self.set_scene("MEETING", c.trace, title="选题评审会", participants=c.participants, agenda=agenda2)
         for aid in ("cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"):
             self.set_agent(aid, "meeting", "选题评审会")
-            self.send("delegation", "ceo", aid, trace,
+            self.send("delegation", "ceo", aid, c.trace,
                       {"task": "参会：对 CCO 9 条选题复核并定稿 6 条"}, priority=2)
         self.meeting_say("ceo", "现在复核 CCO 的 9 条，逐项目定 2 条。今天必须形成 6 条定稿和会议纪要。",
-                         "opening", trace)
+                         "opening", c.trace)
         data, meta = self.call_agent(
             "ceo",
             "主持选题评审会：从 CCO 的 9 条中逐项目定稿 2 条，共 6 条；"
             "输出会议纪要（议题、参会人、结论、每项目 2 条及理由、后续分工），并给出收件人与抄送人。",
-            json.dumps({pid: selected[pid] for pid in self.PIDS}, ensure_ascii=False),
+            json.dumps({pid: c.selected[pid] for pid in self.PIDS}, ensure_ascii=False),
             "额外 JSON 字段：final(数组，恰好 6 条，每条 {projectId,title,angle,durationSec})；"
             "minutes(会议纪要 Markdown，≤1500字)；recipients(数组)；cc(数组)。",
             "summary, evidence, confidence, tools, final, minutes, recipients, cc")
         data = data or self._deg("ceo", "选题评审会")
-        final = self._coerce_final(data, selected)
+        c.final = self._coerce_final(data, c.selected)
         minutes = str(data.get("minutes") or "").strip() or (
-            f"# 选题评审会\n\n- 议题：{hotspot['title']}\n- 参会：CEO 陆清安、CTO 扶频、CCO 沈青禾、"
+            f"# 选题评审会\n\n- 议题：{c.hotspot['title']}\n- 参会：CEO 陆清安、CTO 扶频、CCO 沈青禾、"
             f"产品经理 贺平生/米珂/姜月初\n- 结论：每项目定稿 2 条，共 6 条\n")
         recipients = [str(x) for x in (data.get("recipients") or [])] or \
             ["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"]
         cc = [str(x) for x in (data.get("cc") or [])] or ["owner"]
         display = lambda xs: ["老板" if x == "owner" else self.agents.get(x, {}).get("name", x) for x in xs]
-        meeting_doc = {}
+        c.meeting_doc = {}
         if DL:
             try:
-                meeting_doc = DL.export_meeting(trace, {
+                c.meeting_doc = DL.export_meeting(c.trace, {
                     "title": "选题评审会", "minutes": minutes,
                     "recipients": display(recipients), "cc": display(cc),
-                    "final": final, "hotspot": hotspot})
+                    "final": c.final, "hotspot": c.hotspot})
             except Exception as e:
                 print(f"[pipeline] 会议纪要落盘失败：{type(e).__name__}: {e}", flush=True)
-        self.send("decision", "ceo", "all", trace,
-                  {"text": f"定稿 6 条（每项目 2 条）：{hotspot['title']}",
-                   "final": final, "minutes": minutes,
-                   "minutesUrl": (meeting_doc or {}).get("minutes", ""),
-                   "mailUrl": (meeting_doc or {}).get("mail", ""),
+        self.send("decision", "ceo", "all", c.trace,
+                  {"text": f"定稿 6 条（每项目 2 条）：{c.hotspot['title']}",
+                   "final": c.final, "minutes": minutes,
+                   "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
+                   "mailUrl": (c.meeting_doc or {}).get("mail", ""),
                    "result": data, "engine": meta["engine"]}, project="all", priority=2)
-        self.send("report.ready", "ceo", "owner", trace,
+        self.send("report.ready", "ceo", "owner", c.trace,
                   {"kind": "meeting", "title": "选题评审会纪要",
-                   "minutesUrl": (meeting_doc or {}).get("minutes", ""),
-                   "mailUrl": (meeting_doc or {}).get("mail", ""),
+                   "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
+                   "mailUrl": (c.meeting_doc or {}).get("mail", ""),
                    "recipients": recipients, "cc": cc}, priority=1)
-        conclusion = "定稿 6 条（每项目 2 条）：" + "；".join(
-            f"{PROJECTS[pid]['name']}《{t['title']}》" for pid in self.PIDS for t in final[pid])
-        self.meeting_say("ceo", "结论：" + conclusion + "。后续按项目进入制作，会议纪要已归档到 Obsidian。",
-                         "conclusion", trace)
-        self.meeting_end(trace, conclusion, (meeting_doc or {}).get("minutes", ""))
+        c.conclusion = "定稿 6 条（每项目 2 条）：" + "；".join(
+            f"{PROJECTS[pid]['name']}《{t['title']}》" for pid in self.PIDS for t in c.final[pid])
+        self.meeting_say("ceo", "结论：" + c.conclusion + "。后续按项目进入制作，会议纪要已归档到 Obsidian。",
+                         "conclusion", c.trace)
+        self.meeting_end(c.trace, c.conclusion, (c.meeting_doc or {}).get("minutes", ""))
         # 祁南（kb_manager）在选题定稿即归档，不再等发布审批；发布后只更新同一条
-        self.archive_knowledge(trace, [
+        self.archive_knowledge(c.trace, [
             {"projectId": pid, "title": t.get("title"),
-             "body": f"选题定稿：{t.get('angle') or t.get('title')}；来源热点：{hotspot.get('title')}；"
-                     f"评审会结论：{conclusion[:120]}",
-             "tags": ["热点/" + str(hotspot.get("title") or "")[:24]] + list(hotspot.get("tags") or [])[:3]}
-            for pid in self.PIDS for t in final.get(pid, [])])
-        self.set_scene("WORK", trace, title="定稿 6 条，进入制作")
+             "body": f"选题定稿：{t.get('angle') or t.get('title')}；来源热点：{c.hotspot.get('title')}；"
+                     f"评审会结论：{c.conclusion[:120]}",
+             "tags": ["热点/" + str(c.hotspot.get("title") or "")[:24]] + list(c.hotspot.get("tags") or [])[:3]}
+            for pid in self.PIDS for t in c.final.get(pid, [])])
+        self.set_scene("WORK", c.trace, title="定稿 6 条，进入制作")
 
+
+    def _stage_boss_report(self, c):
+        """3.5 CCO 邮件汇报老板：选题评审结果 + 等待开工审批（抄送 CEO/CTO）"""
         # 3.5 CCO 邮件汇报老板：选题评审结果 + 等待开工审批（抄送 CEO/CTO）
-        self.guard_budget(trace)
+        self.guard_budget(c.trace)
         mail_lines = [
             f"老板：",
             "",
-            f"本轮选题评审已完成（热点：{hotspot['title']}）。",
-            f"候选池 {pool_size} 条 → CCO 筛出 9 条 → 评审会定稿 {sum(len(v) for v in final.values())} 条（每项目 2 条）。",
+            f"本轮选题评审已完成（热点：{c.hotspot['title']}）。",
+            f"候选池 {c.pool_size} 条 → CCO 筛出 9 条 → 评审会定稿 {sum(len(v) for v in c.final.values())} 条（每项目 2 条）。",
             "",
             "## 定稿清单",
         ]
         for pid in self.PIDS:
             mail_lines.append(f"### {PROJECTS[pid]['name']}")
-            for t in final[pid]:
+            for t in c.final[pid]:
                 mail_lines.append(
                     f"- 《{t['title']}》｜角度：{t.get('angle', '—')}｜形态：{t.get('form', '—')}｜"
                     f"时长：{t.get('durationSec', '—')}s｜理由：{t.get('reason', '—')}")
-        if eliminated:
+        if c.eliminated:
             mail_lines += ["", "## 淘汰与原因"]
-            for e in eliminated[:12]:
+            for e in c.eliminated[:12]:
                 mail_lines.append(f"- {e.get('title', '—')}：{e.get('reason', '—')}")
         mail_lines += [
             "",
             "## 待办",
             "- 开工审批单已生成（含成本/素材/合规检查），请老板在 OPC 工作台批准后进入制作。",
-            f"- 会议纪要：{(meeting_doc or {}).get('minutes', '（未生成）')}",
+            f"- 会议纪要：{(c.meeting_doc or {}).get('minutes', '（未生成）')}",
         ]
-        mail_subject = f"[选题评审] {str(hotspot['title'])[:30]} · 定稿 6 条，待开工审批"
+        mail_subject = f"[选题评审] {str(c.hotspot['title'])[:30]} · 定稿 6 条，待开工审批"
         mail_body = "\n".join(mail_lines)
-        self.send("biz.event", "cco", "owner", trace,
+        self.send("biz.event", "cco", "owner", c.trace,
                   {"text": "CCO 已邮件汇报选题评审结果，等待开工审批",
                    "to": BOSS_MAIL, "cc": ["ceo", "cto"], "subject": mail_subject,
-                   "finalCount": sum(len(v) for v in final.values()),
-                   "eliminated": len(eliminated)}, priority=2)
+                   "finalCount": sum(len(v) for v in c.final.values()),
+                   "eliminated": len(c.eliminated)}, priority=2)
         threading.Thread(target=self.mail_boss,
                          args=(mail_subject, mail_body, "cco", ["ceo", "cto"]),
                          daemon=True).start()
 
+
+    def _stage_create_items(self, c):
+        """4. 建 6 条内容（每项目 2 条）"""
         # 4. 建 6 条内容（每项目 2 条）
-        items = {}
+        c.items = {}
         for pid in self.PIDS:
-            for t in final[pid]:
-                item = {"id": uid("c"), "projectId": pid, "traceId": trace, "stage": "topic",
+            for t in c.final[pid]:
+                item = {"id": uid("c"), "projectId": pid, "traceId": c.trace, "stage": "topic",
                         "title": t["title"], "angle": t.get("angle", ""),
                         "owner": f"pm_{pid}", "toneProfile": TONE[pid], "assets": [],
                         "reviewNote": "", "durationSec": t.get("durationSec", 45)}
                 with self.lock:
                     self.contents.append(item)
-                items[item["id"]] = item
-                self.emit("pipeline", trace, item)
-            self.send("delegation", f"pm_{pid}", f"cw_{pid}", trace,
-                      {"task": f"承接本项目 {len(final[pid])} 条定稿选题，先出制作评估再写稿"}, project=pid)
-            self.send("delegation", f"pm_{pid}", f"vd_{pid}", trace,
-                      {"task": f"承接本项目 {len(final[pid])} 条定稿选题，先出制作评估再制作样片"}, project=pid)
+                c.items[item["id"]] = item
+                self.emit("pipeline", c.trace, item)
+            self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
+                      {"task": f"承接本项目 {len(c.final[pid])} 条定稿选题，先出制作评估再写稿"}, project=pid)
+            self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
+                      {"task": f"承接本项目 {len(c.final[pid])} 条定稿选题，先出制作评估再制作样片"}, project=pid)
 
+
+    def _stage_production_approval(self, c):
+        """4.5 开工审批：老板批准选题与成本/素材/合规摘要后才进入制作"""
         # 4.5 开工审批：老板批准选题与成本/素材/合规摘要后才进入制作
         prod_approval = {
-            "id": uid("ap"), "traceId": trace, "action": "production.start", "risk": "high",
+            "id": uid("ap"), "traceId": c.trace, "action": "production.start", "risk": "high",
             "status": "pending", "approver": "老板", "createdAt": iso_now(), "decidedAt": "",
-            "timeoutSec": APPROVAL_TIMEOUT,
-            "items": list(items.keys()),
-            "titles": [i["title"] for i in items.values()],
-            "title": f"{len(items)} 条内容开工审批（含成本/素材/合规检查）",
-            "checks": self._production_checks(items),
+            "timeoutSec": self._stage_timeout(c),
+            "items": list(c.items.keys()),
+            "titles": [i["title"] for i in c.items.values()],
+            "title": f"{len(c.items)} 条内容开工审批（含成本/素材/合规检查）",
+            "checks": self._production_checks(c.items),
         }
         with self.lock:
             self.approvals.append(prod_approval)
             prod_ev = threading.Event()
             self.approval_events[prod_approval["id"]] = prod_ev
-        self.send("approval", "ceo", "owner", trace, {"approval": prod_approval}, priority=2)
-        self.emit("approval", trace, prod_approval)
+        self.send("approval", "ceo", "owner", c.trace, {"approval": prod_approval}, priority=2)
+        self.emit("approval", c.trace, prod_approval)
 
-        prod_ok = prod_ev.wait(timeout=APPROVAL_TIMEOUT)
+        prod_ok = prod_ev.wait(timeout=self._stage_timeout(c))
         with self.lock:
             prod_appr = next(a for a in self.approvals if a["id"] == prod_approval["id"])
             self.approval_events.pop(prod_approval["id"], None)
@@ -2141,54 +2225,57 @@ class Kernel:
                 if prod_appr["status"] == "pending":
                     prod_appr["status"] = "timeout"
                     prod_appr["decidedAt"] = iso_now()
-                    prod_appr["timeoutReason"] = f"等待老板审批超过 {APPROVAL_TIMEOUT}s，按挂起处理"
-                for item in items.values():
+                    prod_appr["timeoutReason"] = f"等待老板审批超过 {self._stage_timeout(c)}s，按挂起处理"
+                for item in c.items.values():
                     item["stage"] = "blocked"
                     item["blockedBy"] = "production-gate"
-                t = self.traces.get(trace)
+                t = self.traces.get(c.trace)
                 if t:
                     t["status"] = "rejected" if prod_appr["status"] == "rejected" else "timeout"
                     t["closedAt"] = iso_now()
-            for item in items.values():
-                self.items_emit(trace, item)
-            self.send("escalation", "ceo", "owner", trace,
+            for item in c.items.values():
+                self.items_emit(c.trace, item)
+            self.send("escalation", "ceo", "owner", c.trace,
                       {"text": "开工审批未通过，本轮不进入制作"}, priority=2)
-            self.emit("approval", trace, prod_appr)
-            self.set_scene("WORK", trace, title="开工审批未通过")
-            return
+            self.emit("approval", c.trace, prod_appr)
+            self.set_scene("WORK", c.trace, title="开工审批未通过")
+            return _PIPELINE_STOP
 
-        self.guard_budget(trace)   # CTO 成本熔断：审批通过后、进入制作前再核一次
+        self.guard_budget(c.trace)   # CTO 成本熔断：审批通过后、进入制作前再核一次
 
+
+    def _stage_assessment(self, c):
+        """5. PM 组织本项目组出《制作评估报告》：文案要求、分镜、时长、配音/TTS、素材"""
         # 5. PM 组织本项目组出《制作评估报告》：文案要求、分镜、时长、配音/TTS、素材
         jobs = {}
-        for pid, pm in pms:
+        for pid, pm in c.pms:
             jobs[pid] = HERMES.pool.submit(
                 self.call_agent, pm,
                 f"为 {PROJECTS[pid]['name']} 的 2 条定稿选题组织本项目组：给出文案要求、分镜剧本要点、"
                 "时长评估、配音/TTS 方案与素材清单，形成《制作评估报告》，并列出素材缺口。",
-                json.dumps(final[pid], ensure_ascii=False),
+                json.dumps(c.final[pid], ensure_ascii=False),
                 "额外 JSON 字段：assessment({items:[{title,durationSec,tts:{voice,style},"
                 "materials:[],copyBrief,storyboardNotes}], summary})；assetGaps(数组，每条 {item, why})。",
                 "summary, evidence, confidence, tools, assessment, assetGaps")
         gap_jobs = {}
-        for pid, pm in pms:
+        for pid, pm in c.pms:
             data, meta = jobs[pid].result()
             data = data or self._deg(pm, "制作评估报告")
-            pid_items = [i for i in items.values() if i["projectId"] == pid]
+            pid_items = [i for i in c.items.values() if i["projectId"] == pid]
             for idx, item in enumerate(pid_items):
                 item["plan"] = self._coerce_plan(data, item, idx)
                 item["assessment"] = {"summary": data.get("summary", ""),
                                       "evidence": data.get("evidence", []),
                                       "risks": data.get("risks", []),
                                       "assetGaps": data.get("assetGaps", [])}
-                self.items_emit(trace, item)
-            self.send("result", pm, "cco", trace,
+                self.items_emit(c.trace, item)
+            self.send("result", pm, "cco", c.trace,
                       {"result": data, "assessment": data.get("assessment"), "engine": meta["engine"]}, project=pid)
-            self.send("result", pm, "cto", trace,
+            self.send("result", pm, "cto", c.trace,
                       {"assessment": data.get("assessment"), "engine": meta["engine"]}, project=pid)
             gaps = data.get("assetGaps") or []
             if gaps:
-                self.send("delegation", pm, "scout", trace,
+                self.send("delegation", pm, "scout", c.trace,
                           {"task": "素材缺失工单：补齐/替代并给出结论", "gaps": gaps}, project=pid, priority=2)
                 gap_jobs[pid] = HERMES.pool.submit(
                     self.call_agent, "scout", "承接素材缺失工单：逐项给出补齐、替代或「无可用素材」的结论。",
@@ -2198,16 +2285,19 @@ class Kernel:
         for pid, job in gap_jobs.items():
             data, meta = job.result()
             data = data or self._deg("scout", "素材工单")
-            for item in items.values():
+            for item in c.items.values():
                 if item["projectId"] == pid:
                     item["assetResolution"] = data.get("gaps", [])
-                    self.items_emit(trace, item)
-            self.send("result", "scout", f"pm_{pid}", trace,
+                    self.items_emit(c.trace, item)
+            self.send("result", "scout", f"pm_{pid}", c.trace,
                       {"result": data, "engine": meta["engine"]}, project=pid)
 
+
+    def _stage_copy(self, c):
+        """6. 文案成稿（6 个真实调用）"""
         # 6. 文案成稿（6 个真实调用）
         jobs = {}
-        for iid, item in items.items():
+        for iid, item in c.items.items():
             pid = item["projectId"]
             plan = item.get("plan") or {}
             jobs[iid] = HERMES.pool.submit(
@@ -2217,9 +2307,9 @@ class Kernel:
                 f"文案要求：{plan.get('copyBrief', '')}",
                 "额外 JSON 字段：copy(成稿文案≤80字)。",
                 "summary, evidence, confidence, tools, copy")
-            self.send("delegation", f"pm_{pid}", f"cw_{pid}", trace,
+            self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
                       {"task": f"按评估报告写《{item['title']}》成稿"}, project=pid)
-        for iid, item in items.items():
+        for iid, item in c.items.items():
             pid = item["projectId"]
             data, meta = jobs[iid].result()
             if meta.get("engine") != "hermes" or not (data or {}).get("copy"):
@@ -2228,14 +2318,17 @@ class Kernel:
                             "tools": [], "copy": f"{PROJECTS[pid]['name']} 文案占位"}
             item["stage"] = "copy"
             item["copy"] = data.get("copy") or data.get("summary", "")
-            self.send("result", f"cw_{pid}", f"pm_{pid}", trace,
+            self.send("result", f"cw_{pid}", f"pm_{pid}", c.trace,
                       {"result": data, "itemId": iid, "engine": meta["engine"],
                        "latencyMs": meta.get("latencyMs", 0)}, project=pid)
-            self.items_emit(trace, item)
+            self.items_emit(c.trace, item)
 
+
+    def _stage_sample(self, c):
+        """7. 视频制作出样片（6 个真实调用）"""
         # 7. 视频制作出样片（6 个真实调用）
         jobs = {}
-        for iid, item in items.items():
+        for iid, item in c.items.items():
             pid = item["projectId"]
             plan = item.get("plan") or {}
             jobs[iid] = HERMES.pool.submit(
@@ -2247,9 +2340,9 @@ class Kernel:
                 "额外 JSON 字段：shots(数字), storyboard(4-6 镜，每镜 画面/台词，可加 插图:1-2 个中文物件名，"
                 "如 相纸/药水盘/放大镜，≤220字), cover(≤20字), sample(样片说明≤80字)。",
                 "summary, evidence, confidence, tools, shots, storyboard, cover, sample")
-            self.send("delegation", f"pm_{pid}", f"vd_{pid}", trace,
+            self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
                       {"task": f"按评估报告出《{item['title']}》样片"}, project=pid)
-        for iid, item in items.items():
+        for iid, item in c.items.items():
             pid = item["projectId"]
             data, meta = jobs[iid].result()
             if meta.get("engine") != "hermes" or not (data or {}).get("storyboard"):
@@ -2261,17 +2354,20 @@ class Kernel:
             item["storyboard"] = data.get("storyboard") or ""
             item["cover"] = data.get("cover") or ""
             item["sampleNote"] = data.get("sample") or data.get("summary", "")
-            self.send("result", f"vd_{pid}", f"pm_{pid}", trace,
+            self.send("result", f"vd_{pid}", f"pm_{pid}", c.trace,
                       {"result": data, "itemId": iid, "engine": meta["engine"],
                        "latencyMs": meta.get("latencyMs", 0)}, project=pid)
-            self.items_emit(trace, item)
+            self.items_emit(c.trace, item)
 
+
+    def _stage_render(self, c):
+        """7.5 真实出片：MCP-TTS 旁白 + OpenMontage 渲染 + 画面验收门"""
         # 7.5 真实出片：MCP-TTS 旁白 + OpenMontage 渲染 + 画面验收门
-        render_blocked = set()
-        for idx, (iid, item) in enumerate(items.items(), 1):
+        c.render_blocked = set()
+        for idx, (iid, item) in enumerate(c.items.items(), 1):
             pid = item["projectId"]
-            self.send("biz.event", f"vd_{pid}", "ceo", trace,
-                      {"text": f"真实出片 {idx}/{len(items)}：《{item['title']}》", "step": "render"},
+            self.send("biz.event", f"vd_{pid}", "ceo", c.trace,
+                      {"text": f"真实出片 {idx}/{len(c.items)}：《{item['title']}》", "step": "render"},
                       project=pid, priority=2)
             if os.environ.get("OPC_SKIP_RENDER") == "1":
                 files = item.get("files") or {}
@@ -2281,7 +2377,8 @@ class Kernel:
             elif not OMR:
                 item["renderCheck"] = {"pass": False, "reasons": ["渲染模块不可用"]}
             else:
-                res = OMR.produce(item, PROJECTS[pid], TONE.get(pid, ""))
+                res = OMR.produce(item, PROJECTS[pid], TONE.get(pid, ""),
+                                  DELIVERY.get(pid) or DELIVERY["_default"])
                 item["render"] = {k: v for k, v in res.items() if k != "check"}
                 item["renderCheck"] = res.get("check") or {
                     "pass": False, "reasons": [res.get("reason") or "未知渲染错误"]}
@@ -2291,51 +2388,54 @@ class Kernel:
                     item["assets"] = []
                     item["renderError"] = res.get("reason", "")
             if not item["renderCheck"].get("pass"):
-                render_blocked.add(iid)
+                c.render_blocked.add(iid)
                 item["blockedBy"] = "render-gate"
                 reason = item.get("renderError") or "；".join(
                     (item["renderCheck"].get("reasons") or [])[:2])
-                self.send("escalation", f"vd_{pid}", "owner", trace,
+                self.send("escalation", f"vd_{pid}", "owner", c.trace,
                           {"text": f"《{item['title']}》样片未过画面验收：{reason}"},
                           project=pid, priority=2)
-            self.emit("render-gate", trace, {"itemId": iid,
+            self.emit("render-gate", c.trace, {"itemId": iid,
                                             "pass": item["renderCheck"].get("pass"),
                                             "check": item["renderCheck"]})
-            self.items_emit(trace, item)
+            self.items_emit(c.trace, item)
 
+
+    def _stage_sample_review(self, c):
+        """8. 样片三方评审（CCO + CTO + 本项目 PM），最多两轮"""
         # 8. 样片三方评审（CCO + CTO + 本项目 PM），最多两轮
-        sample_blocked = set()
-        review_ids = [iid for iid in items if iid not in render_blocked]
-        for rnd in (1, 2):
-            maps, metas = self._sample_wave(trace, review_ids, items)
+        c.sample_blocked = set()
+        c.review_ids = [iid for iid in c.items if iid not in c.render_blocked]
+        for rnd in range(1, c.stage.rounds + 1):
+            maps, metas = self._sample_wave(c.trace, c.review_ids, c.items)
             failed = []
-            for iid in review_ids:
-                item = items[iid]
+            for iid in c.review_ids:
+                item = c.items[iid]
                 pid = item["projectId"]
                 roles = {"cco": maps["cco"][iid], "cto": maps["cto"][iid], "pm": maps[pid][iid]}
                 item["sampleReviews"] = {k: {"pass": v[0], "reasons": v[1]} for k, v in roles.items()}
                 passed = all(v[0] for v in roles.values())
                 item["samplePass"] = passed
-                self.emit("sample-review", trace,
+                self.emit("sample-review", c.trace,
                           {"itemId": iid, "projectId": pid, "round": rnd, "pass": passed,
                            "reviews": item["sampleReviews"]})
                 if not passed:
                     failed.append(iid)
             if not failed:
                 break
-            if rnd == 2:
+            if rnd >= c.stage.rounds:
                 for iid in failed:
-                    items[iid]["stage"] = "blocked"
-                    items[iid]["blockedBy"] = "sample-gate"
-                    sample_blocked.add(iid)
-                    self.items_emit(trace, items[iid])
-                    self.send("escalation", "cco", "owner", trace,
-                              {"text": f"《{items[iid]['title']}》两轮样片评审未通过，已阻断"},
-                              project=items[iid]["projectId"], priority=2)
+                    c.items[iid]["stage"] = "blocked"
+                    c.items[iid]["blockedBy"] = "sample-gate"
+                    c.sample_blocked.add(iid)
+                    self.items_emit(c.trace, c.items[iid])
+                    self.send("escalation", "cco", "owner", c.trace,
+                              {"text": f"《{c.items[iid]['title']}》两轮样片评审未通过，已阻断"},
+                              project=c.items[iid]["projectId"], priority=2)
                 break
             jobs = {}
             for iid in failed:
-                item = items[iid]
+                item = c.items[iid]
                 pid = item["projectId"]
                 reasons = json.dumps(item.get("sampleReviews", {}), ensure_ascii=False)
                 jobs[iid] = HERMES.pool.submit(
@@ -2345,12 +2445,12 @@ class Kernel:
                     "额外 JSON 字段：shots(数字), storyboard(≤220字，每镜可加 插图:1-2 个中文物件名，"
                     "如 相纸/药水盘/放大镜), cover(≤20字), sample(≤80字)。",
                     "summary, evidence, confidence, tools, shots, storyboard, cover, sample")
-                self.send("delegation", f"pm_{pid}", f"vd_{pid}", trace,
+                self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
                           {"task": "按样片三方评审意见返工"}, project=pid, priority=2)
             for iid, job in jobs.items():
                 data, meta = job.result()
                 data = data or {"summary": "返工未返回，沿用原样片", "evidence": [], "confidence": 0.2}
-                item = items[iid]
+                item = c.items[iid]
                 pid = item["projectId"]
                 item["storyboard"] = data.get("storyboard") or item.get("storyboard", "")
                 item["cover"] = data.get("cover") or item.get("cover", "")
@@ -2358,7 +2458,8 @@ class Kernel:
                 # 返工必须重新出片，否则第二轮仍在评审同一份视频（空转）
                 if OMR and not item.get("renderSkipped"):
                     try:
-                        res = OMR.produce(item, PROJECTS[pid], TONE.get(pid, ""))
+                        res = OMR.produce(item, PROJECTS[pid], TONE.get(pid, ""),
+                                          DELIVERY.get(pid) or DELIVERY["_default"])
                         item["render"] = {k: v for k, v in res.items() if k != "check"}
                         item["renderCheck"] = res.get("check") or {
                             "pass": False, "reasons": [res.get("reason") or "未知渲染错误"]}
@@ -2371,18 +2472,21 @@ class Kernel:
                     except Exception as e:
                         item["renderCheck"] = {"pass": False, "reasons": [f"返工出片异常：{type(e).__name__}"]}
                         print(f"[pipeline] {iid} 返工出片异常：{type(e).__name__}: {e}", flush=True)
-                self.items_emit(trace, item)
-                self.send("result", f"vd_{item['projectId']}", f"pm_{item['projectId']}", trace,
+                self.items_emit(c.trace, item)
+                self.send("result", f"vd_{item['projectId']}", f"pm_{item['projectId']}", c.trace,
                           {"result": data, "itemId": iid, "engine": meta["engine"]},
                           project=item["projectId"])
-            review_ids = failed
+            c.review_ids = failed
 
+
+    def _stage_final(self, c):
+        """9. 样片过审后「定版」：不再二次剪辑，直接把过审样片锁为 05-final.mp4"""
         # 9. 样片过审后「定版」：不再二次剪辑，直接把过审样片锁为 05-final.mp4
-        final_ids = [iid for iid in items
-                     if iid not in sample_blocked and iid not in render_blocked]
+        final_ids = [iid for iid in c.items
+                     if iid not in c.sample_blocked and iid not in c.render_blocked]
         jobs = {}
         for iid in final_ids:
-            item = items[iid]
+            item = c.items[iid]
             pid = item["projectId"]
             jobs[iid] = HERMES.pool.submit(
                 self.call_agent, f"vd_{pid}",
@@ -2392,12 +2496,12 @@ class Kernel:
                 "制度：定版不重剪，禁止声称做了帧级调整或重新剪辑；额外 JSON 字段："
                 "finalCut(定版说明≤120字，须写明「不改画面」), assets(数组，交付文件名)。",
                 "summary, evidence, confidence, tools, finalCut, assets")
-            self.send("delegation", f"pm_{pid}", f"vd_{pid}", trace,
+            self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
                       {"task": "样片评审通过，执行定版（不重剪）"}, project=pid)
         for iid, job in jobs.items():
             data, meta = job.result()
             data = data or {"summary": "定版完成（降级）", "evidence": [], "confidence": 0.2}
-            item = items[iid]
+            item = c.items[iid]
             pid = item["projectId"]
             item["stage"] = "final"
             item["finalCut"] = data.get("finalCut") or data.get("summary", "")
@@ -2415,107 +2519,113 @@ class Kernel:
                     item["assets"] = [a for a in item.get("assets", []) if a and a != final_url] + [final_url]
                 except Exception as e:
                     print(f"[pipeline] {iid} 定版母版落盘失败：{type(e).__name__}: {e}", flush=True)
-            self.send("result", f"vd_{pid}", f"pm_{pid}", trace,
+            self.send("result", f"vd_{pid}", f"pm_{pid}", c.trace,
                       {"result": data, "itemId": iid, "engine": meta["engine"]}, project=pid)
-            self.items_emit(trace, item)
+            self.items_emit(c.trace, item)
 
+
+    def _stage_review(self, c):
+        """10. 审核员终审（定版后）；驳回返工重写，最多 2 轮"""
         # 10. 审核员终审（定版后）；驳回返工重写，最多 2 轮
-        self.guard_budget(trace)   # 制作完成后、终审前核对成本
-        passed_items, review_history = {}, []
-        pending = [iid for iid in items
-                   if iid not in sample_blocked and iid not in render_blocked]
-        for rnd in (1, 2):
-            rev_jobs = {iid: HERMES.pool.submit(self.review_with_model, items[iid], trace) for iid in pending}
+        self.guard_budget(c.trace)   # 制作完成后、终审前核对成本
+        c.passed_items, c.review_history = {}, []
+        c.pending = [iid for iid in c.items
+                   if iid not in c.sample_blocked and iid not in c.render_blocked]
+        for rnd in range(1, c.stage.rounds + 1):
+            rev_jobs = {iid: HERMES.pool.submit(self.review_with_model, c.items[iid], c.trace) for iid in c.pending}
             failed = []
-            for iid in pending:
-                item = items[iid]
+            for iid in c.pending:
+                item = c.items[iid]
                 pid = item["projectId"]
                 verdict, reasons, meta = rev_jobs[iid].result()
                 item["stage"] = "review"
                 item["reviewNote"] = "通过" if verdict else "；".join(reasons)
-                review_history.append({"itemId": iid, "projectId": pid, "round": rnd, "pass": verdict})
-                self.send("result", "reviewer", "ceo", trace,
+                c.review_history.append({"itemId": iid, "projectId": pid, "round": rnd, "pass": verdict})
+                self.send("result", "reviewer", "ceo", c.trace,
                           {"verdict": {"pass": verdict, "reasons": reasons,
                                        "projectId": pid, "itemId": iid},
                            "result": {"summary": "审核通过" if verdict else "审核驳回",
                                       "evidence": reasons, "confidence": 0.9, "tools": ["review.check"]},
                            "engine": meta["engine"], "reason": meta.get("reason", "")}, project=pid)
-                self.items_emit(trace, item)
+                self.items_emit(c.trace, item)
                 if verdict:
-                    passed_items[iid] = item
+                    c.passed_items[iid] = item
                 else:
                     failed.append(iid)
             if not failed:
                 break
-            if rnd == 2:
+            if rnd >= c.stage.rounds:
                 for iid in failed:
-                    items[iid]["stage"] = "blocked"
-                    items[iid]["blockedBy"] = "review-gate"
-                    self.items_emit(trace, items[iid])
-                    self.send("escalation", "reviewer", "owner", trace,
-                              {"text": f"《{items[iid]['title']}》两次审核未通过，已阻断，不进入审批"},
-                              project=items[iid]["projectId"], priority=2)
+                    c.items[iid]["stage"] = "blocked"
+                    c.items[iid]["blockedBy"] = "review-gate"
+                    self.items_emit(c.trace, c.items[iid])
+                    self.send("escalation", "reviewer", "owner", c.trace,
+                              {"text": f"《{c.items[iid]['title']}》两次审核未通过，已阻断，不进入审批"},
+                              project=c.items[iid]["projectId"], priority=2)
                 break
             rework = {}
             for iid in failed:
-                item = items[iid]
+                item = c.items[iid]
                 pid = item["projectId"]
                 rework[iid] = HERMES.pool.submit(
                     self.call_agent, f"cw_{pid}", f"按审核意见重写《{item['title']}》文案（≤80字）。",
                     f"项目：{PROJECTS[pid]['name']}；风格：{TONE[pid]}",
                     f"审核驳回理由：{item['reviewNote']}。必须修正这些问题且保持本项目人设。",
                     "summary, evidence, confidence, tools, copy")
-                self.send("delegation", f"pm_{pid}", f"cw_{pid}", trace,
+                self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
                           {"task": "按审核意见返工重写"}, project=pid, priority=2)
-            self.emit("rework", trace, {"round": rnd, "items": failed,
-                                        "reasons": [items[i]["reviewNote"] for i in failed]})
+            self.emit("rework", c.trace, {"round": rnd, "items": failed,
+                                        "reasons": [c.items[i]["reviewNote"] for i in failed]})
             for iid, job in rework.items():
                 new, m = job.result()
-                item = items[iid]
+                item = c.items[iid]
                 item["copy"] = (new or {}).get("copy") or item.get("copy", "")
-                self.send("result", f"cw_{item['projectId']}", f"pm_{item['projectId']}", trace,
+                self.send("result", f"cw_{item['projectId']}", f"pm_{item['projectId']}", c.trace,
                           {"result": new or {"summary": "返工未返回，沿用原稿", "evidence": [],
                                              "confidence": 0.2}, "engine": m["engine"]}, project=item["projectId"])
-                self.items_emit(trace, item)
-            pending = failed
+                self.items_emit(c.trace, item)
+            c.pending = failed
 
         with self.lock:
-            self.traces[trace]["reviewHistory"] = review_history
-            self.traces[trace]["reviewGate"] = {"passed": len(passed_items),
-                                                "blocked": len(items) - len(passed_items)}
-        self._persist_trace(trace)
-        self.export_trace_docs(trace)
+            self.traces[c.trace]["reviewHistory"] = c.review_history
+            self.traces[c.trace]["reviewGate"] = {"passed": len(c.passed_items),
+                                                "blocked": len(c.items) - len(c.passed_items)}
+        self._persist_trace(c.trace)
+        self.export_trace_docs(c.trace)
 
-        if not passed_items:
-            self.send("escalation", "reviewer", "owner", trace,
+        if not c.passed_items:
+            self.send("escalation", "reviewer", "owner", c.trace,
                       {"text": "全部内容审核未通过，本轮不进入审批"}, priority=2)
-            self.set_scene("WORK", trace, title="全部驳回，等待返工")
+            self.set_scene("WORK", c.trace, title="全部驳回，等待返工")
             with self.lock:
-                self.traces[trace]["status"] = "blocked"
-                self.traces[trace]["closedAt"] = iso_now()
-            self._persist_trace(trace)
-            return
+                self.traces[c.trace]["status"] = "blocked"
+                self.traces[c.trace]["closedAt"] = iso_now()
+            self._persist_trace(c.trace)
+            return _PIPELINE_STOP
 
+
+    def _stage_publish_approval(self, c):
+        """11. 审批门（仅放行审核通过的内容）"""
         # 11. 审批门（仅放行审核通过的内容）
-        self.guard_budget(trace)   # 发布审批前最后一道成本核对
-        approval = {"id": uid("ap"), "traceId": trace, "action": "publish.execute", "risk": "high",
+        self.guard_budget(c.trace)   # 发布审批前最后一道成本核对
+        approval = {"id": uid("ap"), "traceId": c.trace, "action": "publish.execute", "risk": "high",
                     "status": "pending", "approver": "老板", "createdAt": iso_now(), "decidedAt": "",
-                    "timeoutSec": APPROVAL_TIMEOUT,
-                    "items": list(passed_items),
-                    "titles": [i["title"] for i in passed_items.values()],
-                    "title": f"{len(passed_items)} 条内容发布审批（含同心圆对外承诺）",
-                    "checks": self._publish_checks(items, passed_items, review_history)}
+                    "timeoutSec": self._stage_timeout(c),
+                    "items": list(c.passed_items),
+                    "titles": [i["title"] for i in c.passed_items.values()],
+                    "title": f"{len(c.passed_items)} 条内容发布审批（含同心圆对外承诺）",
+                    "checks": self._publish_checks(c.items, c.passed_items, c.review_history)}
         with self.lock:
             self.approvals.append(approval)
             ev = threading.Event()
             self.approval_events[approval["id"]] = ev
-        self.send("approval", "ceo", "owner", trace, {"approval": approval}, priority=2)
-        self.emit("approval", trace, approval)
-        for item in passed_items.values():
+        self.send("approval", "ceo", "owner", c.trace, {"approval": approval}, priority=2)
+        self.emit("approval", c.trace, approval)
+        for item in c.passed_items.values():
             item["stage"] = "approved"
-            self.items_emit(trace, item)
+            self.items_emit(c.trace, item)
 
-        approved = ev.wait(timeout=APPROVAL_TIMEOUT)
+        approved = ev.wait(timeout=self._stage_timeout(c))
         with self.lock:
             appr = next(a for a in self.approvals if a["id"] == approval["id"])
             self.approval_events.pop(approval["id"], None)
@@ -2524,36 +2634,39 @@ class Kernel:
                 if appr["status"] == "pending":
                     appr["status"] = "timeout"
                     appr["decidedAt"] = iso_now()
-                    appr["timeoutReason"] = f"等待老板审批超过 {APPROVAL_TIMEOUT}s，按挂起处理"
-                for item in passed_items.values():
+                    appr["timeoutReason"] = f"等待老板审批超过 {self._stage_timeout(c)}s，按挂起处理"
+                for item in c.passed_items.values():
                     item["stage"] = "blocked"
                     item["blockedBy"] = "publish-gate"
-                    self._schedule_export(trace, item)
-                self.traces[trace]["status"] = "rejected" if appr["status"] == "rejected" else "timeout"
-                self.traces[trace]["closedAt"] = iso_now()
-            self._persist_trace(trace)
-            for item in passed_items.values():
-                self.emit("pipeline", trace, item)
-            self.send("escalation", "ceo", "owner", trace,
+                    self._schedule_export(c.trace, item)
+                self.traces[c.trace]["status"] = "rejected" if appr["status"] == "rejected" else "timeout"
+                self.traces[c.trace]["closedAt"] = iso_now()
+            self._persist_trace(c.trace)
+            for item in c.passed_items.values():
+                self.emit("pipeline", c.trace, item)
+            self.send("escalation", "ceo", "owner", c.trace,
                       {"text": "审批未通过或超时，内容已标记 blocked（publish-gate），保持未发布"}, priority=2)
-            self.emit("approval", trace, appr)
-            return
+            self.emit("approval", c.trace, appr)
+            return _PIPELINE_STOP
 
+
+    def _stage_release(self, c):
+        """12. release_ops 发布"""
         # 12. release_ops 发布
-        pub_ctx = json.dumps({i["title"]: i["projectId"] for i in passed_items.values()}, ensure_ascii=False)
-        data, meta = self.call_agent("release_ops", f"按排期发布 {len(passed_items)} 条内容并给出监控口径。",
-                                     pub_ctx, "", "summary, evidence, confidence, tools")
+        c.pub_ctx = json.dumps({i["title"]: i["projectId"] for i in c.passed_items.values()}, ensure_ascii=False)
+        data, meta = self.call_agent("release_ops", f"按排期发布 {len(c.passed_items)} 条内容并给出监控口径。",
+                                     c.pub_ctx, "", "summary, evidence, confidence, tools")
         data = data or {"summary": "内容已发布并进入监控", "evidence": ["平台回执 200"],
                         "confidence": 0.9, "tools": ["publish.execute"]}
-        for iid, item in passed_items.items():
+        for iid, item in c.passed_items.items():
             item["stage"] = "published"
-            self.send("result", "release_ops", "ceo", trace,
+            self.send("result", "release_ops", "ceo", c.trace,
                       {"result": data, "engine": meta["engine"], "itemId": iid},
                       project=item["projectId"])
-            self.items_emit(trace, item)
+            self.items_emit(c.trace, item)
         with self.lock:
-            self.stats["published"] += len(passed_items)
-            for pid in {i["projectId"] for i in passed_items.values()}:
+            self.stats["published"] += len(c.passed_items)
+            for pid in {i["projectId"] for i in c.passed_items.values()}:
                 k = self.projects[pid]["kpi"]
                 if "views" in k:
                     k["views"] += 1200
@@ -2563,78 +2676,85 @@ class Kernel:
                 else:
                     k["tickets"] = 2
                     k["delivery_hours"] = 36.0
-        self.emit("metrics", trace, {p: self.projects[p]["kpi"]
-                                     for p in {i["projectId"] for i in passed_items.values()}})
+        self.emit("metrics", c.trace, {p: self.projects[p]["kpi"]
+                                     for p in {i["projectId"] for i in c.passed_items.values()}})
 
+
+    def _stage_archive(self, c):
+        """13. kb_manager 归档"""
         # 13. kb_manager 归档
         data, meta = self.call_agent("kb_manager", "把本轮 6 条内容归档为知识条目，给出检索标签。",
-                                     pub_ctx, "", "summary, evidence, confidence, tools")
+                                     c.pub_ctx, "", "summary, evidence, confidence, tools")
         data = data or {"summary": "已归档知识资产", "evidence": ["kb.write"], "confidence": 0.9, "tools": []}
         # 定稿时已归档过同题条目，这里按 traceId + 标题更新为发布口径，不重复计数
-        self.archive_knowledge(trace, [
+        self.archive_knowledge(c.trace, [
             {"projectId": item["projectId"], "title": item["title"],
              "body": data.get("summary", "归档"), "tags": ["内容复盘"]}
-            for item in passed_items.values()], stage_label="发布归档")
-        for iid, item in passed_items.items():
+            for item in c.passed_items.values()], stage_label="发布归档")
+        for iid, item in c.passed_items.items():
             item["stage"] = "archived"
-            self.items_emit(trace, item)
-        self.send("result", "kb_manager", "ceo", trace, {"result": data, "engine": meta["engine"]},
+            self.items_emit(c.trace, item)
+        self.send("result", "kb_manager", "ceo", c.trace, {"result": data, "engine": meta["engine"]},
                   project="all")
 
+
+    def _stage_report(self, c):
+        """14. 汇报：CEO 日报 / CTO 技术周报 / 项目周报（并行）"""
         # 14. 汇报：CEO 日报 / CTO 技术周报 / 项目周报（并行）
-        self.set_scene("REPORT", trace, title="CEO 日报生成")
+        self.set_scene("REPORT", c.trace, title="CEO 日报生成")
         wave = {
             "ceo": HERMES.pool.submit(self.call_agent, "ceo",
                                       "写一段今日 CEO 日报结论，覆盖 6 条产出与审批。",
-                                      pub_ctx, "", "summary, evidence, confidence, tools"),
+                                      c.pub_ctx, "", "summary, evidence, confidence, tools"),
             "cto": HERMES.pool.submit(self.call_agent, "cto",
                                       "写一段 CTO 技术周报：Agent 编排健康度与风险。",
-                                      f"本轮消息数 {len([m for m in self.messages if m['traceId'] == trace])}；"
+                                      f"本轮消息数 {len([m for m in self.messages if m['traceId'] == c.trace])}；"
                                       "审批门拦截 publish.execute", "", "summary, evidence, confidence, tools"),
         }
-        for pid in {i["projectId"] for i in passed_items.values()}:
+        for pid in {i["projectId"] for i in c.passed_items.values()}:
             wave[f"pm_{pid}"] = HERMES.pool.submit(
                 self.call_agent, f"pm_{pid}", f"写一段 {PROJECTS[pid]['name']} 项目周报结论。",
-                pub_ctx, "", "summary, evidence, confidence, tools")
+                c.pub_ctx, "", "summary, evidence, confidence, tools")
 
         daily_data, daily_meta = wave["ceo"].result()
         daily_data = daily_data or self._deg("ceo", "CEO 日报")
-        report = {"id": uid("rp"), "traceId": trace, "kind": "daily", "title": "CEO 日报",
+        report = {"id": uid("rp"), "traceId": c.trace, "kind": "daily", "title": "CEO 日报",
                   "conclusion": daily_data.get("summary", ""), "evidence": daily_data.get("evidence", []),
                   "decisions": [{"text": "定稿 6 条（每项目 2 条）并发布", "owner": "ceo",
                                  "risk": "mid", "approved": True}],
                   "engine": daily_meta["engine"], "createdAt": iso_now()}
         with self.lock:
             self.reports.append(report)
-        self.send("report.ready", "ceo", "owner", trace, {"report": report}, priority=1)
-        self.emit("report", trace, report)
+        self.send("report.ready", "ceo", "owner", c.trace, {"report": report}, priority=1)
+        self.emit("report", c.trace, report)
 
         tech_data, tech_meta = wave["cto"].result()
         tech_data = tech_data or self._deg("cto", "技术周报")
-        tech = {"id": uid("rp"), "traceId": trace, "kind": "tech", "title": "CTO 技术周报",
+        tech = {"id": uid("rp"), "traceId": c.trace, "kind": "tech", "title": "CTO 技术周报",
                 "conclusion": tech_data.get("summary", ""), "evidence": tech_data.get("evidence", []),
                 "decisions": [], "engine": tech_meta["engine"], "createdAt": iso_now()}
         with self.lock:
             self.reports.append(tech)
-        self.emit("report", trace, tech)
+        self.emit("report", c.trace, tech)
 
-        for pid in {i["projectId"] for i in passed_items.values()}:
+        for pid in {i["projectId"] for i in c.passed_items.values()}:
             wd, wm = wave[f"pm_{pid}"].result()
             wd = wd or self._deg(f"pm_{pid}", "项目周报")
-            weekly = {"id": uid("rp"), "traceId": trace, "kind": "weekly",
+            weekly = {"id": uid("rp"), "traceId": c.trace, "kind": "weekly",
                       "title": f"{PROJECTS[pid]['name']} 项目周报",
                       "conclusion": wd.get("summary", ""), "evidence": wd.get("evidence", []),
                       "decisions": [], "engine": wm["engine"], "createdAt": iso_now()}
             with self.lock:
                 self.reports.append(weekly)
-            self.emit("report", trace, weekly)
+            self.emit("report", c.trace, weekly)
 
         with self.lock:
-            self.traces[trace]["status"] = "completed"
-            self.traces[trace]["closedAt"] = iso_now()
-            self.traces[trace]["hermes"] = HERMES.stats()
-        self._persist_trace(trace)
-        self.set_scene("WORK", trace, title="归档完成，回到生产")
+            self.traces[c.trace]["status"] = "completed"
+            self.traces[c.trace]["closedAt"] = iso_now()
+            self.traces[c.trace]["hermes"] = HERMES.stats()
+        self._persist_trace(c.trace)
+        self.set_scene("WORK", c.trace, title="归档完成，回到生产")
+
 
     def mgmt_delegate(self, sender, recipient, text):
         """管理层直接下发指令：老板命令优先级最高，管理层可跨项目派单并留痕。"""

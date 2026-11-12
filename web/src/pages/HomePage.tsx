@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { appRoot } from "../appRoot";
 import type { Agent, Approval, OpcState, Work } from "../types";
@@ -18,7 +18,10 @@ const PROJECT_FALLBACK: Record<string, { name: string; color: string }> = {
   tongxinyuan: { name: "同心圆", color: "#7C3AED" },
 };
 const PROJECT_ORDER = ["wenren", "gou", "tongxinyuan"];
-const MGMT_IDS = ["ceo", "cco", "cto"];
+// 管理层：CEO / CCO / CTO + 小秘书
+const MGMT_IDS = ["ceo", "cco", "cto", "secretary"];
+// 老板不占工位
+const FLOOR_HIDDEN = new Set(["boss"]);
 
 type WorkFacets = {
   total: number;
@@ -81,11 +84,34 @@ function daysSince(value?: string): number {
   return Math.floor((Date.now() - t) / 86400000);
 }
 
-// 头像等静态资源在「服务根」，公网需要带 /workbench 前缀
+// 头像等静态资源在「服务根」，公网需要带 /workbench 前缀。
+// 注意：公网 nginx 的 sub_filter 会把接口 JSON 里的 "/avatars/..." 也改写成
+// "/workbench/avatars/..."，这里必须先判重，否则会变成 /workbench/workbench/...
 function assetUrl(path?: string): string {
   if (!path) return "";
   if (!path.startsWith("/")) return path;
-  return `${appRoot().replace(/\/$/, "")}${path}`;
+  const prefix = appRoot().replace(/\/$/, "");
+  if (!prefix) return path;
+  if (path === prefix || path.startsWith(`${prefix}/`)) return path;
+  return `${prefix}${path}`;
+}
+
+// 岗位职责：短句，控制在 7-8 个汉字，避免把工位撑开
+function dutyFor(role: string, scope?: string): string {
+  const r = role || "";
+  if (/秘书/.test(r)) return "日程与会议协调";
+  if (/首席创意|创意官|CCO/i.test(r)) return "创意与风格把控";
+  if (/CEO|首席执行官/i.test(r)) return "统筹经营与决策";
+  if (/CTO|技术总监/i.test(r)) return "技术与系统稳定";
+  if (/产品经理/.test(r)) return "选题与产线推进";
+  if (/文案/.test(r)) return "文案撰写与把关";
+  if (/视频/.test(r)) return "分镜剪辑与成片";
+  if (/发布|运营/.test(r)) return "发布排期与监控";
+  if (/审核/.test(r)) return "内容审核与合规";
+  if (/热点|采集/.test(r)) return "热点追踪与采集";
+  if (/知识库/.test(r)) return "知识沉淀与检索";
+  if (scope) return scope.length > 8 ? `${scope.slice(0, 8)}…` : scope;
+  return "协同与支持";
 }
 
 // 按岗位给工位做差异化装饰
@@ -102,34 +128,37 @@ function deskRole(role: string, isMgmt: boolean): DeskRole {
   return { key: "support", label: "支撑" };
 }
 
-function DeskProp({ kind }: { kind: string }) {
+// 工作状态图标：执行中 / 会议中 / 已交付 / 待命
+function StatusIcon({ status }: { status: string }) {
   const base = {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: 1.8,
+    strokeWidth: 1.9,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
-  if (kind === "lead") {
-    return <svg {...base}><path d="M3 18h18M4 8l4 3 4-5 4 5 4-3-1.4 8H5.4L4 8Z" /></svg>;
+  if (status === "working") {
+    return <svg {...base}><path d="M3 12h4l2.5-7 4 14L16 12h5" /></svg>;
   }
-  if (kind === "video") {
-    return <svg {...base}><rect x="3" y="6" width="18" height="12" rx="2.5" /><path d="m10 9.8 4.6 2.7L10 15.2V9.8Z" /></svg>;
+  if (status === "meeting") {
+    return (
+      <svg {...base}>
+        <path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-4.6A7 7 0 1 1 20 12Z" />
+        <path d="M9 11h.01M12.5 11h.01M16 11h.01" />
+      </svg>
+    );
   }
-  if (kind === "design") {
-    return <svg {...base}><path d="M14.5 4.5 19.5 9.5 9 20H4v-5L14.5 4.5Z" /><path d="m13 6-4 4" /></svg>;
+  if (status === "done") {
+    return <svg {...base}><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>;
   }
-  if (kind === "tech") {
-    return <svg {...base}><path d="m9 8-4 4 4 4M15 8l4 4-4 4" /></svg>;
-  }
-  if (kind === "ops") {
-    return <svg {...base}><path d="M4 20h16M6 20v-6M11 20V8M16 20v-9M21 20v-4" /></svg>;
-  }
-  if (kind === "creative") {
-    return <svg {...base}><path d="M4 20l4.5-1 10-10-3.5-3.5-10 10L4 20Z" /><path d="m13.5 6.5 3.5 3.5" /></svg>;
-  }
-  return <svg {...base}><rect x="4" y="4" width="16" height="6.5" rx="1.8" /><rect x="4" y="13.5" width="16" height="6.5" rx="1.8" /><path d="M8 7.2h.01M8 16.7h.01" /></svg>;
+  return (
+    <svg {...base}>
+      <path d="M5 9h11v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9Z" />
+      <path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16" />
+      <path d="M8 5.5c0 1-1 1.5-1 2.8M11.5 5.5c0 1-1 1.5-1 2.8" />
+    </svg>
+  );
 }
 
 // 短视频架构原则（依据 ep2/ep3 制作记录里的口播时间轴与固定镜头结构）
@@ -147,6 +176,61 @@ export function HomePage() {
   const [ops, setOps] = useState<OpsResp | null>(null);
   const [error, setError] = useState("");
   const [approvalMsg, setApprovalMsg] = useState("");
+  const [soundOn, setSoundOn] = useState(true);
+  const audioRef = useRef<AudioContext | null>(null);
+  const lastHoverRef = useRef(0);
+
+  // 浏览器要求先有用户手势才能播音频：首次点击/触摸时解锁
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        if (!audioRef.current) {
+          const Ctor = window.AudioContext
+            || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          if (Ctor) audioRef.current = new Ctor();
+        }
+        void audioRef.current?.resume();
+      } catch {
+        /* 不支持音频时静默降级 */
+      }
+      window.removeEventListener("pointerdown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
+
+  // 悬停工位时的轻提示音（很短、音量很低，可一键关闭）
+  const playHover = useCallback(() => {
+    if (!soundOn) return;
+    const now = performance.now();
+    if (now - lastHoverRef.current < 140) return;
+    lastHoverRef.current = now;
+    try {
+      if (!audioRef.current) {
+        const Ctor = window.AudioContext
+          || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!Ctor) return;
+        audioRef.current = new Ctor();
+      }
+      const ctx = audioRef.current;
+      if (ctx.state === "suspended") void ctx.resume();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const t = ctx.currentTime;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(660, t);
+      osc.frequency.exponentialRampToValueAtTime(880, t + 0.12);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.035, t + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.19);
+    } catch {
+      /* 忽略音频异常 */
+    }
+  }, [soundOn]);
 
   const loadState = useCallback(() => {
     apiGet<OpcState>("/api/state").then(setState).catch((e) => setError(String(e?.message || e)));
@@ -179,6 +263,8 @@ export function HomePage() {
   }, [loadState, loadWorks, loadIns, loadOps]);
 
   const agents = state?.agents ?? [];
+  // 老板不占工位，工位图与在岗统计都排除
+  const floorAgents = useMemo(() => agents.filter((a) => !FLOOR_HIDDEN.has(a.id)), [agents]);
   const items = works?.items ?? [];
   const facets = works?.facets;
   const byStatus = facets?.byStatus ?? {};
@@ -250,10 +336,18 @@ export function HomePage() {
   }, [items, ins, metrics.published]);
 
   const people = useMemo(() => {
-    const mgmt = agents.filter((a) => MGMT_IDS.includes(a.id));
+    // 管理层固定顺序：CEO / CCO / CTO，小秘书单独放最右侧
+    const mgmtOrder = ["ceo", "cco", "cto"];
+    const mgmt = floorAgents
+      .filter((a) => MGMT_IDS.includes(a.id))
+      .sort((a, b) => {
+        const ia = mgmtOrder.indexOf(a.id);
+        const ib = mgmtOrder.indexOf(b.id);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      });
     const mid: Agent[] = [];
     const byProj = new Map<string, Agent[]>();
-    for (const a of agents) {
+    for (const a of floorAgents) {
       if (MGMT_IDS.includes(a.id)) continue;
       if (a.projectId && PROJECT_ORDER.includes(a.projectId)) {
         const arr = byProj.get(a.projectId) ?? [];
@@ -270,13 +364,13 @@ export function HomePage() {
     ];
     if (mid.length) groups.push({ key: "mid", name: "中台支撑", color: "#6B7280", members: mid });
     return groups;
-  }, [agents, state]);
+  }, [floorAgents, state]);
 
   const statusSummary = useMemo(() => {
     const c: Record<string, number> = { working: 0, meeting: 0, idle: 0, done: 0 };
-    for (const a of agents) c[a.status || "idle"] = (c[a.status || "idle"] ?? 0) + 1;
+    for (const a of floorAgents) c[a.status || "idle"] = (c[a.status || "idle"] ?? 0) + 1;
     return c;
-  }, [agents]);
+  }, [floorAgents]);
 
   const pending = (state?.approvals ?? []).filter((a) => a.status === "pending");
   const opsService = ops?.service;
@@ -453,7 +547,7 @@ export function HomePage() {
           <div>
             <h2>工位图 · 任务分配</h2>
             <p className="muted">
-              在岗 {agents.length} 人 · 执行中 {statusSummary.working} · 会议中 {statusSummary.meeting} · 待命 {statusSummary.idle} · 已交付 {statusSummary.done}
+              在岗 {floorAgents.length} 人 · 执行中 {statusSummary.working} · 会议中 {statusSummary.meeting} · 待命 {statusSummary.idle} · 已交付 {statusSummary.done}
             </p>
           </div>
           <div className="floor-legend">
@@ -462,6 +556,15 @@ export function HomePage() {
                 <i />{label}
               </span>
             ))}
+            <button
+              type="button"
+              className={`floor-sound${soundOn ? " is-on" : ""}`}
+              onClick={() => setSoundOn((v) => !v)}
+              aria-pressed={soundOn}
+              title="悬停工位时播放轻提示音"
+            >
+              {soundOn ? "音效开" : "音效关"}
+            </button>
             <Link to="/org" className="ceo-more">组织配置 →</Link>
           </div>
         </div>
@@ -484,45 +587,64 @@ export function HomePage() {
                   <div className="floor-desks">
                     {group.members.map((a, i) => {
                       const dr = deskRole(a.role, group.key === "mgmt");
+                      const status = a.status || "idle";
+                      const statusText = STATUS_TEXT[status] || status;
+                      const photo = assetUrl(a.avatar || `/avatars/${a.id}.png`);
                       return (
                         <article
                           key={a.id}
-                          className={`desk is-${a.status || "idle"} role-${dr.key}`}
-                          style={{ "--d": `${(i % 6) * 0.06}s` } as React.CSSProperties}
-                          title={`${a.name} · ${a.role} · ${a.task || "暂无任务"}`}
+                          className={`desk is-${status} role-${dr.key}${a.id === "secretary" ? " desk-secretary" : ""}`}
+                          style={{ "--d": `${(i % 6) * 0.05}s` } as React.CSSProperties}
+                          onPointerEnter={playHover}
                         >
-                          <div className="desk-scene">
-                            <span className="desk-monitor" aria-hidden="true"><i /></span>
-                            <span className="desk-surface" aria-hidden="true" />
-                            <span className="desk-front" aria-hidden="true" />
-                            <span className="desk-prop" aria-hidden="true"><DeskProp kind={dr.key} /></span>
-                            <span className="desk-lamp" aria-hidden="true" />
-                            <span className="desk-avatar-wrap">
-                              <span className="desk-avatar desk-avatar-fallback">{(a.name || "?").slice(0, 1)}</span>
-                              <img
-                                className="desk-avatar desk-avatar-img"
-                                src={assetUrl(a.avatar || `/avatars/${a.id}.png`)}
-                                alt={`${a.name} 头像`}
-                                loading="lazy"
-                                decoding="async"
-                                onError={(e) => {
-                                  const img = e.currentTarget;
-                                  if (img.dataset.fb !== "1") {
-                                    img.dataset.fb = "1";
-                                    img.src = assetUrl("/avatars/scout.png");
-                                  } else {
-                                    img.style.display = "none";
-                                  }
-                                }}
-                              />
+                          <span className="desk-edge" aria-hidden="true" />
+
+                          <span className="desk-avatar-wrap">
+                            <span className="desk-avatar desk-avatar-fallback">{(a.name || "?").slice(0, 1)}</span>
+                            <img
+                              className="desk-avatar desk-avatar-img"
+                              src={photo}
+                              alt={`${a.name} 头像`}
+                              loading="lazy"
+                              decoding="async"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fb !== "1") {
+                                  img.dataset.fb = "1";
+                                  img.src = assetUrl("/avatars/scout.png");
+                                } else {
+                                  img.style.display = "none";
+                                }
+                              }}
+                            />
+                          </span>
+
+                          <div className="desk-info">
+                            <span className="desk-role">{a.role}</span>
+                            <b className="desk-name">{a.name}</b>
+                            <span className="desk-duty" title={dutyFor(a.role, a.scope)}>
+                              {dutyFor(a.role, a.scope)}
                             </span>
                           </div>
-                          <div className="desk-meta">
-                            <b>{a.name}</b>
-                            <small>{a.role}</small>
-                            <span className="desk-task">{a.task || "暂无任务"}</span>
-                            <span className="desk-tag">{dr.label}</span>
-                          </div>
+
+                          <span className={`desk-status is-${status}`} title={statusText} aria-label={statusText}>
+                            <StatusIcon status={status} />
+                          </span>
+
+                          {/* 悬停：照片铺满桌面，保持比例裁剪 */}
+                          <span className="desk-photo" aria-hidden="true">
+                            <img
+                              className="desk-photo-img"
+                              src={photo}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              onError={(e) => {
+                                e.currentTarget.closest(".desk-photo")?.classList.add("is-broken");
+                              }}
+                            />
+                            <span className="desk-photo-cap">{a.name} · {a.role}</span>
+                          </span>
                         </article>
                       );
                     })}
