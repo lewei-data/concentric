@@ -158,14 +158,29 @@ def tts(args):
     text = str(args.get("text") or "").strip()
     if not text:
         raise ValueError("需要 text")
-    return _request("POST", "/v1/tts", body={
-        "text": text, "voice": args.get("voice"), "speed": float(args.get("speed") or 1.0),
-        "format": "json", "stem": args.get("stem"),
-    }, timeout=TTS_TIMEOUT)
+    engine = str(args.get("engine") or "cosyvoice").lower()
+    # qwen3 在大模型侧是离线高质量引擎，默认走异步作业；cosyvoice 保持同步直出
+    mode = str(args.get("mode") or ("async" if engine == "qwen3" else "sync")).lower()
+    if engine not in ("cosyvoice", "qwen3"):
+        raise ValueError("engine 只支持 cosyvoice / qwen3")
+    if mode not in ("async", "sync"):
+        raise ValueError("mode 只支持 async / sync")
+    body = {"text": text, "voice": args.get("voice"), "speed": float(args.get("speed") or 1.0),
+            "format": "json", "stem": args.get("stem"), "engine": engine, "mode": mode,
+            "speaker": args.get("speaker"), "language": args.get("language"),
+            "instruct": args.get("instruct")}
+    return _request("POST", "/v1/tts", body=body, timeout=TTS_TIMEOUT)
 
 
 def asr(args):
-    body = {"language": args.get("language"), "model": args.get("model")}
+    engine = str(args.get("engine") or "whisper").lower()
+    mode = str(args.get("mode") or ("async" if engine == "qwen3" else "sync")).lower()
+    if engine not in ("whisper", "qwen3"):
+        raise ValueError("engine 只支持 whisper / qwen3")
+    if mode not in ("async", "sync"):
+        raise ValueError("mode 只支持 async / sync")
+    body = {"language": args.get("language"), "model": args.get("model"),
+            "engine": engine, "mode": mode}
     if args.get("audio_path"):
         body["audio_path"] = args["audio_path"]
     elif args.get("audio_base64"):
@@ -184,10 +199,21 @@ def boss_briefing(args):
     }, timeout=JOB_TIMEOUT)
 
 
+# 语音作业（qwen3 异步 TTS/ASR）的 job_id 前缀，命中就走 /v1/audio/jobs
+_AUDIO_JOB_PREFIXES = ("asr-", "tts-")
+
+
 def job_status(args):
     job_id = str(args.get("job_id") or "").strip()
+    kind = str(args.get("kind") or "").strip().lower()
     if not job_id:
+        if kind in ("asr", "tts"):
+            return _request("GET", "/v1/audio/jobs",
+                            params={"limit": int(args.get("limit") or 20), "kind": kind})
         return _request("GET", "/v1/jobs", params={"limit": int(args.get("limit") or 20)})
+    if job_id.startswith(_AUDIO_JOB_PREFIXES):
+        return _request("GET", "/v1/audio/jobs/%s" % urllib.parse.quote(job_id, safe=""),
+                        timeout=JOB_TIMEOUT)
     return _request("GET", "/v1/jobs/%s" % urllib.parse.quote(job_id, safe=""),
                     params={"wait_sec": float(args.get("wait_sec") or 0)},
                     timeout=JOB_TIMEOUT)
@@ -246,24 +272,44 @@ TOOLS = [
     {
         "name": "media_tts",
         "description": (
-            "文本转语音（本地 CosyVoice3）。返回本地 wav 路径、下载地址、时长和句级时间轴，"
-            "可用于配音、播报或后续视频合成。"
+            "文本转语音，按任务形态选引擎（调度规则）："
+            "① 异步/离线配音——视频旁白、长文本、成品音轨、批量配音——用 engine=qwen3，"
+            "提交后立即返回 job_id，再用 media_job_status 轮询拿 audio_url；"
+            "② 实时短回执/即时播报——用默认 engine=cosyvoice，同步直出 wav。"
+            "返回 wav 路径、下载地址、时长和句级时间轴。"
         ),
         "emoji": "🔊",
         "schema": {"type": "object", "properties": {
             "text": {"type": "string", "description": "要朗读的文本"},
-            "voice": {"type": "string", "description": "音色 ID，如 m06 / female-zh-real"},
-            "speed": {"type": "number", "description": "语速倍率，默认 1.0"},
+            "engine": {"type": "string", "enum": ["cosyvoice", "qwen3"],
+                       "description": "cosyvoice=实时同步（默认）；qwen3=离线高质量，默认异步作业"},
+            "mode": {"type": "string", "enum": ["async", "sync"],
+                     "description": "async=立即返回 job_id 轮询（qwen3 默认）；sync=阻塞等结果"},
+            "voice": {"type": "string", "description": "音色 ID，如 m06 / female-zh-real（cosyvoice）"},
+            "speaker": {"type": "string",
+                        "description": "qwen3 音色：Vivian/Serena/Uncle_Fu/Dylan/Eric/Ryan/Aiden/Ono_Anna/Sohee"},
+            "instruct": {"type": "string", "description": "qwen3 情绪指令，如「兴奋地说」（可选）"},
+            "language": {"type": "string", "description": "语言，默认中文"},
+            "speed": {"type": "number", "description": "语速倍率，默认 1.0（仅 cosyvoice）"},
             "stem": {"type": "string", "description": "产物文件名前缀（可选）"},
         }, "required": ["text"]},
     },
     {
         "name": "media_asr",
-        "description": "语音转文字（本地 whisper）。传本地音频路径或 base64，返回文本、语言与句级时间轴。",
+        "description": (
+            "语音转文字，按任务形态选引擎（调度规则）："
+            "① 异步/离线转写——成片审听、逐字稿、长音频、素材归档——用 engine=qwen3，"
+            "提交后立即返回 job_id，再用 media_job_status 轮询拿文本与时间轴；"
+            "② 实时短语音——即时回执、聊天语音消息——用默认 engine=whisper，同步返回。"
+        ),
         "emoji": "🎧",
         "schema": {"type": "object", "properties": {
             "audio_path": {"type": "string", "description": "本机音频文件绝对路径"},
             "audio_base64": {"type": "string", "description": "音频 base64（与 audio_path 二选一）"},
+            "engine": {"type": "string", "enum": ["whisper", "qwen3"],
+                       "description": "whisper=实时同步（默认）；qwen3=离线高质量，默认异步作业"},
+            "mode": {"type": "string", "enum": ["async", "sync"],
+                     "description": "async=立即返回 job_id 轮询（qwen3 默认）；sync=阻塞等结果"},
             "language": {"type": "string", "description": "语言，默认 zh"},
             "model": {"type": "string", "description": "whisper 模型，默认引擎配置"},
         }, "required": []},
@@ -284,11 +330,16 @@ TOOLS = [
     },
     {
         "name": "media_job_status",
-        "description": "查询异步任务（自我介绍视频 / 老板汇报）：给 job_id 取结果，可长轮询；不给则列出最近任务。",
+        "description": (
+            "查询异步任务：job_xxx（自我介绍视频 / 老板汇报）走视频作业；asr-xxx / tts-xxx"
+            "（qwen3 异步语音）走语音作业，按前缀自动路由。给 job_id 取结果，不给则列出最近任务。"
+        ),
         "emoji": "⏳",
         "schema": {"type": "object", "properties": {
-            "job_id": {"type": "string", "description": "任务 ID（job_xxx）"},
-            "wait_sec": {"type": "number", "description": "长轮询秒数，最多 300"},
+            "job_id": {"type": "string", "description": "任务 ID（job_xxx / asr-xxx / tts-xxx）"},
+            "kind": {"type": "string", "enum": ["asr", "tts"],
+                     "description": "不带 job_id 时按类型列语音作业"},
+            "wait_sec": {"type": "number", "description": "长轮询秒数，最多 300（仅视频作业）"},
             "limit": {"type": "integer", "description": "列出任务条数，默认 20"},
         }, "required": []},
     },

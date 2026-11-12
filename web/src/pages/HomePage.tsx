@@ -1,283 +1,249 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { Agent, Approval, OpcEvent, OpcState } from "../types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import type { Agent, Approval, OpcState, Work } from "../types";
 
-/* 工位坐标与旧版组织地图保持一致（viewBox 900×520） */
-const SEATS: Record<string, [number, number]> = {
-  ceo: [250, 80],
-  cco: [450, 80],
-  cto: [650, 80],
-  pm_wenren: [82, 196],
-  cw_wenren: [82, 262],
-  vd_wenren: [82, 328],
-  pm_gou: [352, 196],
-  cw_gou: [352, 262],
-  vd_gou: [352, 328],
-  pm_tongxinyuan: [628, 196],
-  cw_tongxinyuan: [628, 262],
-  vd_tongxinyuan: [628, 328],
-  scout: [132, 452],
-  reviewer: [332, 452],
-  release_ops: [532, 452],
-  kb_manager: [732, 452],
-};
-const MGMT: Record<string, number> = { ceo: 250, cco: 450, cto: 650 };
-const PROJECT_COLOR: Record<string, string> = {
-  wenren: "#2563EB",
-  gou: "#EA580C",
-  tongxinyuan: "#7C3AED",
-};
+// 公网挂在 /workbench/ 子路径：登录跳转按真实 URL 推导应用根，内网/公网都正确
+function appRoot(): string {
+  const parts = window.location.pathname.split("/");
+  parts.length = Math.max(1, parts.length - 2);
+  return parts.join("/") + "/";
+}
+
 const STATUS_TEXT: Record<string, string> = {
   working: "执行中",
   meeting: "会议中",
   done: "已交付",
   idle: "待命",
 };
-const TYPE_LABEL: Record<string, string> = {
-  delegation: "委派",
-  result: "交付",
-  conflict: "冲突",
-  vote: "投票",
-  decision: "决议",
-  approval: "审批",
-  escalation: "升级",
-  "biz.event": "业务事件",
-  "scene.change": "场景",
-  "report.ready": "汇报",
-  heartbeat: "心跳",
-  "config-reload": "配置热加载",
+
+const PROJECT_FALLBACK: Record<string, { name: string; color: string }> = {
+  wenren: { name: "文人莫克", color: "#2563EB" },
+  gou: { name: "狗大人", color: "#EA580C" },
+  tongxinyuan: { name: "同心圆", color: "#7C3AED" },
 };
-const QUICK_COMMANDS = [
-  "今天哪个项目卡住了？",
-  "@苏寒 汇报今日热点采集情况",
-  "注入热点",
-];
+const PROJECT_ORDER = ["wenren", "gou", "tongxinyuan"];
+const MGMT_IDS = ["ceo", "cco", "cto"];
 
-type FeedItem = { key: string; at: string; kind: string; text: string };
-
-type CommandAnswer = {
-  summary?: string;
-  reply?: string;
-  evidence?: string[];
-  confidence?: number;
-  tools?: string[];
+type WorkFacets = {
+  total: number;
+  byStatus: Record<string, number>;
+  byProject: Record<string, number>;
+  withFinal: number;
+  withReview: number;
 };
-
-type CommandResult = {
-  ok?: boolean;
-  error?: string;
-  agent?: string;
-  answer?: CommandAnswer;
-  traceId?: string;
-  engine?: string;
-  latencyMs?: number;
-  busy?: boolean;
-  hotspot?: { title?: string; score?: number };
-  personaTest?: { pass?: boolean; reasons?: string[]; traceId?: string };
+type WorksResp = { ok: boolean; total: number; items: Work[]; facets?: WorkFacets };
+type InspirationResp = {
+  ok: boolean;
+  counts: Record<string, number>;
+  sources?: Record<string, number>;
+};
+type OpsService = { id: string; name: string; online: boolean; status?: string };
+type OpsResp = {
+  ok: boolean;
+  generatedAt?: string;
+  service?: { ok: boolean; uptimeSec: number; engine?: string; hermes?: Record<string, number | string> };
+  pipeline?: {
+    stageCounts?: Record<string, number>;
+    blocked?: { id: string; title: string; stage: string; blockedBy: string }[];
+  };
+  video?: {
+    services?: OpsService[];
+    localJobs?: { id: string; status: string; kind?: string }[];
+    pipelineRender?: { id: string; title: string; stage: string; state: string }[];
+    pendingRender?: { id: string; title: string; stage: string; blockedBy: string }[];
+  };
+  alerts?: { id: string; level: string; title: string; detail: string; source?: string }[];
 };
 
-// 单次模型调用通常 20–60s，长任务更久；超过这个时间前端放弃等待，但后台仍会继续跑
-const COMMAND_TIMEOUT_MS = 300000;
-
-async function fetchState(): Promise<OpcState | null> {
-  const res = await fetch("/api/state", { credentials: "include" });
+async function apiGet<T>(url: string): Promise<T> {
+  const res = await fetch(url, { credentials: "include" });
   if (res.status === 401) {
-    window.location.assign("/app/login");
-    return null;
+    window.location.assign(`${appRoot()}app/login`);
+    throw new Error("unauthorized");
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as OpcState;
+  return (await res.json()) as T;
 }
 
-function nameOf(agents: Agent[], id?: string) {
-  return agents.find((a) => a.id === id)?.name || id || "系统";
+function fmtUptime(sec?: number): string {
+  if (!sec || sec < 0) return "-";
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d) return `${d} 天 ${h} 小时`;
+  if (h) return `${h} 小时 ${m} 分`;
+  return `${m} 分钟`;
 }
 
-function describeMessage(agents: Agent[], ev: OpcEvent) {
-  const who = `${nameOf(agents, ev.sender)} → ${nameOf(agents, ev.recipient)}`;
-  const label = TYPE_LABEL[ev.type || ""] || ev.type || "消息";
-  const text = ev.payload?.result?.summary || ev.payload?.text
-    || (ev.payload?.verdict ? `审核${ev.payload.verdict.pass ? "通过" : "驳回"}` : "");
-  return `${who} · ${label}${text ? `：${text}` : ""}`;
+function shortTime(value?: string): string {
+  return value ? value.replace("T", " ").slice(5, 16) : "-";
 }
 
-function describeEnvelope(agents: Agent[], env: any) {
-  const d = env?.data || {};
-  switch (env?.kind) {
-    case "message":
-      return describeMessage(agents, d as OpcEvent);
-    case "hotspot":
-      return `热点：${d.title || "-"}（热度 ${d.score ?? "-"}）`;
-    case "scene":
-      return `场景切换 → ${d.scene || "-"}${d.title ? ` · ${d.title}` : ""}`;
-    case "pipeline":
-      return `流水线：《${d.title || "-"}》 → ${d.stage || "-"}`;
-    case "approval":
-      return `审批门：${d.title || d.action || "-"} · ${d.status || "-"}`;
-    case "report":
-      return `${d.title || "汇报"} · ${d.conclusion || ""}`;
-    case "agent":
-      return `${nameOf(agents, d.id)} ${STATUS_TEXT[d.status] || d.status || ""} ${d.task || ""}`;
-    default:
-      return env?.kind || "事件";
-  }
+function daysSince(value?: string): number {
+  const t = Date.parse(value || "");
+  if (!t) return 0;
+  return Math.floor((Date.now() - t) / 86400000);
 }
 
-function toFeed(agents: Agent[], ev: OpcEvent, index: number): FeedItem {
-  return {
-    key: ev.id || `init-${index}`,
-    at: ev.at || "",
-    kind: "message",
-    text: describeMessage(agents, ev),
-  };
-}
+// 短视频架构原则（依据 ep2/ep3 制作记录里的口播时间轴与固定镜头结构）
+const VIDEO_PRINCIPLES = [
+  { t: "口播先行", d: "先定语音时间轴，画面跟着语音走，避免字幕与口播错位。" },
+  { t: "3 秒钩子", d: "开头必须先抓住注意力，再进入正题。" },
+  { t: "固定镜头结构", d: "按秒切分镜头（如 0–4 / 4–14 …），先定结构再填内容。" },
+  { t: "单点强节奏", d: "一条视频只讲清一个点，节奏紧凑、信息不堆叠。" },
+];
 
 export function HomePage() {
   const [state, setState] = useState<OpcState | null>(null);
+  const [works, setWorks] = useState<WorksResp | null>(null);
+  const [ins, setIns] = useState<InspirationResp | null>(null);
+  const [ops, setOps] = useState<OpsResp | null>(null);
   const [error, setError] = useState("");
-  const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [command, setCommand] = useState("");
-  const [sending, setSending] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [result, setResult] = useState<CommandResult | null>(null);
-  const agentsRef = useRef<Agent[]>([]);
-  const startedRef = useRef(0);
+  const [approvalMsg, setApprovalMsg] = useState("");
 
-  const agents = state?.agents ?? [];
-  agentsRef.current = agents;
-
-  const loadState = () => {
-    fetchState()
-      .then((data) => {
-        if (!data) return;
-        setState(data);
-        setError("");
-        const initial = (data.eventsList ?? []).map((ev, i) => toFeed(data.agents ?? [], ev, i));
-        setFeed((current) => (current.length ? current : initial.reverse()));
-      })
-      .catch((err) => setError(String(err?.message || err)));
-  };
+  const loadState = useCallback(() => {
+    apiGet<OpcState>("/api/state").then(setState).catch((e) => setError(String(e?.message || e)));
+  }, []);
+  const loadWorks = useCallback(() => {
+    apiGet<WorksResp>("/api/works?size=100").then(setWorks).catch(() => undefined);
+  }, []);
+  const loadIns = useCallback(() => {
+    apiGet<InspirationResp>("/api/inspiration").then(setIns).catch(() => undefined);
+  }, []);
+  const loadOps = useCallback(() => {
+    apiGet<OpsResp>("/api/ops").then(setOps).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     loadState();
-    const timer = window.setInterval(loadState, 10000);
-    return () => window.clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!sending) return;
-    const timer = window.setInterval(() => {
-      setElapsed(Math.max(0, Math.round((Date.now() - startedRef.current) / 1000)));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [sending]);
-
-  useEffect(() => {
-    const source = new EventSource("/api/events");
-    source.onmessage = (event) => {
-      let env: any;
-      try {
-        env = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-      if (env?.kind === "state" && env.data) {
-        setState(env.data as OpcState);
-        return;
-      }
-      if (env?.kind === "heartbeat") return;
-      const item: FeedItem = {
-        key: `${env?.at || Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-        at: env?.at || "",
-        kind: env?.kind || "event",
-        text: describeEnvelope(agentsRef.current, env),
-      };
-      setFeed((current) => [item, ...current].slice(0, 80));
+    loadWorks();
+    loadIns();
+    loadOps();
+    const t1 = window.setInterval(loadState, 10000);
+    const t2 = window.setInterval(loadWorks, 30000);
+    const t3 = window.setInterval(loadIns, 60000);
+    const t4 = window.setInterval(loadOps, 15000);
+    return () => {
+      window.clearInterval(t1);
+      window.clearInterval(t2);
+      window.clearInterval(t3);
+      window.clearInterval(t4);
     };
-    return () => source.close();
-  }, []);
+  }, [loadState, loadWorks, loadIns, loadOps]);
 
-  const selected = useMemo(
-    () => agents.find((agent) => agent.id === selectedId) ?? null,
-    [agents, selectedId],
-  );
+  const agents = state?.agents ?? [];
+  const items = works?.items ?? [];
+  const facets = works?.facets;
+  const byStatus = facets?.byStatus ?? {};
 
-  const projectName = (pid?: string) =>
-    state?.projects?.find((p) => p.id === pid)?.name
-    || ({ wenren: "文人莫克", gou: "狗大人", tongxinyuan: "同心圆", all: "全公司" } as Record<string, string>)[pid || ""]
-    || "全公司";
+  const projName = (id?: string) =>
+    state?.projects?.find((p) => p.id === id)?.name || PROJECT_FALLBACK[id || ""]?.name || "中台";
+  const projColor = (id?: string) =>
+    state?.projects?.find((p) => p.id === id)?.color || PROJECT_FALLBACK[id || ""]?.color || "#6B7280";
 
-  const projectColor = (pid?: string) =>
-    state?.projects?.find((p) => p.id === pid)?.color || PROJECT_COLOR[pid || ""] || "#6B7280";
+  const today = new Date().toISOString().slice(0, 10);
 
-  const statusOf = (agent: Agent) => {
-    if (state?.meeting?.active && (state.meeting.participants || []).includes(agent.id)) {
-      return "meeting";
-    }
-    return agent.status || "idle";
-  };
+  const metrics = useMemo(() => {
+    const totalWorks = facets?.total ?? items.length;
+    const doing = byStatus["制作中"] ?? 0;
+    const review = byStatus["待评审"] ?? 0;
+    const approved = byStatus["待发布"] ?? 0;
+    const published = (byStatus["已发布"] ?? 0) + (byStatus["已归档"] ?? 0);
+    const doneToday = items.filter(
+      (w) => (w.statusKey === "published" || w.statusKey === "archived")
+        && (w.updatedAt || "").slice(0, 10) === today,
+    ).length;
+    const failing = items.filter(
+      (w) => w.reviewPass === false
+        || w.statusKey === "review"
+        || (w.statusKey === "doing" && w.completeness < 50 && daysSince(w.updatedAt) >= 7),
+    ).length;
+    return { totalWorks, doing, review, approved, published, doneToday, failing };
+  }, [facets, byStatus, items, today]);
 
-  const colorOf = (agent: Agent) => {
-    const status = statusOf(agent);
-    if (status === "meeting") return "#4F46E5";
-    if (status === "working") return "#0EA5E9";
-    if (status === "done") return "#059669";
-    return projectColor(agent.projectId);
-  };
+  // 热门/上线表现：已发布/已归档优先，按评审通过 → 完整度 → 更新时间
+  const hotWorks = useMemo(() => {
+    const pool = items.filter((w) => w.statusKey === "published" || w.statusKey === "archived");
+    const base = pool.length ? pool : items;
+    return [...base]
+      .sort((a, b) =>
+        (Number(b.reviewPass === true) - Number(a.reviewPass === true))
+        || (b.completeness - a.completeness)
+        || String(b.updatedAt).localeCompare(String(a.updatedAt)))
+      .slice(0, 5);
+  }, [items]);
 
-  const pickAgent = (agent: Agent) => {
-    setSelectedId(agent.id);
-    setCommand(`@${agent.name} `);
-  };
+  // 滞销/受阻：未过审、待评审积压、长期停滞
+  const blockedWorks = useMemo(() => {
+    const rows = items
+      .map((w) => {
+        let reason = "";
+        if (w.reviewPass === false) reason = "评审未通过";
+        else if (w.statusKey === "review") reason = "待评审积压";
+        else if (w.statusKey === "doing" && w.completeness < 50 && daysSince(w.updatedAt) >= 7) {
+          reason = `停滞 ${daysSince(w.updatedAt)} 天`;
+        }
+        return reason ? { w, reason } : null;
+      })
+      .filter((x): x is { w: Work; reason: string } => x !== null);
+    return rows.slice(0, 5);
+  }, [items]);
 
-  const sendCommand = async (text: string) => {
-    const value = text.trim();
-    if (!value || sending) return;
-    // 立即清空输入框：避免模型调用期间用户改写的文字在响应回来时被清掉
-    setCommand("");
-    setSending(true);
-    setResult(null);
-    setElapsed(0);
-    startedRef.current = Date.now();
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), COMMAND_TIMEOUT_MS);
-    try {
-      const res = await fetch("/api/commands", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value }),
-        signal: controller.signal,
-      });
-      const json = (await res.json().catch(() => ({}))) as CommandResult;
-      if (res.status === 401) {
-        window.location.assign("/app/login");
-        return;
-      }
-      if (!res.ok && !json.error) {
-        json.ok = false;
-        json.error = `HTTP ${res.status}`;
-      }
-      setResult(json);
-      loadState();
-    } catch (err: any) {
-      if (err?.name === "AbortError") {
-        setResult({
-          ok: false,
-          error: "等待超过 5 分钟。任务可能仍在后台执行，稍后可在 Conring 事件流查看结果。",
-        });
+  const funnel = useMemo(() => {
+    const stageCount = (s: string) => items.filter((w) => w.stage === s).length;
+    return [
+      { key: "idea", label: "创意池", value: ins?.counts?.total ?? 0, hint: "热点 / 视频 / 蒸馏" },
+      { key: "topic", label: "选题", value: stageCount("topic") },
+      { key: "copy", label: "文案定稿", value: stageCount("copy") },
+      { key: "video", label: "分镜 / 制作", value: stageCount("video") },
+      { key: "review", label: "待评审", value: stageCount("review") },
+      { key: "approved", label: "待发布", value: stageCount("approved") },
+      { key: "published", label: "已发布", value: (stageCount("published") + stageCount("archived")) || metrics.published },
+    ];
+  }, [items, ins, metrics.published]);
+
+  const people = useMemo(() => {
+    const mgmt = agents.filter((a) => MGMT_IDS.includes(a.id));
+    const mid: Agent[] = [];
+    const byProj = new Map<string, Agent[]>();
+    for (const a of agents) {
+      if (MGMT_IDS.includes(a.id)) continue;
+      if (a.projectId && PROJECT_ORDER.includes(a.projectId)) {
+        const arr = byProj.get(a.projectId) ?? [];
+        arr.push(a);
+        byProj.set(a.projectId, arr);
       } else {
-        setResult({ ok: false, error: `请求失败：${String(err?.message || err)}` });
+        mid.push(a);
       }
-    } finally {
-      window.clearTimeout(timer);
-      setSending(false);
-      setElapsed(0);
     }
-  };
+    const groups: { key: string; name: string; color: string; members: Agent[] }[] = [
+      { key: "mgmt", name: "管理层", color: "#4F46E5", members: mgmt },
+      ...PROJECT_ORDER.filter((p) => (byProj.get(p) ?? []).length)
+        .map((p) => ({ key: p, name: projName(p), color: projColor(p), members: byProj.get(p) ?? [] })),
+    ];
+    if (mid.length) groups.push({ key: "mid", name: "中台支撑", color: "#6B7280", members: mid });
+    return groups;
+  }, [agents, state]);
+
+  const statusSummary = useMemo(() => {
+    const c: Record<string, number> = { working: 0, meeting: 0, idle: 0, done: 0 };
+    for (const a of agents) c[a.status || "idle"] = (c[a.status || "idle"] ?? 0) + 1;
+    return c;
+  }, [agents]);
+
+  const pending = (state?.approvals ?? []).filter((a) => a.status === "pending");
+  const opsService = ops?.service;
+  const opsVideo = ops?.video;
+  const onlineServices = (opsVideo?.services ?? []).filter((s) => s.online).length;
+  const totalServices = (opsVideo?.services ?? []).length;
+  const runningJobs = (opsVideo?.localJobs ?? []).filter(
+    (j) => /run|process|queue|pending/i.test(j.status || ""),
+  ).length;
+  const pendingRender = opsVideo?.pendingRender?.length ?? 0;
+  const alerts = (ops?.alerts ?? []).slice(0, 3);
 
   const decide = async (approval: Approval, decision: "approve" | "reject") => {
+    setApprovalMsg("");
     try {
       const res = await fetch(`/api/approvals/${approval.id}`, {
         method: "POST",
@@ -285,372 +251,276 @@ export function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setResult({ ok: false, error: String(json?.reason || json?.error || `HTTP ${res.status}`) });
+      if (res.status === 401) {
+        window.location.assign(`${appRoot()}app/login`);
         return;
       }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setApprovalMsg(String(json?.reason || json?.error || `HTTP ${res.status}`));
+        return;
+      }
+      setApprovalMsg(decision === "approve" ? "已通过" : "已驳回");
       loadState();
-    } catch (err: any) {
-      setResult({ ok: false, error: String(err?.message || err) });
+    } catch (e: any) {
+      setApprovalMsg(String(e?.message || e));
     }
   };
 
-  const pending = (state?.approvals ?? []).filter((a) => a.status === "pending");
-  const latestApproval = (state?.approvals ?? []).slice(-1)[0];
-  const lastEvidence = selected
-    ? feed.find((item) => item.text.includes(selected.name))
-    : null;
+  const kpis = [
+    { key: "total", label: "作品总数", value: metrics.totalWorks, hint: `${facets?.withFinal ?? 0} 件已成片`, tone: "" },
+    { key: "done", label: "当天完成", value: metrics.doneToday, hint: "今天发布/归档", tone: "ok" },
+    { key: "doing", label: "正在制作", value: metrics.doing, hint: "制作中", tone: "" },
+    { key: "review", label: "待评审", value: metrics.review, hint: "待我审", tone: "warn" },
+    { key: "published", label: "已发布", value: metrics.published, hint: "含归档", tone: "ok" },
+    { key: "failing", label: "受阻 / 滞销", value: metrics.failing, hint: "未过审/积压/停滞", tone: "danger" },
+  ];
 
   return (
-    <section className="home">
+    <section className="page ceo">
       <div className="page-head">
         <div>
-          <h1>首页</h1>
-          <p className="muted home-sub">Conring 工作流 · 工位图 · 指令台 · 员工详情 · 老板审批门</p>
+          <h1>总览</h1>
+          <p className="muted home-sub">CEO 视角 · 从作品运营到人员分工与系统运行的一屏概览</p>
         </div>
         <span className="muted nowrap">
-          {state?.serverTime ? `服务时间 ${state.serverTime.replace("T", " ")}` : "连接中…"}
+          {state?.serverTime ? `服务时间 ${state.serverTime.replace("T", " ").slice(0, 19)}` : "连接中…"}
         </span>
       </div>
 
       {error && <div className="banner error-banner">状态加载失败：{error}</div>}
 
-      {/* 1. Conring 工作流 */}
-      <section className="card home-block">
-        <div className="block-head">
-          <div>
-            <h2>Conring 工作流</h2>
-            <p className="muted">员工之间的委派、交付、审批与汇报实时流</p>
+      {/* 1. 运营指标 */}
+      <div className="ceo-kpis">
+        {kpis.map((k) => (
+          <div key={k.key} className={`ceo-kpi${k.tone ? ` ceo-kpi-${k.tone}` : ""}`}>
+            <span className="ceo-kpi-label">{k.label}</span>
+            <b className="ceo-kpi-value">{k.value}</b>
+            <span className="ceo-kpi-hint">{k.hint}</span>
           </div>
-          <span className="pill-count">{feed.length} 条</span>
-        </div>
-        <div className="event-feed">
-          {feed.length === 0 ? (
-            <p className="muted">等待事件…</p>
-          ) : (
-            feed.slice(0, 60).map((item) => (
-              <div key={item.key} className={`event-item event-${item.kind}`}>
-                <span className="event-time">{item.at ? item.at.replace("T", " ").slice(11, 19) : "--:--:--"}</span>
-                <span className="event-text">{item.text}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+        ))}
+      </div>
 
-      {/* 2. 工位图 */}
-      <section className="card home-block">
-        <div className="block-head">
-          <div>
-            <h2>工位图</h2>
-            <p className="muted">点击工位即可选中员工，并把指令自动 @ 给他</p>
-          </div>
-          <span className="muted">{agents.length} 名员工</span>
-        </div>
-        <div className="map-wrap">
-          <svg className="office-map" viewBox="0 0 900 520" role="img" aria-label="组织工位图">
-            <rect className="map-zone" x="16" y="28" width="868" height="84" rx="12" />
-            <text className="map-zone-label" x="26" y="44">管理层</text>
-            <rect className="map-zone" x="20" y="138" width="290" height="224" rx="12" />
-            <text className="map-zone-label" x="30" y="154" fill={projectColor("wenren")}>
-              {projectName("wenren")} · 项目区
-            </text>
-            <rect className="map-zone" x="320" y="138" width="290" height="224" rx="12" />
-            <text className="map-zone-label" x="330" y="154" fill={projectColor("gou")}>
-              {projectName("gou")} · 项目区
-            </text>
-            <rect className="map-zone" x="620" y="138" width="264" height="224" rx="12" />
-            <text className="map-zone-label" x="630" y="154" fill={projectColor("tongxinyuan")}>
-              {projectName("tongxinyuan")} · 项目区
-            </text>
-            <rect className="map-zone" x="20" y="394" width="856" height="110" rx="12" />
-            <text className="map-zone-label" x="30" y="410">中台支撑区</text>
-
-            {agents.map((agent) => {
-              if (agent.id === "boss") return null;
-              const status = statusOf(agent);
-              const color = colorOf(agent);
-              const badge = STATUS_TEXT[status] || status;
-              const seat = SEATS[agent.id] || [450, 450];
-              const active = status === "working" || status === "meeting";
-              const isSelected = selectedId === agent.id;
-              const avatar = agent.avatar || `/avatars/${agent.id}.png`;
-              if (MGMT[agent.id]) {
-                const cx = MGMT[agent.id];
-                return (
-                  <g
-                    key={agent.id}
-                    className={`map-seat map-mgmt${active ? " active" : ""}${isSelected ? " selected" : ""}`}
-                    onClick={() => pickAgent(agent)}
-                  >
-                    <rect className="map-mgmt-card" x={cx - 95} y="56" width="190" height="48" rx="12" />
-                    <clipPath id={`clip-${agent.id}`}>
-                      <circle cx={cx - 70} cy="80" r="16" />
-                    </clipPath>
-                    <circle cx={cx - 70} cy="80" r="16" fill={color} />
-                    <image
-                      href={avatar}
-                      x={cx - 86}
-                      y="64"
-                      width="32"
-                      height="32"
-                      clipPath={`url(#clip-${agent.id})`}
-                      preserveAspectRatio="xMidYMid slice"
-                    />
-                    <text className="map-name" x={cx - 46} y="76">{agent.name}</text>
-                    <text className="map-role" x={cx - 46} y="91">{agent.role}</text>
-                    <circle cx={cx + 72} cy="74" r="3.5" fill={color} />
-                    <text className="map-badge" x={cx + 72} y="91" textAnchor="middle">{badge}</text>
-                  </g>
-                );
-              }
-              return (
-                <g
-                  key={agent.id}
-                  className={`map-seat${active ? " active" : ""}${isSelected ? " selected" : ""}`}
-                  onClick={() => pickAgent(agent)}
-                >
-                  <clipPath id={`clip-${agent.id}`}>
-                    <circle cx={seat[0]} cy={seat[1]} r="17.5" />
-                  </clipPath>
-                  <circle className="map-core" cx={seat[0]} cy={seat[1]} r="17" fill={color} />
-                  <image
-                    href={avatar}
-                    x={seat[0] - 17}
-                    y={seat[1] - 17}
-                    width="34"
-                    height="34"
-                    clipPath={`url(#clip-${agent.id})`}
-                    preserveAspectRatio="xMidYMid slice"
-                  />
-                  <text className="map-name" x={seat[0] + 25} y={seat[1] - 2}>{agent.name}</text>
-                  <text className="map-role" x={seat[0] + 25} y={seat[1] + 11}>
-                    {agent.role} · {badge}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-        </div>
-      </section>
-
-      {/* 3. 命令窗口 */}
-      <section className="card home-block cmd-card">
-        <div className="cmd-head">
-          <div className="cmd-icon">›_</div>
-          <div>
-            <h2>指令台</h2>
-            <p className="muted">
-              支持 <code>@员工 指令</code>、<code>注入热点</code>，其余问题由 CEO 汇总当前进度
-            </p>
-          </div>
-          {selected && (
-            <span className="cmd-target">
-              已选中 <b>{selected.name}</b> · {selected.role}
-            </span>
-          )}
-        </div>
-        <div className="cmd-row">
-          <span className="cmd-prefix">$</span>
-          <input
-            className="cmd-input"
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            onKeyDown={(event) => {
-              // 中文输入法用 Enter 选词时不能误发送
-              if (event.key === "Enter" && !event.shiftKey
-                && !(event.nativeEvent as KeyboardEvent).isComposing) {
-                event.preventDefault();
-                sendCommand(command);
-              }
-            }}
-            placeholder="例如：@陆清安 今天哪个项目卡住了 / 注入热点"
-          />
-          <button
-            type="button"
-            className="btn cmd-send"
-            disabled={sending || !command.trim()}
-            onClick={() => sendCommand(command)}
-          >
-            {sending ? `执行中 ${elapsed}s` : "发送"}
-          </button>
-        </div>
-        {sending && (
-          <div className="cmd-progress">
-            <span className="cmd-spinner" />
-            正在发送并等待回复，已等待 {elapsed}s · 单次模型调用通常 20–60s
-          </div>
-        )}
-        <div className="cmd-quick">
-          {QUICK_COMMANDS.map((text) => (
-            <button
-              key={text}
-              type="button"
-              className="chip-btn"
-              disabled={sending}
-              onClick={() => sendCommand(text)}
-            >
-              {text}
-            </button>
-          ))}
-        </div>
-        {result && (
-          <div className={`cmd-result${result.ok === false ? " is-error" : ""}`}>
-            {result.ok === false || result.error ? (
-              <p className="error">{result.error || "指令执行失败"}</p>
-            ) : (
-              <>
-                <div className="cmd-result-head">
-                  <span>
-                    {result.agent
-                      ? `${result.agent} 回复`
-                      : result.personaTest
-                        ? "人设串味检测"
-                        : result.hotspot
-                          ? "热点注入"
-                          : "CEO 回复"}
-                  </span>
-                  {typeof result.answer?.confidence === "number" && (
-                    <span className="muted">置信度 {Math.round(result.answer.confidence * 100)}%</span>
-                  )}
-                  {typeof result.latencyMs === "number" && (
-                    <span className="muted">耗时 {Math.round(result.latencyMs / 100) / 10}s</span>
-                  )}
-                  {result.engine && <span className="muted">{result.engine}</span>}
-                </div>
-                <p className="cmd-result-text">
-                  {result.personaTest
-                    ? `检测结果：${result.personaTest.pass ? "通过，未发现跨项目人设串味" : "未通过，发现人设或素材越界"}`
-                    : result.answer?.summary || result.answer?.reply
-                      || (result.hotspot
-                        ? `已注入《${result.hotspot.title || "-"}》，trace ${result.traceId || "-"}`
-                        : "已执行")}
-                </p>
-                {!!result.personaTest?.reasons?.length && (
-                  <div className="tags">
-                    {result.personaTest.reasons.map((item) => (
-                      <span key={item} className="tag tag-danger">{item}</span>
-                    ))}
-                  </div>
-                )}
-                {!!result.answer?.evidence?.length && (
-                  <div className="tags">
-                    {result.answer.evidence.map((item) => (
-                      <span key={item} className="tag">{item}</span>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-      </section>
-
-      <div className="home-bottom">
-        {/* 4. 员工详情 */}
-        <section className="card home-block">
+      {/* 2. 作品表现 */}
+      <div className="ceo-grid-2">
+        <section className="card ceo-block">
           <div className="block-head">
             <div>
-              <h2>员工详情</h2>
-              <p className="muted">任务、工具与最近一次协作证据</p>
+              <h2>热门作品 · 上线表现</h2>
+              <p className="muted">已发布/归档作品按评审通过、完整度与更新时间排序</p>
             </div>
-            {selected && (
-              <button type="button" className="btn btn-ghost" onClick={() => setSelectedId(null)}>
-                清除选择
-              </button>
-            )}
+            <Link to="/works" className="ceo-more">作品档案 →</Link>
           </div>
-          {!selected ? (
-            <p className="muted">点击上方工位查看员工详情。</p>
+          {hotWorks.length === 0 ? (
+            <p className="muted">暂无已上线作品，先去作品档案把定稿推上线。</p>
           ) : (
-            <div className="agent-detail">
-              <div className="agent-head">
-                <span className="agent-avatar" style={{ background: colorOf(selected) }}>
-                  <img
-                    src={selected.avatar || `/avatars/${selected.id}.png`}
-                    alt={selected.name}
-                    onError={(event) => {
-                      (event.currentTarget as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                </span>
-                <div>
-                  <div className="agent-name">{selected.name} · {selected.role}</div>
-                  <div className="muted">
-                    {projectName(selected.projectId)} · {selected.tone || "跨项目中台"}
+            <div className="ceo-list">
+              {hotWorks.map((w, i) => (
+                <div key={w.id} className="ceo-row">
+                  <span className="ceo-rank">{i + 1}</span>
+                  <div className="ceo-row-main">
+                    <div className="ceo-row-title">{w.title}</div>
+                    <div className="ceo-row-sub">
+                      <span className="ceo-dot" style={{ background: projColor(w.projectId) }} />
+                      {w.projectName} · {w.status} · 完整度 {w.completeness}%
+                    </div>
                   </div>
+                  <span className={`ceo-pill${w.reviewPass === true ? " is-ok" : ""}`}>
+                    {w.reviewPass === true ? "评审通过" : w.reviewPass === false ? "未通过" : "未评审"}
+                  </span>
                 </div>
-              </div>
-              <dl className="kv">
-                <dt>状态</dt>
-                <dd>{STATUS_TEXT[statusOf(selected)] || statusOf(selected)}</dd>
-                <dt>当前任务</dt>
-                <dd>{selected.task || "暂无在执行的任务"}</dd>
-                <dt>权限范围</dt>
-                <dd>{selected.scope || "-"}</dd>
-                <dt>最近证据</dt>
-                <dd>{lastEvidence?.text || "暂无（等待下一轮事件）"}</dd>
-              </dl>
-              <div className="tags">
-                {(selected.tools?.length ? selected.tools : ["暂无工具"]).map((tool) => (
-                  <span key={tool} className="tag">{tool}</span>
-                ))}
-                {(selected.highRisk || []).map((item) => (
-                  <span key={item} className="tag tag-danger">高风险：{item}</span>
-                ))}
-              </div>
+              ))}
             </div>
           )}
         </section>
 
-        {/* 5. 审批 */}
-        <section className="card home-block">
+        <section className="card ceo-block">
           <div className="block-head">
             <div>
-              <h2>老板审批门</h2>
-              <p className="muted">开工 / 发布 / 对外动作必须人工拍板</p>
+              <h2>滞销 / 受阻作品</h2>
+              <p className="muted">未通过评审、待评审积压、或制作长期停滞</p>
             </div>
-            <span className="pill-count">{pending.length} 待审批</span>
+            <Link to="/works" className="ceo-more">全部 →</Link>
           </div>
-          {pending.length === 0 ? (
-            <p className="muted">
-              {latestApproval
-                ? `最近审批：${latestApproval.title || latestApproval.action} · ${latestApproval.status === "approved" ? "已通过" : latestApproval.status}`
-                : "暂无待审批。AI 不得自行开工、发布或对外承诺。"}
-            </p>
+          {blockedWorks.length === 0 ? (
+            <p className="muted">当前没有受阻作品，产线通畅。</p>
           ) : (
-            <div className="approval-list">
-              {pending.slice(-3).reverse().map((approval) => {
-                const checks = approval.checks || {};
-                const cost = checks.cost;
-                return (
-                  <div key={approval.id} className="approval-card">
-                    <h3>{approval.title || approval.action || approval.id}</h3>
-                    <div className="approval-line">
-                      风险：{approval.risk || "-"} · 动作：{approval.action || "-"} · 内容 {(approval.items || []).length} 条
-                    </div>
-                    {cost && (
-                      <div className="approval-line">
-                        模型调用约 {cost.modelCallsTypical ?? "-"} 次 · 渲染 {cost.renders ?? "-"} 条
-                      </div>
-                    )}
-                    <div className="approval-line">trace：{approval.traceId || "-"}</div>
-                    <div className="approval-actions">
-                      <button type="button" className="btn btn-ok" onClick={() => decide(approval, "approve")}>
-                        {approval.action === "publish.execute" ? "通过并发布" : "通过并开工"}
-                      </button>
-                      <button type="button" className="btn btn-ghost" onClick={() => decide(approval, "reject")}>
-                        驳回
-                      </button>
+            <div className="ceo-list">
+              {blockedWorks.map(({ w, reason }) => (
+                <div key={w.id} className="ceo-row">
+                  <span className="ceo-rank ceo-rank-warn">!</span>
+                  <div className="ceo-row-main">
+                    <div className="ceo-row-title">{w.title}</div>
+                    <div className="ceo-row-sub">
+                      <span className="ceo-dot" style={{ background: projColor(w.projectId) }} />
+                      {w.projectName} · {w.stageName} · 更新 {shortTime(w.updatedAt)}
                     </div>
                   </div>
-                );
-              })}
+                  <span className="ceo-pill is-danger">{reason}</span>
+                </div>
+              ))}
             </div>
           )}
         </section>
       </div>
+
+      {/* 3. 创作流水线 */}
+      <section className="card ceo-block">
+        <div className="block-head">
+          <div>
+            <h2>创作流水线</h2>
+            <p className="muted">创意 → 选题 → 定稿 → 分镜 → 评审 → 发布 的当前分布</p>
+          </div>
+          <span className="pill-count">共 {metrics.totalWorks} 件在管</span>
+        </div>
+        <div className="ceo-funnel">
+          {funnel.map((s, i) => (
+            <div key={s.key} className="ceo-stage">
+              <span className="ceo-stage-label">{s.label}</span>
+              <b className="ceo-stage-value">{s.value}</b>
+              {s.hint && <span className="ceo-stage-hint">{s.hint}</span>}
+              {i < funnel.length - 1 && <span className="ceo-stage-arrow" aria-hidden="true">›</span>}
+            </div>
+          ))}
+        </div>
+
+        <div className="ceo-principle">
+          <div className="ceo-principle-head">
+            <h3>短视频架构确定原则</h3>
+            <Link to="/knowledge" className="ceo-more">知识库 →</Link>
+          </div>
+          <div className="ceo-principle-grid">
+            {VIDEO_PRINCIPLES.map((p) => (
+              <div key={p.t} className="ceo-principle-item">
+                <b>{p.t}</b>
+                <span>{p.d}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 4. 人员与分配 */}
+      <section className="card ceo-block">
+        <div className="block-head">
+          <div>
+            <h2>人员编制 · 任务分配</h2>
+            <p className="muted">
+              执行中 {statusSummary.working} · 会议中 {statusSummary.meeting} · 待命 {statusSummary.idle} · 已交付 {statusSummary.done}
+            </p>
+          </div>
+          <Link to="/org" className="ceo-more">组织配置 →</Link>
+        </div>
+        <div className="ceo-people">
+          {people.map((group) => (
+            <div key={group.key} className="ceo-people-group">
+              <div className="ceo-people-head" style={{ borderColor: group.color }}>
+                <span className="ceo-dot" style={{ background: group.color }} />
+                {group.name}
+                <span className="muted"> · {group.members.length} 人</span>
+              </div>
+              {group.members.map((a) => (
+                <div key={a.id} className="ceo-person">
+                  <div className="ceo-person-main">
+                    <b>{a.name}</b>
+                    <span className="muted">{a.role}</span>
+                  </div>
+                  <span className={`ceo-pill ceo-pill-${a.status || "idle"}`}>
+                    {STATUS_TEXT[a.status || "idle"] || a.status}
+                  </span>
+                  <span className="ceo-person-task" title={a.task || "暂无在执行的任务"}>
+                    {a.task || "暂无任务"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 5. IT 系统运行 + 审批 */}
+      <div className="ceo-grid-2">
+        <section className="card ceo-block">
+          <div className="block-head">
+            <div>
+              <h2>IT 系统运行</h2>
+              <p className="muted">服务健康、视频产线与告警</p>
+            </div>
+            <Link to="/ops" className="ceo-more">运维监控 →</Link>
+          </div>
+          <div className="ceo-sys">
+            <div className="ceo-sys-row">
+              <span>主服务</span>
+              <span className={`ceo-pill${opsService?.ok ? " is-ok" : " is-danger"}`}>
+                {opsService?.ok ? "运行中" : ops ? "异常" : "加载中"}
+              </span>
+            </div>
+            <div className="ceo-sys-row">
+              <span>已运行</span>
+              <b>{fmtUptime(opsService?.uptimeSec)}</b>
+            </div>
+            <div className="ceo-sys-row">
+              <span>视频服务</span>
+              <b>{totalServices ? `${onlineServices}/${totalServices} 在线` : "-"}</b>
+            </div>
+            <div className="ceo-sys-row">
+              <span>渲染队列</span>
+              <b>
+                执行 {runningJobs} · 阻塞 {pendingRender}
+              </b>
+            </div>
+          </div>
+          {alerts.length > 0 ? (
+            <div className="ceo-alerts">
+              {alerts.map((a) => (
+                <div key={a.id} className={`ceo-alert is-${a.level}`}>
+                  <b>{a.title}</b>
+                  <span>{a.detail}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted ceo-ok">暂无告警，系统平稳。</p>
+          )}
+        </section>
+
+        <section className="card ceo-block">
+          <div className="block-head">
+            <div>
+              <h2>待我拍板</h2>
+              <p className="muted">开工 / 发布 / 对外动作必须人工拍板</p>
+            </div>
+            <span className="pill-count">{pending.length} 待审批</span>
+          </div>
+          {approvalMsg && <p className="muted">{approvalMsg}</p>}
+          {pending.length === 0 ? (
+            <p className="muted">暂无待审批。AI 不得自行开工、发布或对外承诺。</p>
+          ) : (
+            <div className="approval-list">
+              {pending.slice(-3).reverse().map((approval) => (
+                <div key={approval.id} className="approval-card">
+                  <h3>{approval.title || approval.action || approval.id}</h3>
+                  <div className="approval-line">
+                    风险：{approval.risk || "-"} · 动作：{approval.action || "-"} · 内容 {(approval.items || []).length} 条
+                  </div>
+                  <div className="approval-actions">
+                    <button type="button" className="btn btn-ok" onClick={() => decide(approval, "approve")}>
+                      {approval.action === "publish.execute" ? "通过并发布" : "通过并开工"}
+                    </button>
+                    <button type="button" className="btn btn-ghost" onClick={() => decide(approval, "reject")}>
+                      驳回
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <p className="ceo-note muted">
+        说明：作品档案暂未接入平台播放量，热门/滞销以「上线状态 + 评审结论 + 完整度 + 停滞天数」等真实信号排序，未做播放数据臆造。
+      </p>
     </section>
   );
 }

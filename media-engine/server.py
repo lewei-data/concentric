@@ -5,8 +5,12 @@
   GET  /v1/voices       音色表
   POST /v1/tts          文本 → wav/mp3 音频流，或 json（含 srt/segments 链接）
   POST /v1/asr          multipart(file) 或 json(audio_base64/audio_path) → 文本 + 时间轴
+  GET  /v1/audio/jobs        qwen3 语音作业列表（含队列统计）
+  GET  /v1/audio/jobs/{id}   轮询 qwen3 作业状态与结果
   GET  /files/{name}    取回合成产物（srt / segments.json / mp3）
   GET  /metrics         Prometheus 文本格式
+
+qwen3 默认异步：POST 立即 202 返回 job_id + queue_position，结果靠轮询；传 mode=sync 走旧的阻塞语义。
 
 推理全部在本进程外/懒加载：TTS 走多进程池（每进程一份模型），ASR 走本进程 whisper。
 S1 期间 mcp-tts / mcp-asr 保持在线，本服务只做旁路，出问题停掉即可回滚。
@@ -42,6 +46,8 @@ WORK_DIR = os.environ.get("MEDIA_WORK_DIR", os.path.join(os.path.dirname(os.path
 TOKEN = os.environ.get("MEDIA_ENGINE_TOKEN", "").strip()
 TTL_HOURS = float(os.environ.get("MEDIA_TTL_HOURS", "24"))
 MAX_BODY_MB = float(os.environ.get("MEDIA_MAX_BODY_MB", "25"))
+# qwen3 异步作业的轮询前缀（与视频作业的 /v1/jobs 分开，避免路由语义混淆）
+AUDIO_POLL_PREFIX = "/v1/audio/jobs/"
 FFMPEG = os.environ.get("FFMPEG", shutil.which("ffmpeg") or "/home/boray/.local/bin/ffmpeg")
 
 os.makedirs(WORK_DIR, exist_ok=True)
@@ -179,6 +185,7 @@ class TTSRequest(BaseModel):
     speaker: str | None = None  # engine=qwen3 时的音色（Vivian/Serena/...）
     language: str | None = None
     instruct: str | None = None  # engine=qwen3 时的情绪指令，如「兴奋地说」
+    mode: str = "async"      # engine=qwen3：async（默认，返回 job_id）| sync（阻塞等结果）
 
 
 def _to_mp3(wav_path, out_path):
@@ -192,6 +199,49 @@ def _file_url(name):
     return "/files/" + name
 
 
+def _tts_json(result, voice=None):
+    """TTS 结果 → json 响应（同步 json 与异步作业 result 共用）。"""
+    return {"job_id": result["stem"], "stem": result["stem"], "voice": voice or "default",
+            "engine": result.get("engine", "cosyvoice"),
+            "speaker": result.get("speaker"),
+            "audio_url": _file_url(os.path.basename(result["audio_path"])),
+            "audio_path": result["audio_path"],
+            "srt_url": _file_url(os.path.basename(result["srt_path"])),
+            "segments_url": _file_url(os.path.basename(result["segments_path"])),
+            "sample_rate": result["sample_rate"], "duration": result["duration"],
+            "segment_count": result["segment_count"], "segments": result["segments"],
+            "synth_sec": result["synth_sec"], "rtf": result["rtf"],
+            "workers": result.get("workers", 1)}
+
+
+def _qwen_asr_sync(path, lang):
+    """Qwen ASR 单次阻塞调用：先过音频级门，再识别，最后走文本黑名单。"""
+    _, duration, _, reason = asr_engine.probe(path)
+    if reason:
+        return qwen_engine.empty_result(lang or asr_engine.DEFAULT_LANG, duration, reason)
+    result = qwen_engine.transcribe(path, lang)
+    kept, reasons = asr_engine.filter_segments(
+        [{"text": result["text"], "start": 0.0, "end": result["duration"],
+          "avg_logprob": 0.0, "no_speech_prob": 0.0, "compression_ratio": 1.0}],
+        lang or asr_engine.DEFAULT_LANG)
+    if reasons:
+        result.update({"text": "", "segments": [], "silent": True,
+                       "silent_reason": "blacklist",
+                       "filtered": sum(reasons.values()),
+                       "filtered_reasons": reasons})
+    return result
+
+
+def _job_ack(job, extra=None):
+    """202 受理响应：只回作业标识与排队位置，结果靠轮询。"""
+    out = {"job_id": job["job_id"], "status": job["status"], "kind": job["kind"],
+           "engine": "qwen3", "queue_position": job["queue_position"],
+           "created_at": job["created_at"], "poll_url": AUDIO_POLL_PREFIX + job["job_id"]}
+    if extra:
+        out.update(extra)
+    return JSONResponse(out, status_code=202)
+
+
 @app.post("/v1/tts")
 async def tts(payload: TTSRequest, request: Request):
     if not _authorized(request):
@@ -202,7 +252,32 @@ async def tts(payload: TTSRequest, request: Request):
     engine = (payload.engine or "cosyvoice").lower()
     if engine not in ("cosyvoice", "qwen3"):
         return JSONResponse({"error": "engine 只支持 cosyvoice / qwen3"}, status_code=400)
+    mode = (payload.mode or "async").lower()
+    if mode not in ("async", "sync"):
+        return JSONResponse({"error": "mode 只支持 async / sync"}, status_code=400)
     _count("tts_requests")
+
+    if engine == "qwen3" and mode == "async":
+        if not (payload.text or "").strip():
+            return JSONResponse({"error": "text 不能为空"}, status_code=400)
+        speaker = payload.speaker or payload.voice
+
+        def _tts_work():
+            try:
+                with _Timer("tts_ms"):
+                    res = qwen_engine.synthesize(payload.text, speaker, payload.language,
+                                                 payload.instruct, WORK_DIR, payload.stem)
+                return _tts_json(res, payload.voice)
+            except Exception:
+                _count("tts_fail")
+                raise
+
+        job = qwen_engine.TTS_JOBS.submit(_tts_work, {
+            "text_len": len(payload.text),
+            "speaker": speaker or qwen_engine.DEFAULT_SPEAKER,
+            "language": payload.language, "instruct": payload.instruct})
+        return _job_ack(job, {"note": "异步模式统一返回 json，音频完成后取 result.audio_url"})
+
     try:
         with _Timer("tts_ms"):
             if engine == "qwen3":
@@ -234,29 +309,20 @@ async def tts(payload: TTSRequest, request: Request):
             return JSONResponse({"error": "mp3 转码失败：%s" % e}, status_code=500)
         return FileResponse(mp3_path, media_type="audio/mpeg", headers=headers)
 
-    return {"job_id": result["stem"], "voice": payload.voice or "default",
-            "engine": result.get("engine", "cosyvoice"),
-            "speaker": result.get("speaker"),
-            "audio_url": _file_url(os.path.basename(wav_path)),
-            "audio_path": wav_path,
-            "srt_url": _file_url(os.path.basename(result["srt_path"])),
-            "segments_url": _file_url(os.path.basename(result["segments_path"])),
-            "sample_rate": result["sample_rate"], "duration": result["duration"],
-            "segment_count": result["segment_count"], "segments": result["segments"],
-            "synth_sec": result["synth_sec"], "rtf": result["rtf"], "workers": result["workers"]}
+    return _tts_json(result, payload.voice)
 
 
 # ---------------------------------------------------------------- ASR
 async def _asr_input(request: Request):
-    """multipart 或 json 两种入参，统一落到临时文件。返回 (path, tmp?, language, model, prompt, engine)。"""
+    """multipart 或 json 两种入参，统一落到临时文件。返回 (path, tmp?, language, model, prompt, engine, mode)。"""
     ctype = request.headers.get("content-type", "")
-    lang = model = prompt = engine = None
+    lang = model = prompt = engine = mode = None
     audio_path = tmp = None
     if ctype.startswith("application/json"):
         body = await request.json()
         lang, model = body.get("language"), body.get("model")
         prompt = body.get("initial_prompt")
-        engine = body.get("engine")
+        engine, mode = body.get("engine"), body.get("mode")
         if body.get("audio_path"):
             audio_path = body["audio_path"]
             if not os.path.exists(audio_path):
@@ -280,6 +346,7 @@ async def _asr_input(request: Request):
         lang, model = form.get("language"), form.get("model")
         prompt = form.get("initial_prompt")
         engine = form.get("engine")
+        mode = form.get("mode")
         fd, tmp = tempfile.mkstemp(prefix="asr_", suffix=".bin", dir=WORK_DIR)
         size = 0
         with os.fdopen(fd, "wb") as f:
@@ -294,7 +361,7 @@ async def _asr_input(request: Request):
                     raise ValueError("音频超过 %.0fMB 上限" % MAX_BODY_MB)
                 f.write(chunk)
         audio_path = tmp
-    return audio_path, tmp, lang, model, prompt, engine
+    return audio_path, tmp, lang, model, prompt, engine, mode
 
 
 @app.post("/v1/asr")
@@ -303,33 +370,43 @@ async def asr(request: Request):
         return _forbidden()
     _count("asr_requests")
     try:
-        audio_path, tmp, lang, model, prompt, engine = await _asr_input(request)
+        audio_path, tmp, lang, model, prompt, engine, mode = await _asr_input(request)
     except Exception as e:
         _count("asr_fail")
         return JSONResponse({"error": str(e)}, status_code=400)
-    engine = (engine or "whisper").lower()
+    engine = (engine or request.query_params.get("engine") or "whisper").lower()
     if engine not in ("whisper", "qwen3"):
         _count("asr_fail")
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
         return JSONResponse({"error": "engine 只支持 whisper / qwen3"}, status_code=400)
+    mode = (mode or request.query_params.get("mode") or "async").lower()
+    if mode not in ("async", "sync"):
+        _count("asr_fail")
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+        return JSONResponse({"error": "mode 只支持 async / sync"}, status_code=400)
+
+    if engine == "qwen3" and mode == "async":
+        def _asr_work():
+            try:
+                with _Timer("asr_ms"):
+                    res = _qwen_asr_sync(audio_path, lang)
+                if res.get("silent"):
+                    _count("asr_empty")
+                return res
+            finally:
+                if tmp and os.path.exists(tmp):
+                    os.unlink(tmp)
+
+        job = qwen_engine.ASR_JOBS.submit(_asr_work, {
+            "language": lang, "source": "upload" if tmp else "audio_path"})
+        return _job_ack(job, {"note": "轮询 poll_url，结果在 result 字段"})
+
     try:
         with _Timer("asr_ms"):
             if engine == "qwen3":
-                # 先过音频级门（毫秒级），避免把静音送给 Qwen 让它幻觉出文本
-                _, duration, _, reason = await run_in_threadpool(asr_engine.probe, audio_path)
-                if reason:
-                    result = qwen_engine.empty_result(lang or asr_engine.DEFAULT_LANG,
-                                                      duration, reason)
-                else:
-                    result = await run_in_threadpool(qwen_engine.transcribe, audio_path, lang)
-                    kept, reasons = asr_engine.filter_segments(
-                        [{"text": result["text"], "start": 0.0, "end": result["duration"],
-                          "avg_logprob": 0.0, "no_speech_prob": 0.0, "compression_ratio": 1.0}],
-                        lang or asr_engine.DEFAULT_LANG)
-                    if reasons:
-                        result.update({"text": "", "segments": [], "silent": True,
-                                       "silent_reason": "blacklist",
-                                       "filtered": sum(reasons.values()),
-                                       "filtered_reasons": reasons})
+                result = await run_in_threadpool(_qwen_asr_sync, audio_path, lang)
             else:
                 result = await run_in_threadpool(
                     asr_engine.transcribe, audio_path, lang, model, prompt)
@@ -343,6 +420,30 @@ async def asr(request: Request):
     finally:
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
+
+
+@app.get("/v1/audio/jobs")
+def audio_jobs_list(request: Request, limit: int = 20, kind: str | None = None):
+    """qwen3 语音作业列表（与视频作业的 /v1/jobs 分开，避免语义混淆）。"""
+    if not _authorized(request):
+        return _forbidden()
+    limit = max(1, min(limit, 200))
+    jobs = qwen_engine.list_jobs(limit)
+    if kind in ("asr", "tts"):
+        jobs = [j for j in jobs if j["kind"] == kind]
+    return {"count": len(jobs), "jobs": jobs, "stats": qwen_engine.job_stats()}
+
+
+@app.get("/v1/audio/jobs/{job_id}")
+def audio_jobs_get(job_id: str, request: Request):
+    if not _authorized(request):
+        return _forbidden()
+    job = qwen_engine.get_job(job_id)
+    if job is None:
+        return JSONResponse({"error": "作业不存在或已过期", "job_id": job_id},
+                            status_code=404)
+    job["poll_url"] = AUDIO_POLL_PREFIX + job_id
+    return job
 
 
 # ---------------------------------------------------------------- 数字人与视频

@@ -9,10 +9,13 @@ CPU 实测（2026-11-12，本机 144 核，fp32）：ASR RTF 1.7~2.3、TTS RTF 2
 只适合离线批量转写 / 配音朗读，不能进实时通话链路。
 """
 
+import collections
 import json
 import os
+import queue
 import shutil
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -53,15 +56,17 @@ def _post(url, payload, timeout=TIMEOUT):
 def _ping(url, timeout=1.0):
     try:
         with urllib.request.urlopen(url + "/health", timeout=timeout) as r:
-            return bool(json.loads(r.read().decode("utf-8")).get("ok"))
+            return json.loads(r.read().decode("utf-8"))
     except Exception:
-        return False
+        return {}
 
 
 def health():
-    return {"asr": {"url": ASR_URL, "up": _ping(ASR_URL)},
-            "tts": {"url": TTS_URL, "up": _ping(TTS_URL)},
-            "speakers": list(SPEAKERS), "default_speaker": DEFAULT_SPEAKER}
+    a, t = _ping(ASR_URL), _ping(TTS_URL)
+    return {"asr": {"url": ASR_URL, "up": bool(a.get("ok")), "busy": bool(a.get("busy"))},
+            "tts": {"url": TTS_URL, "up": bool(t.get("ok")), "busy": bool(t.get("busy"))},
+            "speakers": list(SPEAKERS), "default_speaker": DEFAULT_SPEAKER,
+            "jobs": job_stats()}
 
 
 def _ffprobe_duration(path):
@@ -166,3 +171,145 @@ def synthesize(text, speaker=None, language=None, instruct=None, out_dir=None, s
             "duration": round(duration, 3), "segment_count": 1,
             "synth_sec": r.get("synth_sec"), "rtf": r.get("rtf"),
             "workers": 1, "engine": "qwen3", "speaker": speaker, "segments": segs}
+
+
+# ---------------------------------------------------------------- 作业队列
+class JobQueue:
+    """单 worker 的 FIFO 作业队列。
+
+    Qwen 服务是单线程 Flask，本身就只能串行推理；这里把「HTTP 长连接等结果」改成
+    「提交拿 job_id、轮询取结果」，顺带把排队位置暴露出来。作业只存内存，media-engine
+    重启即丢失（Qwen 侧产物仍在 work 目录，可按 stem 找回）。
+    """
+
+    def __init__(self, name, kind, ttl_sec=86400, max_jobs=1000, workers=1):
+        self.name = name
+        self.kind = kind
+        self._ttl = ttl_sec
+        self._max = max_jobs
+        self._jobs = {}
+        self._order = collections.deque()
+        self._q = queue.Queue()
+        self._lock = threading.Lock()
+        self._seq = 0
+        self._done = self._failed = 0
+        for i in range(workers):
+            threading.Thread(target=self._run, name="%s-job-%d" % (name, i),
+                             daemon=True).start()
+
+    # ---- 内部
+    def _queued_ahead(self, seq):
+        return sum(1 for j in self._jobs.values()
+                   if j["status"] == "queued" and j["_seq"] < seq)
+
+    def _prune(self):
+        cutoff = time.time() - self._ttl
+        while self._order:
+            jid = self._order[0]
+            job = self._jobs.get(jid)
+            if job is None:
+                self._order.popleft()
+                continue
+            if job["status"] in ("queued", "running") or job["created_at"] > cutoff:
+                break
+            self._order.popleft()
+            self._jobs.pop(jid, None)
+        # 超量时只淘汰已完成的，运行中/排队中的绝不丢
+        while len(self._jobs) > self._max and self._order:
+            jid = self._order[0]
+            job = self._jobs.get(jid)
+            if job is not None and job["status"] in ("queued", "running"):
+                break
+            self._order.popleft()
+            if job is not None:
+                self._jobs.pop(jid, None)
+
+    def _run(self):
+        while True:
+            jid, fn = self._q.get()
+            with self._lock:
+                job = self._jobs.get(jid)
+                if job is None:
+                    continue
+                job["status"] = "running"
+                job["started_at"] = round(time.time(), 3)
+            t0 = time.time()
+            result = err = None
+            try:
+                result = fn()
+                status = "succeeded"
+            except Exception as e:  # 作业失败不能让 worker 线程退出
+                status, err = "failed", str(e)
+            with self._lock:
+                job = self._jobs.get(jid)
+                if job is not None:
+                    job.update({"status": status, "result": result, "error": err,
+                                "finished_at": round(time.time(), 3),
+                                "elapsed_s": round(time.time() - t0, 2)})
+                if status == "succeeded":
+                    self._done += 1
+                else:
+                    self._failed += 1
+
+    # ---- 对外
+    def submit(self, fn, meta=None):
+        with self._lock:
+            self._seq += 1
+            jid = "%s-%s" % (self.kind, uuid.uuid4().hex[:12])
+            job = {"job_id": jid, "kind": self.kind, "engine": self.name,
+                   "status": "queued", "created_at": round(time.time(), 3),
+                   "started_at": None, "finished_at": None, "elapsed_s": None,
+                   "queue_position": self._queued_ahead(self._seq),
+                   "meta": meta or {}, "result": None, "error": None,
+                   "_seq": self._seq}
+            self._jobs[jid] = job
+            self._order.append(jid)
+            self._prune()
+            view = self._view(job)
+        self._q.put((jid, fn))
+        return view
+
+    def _view(self, job):
+        out = {k: v for k, v in job.items() if not k.startswith("_")}
+        if job["status"] == "queued":
+            out["queue_position"] = self._queued_ahead(job["_seq"])
+        else:
+            out["queue_position"] = 0
+        return out
+
+    def get(self, jid):
+        with self._lock:
+            self._prune()
+            job = self._jobs.get(jid)
+            return self._view(job) if job else None
+
+    def list(self, limit=20):
+        with self._lock:
+            self._prune()
+            jobs = sorted(self._jobs.values(), key=lambda j: j["_seq"], reverse=True)
+            return [self._view(j) for j in jobs[:limit]]
+
+    def stats(self):
+        with self._lock:
+            queued = sum(1 for j in self._jobs.values() if j["status"] == "queued")
+            running = sum(1 for j in self._jobs.values() if j["status"] == "running")
+            return {"queued": queued, "running": running,
+                    "succeeded": self._done, "failed": self._failed}
+
+
+ASR_JOBS = JobQueue("qwen3-asr-0.6b", "asr")
+TTS_JOBS = JobQueue("qwen3-tts-12hz-0.6b", "tts")
+
+
+def job_stats():
+    return {"asr": ASR_JOBS.stats(), "tts": TTS_JOBS.stats()}
+
+
+def get_job(jid):
+    return ASR_JOBS.get(jid) or TTS_JOBS.get(jid)
+
+
+def list_jobs(limit=20):
+    jobs = ASR_JOBS.list(limit) + TTS_JOBS.list(limit)
+    jobs.sort(key=lambda j: j["created_at"], reverse=True)
+    return jobs[:limit]

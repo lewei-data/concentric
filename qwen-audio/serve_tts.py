@@ -8,6 +8,7 @@
 """
 import json
 import os
+import threading
 import time
 import uuid
 
@@ -25,6 +26,8 @@ os.makedirs(WORK, exist_ok=True)
 torch.set_num_threads(THREADS)
 app = Flask(__name__)
 model = None
+# 推理串行锁：模型不是线程安全的，多线程只用于让 /health 等轻请求不被推理挡住
+_INFER_LOCK = threading.Lock()
 
 
 def get_model():
@@ -37,7 +40,7 @@ def get_model():
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "engine": "qwen3-tts-12hz-0.6b-customvoice", "loaded": model is not None,
-                    "threads": THREADS, "model_dir": MODEL_DIR})
+                    "busy": _INFER_LOCK.locked(), "threads": THREADS, "model_dir": MODEL_DIR})
 
 
 @app.get("/audio/<name>")
@@ -55,11 +58,13 @@ def tts():
     language = data.get("language") or "Chinese"
     instruct = data.get("instruct") or None
 
-    t0 = time.time()
-    wavs, sr = get_model().generate_custom_voice(
-        text=text, language=language, speaker=speaker, instruct=instruct
-    )
-    synth = time.time() - t0
+    t_req = time.time()
+    with _INFER_LOCK:
+        t0 = time.time()
+        wavs, sr = get_model().generate_custom_voice(
+            text=text, language=language, speaker=speaker, instruct=instruct
+        )
+        synth = time.time() - t0
     name = f"qwen_tts_{uuid.uuid4().hex[:10]}.wav"
     sf.write(os.path.join(WORK, name), wavs[0], sr)
     dur = len(wavs[0]) / sr
@@ -69,6 +74,7 @@ def tts():
         "sample_rate": sr,
         "duration": round(dur, 2),
         "synth_sec": round(synth, 2),
+        "queue_wait_s": round(t0 - t_req, 2),
         "rtf": round(synth / dur, 2),
         "speaker": speaker,
         "engine": "qwen3-tts-12hz-0.6b-customvoice",
@@ -77,4 +83,5 @@ def tts():
 
 if __name__ == "__main__":
     get_model()
-    app.run(host="0.0.0.0", port=PORT, threaded=False)
+    # threaded=True：/health 由独立线程即时响应；推理本身仍被 _INFER_LOCK 串行化
+    app.run(host="0.0.0.0", port=PORT, threaded=True)

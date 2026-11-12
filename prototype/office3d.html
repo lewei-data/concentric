@@ -160,6 +160,15 @@
       var msg = Object.assign({ source: 'opc-3d', type: type, scene: 'office' }, extra || {});
       try { window.parent.postMessage(msg, location.origin); } catch (e) { /* ignore */ }
     };
+    /* 顶层可能在 ready 消息之后才注册监听器（iframe 命中缓存时尤其明显）。
+       收到 ping 就补发当前状态，避免外层一直停在「正在加载 3D 场景」。 */
+    window.addEventListener('message', function (e) {
+      if (e.origin !== location.origin) return;
+      var d = e.data;
+      if (!d || d.source !== 'opc-3d-host' || d.type !== 'opc:ping') return;
+      if (window.__officeBooted) window.__opcNotify('opc:scene-ready');
+      else if (window.__opcBootError) window.__opcNotify('opc:scene-error', { message: window.__opcBootError });
+    });
     if (!embedded) return;
     function bindLinks() {
       document.querySelectorAll('a.back').forEach(function (a) {

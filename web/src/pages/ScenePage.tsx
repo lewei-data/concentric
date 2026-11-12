@@ -154,19 +154,35 @@ function toMeetingView(raw: Record<string, any>): MeetingView {
   };
 }
 
+type FrameWindow = Window & {
+  __officeBooted?: boolean;
+  __meetingBooted?: boolean;
+  __opcBootError?: string | null;
+};
+
 export function ScenePage({ scene }: { scene: SceneKey }) {
   const cfg = SCENES[scene];
   const navigate = useNavigate();
   const [nonce, setNonce] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
+  const [frameLoaded, setFrameLoaded] = useState(false);
   const [sceneError, setSceneError] = useState("");
+  const [frameNote, setFrameNote] = useState("");
   const [sessionReady, setSessionReady] = useState(false);
   const [stateView, setStateView] = useState<StateView | null>(null);
   const [meetingView, setMeetingView] = useState<MeetingView | null>(null);
   const [dataError, setDataError] = useState("");
   const timer = useRef<number | undefined>(undefined);
   const refreshTimer = useRef<number | undefined>(undefined);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
+  const markLoaded = useCallback(() => {
+    setLoaded(true);
+    setTimedOut(false);
+    setSceneError("");
+    window.clearTimeout(timer.current);
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -207,10 +223,7 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
       const data = event.data as Record<string, any> | null;
       if (!data || data.source !== "opc-3d") return;
       if (data.type === "opc:scene-ready") {
-        setLoaded(true);
-        setTimedOut(false);
-        setSceneError("");
-        window.clearTimeout(timer.current);
+        markLoaded();
       } else if (data.type === "opc:scene-error") {
         setSceneError(String(data.message || "3D 场景初始化失败"));
         setLoaded(false);
@@ -224,7 +237,43 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [navigate]);
+  }, [navigate, markLoaded]);
+
+  // 兜底握手：iframe 命中缓存时，子页面的 ready 消息可能早于本组件的监听器注册而丢失，
+  // 表现为「独立窗口正常、内嵌默认加载一直转圈」。这里直接轮询同源 iframe 的 boot 标记，
+  // 并把「已出现 canvas」也视为就绪（three.js 一旦初始化就说明页面确实跑起来了）。
+  useEffect(() => {
+    if (loaded || sceneError) return;
+    const id = window.setInterval(() => {
+      const frame = frameRef.current;
+      if (!frame) return;
+      let doc: Document | null = null;
+      let win: FrameWindow | null = null;
+      try {
+        doc = frame.contentDocument;
+        win = frame.contentWindow as FrameWindow | null;
+      } catch {
+        return; // 跨源/内嵌被拦截时读不到，交给 onLoad 的诊断报错
+      }
+      if (!doc || !win) return;
+      const booted = scene === "office" ? win.__officeBooted : win.__meetingBooted;
+      if (booted) {
+        markLoaded();
+        return;
+      }
+      if (win.__opcBootError) {
+        setSceneError(String(win.__opcBootError));
+        setLoaded(false);
+        window.clearTimeout(timer.current);
+        return;
+      }
+      // 握手消息丢失但渲染器已经建好：直接放行，避免被遮罩误伤
+      if (doc.querySelector("canvas")) {
+        markLoaded();
+      }
+    }, 400);
+    return () => window.clearInterval(id);
+  }, [loaded, sceneError, scene, markLoaded]);
 
   // 外层侧栏消费同一份 SSE，iframe 里 3D 画面与外层数据保持一致
   useEffect(() => {
@@ -251,32 +300,104 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
   useEffect(() => {
     setLoaded(false);
     setTimedOut(false);
+    setFrameLoaded(false);
     setSceneError("");
+    setFrameNote("");
     timer.current = window.setTimeout(() => setTimedOut(true), 25000);
     return () => window.clearTimeout(timer.current);
   }, [scene, nonce]);
 
+  // 超时后主动自检一次：把 iframe 实际拿到的 HTTP 状态 / 最终地址 / 标题写进提示，
+  // 这样「被重定向」「被网关改写」「iframe 被拦截」能一眼区分，不必翻控制台。
+  useEffect(() => {
+    if (!timedOut || loaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${cfg.src}&probe=1`, {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        const text = await res.text();
+        const title = /<title>([^<]*)<\/title>/i.exec(text)?.[1] || "";
+        const finalUrl = res.url || cfg.src;
+        setFrameNote(
+          `自检：HTTP ${res.status}，最终地址 ${finalUrl}，页面标题「${title || "无"}」`
+            + (/\/login/i.test(finalUrl) ? "（被重定向到登录页）" : ""),
+        );
+      } catch (err) {
+        if (!cancelled) setFrameNote(`自检请求失败：${(err as Error).message}`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [timedOut, loaded, cfg.src]);
+
   const reload = () => setNonce((n) => n + 1);
 
   const handleFrameLoad = (event: React.SyntheticEvent<HTMLIFrameElement>) => {
+    const frame = event.currentTarget;
+    setFrameLoaded(true);
+    // 主动 ping：若子页面已经就绪但 ready 消息早于监听器被丢弃，让它补发一次
     try {
-      const frame = event.currentTarget;
-      const doc = frame.contentDocument;
-      if (!doc) return;
-      if (doc.title.includes("登录")) {
-        window.location.assign("/app/login");
-        return;
-      }
-      // postMessage 偶发丢失时的兜底：同源可直接读子页面的 boot 标记
-      const win = frame.contentWindow as (Window & { __officeBooted?: boolean; __meetingBooted?: boolean }) | null;
-      const booted = scene === "office" ? win?.__officeBooted : win?.__meetingBooted;
-      if (booted) {
-        setLoaded(true);
-        setTimedOut(false);
-        setSceneError("");
-        window.clearTimeout(timer.current);
-      }
-    } catch { /* 跨源时忽略，仍以 postMessage 握手为准 */ }
+      frame.contentWindow?.postMessage(
+        { source: "opc-3d-host", type: "opc:ping" },
+        window.location.origin,
+      );
+    } catch { /* ignore */ }
+
+    let doc: Document | null = null;
+    try {
+      doc = frame.contentDocument;
+    } catch {
+      doc = null;
+    }
+    if (!doc) {
+      // 内嵌被 X-Frame-Options / CSP frame-ancestors 拦截时，子文档不可访问
+      setSceneError("浏览器或网关阻止了内嵌 3D 页面（X-Frame-Options / CSP frame-ancestors）。");
+      setFrameNote("请用「独立窗口打开」，或让运维放行 /office3d 的 iframe 嵌入。");
+      setLoaded(false);
+      window.clearTimeout(timer.current);
+      return;
+    }
+    if (doc.title.includes("登录")) {
+      // 顶层还有效却把 iframe 重定向到登录页，通常是 iframe 内没能带上会话 Cookie，
+      // 这时直接跳登录会变成死循环，先确认会话再决定「跳登录」还是「报嵌入问题」。
+      fetch("/api/session", { credentials: "include" })
+        .then((res) => {
+          if (res.ok) {
+            setSceneError("内嵌 3D 页面被重定向到登录页（iframe 没有共享登录态）。");
+            setFrameNote("请用「独立窗口打开」，或在浏览器中允许本站 Cookie / 关闭对第三方 Cookie 的拦截。");
+            setLoaded(false);
+            window.clearTimeout(timer.current);
+          } else {
+            window.location.assign(`${APP_ROOT}app/login`);
+          }
+        })
+        .catch(() => window.location.assign(`${APP_ROOT}app/login`));
+      return;
+    }
+    const href = doc.location?.href || "";
+    if (doc.title && href !== "about:blank" && !doc.title.includes("3D")) {
+      // 地址被重写 / 404 回退到别的页面：直接暴露实际标题，便于定位
+      setSceneError("内嵌地址没有加载到 3D 页面。");
+      setFrameNote(`当前页面标题「${doc.title}」，地址 ${href || "未知"}`);
+      setLoaded(false);
+      window.clearTimeout(timer.current);
+      return;
+    }
+
+    const win = frame.contentWindow as FrameWindow | null;
+    const booted = scene === "office" ? win?.__officeBooted : win?.__meetingBooted;
+    if (booted) {
+      markLoaded();
+      return;
+    }
+    if (win?.__opcBootError) {
+      setSceneError(String(win.__opcBootError));
+      setLoaded(false);
+      window.clearTimeout(timer.current);
+    }
   };
 
   const agentRows = useMemo(
@@ -311,25 +432,30 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
 
       <div className="scene-layout">
         <div className="scene-frame">
-          {sessionReady && (
-            <iframe
-              key={`${scene}-${nonce}`}
-              src={`${cfg.src}&t=${nonce}`}
-              title={cfg.title}
-              onLoad={handleFrameLoad}
-              allow="fullscreen"
-            />
-          )}
-          {!sessionReady && <div className="scene-loading">正在校验登录状态…</div>}
-          {sessionReady && !loaded && !timedOut && (
+          {/* 不再等会话校验：iframe 自身携带 cookie，先渲染能避免会话探测卡住时整块空白 */}
+          <iframe
+            key={`${scene}-${nonce}`}
+            ref={frameRef}
+            src={`${cfg.src}&t=${nonce}`}
+            title={cfg.title}
+            onLoad={handleFrameLoad}
+            allow="fullscreen"
+          />
+          {!frameLoaded && !sceneError && !timedOut && (
             <div className="scene-loading">正在加载 3D 场景…</div>
+          )}
+          {frameLoaded && !loaded && !sceneError && !timedOut && (
+            <div className="scene-loading is-float">正在校验 3D 场景…</div>
           )}
           {(sceneError || (timedOut && !loaded)) && (
             <div className="scene-error">
               <div>
                 <p>{sceneError || "场景加载超时，请确认已登录且服务正常。"}</p>
+                {frameNote && <p className="scene-error-tip">{frameNote}</p>}
                 <p className="scene-error-tip">
-                  常见原因：浏览器未启用 WebGL、会话已过期、或 /vendor/three.module.js 未加载成功。
+                  {frameLoaded
+                    ? "iframe 已载入但未收到就绪信号：多为 WebGL 初始化失败，或 /vendor/three.module.js 未加载成功。"
+                    : "常见原因：浏览器未启用 WebGL、会话已过期、或 /vendor/three.module.js 未加载成功。"}
                 </p>
                 <div className="scene-error-actions">
                   <button type="button" className="btn" onClick={reload}>重试</button>
