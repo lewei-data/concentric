@@ -590,7 +590,8 @@ def assets(subdir: str, name: str):
     """素材与成片下载（支持 Range，客户端可边下边播 mp4）。"""
     safe_sub = os.path.basename(subdir)
     safe = os.path.basename(name)
-    if safe_sub not in ("avatars", "faces", "videos", "portraits", "intro", "live"):
+    if safe_sub not in ("avatars", "faces", "videos", "portraits", "intro", "live",
+                        "fullbody", "idphoto"):
         return JSONResponse({"error": "not found"}, status_code=404)
     for root in video_engine.asset_roots():
         root_real = os.path.realpath(root)
