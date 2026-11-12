@@ -4139,6 +4139,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         ext = os.path.splitext(full)[1].lower()
         ctype = {".md": "text/plain; charset=utf-8", ".png": "image/png",
+                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+                 ".gif": "image/gif", ".svg": "image/svg+xml",
+                 ".pdf": "application/pdf",
+                 ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
                  ".mp4": "video/mp4", ".json": "application/json; charset=utf-8",
                  ".html": "text/html; charset=utf-8"}.get(ext, "application/octet-stream")
         size = os.path.getsize(full)
