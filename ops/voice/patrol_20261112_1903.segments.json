@@ -2,13 +2,13 @@
   "voice": "default",
   "speed": 1.0,
   "sample_rate": 24000,
-  "duration": 1.268,
+  "duration": 7.505,
   "segments": [
     {
       "index": 0,
-      "text": "巡检语音测试。",
+      "text": "2026-11-12 19:03 巡检正常，共13/13 项服务在线。",
       "start": 0.0,
-      "end": 1.268
+      "end": 7.505
     }
   ]
 }

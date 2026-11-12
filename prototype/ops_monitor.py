@@ -12,6 +12,7 @@
 
 import json
 import os
+import sqlite3
 import threading
 import time
 from collections import Counter
@@ -26,6 +27,14 @@ JOBS_FILE = os.path.join(REPO_ROOT, "media-gen", "output", "jobs.json")
 PROBE_TTL = 15
 _PROBE = {"at": 0.0, "data": None}
 _PROBE_LOCK = threading.Lock()
+
+# CTO 节点台账：由 ops-patrol-30m 每 30 分钟写入（opsctl.py check）
+NODES_DB = os.path.join(REPO_ROOT, "ops", "nodes.db")
+PATROL_JOBS = os.environ.get(
+    "OPC_PATROL_JOBS", "/opt/sefs/hermes/profiles/cto/cron/jobs.json")
+NODE_TTL = 15
+_NODES = {"at": 0.0, "data": None}
+_NODES_LOCK = threading.Lock()
 
 SERVICES = [
     {"id": "media-engine", "name": "媒体引擎 TTS / ASR / 视频", "url": "http://127.0.0.1:9200",
@@ -130,6 +139,193 @@ def _local_jobs(limit=24):
     return out, True
 
 
+def _patrol_next_run():
+    """从 CTO 的 30 分钟巡检任务里读下次执行时间；读不到就按 lastCheck + 30m 估算。"""
+    try:
+        with open(PATROL_JOBS, encoding="utf-8") as f:
+            jobs = (json.load(f) or {}).get("jobs") or []
+        for job in jobs:
+            name = str(job.get("name") or "")
+            if "patrol" not in name.lower():
+                continue
+            minutes = int(((job.get("schedule") or {}).get("minutes")) or 30)
+            return str(job.get("next_run_at") or ""), minutes
+    except (OSError, ValueError, TypeError):
+        pass
+    return "", 30
+
+
+def _add_minutes(ts, minutes):
+    try:
+        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S%z")
+    except (TypeError, ValueError):
+        return ""
+    return (dt + timedelta(minutes=minutes)).isoformat(timespec="seconds")
+
+
+def _nodes_view(force=False):
+    """读取 ops/nodes.db（只读）：节点 / 服务最近状态 + 24 小时巡检趋势。"""
+    with _NODES_LOCK:
+        cached = _NODES["data"]
+        fresh = cached is not None and (time.time() - _NODES["at"]) < NODE_TTL
+    if fresh and not force:
+        return cached
+
+    next_run, cadence = _patrol_next_run()
+    data = {
+        "available": False,
+        "dbPath": os.path.relpath(NODES_DB, REPO_ROOT),
+        "cadenceMinutes": cadence,
+        "nextCheck": next_run,
+        "lastCheck": "",
+        "ageMinutes": None,
+        "stale": False,
+        "summary": {"nodes": 0, "services": 0, "ok": 0, "failed": 0, "criticalFailed": 0},
+        "nodes": [],
+        "history": [],
+    }
+    if not os.path.exists(NODES_DB):
+        data["error"] = "节点台账尚未生成（ops/nodes.db 不存在），等待 CTO 首轮 30 分钟巡检"
+        with _NODES_LOCK:
+            _NODES["at"], _NODES["data"] = time.time(), data
+        return data
+
+    try:
+        con = sqlite3.connect(f"file:{NODES_DB}?mode=ro", uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        try:
+            nodes = [dict(r) for r in con.execute("SELECT * FROM nodes ORDER BY id")]
+            services = [dict(r) for r in con.execute("SELECT * FROM services ORDER BY node_id, id")]
+            patrols = [dict(r) for r in con.execute(
+                "SELECT ts,total,ok,failed,summary FROM patrols ORDER BY id DESC LIMIT 48")]
+            latest = {r["service_id"]: dict(r) for r in con.execute(
+                "SELECT c.service_id, c.status, c.latency_ms, c.detail, c.ts FROM checks c "
+                "JOIN (SELECT service_id, MAX(id) AS mid FROM checks GROUP BY service_id) m "
+                "ON c.id = m.mid")}
+            cutoff = (datetime.now(TZ) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S%z")
+            agg = {r["node_id"]: dict(r) for r in con.execute(
+                "SELECT s.node_id, COUNT(*) AS total, "
+                "SUM(CASE WHEN c.status = 'ok' THEN 1 ELSE 0 END) AS ok "
+                "FROM checks c JOIN services s ON s.id = c.service_id "
+                "WHERE c.ts >= ? GROUP BY s.node_id", (cutoff,))}
+            trend_rows = [dict(r) for r in con.execute(
+                "SELECT c.ts, s.node_id, COUNT(*) AS total, "
+                "SUM(CASE WHEN c.status = 'ok' THEN 1 ELSE 0 END) AS ok "
+                "FROM checks c JOIN services s ON s.id = c.service_id "
+                "GROUP BY c.ts, s.node_id ORDER BY c.ts DESC LIMIT 400")]
+        finally:
+            con.close()
+    except (sqlite3.Error, OSError) as e:
+        data["error"] = f"读取 nodes.db 失败：{type(e).__name__}: {e}"
+        with _NODES_LOCK:
+            _NODES["at"], _NODES["data"] = time.time(), data
+        return data
+
+    # 趋势按节点归集，按时间升序保留最近 24 轮
+    trend = {}
+    for row in reversed(trend_rows):  # DESC → 升序
+        bucket = trend.setdefault(row["node_id"], [])
+        if len(bucket) >= 24:
+            bucket.pop(0)
+        bucket.append({
+            "ts": row["ts"], "total": int(row["total"] or 0), "ok": int(row["ok"] or 0),
+            "failed": int((row["total"] or 0) - (row["ok"] or 0)),
+        })
+
+    by_node = {}
+    for svc in services:
+        by_node.setdefault(svc["node_id"], []).append(svc)
+
+    out_nodes = []
+    all_latest = []
+    for node in nodes:
+        svcs = []
+        ok = failed = critical_failed = 0
+        latencies = []
+        last_check = ""
+        for svc in by_node.get(node["id"], []):
+            chk = latest.get(svc["id"]) or {}
+            status = str(chk.get("status") or "unknown")
+            if status == "ok":
+                ok += 1
+            elif status == "fail":
+                failed += 1
+                if svc.get("criticality") == "high":
+                    critical_failed += 1
+            latency = chk.get("latency_ms")
+            if latency is not None:
+                try:
+                    latencies.append(float(latency))
+                except (TypeError, ValueError):
+                    pass
+            checked = str(chk.get("ts") or "")
+            last_check = max(last_check, checked)
+            item = {
+                "id": svc["id"], "name": svc["name"], "port": svc.get("port"),
+                "proto": svc.get("proto") or "", "criticality": svc.get("criticality") or "mid",
+                "status": status, "latencyMs": latency,
+                "detail": str(chk.get("detail") or "")[:160], "checkedAt": checked,
+            }
+            svcs.append(item)
+            all_latest.append(item)
+
+        agg_row = agg.get(node["id"]) or {}
+        total24 = int(agg_row.get("total") or 0)
+        ok24 = int(agg_row.get("ok") or 0)
+        out_nodes.append({
+            "id": node["id"], "name": node["name"], "host": node.get("host") or "",
+            "role": node.get("role") or "", "note": node.get("note") or "",
+            "sshAlias": node.get("ssh_alias") or "",
+            "status": "fail" if failed else ("unknown" if not svcs else "ok"),
+            "total": len(svcs), "ok": ok, "failed": failed,
+            "lastCheck": last_check,
+            "avgLatencyMs": round(sum(latencies) / len(latencies)) if latencies else None,
+            "uptime24h": round(ok24 * 100.0 / total24, 1) if total24 else None,
+            "services": svcs,
+            "trend": trend.get(node["id"], []),
+        })
+
+    last_check = max((n["lastCheck"] for n in out_nodes), default="") or (
+        str(patrols[0]["ts"]) if patrols else "")
+    total = int(patrols[0]["total"] or 0) if patrols else len(all_latest)
+    ok_total = int(patrols[0]["ok"] or 0) if patrols else sum(
+        1 for s in all_latest if s["status"] == "ok")
+
+    age_minutes = None
+    if last_check:
+        try:
+            dt = datetime.strptime(last_check, "%Y-%m-%dT%H:%M:%S%z")
+            age_minutes = max(0, int((datetime.now(TZ) - dt).total_seconds() // 60))
+        except (TypeError, ValueError):
+            age_minutes = None
+
+    data.update({
+        "available": True,
+        "lastCheck": last_check,
+        "ageMinutes": age_minutes,
+        # 超过 1.5 个周期没写入，说明 30 分钟巡检本身可能停摆
+        "stale": age_minutes is not None and age_minutes > cadence * 1.5,
+        "nextCheck": next_run or _add_minutes(last_check, cadence),
+        "summary": {
+            "nodes": len(out_nodes),
+            "services": len(services),
+            "ok": ok_total,
+            "failed": max(0, total - ok_total),
+            "criticalFailed": sum(1 for s in all_latest
+                                  if s["status"] == "fail" and s["criticality"] == "high"),
+        },
+        "nodes": out_nodes,
+        "history": [
+            {"ts": p["ts"], "total": int(p["total"] or 0), "ok": int(p["ok"] or 0),
+             "failed": int(p["failed"] or 0), "summary": p.get("summary") or ""}
+            for p in reversed(patrols[:24])  # 升序，最近 24 轮（约 12 小时）
+        ],
+    })
+    with _NODES_LOCK:
+        _NODES["at"], _NODES["data"] = time.time(), data
+    return data
+
+
 def _render_view(pipeline):
     out = []
     for it in pipeline:
@@ -166,6 +362,7 @@ def build(state, health, force_probe=False):
     aborted = cost.get("aborted") or {}
 
     services = _services(force_probe)
+    node_view = _nodes_view(force_probe)
     local_jobs, jobs_file_ok = _local_jobs()
     render_items = _render_view(pipeline)
     stage_counts = Counter(str(it.get("stage") or "unknown") for it in pipeline)
@@ -194,6 +391,31 @@ def build(state, health, force_probe=False):
                 "detail": "健康检查返回 degraded，部分 TTS 工作进程不可用。",
                 "source": svc["url"], "at": _now(), "action": "检查引擎日志后恢复",
             })
+    # 节点台账里的 30 分钟巡检异常（以 SQLite 最近一次 check 为准）
+    if node_view.get("available"):
+        if node_view.get("stale"):
+            alerts.append({
+                "id": "node-patrol-stale", "level": "warning",
+                "title": f"节点巡检 {node_view.get('ageMinutes')} 分钟未更新",
+                "detail": f"最近一次巡检 {node_view.get('lastCheck') or '—'}，"
+                          f"已超过 {node_view.get('cadenceMinutes')} 分钟周期；"
+                          "页面显示的是历史快照，不代表节点当前状态。",
+                "source": "ops/nodes.db", "at": node_view.get("lastCheck") or "",
+                "action": "检查 CTO 定时任务 ops-patrol-30m 与 scripts/patrol_tick.sh 是否正常执行",
+            })
+        for node in node_view.get("nodes") or []:
+            for svc in node.get("services") or []:
+                if svc.get("status") != "fail":
+                    continue
+                critical = svc.get("criticality") == "high"
+                alerts.append({
+                    "id": f"node-{node['id']}-{svc['id']}", "level": "critical" if critical else "warning",
+                    "title": f"{node['name']} · {svc['name']} 巡检异常",
+                    "detail": f"{node['host']}:{svc.get('port')}（{svc.get('proto')}）"
+                              f"最近一次检查 {svc.get('checkedAt') or '—'}：{svc.get('detail') or '探测失败'}",
+                    "source": f"ops/nodes.db · {node['id']}/{svc['id']}", "at": svc.get("checkedAt") or "",
+                    "action": "SSH 到节点确认服务进程 / 端口，修复后等下一轮 30 分钟巡检自动恢复",
+                })
     if failed_jobs:
         alerts.append({
             "id": "media-failed-jobs", "level": "warning",
@@ -293,6 +515,8 @@ def build(state, health, force_probe=False):
             "mediaJobs": len(local_jobs),
             "mediaJobsFailed": len(failed_jobs),
             "mediaJobsStuck": len(stuck_jobs),
+            "nodesTotal": (node_view.get("summary") or {}).get("nodes", 0),
+            "nodesFailed": (node_view.get("summary") or {}).get("failed", 0),
         },
         "pipeline": {
             "stageCounts": dict(stage_counts),
@@ -317,6 +541,7 @@ def build(state, health, force_probe=False):
                 for it in pipeline if it.get("blockedBy")
             ][-12:],
         },
+        "nodes": node_view,
         "alerts": alerts[:24],
         "actions": {
             "pendingApprovals": [{"id": a.get("id"), "title": a.get("title"),
@@ -335,6 +560,7 @@ def build(state, health, force_probe=False):
             "主服务状态来自 /api/state 与 /api/health；Hermes 统计、成本与流水线均为内存态，重启后归零。",
             "视频任务视图 = 主流水线 render 结果 + media-gen/output/jobs.json 落盘任务；媒体服务在线时额外探测其任务队列。",
             "媒体引擎 :9200 与 media-gen :9103 为独立服务，离线时仍展示历史任务并给出告警。",
+            "节点监控来自 CTO 节点台账 ops/nodes.db（SQLite）：ops-patrol-30m 每 30 分钟执行 opsctl.py check，写入 nodes / services / checks / patrols；页面只读展示，不触发巡检。",
         ],
     }
     return data

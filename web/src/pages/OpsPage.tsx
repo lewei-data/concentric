@@ -49,6 +49,48 @@ type PendingApproval = {
   status: string;
   createdAt: string;
 };
+type NodeService = {
+  id: number;
+  name: string;
+  port: number | null;
+  proto: string;
+  criticality: string;
+  status: string;
+  latencyMs: number | null;
+  detail: string;
+  checkedAt: string;
+};
+type NodeTrendPoint = { ts: string; total: number; ok: number; failed: number };
+type MonitorNode = {
+  id: string;
+  name: string;
+  host: string;
+  role: string;
+  note: string;
+  sshAlias: string;
+  status: string;
+  total: number;
+  ok: number;
+  failed: number;
+  lastCheck: string;
+  avgLatencyMs: number | null;
+  uptime24h: number | null;
+  services: NodeService[];
+  trend: NodeTrendPoint[];
+};
+type NodeMonitor = {
+  available: boolean;
+  dbPath: string;
+  cadenceMinutes: number;
+  nextCheck: string;
+  lastCheck: string;
+  ageMinutes?: number | null;
+  stale?: boolean;
+  error?: string;
+  summary: { nodes: number; services: number; ok: number; failed: number; criticalFailed: number };
+  nodes: MonitorNode[];
+  history: NodeTrendPoint[];
+};
 type OpsData = {
   ok: boolean;
   generatedAt?: string;
@@ -79,6 +121,7 @@ type OpsData = {
     supported: { action: string; label: string; detail: string }[];
     manualOnly: string;
   };
+  nodes?: NodeMonitor;
   notes?: string[];
 };
 
@@ -203,6 +246,8 @@ export function OpsPage() {
   const renders = data?.video?.pipelineRender || [];
   const pendingRender = data?.video?.pendingRender || [];
   const approvals = data?.actions?.pendingApprovals || [];
+  const nodes = data?.nodes;
+  const history = nodes?.history || [];
   const stageCounts = Object.entries(data?.pipeline?.stageCounts || {}).sort((a, b) => b[1] - a[1]);
   const maxStage = Math.max(1, ...stageCounts.map(([, n]) => n));
 
@@ -261,6 +306,130 @@ export function OpsPage() {
           <b>{stats.mediaJobs ?? "-"}</b>
           <small>失败 {stats.mediaJobsFailed ?? "-"} · 滞留 {stats.mediaJobsStuck ?? "-"}</small>
         </div>
+      </section>
+
+      <section className="ops-card ops-nodes" aria-label="节点监控">
+        <div className="ops-nodes-head">
+          <div>
+            <h2>节点监控</h2>
+            <p className="ops-nodes-sub">
+              CTO 节点台账 · 每 {nodes?.cadenceMinutes ?? 30} 分钟自动巡检 · 读取 SQLite
+              {nodes?.dbPath ? `（${nodes.dbPath}）` : ""}
+            </p>
+          </div>
+          <div className="ops-nodes-meta">
+            <span className={`ops-pill ${nodes?.stale ? "warn" : "ok"}`}>
+              {nodes?.stale
+                ? `巡检延迟 ${nodes.ageMinutes ?? "?"} 分钟`
+                : `${nodes?.cadenceMinutes ?? 30} 分钟巡检`}
+            </span>
+            <span>最近 <b>{shortTime(nodes?.lastCheck)}</b></span>
+            <span>下次 <b>{shortTime(nodes?.nextCheck)}</b></span>
+            <button type="button" className="btn btn-ghost ops-mini-btn" onClick={() => void load()}>
+              刷新
+            </button>
+          </div>
+        </div>
+
+        {!nodes?.available ? (
+          <p className="muted ops-nodes-empty">
+            {nodes?.error || "节点台账暂不可用，等待 CTO 首轮巡检写入 ops/nodes.db。"}
+          </p>
+        ) : (
+          <>
+            <div className="node-summary">
+              <div><b>{nodes.summary.nodes}</b><small>节点</small></div>
+              <div><b>{nodes.summary.services}</b><small>监控服务</small></div>
+              <div><b className={nodes.summary.failed ? "ops-bad" : "ok-text"}>{nodes.summary.ok}</b><small>最近在线</small></div>
+              <div><b className={nodes.summary.failed ? "ops-bad" : ""}>{nodes.summary.failed}</b><small>异常项</small></div>
+              <div><b className={nodes.summary.criticalFailed ? "ops-bad" : ""}>{nodes.summary.criticalFailed}</b><small>高危异常</small></div>
+            </div>
+
+            <div className="node-grid">
+              {nodes.nodes.map((node) => (
+                <article key={node.id} className="node-card">
+                  <header className="node-top">
+                    <span className={`node-dot ${node.status === "ok" ? "ok" : node.status === "fail" ? "fail" : "unknown"}`} />
+                    <div className="node-title">
+                      <b>{node.name}</b>
+                      <small title={`${node.host} · ${node.role}`}>
+                        {node.host} · {node.role || "未标注角色"}
+                      </small>
+                    </div>
+                    <span className={`ops-pill ${node.status === "ok" ? "ok" : node.status === "fail" ? "bad" : ""}`}>
+                      {node.status === "ok" ? "全部在线" : node.status === "fail" ? `${node.failed} 项异常` : "待巡检"}
+                    </span>
+                  </header>
+
+                  <div className="node-metrics">
+                    <div>
+                      <b>{node.uptime24h != null ? `${node.uptime24h}%` : "—"}</b>
+                      <small>24h 可用率</small>
+                    </div>
+                    <div>
+                      <b>{node.avgLatencyMs != null ? `${node.avgLatencyMs}ms` : "—"}</b>
+                      <small>平均时延</small>
+                    </div>
+                    <div>
+                      <b>{node.ok}/{node.total}</b>
+                      <small>服务在线</small>
+                    </div>
+                    <div>
+                      <b>{shortTime(node.lastCheck)}</b>
+                      <small>最近检查</small>
+                    </div>
+                  </div>
+
+                  {node.trend.length > 0 && (
+                    <div className="node-spark" aria-label="最近巡检轮次的在线服务数">
+                      {node.trend.map((p, i) => (
+                        <i
+                          key={`${p.ts}-${i}`}
+                          className={p.failed ? "bad" : "ok"}
+                          style={{ height: `${Math.max(18, (p.ok / Math.max(1, p.total)) * 100)}%` }}
+                          title={`${shortTime(p.ts)} · ${p.ok}/${p.total} 在线`}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  <ul className="node-svc-list">
+                    {node.services.map((svc) => (
+                      <li key={svc.id} className={`node-svc ${svc.status === "ok" ? "ok" : svc.status === "fail" ? "fail" : "unknown"}`}>
+                        <span className="node-svc-status" />
+                        <b title={svc.name}>{svc.name}</b>
+                        <span className="node-svc-meta">{svc.proto ? svc.proto.toUpperCase() : "—"} {svc.port ?? "—"}</span>
+                        <span className="node-svc-lat">{svc.latencyMs != null ? `${svc.latencyMs}ms` : "—"}</span>
+                        <span className={`ops-pill ${svc.status === "ok" ? "ok" : svc.status === "fail" ? "bad" : ""}`}>
+                          {svc.status === "ok" ? "正常" : svc.status === "fail" ? "异常" : "未知"}
+                        </span>
+                      </li>
+                    ))}
+                    {!node.services.length && <li className="muted">该节点未登记服务。</li>}
+                  </ul>
+                  {node.note && <p className="node-note">{node.note}</p>}
+                </article>
+              ))}
+            </div>
+
+            <div className="patrol-history">
+              <div className="patrol-history-head">
+                <h3>巡检历史 <small className="muted">最近 {history.length} 轮（每轮约 30 分钟）</small></h3>
+                <span className="patrol-legend"><i className="ok" />正常<i className="bad" />异常</span>
+              </div>
+              <div className="patrol-strip">
+                {history.map((p, i) => (
+                  <span
+                    key={`${p.ts}-${i}`}
+                    className={`patrol-bar ${p.failed ? "bad" : "ok"}`}
+                    title={`${shortTime(p.ts)} · ${p.ok}/${p.total} 在线${p.failed ? ` · ${p.failed} 项异常` : ""}`}
+                  />
+                ))}
+                {!history.length && <span className="muted">尚无巡检历史。</span>}
+              </div>
+            </div>
+          </>
+        )}
       </section>
 
       <div className="ops-layout">
