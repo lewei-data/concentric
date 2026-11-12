@@ -1,0 +1,18 @@
+[Script Info]
+; 成片 720x960 / 10s，三句自我介绍字幕
+ScriptType: v4.00+
+PlayResX: 720
+PlayResY: 960
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Intro,Noto Sans SC,46,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0.6,0,1,3,1,2,48,48,96,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.05,0:00:02.62,Intro,,0,0,0,,我是 001 号员工，老板小秘。
+Dialogue: 0,0:00:02.94,0:00:05.10,Intro,,0,0,0,,老板让我干什么都可以。
+Dialogue: 0,0:00:05.50,0:00:09.30,Intro,,0,0,0,,我的老板是蒿瑟莫，大家都叫他莫老仙。

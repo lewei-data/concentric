@@ -58,6 +58,8 @@ COST_LIMIT_USD = float(os.environ.get("OPC_COST_LIMIT_USD", "0"))
 AUTH_USER = os.environ.get("OPC_BASIC_USER", "")
 AUTH_PASS = os.environ.get("OPC_BASIC_PASS", "")
 LOOPBACK = ("127.0.0.1", "::1")
+# 首页默认进入新版 /app；设 OPC_HOME_LEGACY=1 可一键回退到旧版控制台（不改代码、不丢 /app）
+HOME_LEGACY = os.environ.get("OPC_HOME_LEGACY", "0") == "1"
 
 
 def iso_now() -> str:
@@ -3424,6 +3426,13 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return self._json({"ok": False, "login": "/login"}, 401)
             return self._json({"ok": True, "user": user})
+        # 根路径默认进入新版工作台；OPC_HOME_LEGACY=1 时放行走后面的旧版分支
+        if path == "/" and not HOME_LEGACY:
+            self.send_response(302)
+            self.send_header("Location", "/app")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
         # 静态资源与交付物不拦登录（交付链接要能在外部浏览器直接打开）
         if path == "/vendor/three.module.js":
             return self._static("vendor/three.module.js", "application/javascript; charset=utf-8")
@@ -3445,7 +3454,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._web_dist(path[len("/app/"):], immutable=True)
         if path == "/app/legacy":
             self.send_response(302)
-            self.send_header("Location", "/")
+            self.send_header("Location", "/legacy")
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             return
         if path == "/app":
@@ -3463,7 +3473,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return self._json({"ok": True, "version": "3.0", "engine": MODE,
                                "hermes": HERMES.stats(), "time": iso_now()})
-        if path in ("/", "/index.html"):
+        # /legacy 始终可用：新版顶栏与 /app/legacy 用它回退旧控制台
+        if path in ("/", "/legacy", "/index.html"):
             return self._index()
         if path in ("/office3d", "/office3d.html"):
             return self._static("office3d.html", "text/html; charset=utf-8")

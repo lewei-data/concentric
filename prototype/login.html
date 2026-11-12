@@ -105,9 +105,11 @@
 
 <script>
   const qs = new URLSearchParams(location.search);
-  const nextRaw = qs.get('next') || '/';
+  // 根路径已默认跳 /app，未带 next 的登录也进入新版工作台；
+  // 从旧版 /legacy、3D 页面等带 next 进来时仍回跳原页面。
+  const nextRaw = qs.get('next') || '/app';
   // 只接受站内路径，避免被拼成外站跳转
-  const next = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : '/';
+  const next = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : '/app';
 
   const f = document.getElementById('f');
   const acc = document.getElementById('acc');

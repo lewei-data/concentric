@@ -94,8 +94,9 @@ BACKENDS = {
     },
     "minimax_h3": {
         "kind": "video", "label": "MiniMax H3（本机开源权重尝试）",
-        "path": H3_MODEL, "notes": "H3-Base 33B 音视频联合模型；单 checkpoint 144GB，"
-                                 "量化 GGUF Q4 约 45GB；无 x86 纯 CPU 跑通案例，暂列不可用",
+        "path": H3_MODEL, "notes": "H3-Base 33B dense 音视频联合模型（其中约 13B 在 AdaLN 分支、"
+                                  "可预计算不加载）；单套 FL2VA 权重 134GB，量化 GGUF Q4 全套 40-53GB；"
+                                  "官方仅提供 GPU 多卡推理路径，暂列不可用",
     },
 }
 
@@ -149,9 +150,10 @@ def backends_view():
         item["available"] = item["weights_present"] and (eng.available if eng else True)
         if name == "minimax_h3" and not item["weights_present"]:
             item["reason"] = (
-                "未接入：H3-Base 单 checkpoint 144GB（DiT 66.28 + Qwen3-VL-32B 文本编码器 66.73 "
-                "+ 视频 VAE 10.42 + 音频 VAE 0.6 GB），量化 GGUF Q4 约 45GB；"
-                "社区无 x86 纯 CPU 跑通案例，本机无 GPU，故不作为可用渠道")
+                "未接入：H3-Base 是 33B dense 音视频联合模型，单套 FL2VA 权重 134.1GB"
+                "（transformer 61.7 + Qwen3-VL-32B 文本编码器 62.1 + 视频 VAE 9.7 + 音频 VAE 0.6），"
+                "量化 GGUF Q4 全套 40-53GB；官方只用 SGLang/vLLM/diffusers/ComfyUI 的 GPU 多卡路径，"
+                "未提供 CPU 实现（稀疏注意力也未随初始版本发布），本机无 GPU，故不作为可用渠道")
         elif not item["weights_present"]:
             item["reason"] = "权重目录为空：%s" % b["path"]
         if name == "wan21":

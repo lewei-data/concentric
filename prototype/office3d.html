@@ -65,9 +65,9 @@
   .spinner{width:26px;height:26px;border-radius:50%;border:3px solid #C7D2FE;border-top-color:#4F46E5;
     animation:spin 1s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
-  /* 新版工作台内嵌模式：外层头部已展示品牌，避免双层 LOGO */
-  .embedded .hud{top:8px;left:8px;right:8px;padding:8px 12px}
-  .embedded .mark,.embedded .brand{display:none}
+  /* 新版工作台内嵌模式：品牌头部与实时数据由外层提供，这里只保留 3D 画面与人物详情 */
+  .embedded .hud,.embedded .legend,.embedded .hint,.embedded .chips{display:none}
+  .embedded .emp{bottom:14px}
 </style>
 <script type="importmap">
 { "imports": { "three": "/vendor/three.module.js" } }
@@ -115,12 +115,30 @@
 
 <script>
   window.__officeBooted = false;
-  if (window.self !== window.top) {
-    document.documentElement.classList.add('embedded');
-    function markLinks() { document.querySelectorAll('a.back').forEach(function (a) { a.target = '_top'; }); }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', markLinks);
-    else markLinks();
-  }
+  (function () {
+    var embedded = new URLSearchParams(location.search).get('embed') === '1' || window.self !== window.top;
+    if (embedded) document.documentElement.classList.add('embedded');
+    /* 与新版工作台 ScenePage 的握手：就绪 / 场景内跳转 / 会话过期，避免 iframe 内整页跳走 */
+    window.__opcNotify = function (type, extra) {
+      if (window.parent === window) return;
+      var msg = Object.assign({ source: 'opc-3d', type: type, scene: 'office' }, extra || {});
+      try { window.parent.postMessage(msg, location.origin); } catch (e) { /* ignore */ }
+    };
+    if (!embedded) return;
+    function bindLinks() {
+      document.querySelectorAll('a.back').forEach(function (a) {
+        a.removeAttribute('target');
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          var href = a.getAttribute('href') || '/app';
+          var path = href === '/app/meeting' ? '/meeting' : href === '/app/office' ? '/office' : '/';
+          window.__opcNotify('opc:navigate', { path: path });
+        });
+      });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindLinks);
+    else bindLinks();
+  })();
   setTimeout(function(){
     if (!window.__officeBooted) {
       var el = document.getElementById('loading');
@@ -1421,7 +1439,14 @@ function seatsForMeeting(list) {
 async function loadState() {
   try {
     const r = await fetch('/api/state', { cache: 'no-store' });
-    applyState(await r.json());
+    if (r.status === 401 || r.status === 403) {
+      window.__opcNotify('opc:unauthorized');   // 让顶层工作台统一跳登录，而不是在 iframe 里显示登录页
+      return false;
+    }
+    if (!r.ok) return false;
+    const st = await r.json();
+    if (!st || !Array.isArray(st.agents)) return false;   // 401 的 JSON 不当成空办公室
+    applyState(st);
     return true;
   } catch (e) {
     return false;   // 保持上一次画面，由 boot/定时器重试
@@ -1907,9 +1932,13 @@ renderer.domElement.addEventListener('pointerup', e => {
       }
       if (nav || id) break;
     }
-    if (nav) {                                   // 内嵌时由顶层页面完成场景切换
-      const top = (window.self !== window.top) ? window.top : window;
-      top.location.href = nav;
+    if (nav) {                                   // 内嵌时交给 React Router 切换，避免顶层整页刷新
+      if (window.parent !== window) {
+        const path = nav === '/app/meeting' ? '/meeting' : nav === '/app/office' ? '/office' : '/';
+        window.__opcNotify('opc:navigate', { path: path });
+      } else {
+        location.href = nav;
+      }
       return;
     }
     selected = (id && id !== selected) ? id : null;
@@ -1993,6 +2022,7 @@ function boot() {
     setInterval(loadState, 30000);
     document.getElementById('loading').style.display = 'none';
     window.__officeBooted = true;
+    window.__opcNotify('opc:scene-ready');
   });
 }
 boot();
