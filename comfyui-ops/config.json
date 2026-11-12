@@ -9,7 +9,7 @@
   },
   "endpoints": {
     "image": {
-      "url": "http://127.0.0.1:8188",
+      "url": "http://192.168.21.157:8188",
       "port": 8188,
       "remote": {
         "output_dir": "/conring/ComfyUI/app/output",
@@ -22,7 +22,7 @@
       }
     },
     "video": {
-      "url": "http://127.0.0.1:8189",
+      "url": "http://192.168.21.157:8189",
       "port": 8189,
       "remote": {
         "output_dir": "/data",
