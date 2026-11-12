@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>同心圆 · 3D 会议室</title>
+<link rel="icon" href="/favicon.ico" type="image/svg+xml" />
 <style>
   :root{
     --ink:#111827; --muted:#6B7280; --line:#E5E7EB; --primary:#4F46E5;
@@ -198,6 +199,39 @@
 
 <script>
   window.__meetingBooted = false;
+  /* 与 office3d 一致：把启动阶段的真实错误同步给顶层，不再静默等到超时。 */
+  window.__opcBootError = null;
+  window.__opcReportBootError = function (detail) {
+    if (window.__opcBootError) return;
+    var msg = String(detail || '未知错误').slice(0, 300);
+    window.__opcBootError = msg;
+    try {
+      if (window.__opcNotify) window.__opcNotify('opc:scene-error', { message: msg });
+    } catch (e) { /* ignore */ }
+    var el = document.getElementById('loading');
+    if (el) {
+      el.innerHTML = '';
+      var box = document.createElement('div'); box.className = 'box';
+      var p = document.createElement('div'); p.textContent = '3D 场景加载失败：' + msg;
+      var tip = document.createElement('div');
+      tip.style.marginTop = '8px'; tip.style.fontSize = '12px'; tip.style.opacity = '.75';
+      tip.textContent = '请点工作台「重新加载」，或独立窗口打开查看完整报错。';
+      box.appendChild(p); box.appendChild(tip); el.appendChild(box);
+    }
+  };
+  window.addEventListener('error', function (e) {
+    if (!e) return;
+    var msg = e.message || (e.error && e.error.message);
+    if (!msg && e.target && e.target !== window) {
+      var src = e.target.src || e.target.href || '';
+      if (src) msg = '静态资源加载失败：' + src;
+    }
+    if (msg) window.__opcReportBootError(msg);
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    window.__opcReportBootError((r && (r.message || r)) || '异步初始化失败');
+  });
   (function () {
     var embedded = new URLSearchParams(location.search).get('embed') === '1' || window.self !== window.top;
     if (embedded) document.documentElement.classList.add('embedded');
@@ -222,21 +256,34 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindLinks);
     else bindLinks();
   })();
+  window.__opcModuleStarted = false;
   setTimeout(function(){
-    if (!window.__meetingBooted) {
-      var el = document.getElementById('loading');
-      if (el) el.innerHTML = '<div class="box"><div>场景加载超时，请刷新页面重试（需已登录，且 /vendor/three.module.js 与 /api/meeting 可访问）</div></div>';
+    if (!window.__meetingBooted && !window.__opcBootError && !window.__opcModuleStarted) {
+      window.__opcReportBootError('3D 模块脚本未能执行（/vendor/three.module.js 加载失败，或浏览器不支持 ES Module / WebGL）');
+    }
+  }, 6000);
+  setTimeout(function(){
+    if (!window.__meetingBooted && !window.__opcBootError) {
+      window.__opcReportBootError('场景初始化超过 15 秒（需已登录，且 /vendor/three.module.js 与 /api/meeting 可访问）');
     }
   }, 15000);
 </script>
 
 <script type="module">
-import * as THREE from 'three';
+import * as THREE from '/vendor/three.module.js';
+window.__opcModuleStarted = true;   // 供启动看门狗判断模块是否真的执行
 /* 名册新增员工若缺头像，回退通用脸，避免 404 造成空白贴图 */
 function loadFace(id) {
   const tex = new THREE.TextureLoader().load(`/faces/${id}.png`, undefined, undefined, () => {
     new THREE.TextureLoader().load('/faces/scout.png', t => {
       tex.image = t.image;
+      tex.needsUpdate = true;
+    }, undefined, () => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 2;
+      const g = c.getContext('2d');
+      if (g) { g.fillStyle = '#c7d2fe'; g.fillRect(0, 0, 2, 2); }
+      tex.image = c;
       tex.needsUpdate = true;
     });
   });

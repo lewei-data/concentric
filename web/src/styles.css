@@ -1555,6 +1555,32 @@ a:hover {
   margin: 0 0 12px;
 }
 
+.scene-error > div {
+  max-width: 460px;
+  padding: 0 18px;
+}
+
+.scene-error p:first-child {
+  color: #b91c1c;
+  font-weight: 600;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.scene-error .scene-error-tip {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+.scene-error-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .scene-panel {
   height: calc(100vh - 210px);
   min-height: 540px;

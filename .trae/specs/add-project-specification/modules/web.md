@@ -1,33 +1,34 @@
 # 模块规格 · web（Refine 新版控制台 `/app`）
 
 > 上级文档：[spec.md](../spec.md)。本文件只描述 `web/`。
-> 校对基准：2026-11-12 线上 `http://192.168.31.206:8848/app`（本机 `:8848`，`web/dist` 于本次功能改动后重建，当前产物 `index-BDPN3rhf.js` / `index-yvsrD8mC.css` / `MarkdownBody-DdXjBN7k.js`），工作区 HEAD `6445703`；运行进程实测 `OPC_DB=1`、`OPC_INGEST=1`（`/etc/systemd/system/opc-workbench.service.d/db.conf`）。
-> 规模：`web/src` 下 16 个 `.ts/.tsx` + 1 个 CSS，共 5,173 行（`wc -l`）：页面 2,719 行、组件/数据/鉴权/入口 492 行、样式 1,962 行。
-> 本版补齐内容：新增「消息中心」「3D 场景」两页与三条路由（`/messages`、`/office`、`/meeting`）、统一消息的 **DB 数据访问契约**、老板权限与降级、深蓝渐变顶栏、3D iframe 的会话预检/postMessage 握手/真实数据侧栏、构建产物哈希与线上验收手段。
+> 校对基准：2026-11-12 线上 `http://192.168.31.206:8848/app`（本机 `:8848`，`web/dist` 于本次功能改动后重建，当前产物 `index-C21ZRNYx.js` / `index-q43a5DfF.css` / `MarkdownBody-C9D22Bk_.js`），工作区 HEAD `71b82f5`；运行进程实测 `OPC_DB=1`、`OPC_INGEST=1`（`/etc/systemd/system/opc-workbench.service.d/db.conf`）。
+> 规模：`web/src` 下 18 个 `.ts/.tsx` + 1 个 CSS，共 6,300 行（`wc -l`）：页面 3,417 行、组件/数据/鉴权/入口 502 行、样式 2,381 行。
+> 本版补齐内容：新增「消息中心」「3D 场景」两页与三条路由（`/messages`、`/office`、`/meeting`）、统一消息的 **DB 数据访问契约**、老板权限与降级、深蓝渐变顶栏、3D iframe 的会话预检/postMessage 握手/真实数据侧栏，以及「创意灵感」（CCO）与「运维监控」（CTO）两页与配套后端聚合接口。
 
 ## 0. 校对结论（与上一版规格的差异）
 
 | 项 | 上一版规格（HEAD `7e07433`） | 线上新版本（HEAD `4399383`） | 证据 |
 | --- | --- | --- | --- |
-| 源码规模 | 13 个 `.ts/.tsx` + 1 CSS，3,488 行 | 16 个 `.ts/.tsx` + 1 CSS，5,173 行（+1,685） | `wc -l web/src/**` |
-| 新增页面 | 无 | `MessagesPage.tsx` 489 行（消息中心，读 SQLite）、`ScenePage.tsx` 374 行（3D 场景 + 真实数据侧栏） | `web/src/pages/` |
-| 显式路由 | 6 条 + `*` 兜底 | 9 条 + `*` 兜底（新增 `/messages`、`/office`、`/meeting`） | `App.tsx:30-49` |
-| 导航 | 侧边导航壳 38 行 | 深蓝渐变顶栏 99 行：分组胶囊导航、3D 快捷入口、旧版回退、用户身份卡；按 `role` 隐藏「消息中心」 | `Layout.tsx:1-99`、`styles.css` |
-| 数据访问 | 全部 `/api/*` 走内存 / Obsidian 文件 | **统一消息与过程数据改读 `prototype/opc.db`**；其余页面仍走内存 / 文件（影子双写） | `server.py:3513-3542`、`db.py:585-687`、`server.py:1155-1168` |
-| 实时通道 | 仅首页 SSE | 消息中心订阅 `chat.message`；3D 场景侧栏订阅 `/api/events` 刷新 `/api/state` 或 `/api/meeting` | `MessagesPage.tsx:195-232`、`ScenePage.tsx` |
+| 源码规模 | 13 个 `.ts/.tsx` + 1 CSS，3,488 行 | 18 个 `.ts/.tsx` + 1 CSS，6,300 行（+2,812） | `wc -l web/src/**` |
+| 新增页面 | 无 | `MessagesPage.tsx` 489 行（消息中心，读 SQLite）、`ScenePage.tsx` 374 行（3D 场景 + 数据侧栏）、`InspirationPage.tsx` 255 行、**`OpsPage.tsx` 443 行** | `web/src/pages/` |
+| 显式路由 | 6 条 + `*` 兜底 | 11 条 + `*` 兜底（新增 `/messages`、`/office`、`/meeting`、`/inspiration`、`/ops`） | `App.tsx:30-51` |
+| 导航 | 侧边导航壳 38 行 | 深蓝渐变顶栏 105 行：8 项主导航（含创意灵感 / 运维监控）、老板专属消息中心、3D 快捷入口、旧版回退、用户身份卡 | `Layout.tsx:1-105`、`styles.css` |
+| 数据访问 | 全部 `/api/*` 走内存 / Obsidian 文件 | **统一消息与过程数据改读 `prototype/opc.db`**；新增 `/api/inspiration` / `/api/ops` 只读聚合；其余页面仍走内存 / 文件（影子双写） | `server.py:3513-3542`、`insights.py`、`ops_monitor.py`、`db.py:585-687` |
+| 实时通道 | 仅首页 SSE | 消息中心订阅 `chat.message`；3D 场景、创意灵感、运维监控侧栏均订阅 `/api/events` 增量刷新 | `MessagesPage.tsx:195-232`、`ScenePage.tsx`、`InspirationPage.tsx`、`OpsPage.tsx` |
 | 首页入口 | 根路径返回旧控制台 | `/` 302 → `/app`；`/legacy` 与 `/app/legacy` 回退旧版；`OPC_HOME_LEGACY=1` 可整站回退 | `server.py:3425-3435, 3456-3462`、`README.md` |
-| 构建产物 | 未登记哈希 | 当前 `index-BDPN3rhf.js` / `index-yvsrD8mC.css` / 懒加载 `MarkdownBody-DdXjBN7k.js`（每次代码变更哈希会变，以 `web/dist/index.html` 为准） | `web/dist/index.html`、`web/dist/assets/` |
+| 处置能力 | 仅首页指令/审批 | 运维监控页提供仅老板可用的 `POST /api/ops/recover`（巡检派单 / 热加载 / 审批），带二次确认 | `server.py` do_POST、`OpsPage.tsx` |
+| 构建产物 | 未登记哈希 | 当前 `index-C21ZRNYx.js` / `index-q43a5DfF.css` / 懒加载 `MarkdownBody-C9D22Bk_.js`（以 `web/dist/index.html` 为准） | `web/dist/index.html`、`web/dist/assets/` |
 
 > **口径校正（重要）**：「数据访问已经改成了 db」适用于**过程数据 / 统一消息**（`chat_threads`、`chat_messages`、`trace_events` 等），不是整个前端的所有列表。实测 `/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/works`、`/api/org`、`/api/meeting`、`/api/reports` 仍读内存快照、Obsidian md 或交付物目录；`server.py:1155-1168` 是「DB 影子双写」，`_restore_history()` 仍以 `runtime.json` / md 恢复，读切换（P1）尚未完成。详见 §4.5 与 §8。
 
-> **一致性核验（已核实）**：`web/src` 重新执行 `npm run build`（`tsc --noEmit && vite build`）得到与线上完全相同的资源文件名，改动前三个文件 MD5 逐一相等；本次功能改动后线上已切到新哈希 `index-BDPN3rhf.js` / `index-yvsrD8mC.css`，本地 `web/dist` 与线上一致。因此 `/app` 始终由当前 `web/src` 构建产物托管，**不存在「线上有、仓库里缺」的前端代码**。
+> **一致性核验（已核实）**：`web/src` 重新执行 `npm run build`（`tsc --noEmit && vite build`）得到与线上完全相同的资源文件名，改动前三个文件 MD5 逐一相等；本次功能改动后线上已切到新哈希 `index-C21ZRNYx.js` / `index-q43a5DfF.css`，本地 `web/dist` 与线上一致。因此 `/app` 始终由当前 `web/src` 构建产物托管，**不存在「线上有、仓库里缺」的前端代码**。
 
 ## 1. 模块定位
 
 `web/` 是工作台的**新版单页控制台**：Refine v4 提供资源列表/详情，React 18 + Vite 5 构建，产物由 `prototype/server.py` 以 `/app` 路径托管（`server.py:3442-3454, 3605-3624`）。
 
 - 根路径 `/` 默认 302 跳 `/app`；旧版 `prototype/index.html` 由 `/legacy`、`/index.html` 提供，`/app/legacy` 302 → `/legacy`；`OPC_HOME_LEGACY=1` 重启后根路径直接回退旧版（`server.py:3425-3435, 3456-3462`）。
-- 页面共 8 个业务页 + 1 个登录页：驾驶舱、作品档案、热点、知识库、消息中心、组织配置、Office 3D、Meeting 3D。
+- 页面共 10 个业务页 + 1 个登录页：总览、创意灵感、作品档案、热点、知识库、消息中心、组织配置、运维监控、Office 3D、Meeting 3D。
 - **只读为主**：`dataProvider` 的 `create/update/deleteOne` 一律 reject；写操作只存在于组织配置页与首页指令/审批（`dataProvider.ts:86-90`）。
 - **两套数据后端并存**：业务列表/快照走 `KERNEL` 内存与 Vault 文件；消息中心与 trace 回放补齐走 SQLite（`opc.db`）。
 
@@ -36,12 +37,12 @@
 | 文件 | 行数 | 职责 |
 | --- | ---: | --- |
 | `src/main.tsx` | 10 | React 挂载入口 |
-| `src/App.tsx` | 53 | Refine 初始化、4 个 resource、10 条路由 |
+| `src/App.tsx` | 57 | Refine 初始化、4 个 resource、12 条路由 |
 | `src/authProvider.ts` | 77 | 登录/登出/会话检查/401 处理 |
 | `src/dataProvider.ts` | 90 | 列表/详情数据适配，写操作拒绝 |
 | `src/types.ts` | 151 | 领域类型（Agent / Work / Hotspot / Knowledge / OpcState / 事件等） |
 | `src/vite-env.d.ts` | 1 | Vite 类型声明 |
-| `src/components/Layout.tsx` | 99 | 深蓝渐变顶栏、分组导航、老板可见性、旧版回退、用户身份卡 |
+| `src/components/Layout.tsx` | 105 | 深蓝渐变顶栏、8 项主导航、老板可见性、旧版回退、用户身份卡 |
 | `src/components/MarkdownBody.tsx` | 11 | Markdown 渲染（`react-markdown` + `remark-gfm`），按需懒加载 |
 | `src/pages/HomePage.tsx` | 656 | 驾驶舱：状态快照、SSE 事件流、指令、审批 |
 | `src/pages/WorksPage.tsx` | 388 | 作品档案列表 + 详情 |
@@ -50,8 +51,10 @@
 | `src/pages/HotspotsPage.tsx` | 157 | 热点列表 + 详情 |
 | `src/pages/KnowledgePage.tsx` | 165 | 知识库列表 + 详情 |
 | `src/pages/ScenePage.tsx` | **374** | **3D 办公区 / 会议室 iframe 嵌入、会话预检、postMessage 握手、真实数据侧栏（`/api/state` / `/api/meeting` + SSE）、20s 超时与重试** |
+| `src/pages/InspirationPage.tsx` | **255** | **创意灵感：热点分析 / 视频分析 / 蒸馏启发三类线索，筛选、搜索、展开要点、跳原文** |
+| `src/pages/OpsPage.tsx` | **443** | **运维监控：系统状态、任务执行、视频生成、告警与恢复运行动作** |
 | `src/pages/LoginPage.tsx` | 62 | 登录表单 |
-| `src/styles.css` | 1,962 | 全站样式（含消息中心 / 深蓝顶栏 / 3D 场景数据侧栏） |
+| `src/styles.css` | 2,381 | 全站样式（含消息中心 / 深蓝顶栏 / 3D 场景 / 灵感 / 运维） |
 
 ## 3. 技术栈与构建
 
@@ -73,15 +76,17 @@
 | 路径（浏览器） | 组件 | 鉴权 | 数据来源 | 出处 |
 | --- | --- | --- | --- | --- |
 | `/app/login` | `LoginPage` | 公开 | `POST /api/login` | `App.tsx:31` |
-| `/app/` | `HomePage` | `Authenticated` | `/api/state`（内存快照） | `App.tsx:39` |
-| `/app/works` | `WorksPage` | 同上 | `/api/works`（交付物目录） | `App.tsx:40` |
-| `/app/hotspots` | `HotspotsPage` | 同上 | `/api/hotspots`（内存 / md） | `App.tsx:41` |
-| `/app/knowledge` | `KnowledgePage` | 同上 | `/api/knowledge`（内存 / md） | `App.tsx:42` |
-| `/app/messages` | `MessagesPage` | 同上 + **仅老板可见入口** | **`/api/chat/*`（SQLite）** | `App.tsx:43`、`Layout.tsx:27,51` |
-| `/app/org` | `OrgPage` | 同上 | `/api/org*`（profile / md） | `App.tsx:44` |
-| `/app/office` | `ScenePage scene="office"` | 同上 | iframe `/office3d?embed=1` + `/api/state` 侧栏 | `App.tsx:45`、`ScenePage.tsx` |
-| `/app/meeting` | `ScenePage scene="meeting"` | 同上 | iframe `/meeting3d?embed=1` + `/api/meeting` 侧栏 | `App.tsx:46`、`ScenePage.tsx` |
-| `/app/*` 其他 | 重定向到 `/` | — | — | `App.tsx:48` |
+| `/app/` | `HomePage` | `Authenticated` | `/api/state`（内存快照） | `App.tsx:41` |
+| `/app/inspiration` | `InspirationPage` | 同上 | **`/api/inspiration`**（热点简报 / 视频拆解 / 知识库 / 评审会聚合） | `App.tsx:42` |
+| `/app/ops` | `OpsPage` | 同上 | **`/api/ops`** + `POST /api/ops/recover`（恢复动作仅老板） | `App.tsx:43` |
+| `/app/works` | `WorksPage` | 同上 | `/api/works`（交付物目录） | `App.tsx:44` |
+| `/app/hotspots` | `HotspotsPage` | 同上 | `/api/hotspots`（内存 / md） | `App.tsx:45` |
+| `/app/knowledge` | `KnowledgePage` | 同上 | `/api/knowledge`（内存 / md） | `App.tsx:46` |
+| `/app/messages` | `MessagesPage` | 同上 + **仅老板可见入口** | **`/api/chat/*`（SQLite）** | `App.tsx:47` |
+| `/app/org` | `OrgPage` | 同上 | `/api/org*`（profile / md） | `App.tsx:48` |
+| `/app/office` | `ScenePage scene="office"` | 同上 | iframe `/office3d?embed=1` + `/api/state` 侧栏 | `App.tsx:49` |
+| `/app/meeting` | `ScenePage scene="meeting"` | 同上 | iframe `/meeting3d?embed=1` + `/api/meeting` 侧栏 | `App.tsx:50` |
+| `/app/*` 其他 | 重定向到 `/` | — | — | `App.tsx:52` |
 
 未登录时 `Authenticated` 以 `<Navigate to="/login" replace />` 回登录页（`App.tsx:32-37`）。
 
@@ -156,6 +161,20 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 
 风险（已核实）：`_restore_history()` 仍只从 `runtime.json` + Obsidian 恢复，不查 `opc.db`；因此重启后 `/api/state`、`/api/hotspots`、`/api/knowledge`、`/api/reports` 可能少于库内行数，DB 数据只能经 `/api/chat/*` 与 `/api/trace/<id>` 看到。这是 P0 影子期设计，读切换属 `PROCESS-DATA-DB-PLAN.md` 的 P1，登记在 §8，不在本模块内修复。
 
+### 4.6 创意灵感 / 运维监控数据契约（2026-11-12 新增）
+
+两页都不造数据，后端新增两个只读聚合模块与一个处置接口（均需登录）。
+
+| 接口 | 模块 | 响应 | 数据源 |
+| --- | --- | --- | --- |
+| `GET /api/inspiration[?refresh=1]` | `prototype/insights.py` | `{ok,generatedAt,counts{total,热点分析,视频分析,蒸馏启发},sources,items[],notes}`；`items[]` 含 `id/category/subKind/title/summary/detail/tags/source/link/at/score/origin`，60s 缓存 | `KERNEL.hotspot_page()`；Obsidian `OPC/热点采集/*热点简报*.md`「分项目可用角度」表；`素材/**` 视频拆解 + 仓库根目录「同心圆-*」创意说明（按章节切分、过滤可复用结论）；知识库归档「一句话结论 / 可复用点」；选题评审会定稿清单 |
+| `GET /api/ops` | `prototype/ops_monitor.py` | `{ok,generatedAt,service,stats,pipeline,video{services,localJobs,pipelineRender,pendingRender},alerts[],actions,notes}` | `KERNEL.snapshot()` / `/api/health`；`media-gen/output/jobs.json`；短超时探测 `127.0.0.1:9200` 与 `:9103` 的 `/health` `/v1/jobs`（15s 缓存，离线仍返回结构） |
+| `POST /api/ops/recover` | `server.py` do_POST | `{ok,action,result,by,at}`；仅老板；`action ∈ patrol|reload|approve|reject`，审批类需 `id` | `KERNEL.patrol()`（清陈旧 trace → 待审批停派单 → 有任务在跑等待 → 否则派单全员复工）、`reload_config()`、`decide_approval()` |
+
+**视频生成环节口径**：主流水线 `om_render` 的 `render/renderCheck/renderError` 结果 + 卡在门禁的待出片内容 + `media-gen/output/jobs.json` 落盘任务（状态/进度/耗时/错误）。`media-engine:9200`、`media-gen:9103` 为独立服务；离线时页面仍展示历史任务并给出 `critical` 告警。**前端不直接重启进程**：重启主服务/引擎仍走 `opc.sh restart` / `systemctl restart`。
+
+**2026-11-12 线上实测**：`/api/inspiration` 返回 106 条（热点分析 23 / 视频分析 34 / 蒸馏启发 49，来源：1 份简报、7 份视频文档、37 条知识归档、3 场评审会、23 条热点线索）；`/api/ops` 返回 12 条告警（媒体引擎与生成服务离线、4 条失败/中断任务、2 条滞留任务、60 条 `production-gate` 阻塞、5 条超时审批、3 份事故报告）、16 条落盘视频任务、12 条待出片内容。两页 playwright-cli 实测 0 控制台报错。
+
 ## 5. 鉴权契约
 
 | 能力 | 实现 | 出处 |
@@ -166,6 +185,7 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 | 登出 | `POST /api/logout`，再清本地状态并跳 `/login` | `authProvider.ts:61-69` |
 | 全局 401 | `onError` 跳 `/app/login` 并 `{logout:true}` | `authProvider.ts:70-76` |
 | 统一消息 | 后端 `_owner_only()` 仅老板放行，否则 403；前端按 `identity.role` 隐藏入口 | `server.py:3257-3263, 3514-3516`、`Layout.tsx:27,51` |
+| 运维恢复动作 | `POST /api/ops/recover` 校验 `role == "老板"`，否则 403；前端对巡检派单与审批操作加二次确认 | `server.py` do_POST、`OpsPage.tsx` |
 
 `/app` 页面本身公开，数据接口全部经过 `opc_sess` 会话拦截（`server.py:3442-3461`）。
 
@@ -174,7 +194,7 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 - 构建产物由后端 `_web_dist` 提供：`/app/assets/*` 走 `public, max-age=31536000, immutable`；`index.html` 与其他路径 `no-cache`（`server.py:3444-3445, 3605-3624`）。
 - 未命中文件回退 `web/dist/index.html`，支持 SPA 深链（`server.py:3606-3614`）。
 - `web/dist` 未构建时返回 404「web/dist 未构建，先在 web/ 执行 npm run build」（`server.py:3613-3614`）。
-- 当前线上 `index.html` 引用 `/app/assets/index-BDPN3rhf.js` 与 `index-yvsrD8mC.css`；`MarkdownBody-DdXjBN7k.js` 为知识详情懒加载 chunk（`web/dist/index.html`、`KnowledgePage.tsx:5-6`）。`web/dist` 不入 git（`.gitignore`），由服务端目录直接托管，每次 `npm run build` 后线上立即换新哈希。
+- 当前线上 `index.html` 引用 `/app/assets/index-C21ZRNYx.js` 与 `index-q43a5DfF.css`；`MarkdownBody-C9D22Bk_.js` 为知识详情懒加载 chunk（`web/dist/index.html`、`KnowledgePage.tsx:5-6`）。`web/dist` 不入 git（`.gitignore`），由服务端目录直接托管，每次 `npm run build` 后线上立即换新哈希。
 
 ## 7. 失败与降级
 
@@ -190,6 +210,9 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 | 后端不可达 | 登录 `catch` 提示失败；登出仍清本地 | `authProvider.ts:27-36, 61-67` |
 | 作品档案模块未加载 | `/api/works` 500，页面展示空列表 | `server.py:3483-3485` |
 | 无 `dist` | `/app` 404 提示构建 | `server.py:3613-3614` |
+| 聚合模块加载失败 | `/api/inspiration` / `/api/ops` 返回 500 `{ok:false,error:"…模块未加载"}`，两页显示错误横幅，不影响其它页面 | `server.py` do_GET |
+| 媒体引擎 / 生成服务离线 | `/api/ops` 仍返回历史 `localJobs` 并给出 `critical` 告警；探测结果 15s 缓存，服务恢复后下次刷新才变在线 | `ops_monitor.py` |
+| 恢复动作非老板 / 参数错误 | 403 `{ok:false,error:"forbidden"}`；非法 action 400；缺审批 id 400 | `server.py` do_POST |
 
 ## 8. 已知限制
 
@@ -202,6 +225,8 @@ resource 仍为 4 个：`works`、`hotspots`、`knowledge`、`org`（`App.tsx:23
 7. 组织页为直连 `fetch`，错误处理各自实现，与 Refine 通知体系不统一；写操作由后端 403 兜底。
 8. `types.ts` 的 151 行领域类型未做运行时校验，`OpcState` 只声明 7 个键而 `/api/state` 实测返回 18 个键，字段漂移只能靠 TS 编译期发现。
 9. 消息中心导出为一次性 JSON 下载（`limit=20000` 上限），无服务端流式导出与导出审计记录（`MessagesPage.tsx:257-280`）。
+10. **创意灵感是只读聚合，不是新的数据模型**：没有灵感写接口 / 收藏 / 标注，视频拆解结论仍散落在 Obsidian 与仓库 md 中；`/vault` 无目录列表接口，仓库文档只能内联要点（`insights.py`）。
+11. **运维恢复不含进程重启**：`patrol` 可能启动新一轮编排（非幂等），`reload_config` 校验失败保留旧值；媒体引擎 / 主服务重启、失败任务重提仍需运维脚本，前端只展示告警与建议（`ops_monitor.py`）。
 
 ## 9. 验收手段
 
@@ -219,6 +244,10 @@ curl -s -c /tmp/opc.cookies -H 'Content-Type: application/json' \
 curl -s -b /tmp/opc.cookies 'http://192.168.31.206:8848/api/chat/messages?limit=2'   # {ok:true,enabled:true,messages:[...]}
 curl -s -b /tmp/opc.cookies 'http://192.168.31.206:8848/api/chat/stats?days=7'       # stats.bySource/byModality/byDay
 curl -s -b /tmp/opc.cookies 'http://192.168.31.206:8848/api/state'                   # 18 个键
+curl -s -b /tmp/opc.cookies 'http://192.168.31.206:8848/api/inspiration'             # counts/sources/items
+curl -s -b /tmp/opc.cookies 'http://192.168.31.206:8848/api/ops'                     # service/stats/video/alerts/actions
+curl -s -b /tmp/opc.cookies -H 'Content-Type: application/json' \
+  -d '{"action":"reload"}' http://192.168.31.206:8848/api/ops/recover                 # 仅老板；热加载配置
 
 # 过程库行数与开关
 python3 -c 'import sqlite3; c=sqlite3.connect("file:prototype/opc.db?mode=ro",uri=True); \
@@ -226,4 +255,4 @@ print(c.execute("select count(*) from chat_messages").fetchone())'
 tr '\0' '\n' < /proc/$(pgrep -f 'prototype/server.py' | head -1)/environ | grep '^OPC_'
 ```
 
-人工回归：清 Cookie 访问 `/app/works` 应跳 `/app/login`；非老板登录后不应出现「消息中心」入口；`OPC_DB=0` 重启后消息中心应显示「过程数据库未启用」；根路径应跳 `/app`，顶栏「旧版控制台」应进入 `/legacy` 且旧版「新版界面 →」可切回；`/app/office`、`/app/meeting` 应显示 3D 画面 + 真实数据侧栏，控制台 0 报错，点击 3D 会议室指示牌应在 SPA 内切换而非整页刷新；`OPC_HOME_LEGACY=1` 重启后根路径应直接返回旧版控制台。
+人工回归：清 Cookie 访问 `/app/works` 应跳 `/app/login`；非老板登录后不应出现「消息中心」入口；`OPC_DB=0` 重启后消息中心应显示「过程数据库未启用」；根路径应跳 `/app`，顶栏「旧版控制台」应进入 `/legacy` 且旧版「新版界面 →」可切回；`/app/office`、`/app/meeting` 应显示 3D 画面 + 真实数据侧栏，控制台 0 报错，点击 3D 会议室指示牌应在 SPA 内切换而非整页刷新；`OPC_HOME_LEGACY=1` 重启后根路径应直接返回旧版控制台；顶栏「创意灵感」应显示三类灵感与来源统计、筛选/展开/原文链接可用，「运维监控」应显示系统状态、告警、视频任务与恢复按钮（热加载可实际执行）；两页控制台 0 报错。

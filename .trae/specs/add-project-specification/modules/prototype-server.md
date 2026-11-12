@@ -15,7 +15,7 @@
 
 | 文件 | 行数 | 职责 |
 | --- | ---: | --- |
-| `server.py` | 3,960 | HTTP 服务 + 编排内核 + 鉴权 + SSE + 组织配置 + 过程库接线 |
+| `server.py` | 4,028 | HTTP 服务 + 编排内核 + 鉴权 + SSE + 组织配置 + 过程库接线 |
 | `index.html` | 1,146 | 旧版控制台（首页 / 素材库 / 审批入口） |
 | `login.html` | 167 | 登录页 |
 | `office3d.html` | 2,139 | 3D 办公室视图 |
@@ -28,6 +28,8 @@
 | `db.py` | 750 | SQLite/WAL 过程库 schema、缓冲批写、DAO（`OPC_DB=1` 启用） |
 | `ingest.py` | 272 | 飞书 / APP 源库只读轮询摄取（30s，水位线去重） |
 | `import_runtime.py` | 119 | runtime.json / 会议 / 飞书 / APP 一次性回填（幂等） |
+| `insights.py` | 351 | CCO 创意灵感只读聚合（热点简报 / 视频拆解 / 知识库 / 评审会），60s 缓存 |
+| `ops_monitor.py` | 340 | CTO 运维监控只读聚合（state / health / 媒体任务 / 服务探测 / 告警） |
 | `opc.db` | — | 过程数据 SQLite 库（+ `-wal` / `-shm`），与代码同目录 |
 | `materials.json` | — | 首页素材库清单（`server.py:3627-3651`） |
 
@@ -178,7 +180,7 @@
 ## 8. 已知限制
 
 1. `_static` 未做 `realpath` 越界校验，安全完全依赖各调用点的文件名正则（`server.py:3506-3518`）。
-2. `server.py` 单文件 3,960 行，HTTP 层与编排内核同文件，无法按模块独立测试；过程库虽已独立为 `db.py` / `ingest.py`，但业务列表读路径仍留在 `server.py` 内（见 spec.md D12）。
+2. `server.py` 单文件 4,028 行，HTTP 层与编排内核同文件，无法按模块独立测试；过程库虽已独立为 `db.py` / `ingest.py`，但业务列表读路径仍留在 `server.py` 内（见 spec.md D12）。
 3. 会话与登录失败计数均为进程内存，重启即丢失（`server.py:104-109`）。
 4. `/api/events` 无鉴权之外的租户隔离，所有登录用户看到同一事件流。
 5. 交付物文件数量与 README「8 类」不一致，见 spec.md 第 15 节 D9。

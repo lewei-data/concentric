@@ -150,6 +150,7 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
   const [nonce, setNonce] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
+  const [sceneError, setSceneError] = useState("");
   const [sessionReady, setSessionReady] = useState(false);
   const [stateView, setStateView] = useState<StateView | null>(null);
   const [meetingView, setMeetingView] = useState<MeetingView | null>(null);
@@ -198,6 +199,12 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
       if (data.type === "opc:scene-ready") {
         setLoaded(true);
         setTimedOut(false);
+        setSceneError("");
+        window.clearTimeout(timer.current);
+      } else if (data.type === "opc:scene-error") {
+        setSceneError(String(data.message || "3D 场景初始化失败"));
+        setLoaded(false);
+        setTimedOut(false);
         window.clearTimeout(timer.current);
       } else if (data.type === "opc:navigate" && typeof data.path === "string" && data.path.startsWith("/")) {
         navigate(data.path);
@@ -234,7 +241,8 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
   useEffect(() => {
     setLoaded(false);
     setTimedOut(false);
-    timer.current = window.setTimeout(() => setTimedOut(true), 20000);
+    setSceneError("");
+    timer.current = window.setTimeout(() => setTimedOut(true), 25000);
     return () => window.clearTimeout(timer.current);
   }, [scene, nonce]);
 
@@ -242,8 +250,22 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
 
   const handleFrameLoad = (event: React.SyntheticEvent<HTMLIFrameElement>) => {
     try {
-      const doc = event.currentTarget.contentDocument;
-      if (doc && doc.title.includes("登录")) window.location.assign("/app/login");
+      const frame = event.currentTarget;
+      const doc = frame.contentDocument;
+      if (!doc) return;
+      if (doc.title.includes("登录")) {
+        window.location.assign("/app/login");
+        return;
+      }
+      // postMessage 偶发丢失时的兜底：同源可直接读子页面的 boot 标记
+      const win = frame.contentWindow as (Window & { __officeBooted?: boolean; __meetingBooted?: boolean }) | null;
+      const booted = scene === "office" ? win?.__officeBooted : win?.__meetingBooted;
+      if (booted) {
+        setLoaded(true);
+        setTimedOut(false);
+        setSceneError("");
+        window.clearTimeout(timer.current);
+      }
     } catch { /* 跨源时忽略，仍以 postMessage 握手为准 */ }
   };
 
@@ -292,11 +314,19 @@ export function ScenePage({ scene }: { scene: SceneKey }) {
           {sessionReady && !loaded && !timedOut && (
             <div className="scene-loading">正在加载 3D 场景…</div>
           )}
-          {timedOut && !loaded && (
+          {(sceneError || (timedOut && !loaded)) && (
             <div className="scene-error">
               <div>
-                <p>场景加载超时，请确认已登录且服务正常。</p>
-                <button type="button" className="btn" onClick={reload}>重试</button>
+                <p>{sceneError || "场景加载超时，请确认已登录且服务正常。"}</p>
+                <p className="scene-error-tip">
+                  常见原因：浏览器未启用 WebGL、会话已过期、或 /vendor/three.module.js 未加载成功。
+                </p>
+                <div className="scene-error-actions">
+                  <button type="button" className="btn" onClick={reload}>重试</button>
+                  <a className="btn btn-ghost" href={cfg.src.replace("?embed=1", "")} target="_blank" rel="noreferrer">
+                    独立窗口打开
+                  </a>
+                </div>
               </div>
             </div>
           )}

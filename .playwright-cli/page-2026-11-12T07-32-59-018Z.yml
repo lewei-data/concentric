@@ -1,0 +1,149 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e4]:
+    - generic [ref=f2e11]:
+      - generic [ref=f2e12]: 同心圆
+      - generic [ref=f2e13]: 3D 会议室 · MEETING ROOM
+    - generic [ref=f2e14]: 已结束
+    - generic [ref=f2e15]: 选题评审会
+    - generic [ref=f2e16]:
+      - generic [ref=f2e17]:
+        - text: 参会
+        - generic [ref=f2e18]: "0"
+      - generic [ref=f2e19]:
+        - text: 发言
+        - generic [ref=f2e20]: "0"
+    - button "召开选题会" [ref=f2e21] [cursor=pointer]
+    - link "← 3D 办公区" [ref=f2e22] [cursor=pointer]:
+      - /url: /app/office
+    - link "工作台" [ref=f2e23] [cursor=pointer]:
+      - /url: /app
+  - complementary [ref=f2e24]:
+    - generic [ref=f2e25]:
+      - generic [ref=f2e26]:
+        - generic [ref=f2e27]: 会议记录
+        - text: Obsidian 归档 · 随时可查
+      - generic [ref=f2e28]: "40"
+    - generic [ref=f2e29]:
+      - generic [ref=f2e30] [cursor=pointer]:
+        - generic [ref=f2e31]:
+          - generic [ref=f2e32]: 选题评审会
+          - generic [ref=f2e33]: 已结束
+        - generic [ref=f2e34]: 11/12 12:22 · 8 人参会 · 2 条发言
+        - generic [ref=f2e35]: 定稿 6 条（每项目 2 条）：文人莫克《旧东西坏的不是它，是配它的那一半》；文人莫克《养老社区试住三天，看的是哪几眼》；狗大人《最贵的那个，给最便宜的那个写方案》；狗大人《冷空气一到，它把我的沙发改成了它的恒温区》；同心圆《它只写方案，动手那一步留给你》；同心圆《一条带辟谣标的通知，先查它从哪来》
+      - generic [ref=f2e36] [cursor=pointer]:
+        - generic [ref=f2e37]:
+          - generic [ref=f2e38]: 选题评审会议纪要（2026-11-12）
+          - generic [ref=f2e39]: 历史纪要
+        - generic [ref=f2e40]: 11/12 12:22 · 0 人参会 · 0 条发言
+        - generic [ref=f2e41]: —
+      - generic [ref=f2e42] [cursor=pointer]:
+        - generic [ref=f2e43]:
+          - generic [ref=f2e44]: 每日选题会
+          - generic [ref=f2e45]: 已结束
+        - generic [ref=f2e46]: 11/12 12:17 · 8 人参会 · 6 条发言
+        - generic [ref=f2e47]: 每日选题会结束：候选池 16 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+      - generic [ref=f2e48] [cursor=pointer]:
+        - generic [ref=f2e49]:
+          - generic [ref=f2e50]: 选题评审会
+          - generic [ref=f2e51]: 已结束
+        - generic [ref=f2e52]: 11/12 08:11 · 8 人参会 · 2 条发言
+        - generic [ref=f2e53]: 定稿 6 条（每项目 2 条）：文人莫克《手机上越刷越热的 AI 新闻，跟六十岁的您到底有什么关系》；文人莫克《灯能听懂话，开关还得摸得着》；狗大人《我给它记了半年零食账，它一次都没签过字》；狗大人《剪指甲那十分钟，它正式进入维护状态》；同心圆《一夜涨两千多星的开源件，企业敢不敢直接上线》；同心圆《上线前那份体检单，谁审、谁改、谁签字》
+      - generic [ref=f2e54] [cursor=pointer]:
+        - generic [ref=f2e55]:
+          - generic [ref=f2e56]: 选题评审会议纪要（2026-11-12）
+          - generic [ref=f2e57]: 历史纪要
+        - generic [ref=f2e58]: 11/12 08:11 · 0 人参会 · 0 条发言
+        - generic [ref=f2e59]: —
+      - generic [ref=f2e60] [cursor=pointer]:
+        - generic [ref=f2e61]:
+          - generic [ref=f2e62]: 每日选题会
+          - generic [ref=f2e63]: 已结束
+        - generic [ref=f2e64]: 11/12 08:07 · 8 人参会 · 6 条发言
+        - generic [ref=f2e65]: 每日选题会结束：候选池 13 条，CCO 筛出 6 条（每项目 2 条），转入选题评审会定稿。
+      - generic [ref=f2e66] [cursor=pointer]:
+        - generic [ref=f2e67]:
+          - generic [ref=f2e68]: 选题评审会
+          - generic [ref=f2e69]: 已结束
+        - generic [ref=f2e70]: 11/12 04:15 · 8 人参会 · 2 条发言
+        - generic [ref=f2e71]: 定稿 6 条（每项目 2 条）：文人莫克《手机上把字调到最大，为什么还是看不清》；文人莫克《入冬第一锅汤，火候在三处》；狗大人《我家的界面是给狗设计的，我只是暂住》；狗大人《它没写过一行文档，需求却从没歧义》；同心圆《GitHub 日榜 2026-11-12 03:05 今日新增最高：meta/astryx（+2,842★，TypeSc》；同心圆《一个分身，全家来问：使用端那份共享，要不要管》
+      - generic [ref=f2e72] [cursor=pointer]:
+        - generic [ref=f2e73]:
+          - generic [ref=f2e74]: 选题评审会议纪要（2026-11-12 第六批）
+          - generic [ref=f2e75]: 历史纪要
+        - generic [ref=f2e76]: 11/12 04:15 · 0 人参会 · 0 条发言
+        - generic [ref=f2e77]: —
+      - generic [ref=f2e78] [cursor=pointer]:
+        - generic [ref=f2e79]:
+          - generic [ref=f2e80]: 每日选题会
+          - generic [ref=f2e81]: 已结束
+        - generic [ref=f2e82]: 11/12 04:10 · 8 人参会 · 6 条发言
+        - generic [ref=f2e83]: 每日选题会结束：候选池 14 条，CCO 筛出 6 条（每项目 2 条），转入选题评审会定稿。
+      - generic [ref=f2e84] [cursor=pointer]:
+        - generic [ref=f2e85]:
+          - generic [ref=f2e86]: 选题评审会
+          - generic [ref=f2e87]: 已结束
+        - generic [ref=f2e88]: 11/10 04:07 · 8 人参会 · 2 条发言
+        - generic [ref=f2e89]: 定稿 6 条（每项目 2 条）：文人莫克《旅居之前，先分三只箱子》；文人莫克《你的网名，被人一键搜出多少个账号：给爸妈的三步数字足迹自查》；狗大人《给狗写简历，特长那一栏我卡了十分钟》；狗大人《家里的音箱最近只听狗的》；同心圆《它答不上来的那一刻，转给谁》；同心圆《数字分身开通前，先查一遍你的账号足迹：可查，但不可留存》
+      - generic [ref=f2e90] [cursor=pointer]:
+        - generic [ref=f2e91]:
+          - generic [ref=f2e92]: 选题评审会议纪要（2026-11-10 · 第二轮）
+          - generic [ref=f2e93]: 历史纪要
+        - generic [ref=f2e94]: 11/10 04:07 · 0 人参会 · 0 条发言
+        - generic [ref=f2e95]: —
+      - generic [ref=f2e96] [cursor=pointer]:
+        - generic [ref=f2e97]:
+          - generic [ref=f2e98]: 每日选题会
+          - generic [ref=f2e99]: 已结束
+        - generic [ref=f2e100]: 11/10 04:06 · 8 人参会 · 6 条发言
+        - generic [ref=f2e101]: 每日选题会结束：候选池 15 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+      - generic [ref=f2e102] [cursor=pointer]:
+        - generic [ref=f2e103]:
+          - generic [ref=f2e104]: 选题评审会
+          - generic [ref=f2e105]: 已结束
+        - generic [ref=f2e106]: 11/10 02:10 · 8 人参会 · 2 条发言
+        - generic [ref=f2e107]: 定稿 6 条（每项目 2 条）：文人莫克《卫生间先装一根扶手：适老化改造，改的是地面和光》；文人莫克《半斤八两：一句老话里藏着两套秤》；狗大人《400 个站点记得我，我记不住狗的驱虫日期》；狗大人《狗的日更：一根电线杆就是一个站点》；同心圆《GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（》；同心圆《验收那一天，怎么证明它一直按你的口径说话》
+      - generic [ref=f2e108] [cursor=pointer]:
+        - generic [ref=f2e109]:
+          - generic [ref=f2e110]: 选题评审会议纪要（2026-11-10）
+          - generic [ref=f2e111]: 历史纪要
+        - generic [ref=f2e112]: 11/10 02:10 · 0 人参会 · 0 条发言
+        - generic [ref=f2e113]: —
+      - generic [ref=f2e114] [cursor=pointer]:
+        - generic [ref=f2e115]:
+          - generic [ref=f2e116]: 每日选题会
+          - generic [ref=f2e117]: 已结束
+        - generic [ref=f2e118]: 11/10 02:07 · 8 人参会 · 6 条发言
+        - generic [ref=f2e119]: 每日选题会结束：候选池 15 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+      - generic [ref=f2e120] [cursor=pointer]:
+        - generic [ref=f2e121]:
+          - generic [ref=f2e122]: 选题评审会
+          - generic [ref=f2e123]: 已结束
+        - generic [ref=f2e124]: 11/10 00:08 · 8 人参会 · 2 条发言
+        - generic [ref=f2e125]: 定稿 6 条（每项目 2 条）：文人莫克《名字一样，人不一样：翻族谱先看字号、生卒、里居这三行》；文人莫克《理发卡里还剩两千八，店换了招牌》；狗大人《给狗排的作息表它执行了三天，第四天它把我从名单里划掉了》；狗大人《我喊十遍它不开灯，我家狗嗷一嗓子就亮了》；同心圆《GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（》；同心圆《《换一家服务商，你的分身带得走吗》》
+      - generic [ref=f2e126] [cursor=pointer]:
+        - generic [ref=f2e127]:
+          - generic [ref=f2e128]: 选题评审会纪要（2026-11-10 第十一批）
+          - generic [ref=f2e129]: 历史纪要
+        - generic [ref=f2e130]: 11/10 00:08 · 0 人参会 · 0 条发言
+        - generic [ref=f2e131]: —
+      - generic [ref=f2e132] [cursor=pointer]:
+        - generic [ref=f2e133]:
+          - generic [ref=f2e134]: 每日选题会
+          - generic [ref=f2e135]: 已结束
+        - generic [ref=f2e136]: 11/10 00:06 · 8 人参会 · 6 条发言
+        - generic [ref=f2e137]: 每日选题会结束：候选池 16 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+      - generic [ref=f2e138] [cursor=pointer]:
+        - generic [ref=f2e139]:
+          - generic [ref=f2e140]: 选题评审会
+          - generic [ref=f2e141]: 已结束
+        - generic [ref=f2e142]: 11/09 22:14 · 8 人参会 · 2 条发言
+        - generic [ref=f2e143]: 定稿 6 条（每项目 2 条）：文人莫克《去儿女那座城住一个月，钥匙带不带》；文人莫克《药盒分七天，分的是药，也是谁在替你记》；狗大人《我搜我自己，搜出七个不认识的我》；狗大人《寒潮来了，它比我早知道》；同心圆《GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（》；同心圆《它说的话，要不要挂一块牌子》
+      - generic [ref=f2e144] [cursor=pointer]:
+        - generic [ref=f2e145]:
+          - generic [ref=f2e146]: 选题评审会纪要（2026-11-09 第十批）
+          - generic [ref=f2e147]: 历史纪要
+        - generic [ref=f2e148]: 11/09 22:14 · 0 人参会 · 0 条发言
+        - generic [ref=f2e149]: —
+    - link "打开会议索引 ↗" [ref=f2e150] [cursor=pointer]:
+      - /url: /vault/OPC/会议纪要/00-会议索引.md
+  - generic [ref=f2e151]: 拖拽旋转 · 滚轮缩放 · 点击人物查看其发言 · 会议记录自动写入 Obsidian

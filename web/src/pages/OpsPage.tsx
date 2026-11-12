@@ -71,6 +71,7 @@ type OpsData = {
     localJobsAvailable: boolean;
     localJobs: LocalJob[];
     pipelineRender: RenderItem[];
+    pendingRender: { id: string; title: string; stage: string; blockedBy: string }[];
   };
   alerts?: OpsAlert[];
   actions?: {
@@ -176,10 +177,16 @@ export function OpsPage() {
       const body = (await res.json()) as { ok?: boolean; error?: string; result?: Record<string, unknown> };
       if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
       const result = body.result || {};
-      const label = result.action || result.approval
-        ? String(result.action || `审批 ${id} 已处理`)
-        : "操作完成";
-      setFeedback({ ok: true, text: `已执行：${label}（${shortTime(data?.generatedAt)} 后刷新）` });
+      let label = "操作完成";
+      if (action === "patrol") {
+        label = `巡检结果：${String(result.action || "完成")}` +
+          (result.traceId ? `（trace ${String(result.traceId)}）` : "");
+      } else if (action === "reload") {
+        label = `配置热加载：${result.agents ?? "?"} 人 / ${result.projects ?? "?"} 项目`;
+      } else if (action === "approve" || action === "reject") {
+        label = `审批 ${id} 已${action === "approve" ? "批准" : "驳回"}`;
+      }
+      setFeedback({ ok: true, text: `已执行 · ${label}` });
       await load();
     } catch (e) {
       setFeedback({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -194,6 +201,7 @@ export function OpsPage() {
   const services = data?.video?.services || [];
   const jobs = data?.video?.localJobs || [];
   const renders = data?.video?.pipelineRender || [];
+  const pendingRender = data?.video?.pendingRender || [];
   const approvals = data?.actions?.pendingApprovals || [];
   const stageCounts = Object.entries(data?.pipeline?.stageCounts || {}).sort((a, b) => b[1] - a[1]);
   const maxStage = Math.max(1, ...stageCounts.map(([, n]) => n));
@@ -400,8 +408,19 @@ export function OpsPage() {
           </table>
         </div>
 
+        <h3>待出片内容 <small className="muted">（卡在门禁，共 {stats.blockedTotal ?? 0} 条，展示最近 {pendingRender.length} 条）</small></h3>
+        <ul className="ops-list">
+          {pendingRender.slice().reverse().map((r) => (
+            <li key={r.id}>
+              <span className="ops-pill warn">{r.blockedBy || r.stage}</span>
+              <span className="ops-list-title" title={r.title}>{r.title || r.id}</span>
+            </li>
+          ))}
+          {!pendingRender.length && <li className="muted">没有卡在门禁的内容。</li>}
+        </ul>
+
         <h3>主流水线出片结果</h3>
-        {renders.length === 0 && <p className="muted">当前流水线条目未带出片结果。</p>}
+        {renders.length === 0 && <p className="muted">当前流水线条目未带出片结果（尚未进入渲染阶段）。</p>}
         <ul className="ops-list">
           {renders.slice(-10).reverse().map((r) => (
             <li key={r.id}>

@@ -85,7 +85,9 @@ chmod +x opc.sh
 | --- | --- |
 | `/` | **默认 302 → `/app`**（新版工作台）；设 `OPC_HOME_LEGACY=1` 并重启可直接回退为旧版控制台 |
 | `/legacy`、`/index.html`、`/app/legacy` | 旧版工作台控制台（需登录）；新版顶栏「旧版控制台」与 `/app/legacy` 都指向 `/legacy`，旧版右上角「新版界面 →」回 `/app` |
-| `/app` | 新版界面（React + Refine，页面公开、数据接口需登录）：首页 / 作品档案 / 热点 / 知识库 / 消息中心 / 组织配置 / Office 3D / Meeting 3D；SPA 深链回退 `web/dist/index.html` |
+| `/app` | 新版界面（React + Refine，页面公开、数据接口需登录）：总览 / 创意灵感 / 作品档案 / 热点 / 知识库 / 消息中心 / 组织配置 / 运维监控 / Office 3D / Meeting 3D；SPA 深链回退 `web/dist/index.html` |
+| `/app/inspiration` | 创意灵感（CCO 视角）：热点分析 / 视频分析 / 蒸馏启发三类线索，可筛选、搜索、展开要点、跳原文 |
+| `/app/ops` | 运维监控（CTO 视角）：系统运行、任务执行、视频生成链路、异常告警与恢复运行动作 |
 | `/app/assets/...` | 新版前端静态资源（带内容哈希，长缓存）；`web/` 下 `npm run build` 产物由服务端托管 |
 | `/login` | 旧版登录页；未带 `next` 时默认回跳 `/app`，带 `next=/legacy` 等则回原页面 |
 | `/office3d`、`/meeting3d` | 3D 办公区 / 会议室（需登录）；`?embed=1` 为新版 iframe 内嵌模式，隐藏重复 HUD 并通过 `postMessage` 通知父页就绪、跳转与会话过期 |
@@ -108,6 +110,17 @@ chmod +x opc.sh
 | `/api/delegate`、`/api/commands` | 人工派单与指令 |
 | `/api/login`、`/api/logout`、`/api/session` | 会话管理 |
 | `/api/config/reload` | 热加载 Obsidian 配置 |
+| `/api/inspiration` | CCO 创意灵感只读聚合（`prototype/insights.py`）：`{ok,counts,sources,items}`；`?refresh=1` 强制重建 60s 缓存 |
+| `/api/ops` | CTO 运维监控只读聚合（`prototype/ops_monitor.py`）：`{ok,service,stats,pipeline,video,alerts,actions}` |
+| `/api/ops/recover` | POST，仅老板：`{"action":"patrol\|reload\|approve\|reject","id":"<审批号>"}`；巡检派单 / 热加载 / 处理审批 |
+
+## 创意灵感与运维监控
+
+- **创意灵感**（CCO）：`insights.py` 聚合四类真实素材——`/api/hotspots` 热点线索、Obsidian `OPC/热点采集/*热点简报*.md` 的「分项目可用角度」表、`素材/**` 的视频拆解与给 CCO 的一页纸、仓库根目录「同心圆-*」创意说明、知识库归档的「一句话结论 / 可复用点」以及选题评审会定稿清单。按「热点分析 / 视频分析 / 蒸馏启发」三类展示，全部只读，`/vault/...` 可跳原文。
+- **运维监控**（CTO）：`ops_monitor.py` 聚合 `/api/state` 与 `/api/health`（引擎、Hermes 调用、成本、流水线、审批、事故报告）、`media-gen/output/jobs.json` 的落盘任务，并短超时探测 `media-engine:9200` 与 `media-gen:9103` 的 `/health`、`/v1/jobs`。离线时仍展示历史任务并给出严重告警。
+- **视频生成环节**：主流水线 `om_render` 出片结果 + 卡在门禁的待出片内容 + 16 条落盘生成任务（状态/进度/耗时/错误），媒体服务离线也会明确标出。
+- **及时处理 / 恢复运行**：页面提供「一键恢复运行」（`patrol`：清陈旧 trace → 待审批则停止派单 → 有任务在跑则等待 → 否则派单全员复工）、「热加载配置」（`reload_config`，校验失败保留旧值），以及待审审批单的直接批准/驳回；统一走 `POST /api/ops/recover`，仅老板可用并有二次确认。重启主服务或媒体引擎仍需运维执行 `opc.sh restart` / `systemctl restart`，前端不直接重启进程。
+- 两页都订阅 `/api/events` 增量刷新，另有 15s / 60s 兜底轮询；数据全部来自真实接口与文件，不造样例数据。
 
 ## 首页版本与 3D 场景
 

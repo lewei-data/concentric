@@ -1,7 +1,7 @@
 # Checklist
 
 - [x] 规格覆盖 13 个能力域（C1~C13），无遗漏子系统（含 `media-engine/`、`hermes-plugins/`、`android/`、`video-remotion/`、`ep2/ep3`）
-- [x] 每个能力域至少给出 1 个可点击代码位置（文件:行号）；C9 前端、C4 事件、C12 路由与 DB 相关条目已按 HEAD `6445703` 复核，其余能力域仍以初版基线 `7e07433` 为准
+- [x] 每个能力域至少给出 1 个可点击代码位置（文件:行号）；C9 前端、C4 事件、C12 路由与 DB 相关条目已按 HEAD `71b82f5` 复核，其余能力域仍以初版基线 `7e07433` 为准
 - [x] HTTP 接口契约表完整：工作台 GET 路由（含新增 `/api/chat/*`）、POST 路由、媒体引擎全部路由，均标注鉴权要求
 - [x] 配置表完整：Vault 文件/目录、`prototype/opc.db` 过程库与 `OPC_DB` / `OPC_INGEST` 等开关的作用、缺失时降级行为均有说明
 - [x] 事件总线规格给出完整 `kind` 枚举（21 种，含 `chat.message`），且与代码静态提取结果一致
@@ -14,12 +14,17 @@
 - [x] 追溯表覆盖全部 13 个能力域，每域给出验收手段
 - [x] 5 个模块规格齐备：`prototype-server.md`、`media-engine.md`、`web.md`、`android.md`、`hermes-plugins.md`
 - [x] 每个模块文档均含：定位、文件清单（含行数）、内部结构、接口契约表、配置项、失败降级、已知限制、验收手段
-- [x] 模块规模数字均可用 `wc -l` 复现（`server.py` 3,960；media-engine 四文件 2,005；web 5,173；android 52 文件 16,272）
+- [x] 模块规模数字均可用 `wc -l` 复现（`server.py` 4,028；media-engine 四文件 2,005；web 6,300；android 52 文件 16,272）
 - [x] `web.md` 已按 2026-11-12 线上 `http://192.168.31.206:8848/app` 新版本校对：新增消息中心 / 3D 场景两页、9 条显式路由、构建产物哈希、老板权限与 403/503 降级
 - [x] `npm run build` 重建的资源与线上 `/app/assets/*` 文件名一致，确认无「线上有、仓库里缺」的前端代码
 - [x] 已登记首页 `/` → `/app`、`/legacy` 回退入口与 `OPC_HOME_LEGACY=1` 整站回退，且 302 带 `Content-Length: 0` 不挂起
 - [x] 已登记深蓝渐变顶栏、3D 会话预检 / `postMessage` 握手 / 真实数据侧栏（`/api/state`、`/api/meeting` + SSE）
 - [x] playwright-cli 实测：根路径跳新版、`/legacy` 旧版可用、Office/Meeting 3D 加载遮罩消失、控制台 0 报错、侧栏显示真实数据
+- [x] 顶栏新增「创意灵感」「运维监控」入口并注册 `/app/inspiration`、`/app/ops` 路由
+- [x] `/api/inspiration` 契约登记：三类灵感、四类来源、`?refresh=1` 缓存、只读与 `/vault` 原文链接
+- [x] `/api/ops` 契约登记：系统/任务/视频生成/告警/待出片，媒体服务离线降级与 15s 探测缓存
+- [x] `POST /api/ops/recover` 权限与四种动作（`patrol|reload|approve|reject`）登记；进程重启仍限运维脚本
+- [x] playwright-cli 实测两页：灵感 106 条（23/34/49）、运维 12 条告警 / 16 条落盘任务 / 12 条待出片，筛选展开与热加载均可用，控制台 0 报错
 - [x] `web.md` 已补齐 DB 数据访问契约：`/api/chat/threads|messages|stats|export`、`chat.message` SSE、`/api/trace/<id>` 补齐、`/api/commands` 写库、snake_case 字段与 FTS/游标分页
 - [x] 「数据访问已改成 db」的实际边界已登记（D12）：过程数据读库，业务列表/快照仍读内存或文件，影子双写不等于读切换
 - [x] `spec.md` 第 17 节「模块规格索引」链接到全部 5 个模块文档

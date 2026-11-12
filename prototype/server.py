@@ -3443,6 +3443,23 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         # 静态资源与交付物不拦登录（交付链接要能在外部浏览器直接打开）
+        # 旧版控制台 / 登录页 / 3D 页未显式声明 icon，浏览器会请求 /favicon.ico；
+        # 以前返回 404，控制台出现「Failed to load resource」被误判为 3D 加载失败。
+        if path == "/favicon.ico":
+            icon = (
+                b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">'
+                b'<circle cx="20" cy="20" r="19" fill="#2f6fed"/>'
+                b'<circle cx="20" cy="20" r="13.5" fill="none" stroke="#fff" stroke-width="1.6" opacity=".7"/>'
+                b'<circle cx="20" cy="20" r="8.5" fill="none" stroke="#fff" stroke-width="2"/>'
+                b'<circle cx="20" cy="20" r="3.2" fill="#fff"/></svg>'
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(icon)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(icon)
+            return
         if path == "/vendor/three.module.js":
             return self._static("vendor/three.module.js", "application/javascript; charset=utf-8")
         if path.startswith("/avatars/"):

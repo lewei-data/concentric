@@ -86,7 +86,7 @@ def _item(category, sub_kind, title, summary, detail, tags, source, link,
         "subKind": sub_kind,
         "title": _clean(title, 110) or "未命名灵感",
         "summary": _clean(summary, 220),
-        "detail": str(detail or "").strip()[:900],
+        "detail": str(detail or "").strip()[:620],
         "tags": [str(t) for t in (tags or []) if str(t).strip()][:12],
         "source": source,
         "link": link,
@@ -211,8 +211,9 @@ def _video_ideas(vault):
         link = _vault_link(rel) if in_vault else ""
         stem = os.path.splitext(os.path.basename(path))[0]
         tags = ["视频拆解" if in_vault else "创意说明", stem]
+        noise = {"opt", "sefs", "home", "boray", "opc-workbench", "素材"}
         for part in os.path.dirname(path).split(os.sep)[-2:]:
-            if part and part not in _SKIP_DIRS and part != "素材":
+            if part and part not in _SKIP_DIRS and part not in noise:
                 tags.append(part)
         sections = _sections(_read(path))
         useful = [s for s in sections if _USEFUL_RE.search(s[0]) or _USEFUL_RE.search(s[1][:200])]
@@ -249,12 +250,22 @@ def _distill_ideas(kernel, vault):
             entries = [dict(k) for k in kernel.knowledge][-120:]
     except Exception:
         entries = []
+    creative_tag = ("选题定稿", "选题", "创意", "分镜", "文案", "金句", "脚本", "角度", "调性")
+    ops_title = ("核验结论", "事故报告", "技术复核", "缺件回执", "授权链")
+    kept = 0
     for k in entries:
         body = str(k.get("body") or "")
         tags = list(k.get("tags") or [])
-        if not (any("选题定稿" in str(t) for t in tags)
-                or "可复用点" in body or "一句话结论" in body):
+        title = str(k.get("title") or k.get("summary") or "")
+        has_tag = any(any(word in str(t) for word in creative_tag) for t in tags)
+        if not (has_tag or "可复用点" in body):
             continue
+        # CTO 事故/授权链核验类归档不是 CCO 创意灵感，排除
+        if not has_tag and any(word in title for word in ops_title):
+            continue
+        kept += 1
+        if kept > 36:
+            break
         conclusion, reusable = "", []
         m = re.search(r"^#\s*一句话结论\s*$([\s\S]{0,900}?)(?=^#{1,2}\s|\Z)", body, re.M)
         if m:
@@ -296,7 +307,7 @@ def _distill_ideas(kernel, vault):
                 CAT_DISTILL, "评审会结论", rec.get("title") or "评审会结论", concl, concl,
                 ["CCO 定稿"], f"选题评审会 · {(at or '')[:10]}", "/app/meeting",
                 at, None, "KERNEL.meeting_payload()"))
-    return items, len(entries), meeting_count
+    return items, kept, meeting_count
 
 
 def build(kernel, refresh: bool = False, vault: str = None):

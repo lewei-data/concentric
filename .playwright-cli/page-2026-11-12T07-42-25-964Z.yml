@@ -1,0 +1,1555 @@
+- generic [active] [ref=f30e1]:
+  - generic [ref=f30e2]:
+    - generic [ref=f30e10]:
+      - generic [ref=f30e11]: 同心圆
+      - generic [ref=f30e12]: AI 工作台
+    - generic [ref=f30e13]: LIVE
+    - generic [ref=f30e14]: 15:42:25
+    - link "素材库 ↓" [ref=f30e15] [cursor=pointer]:
+      - /url: "#materialsCard"
+    - link "新版界面 →" [ref=f30e16] [cursor=pointer]:
+      - /url: /app
+    - link "3D 办公区 ↗" [ref=f30e17] [cursor=pointer]:
+      - /url: /office3d
+    - generic "当前登录身份" [ref=f30e18]:
+      - img "老板头像" [ref=f30e19]
+      - generic [ref=f30e20]:
+        - generic [ref=f30e21]: 蒿色莫
+        - generic [ref=f30e22]: 老板 · 已登录
+      - link "退出" [ref=f30e23] [cursor=pointer]:
+        - /url: "#"
+  - generic [ref=f30e24]:
+    - generic [ref=f30e25]:
+      - generic [ref=f30e26]:
+        - generic [ref=f30e27]: 组织地图 · 16 工位（登录身份见右上角）
+        - generic [ref=f30e28]: WORK
+      - img "16 人组织地图（登录身份见右上角）" [ref=f30e30]:
+        - generic [ref=f30e32]: 管理层
+        - generic [ref=f30e34]: 文人莫克 · 项目区
+        - generic [ref=f30e36]: 狗大人 · 项目区
+        - generic [ref=f30e38]: 同心圆 · 项目区
+        - generic [ref=f30e40]: 中台支撑区
+        - generic [ref=f30e41] [cursor=pointer]:
+          - generic [ref=f30e46]: 陆清安
+          - generic [ref=f30e47]: CEO
+          - generic [ref=f30e49]: 待命
+        - generic [ref=f30e50] [cursor=pointer]:
+          - generic [ref=f30e55]: 沈青禾
+          - generic [ref=f30e56]: 首席创意官
+          - generic [ref=f30e58]: 待命
+        - generic [ref=f30e59] [cursor=pointer]:
+          - generic [ref=f30e64]: 扶频
+          - generic [ref=f30e65]: CTO
+          - generic [ref=f30e67]: 待命
+        - generic [ref=f30e68] [cursor=pointer]:
+          - generic [ref=f30e72]: 贺平生
+          - generic [ref=f30e73]: 产品经理 · 待命
+        - generic [ref=f30e74] [cursor=pointer]:
+          - generic [ref=f30e78]: 陆川
+          - generic [ref=f30e79]: 文案编写 · 待命
+        - generic [ref=f30e80] [cursor=pointer]:
+          - generic [ref=f30e84]: 陆离
+          - generic [ref=f30e85]: 视频制作 · 待命
+        - generic [ref=f30e86] [cursor=pointer]:
+          - generic [ref=f30e90]: 米珂
+          - generic [ref=f30e91]: 产品经理 · 待命
+        - generic [ref=f30e92] [cursor=pointer]:
+          - generic [ref=f30e96]: 叶秋
+          - generic [ref=f30e97]: 文案编写 · 待命
+        - generic [ref=f30e98] [cursor=pointer]:
+          - generic [ref=f30e102]: 萧执
+          - generic [ref=f30e103]: 视频制作 · 待命
+        - generic [ref=f30e104] [cursor=pointer]:
+          - generic [ref=f30e108]: 姜月初
+          - generic [ref=f30e109]: 产品经理 · 待命
+        - generic [ref=f30e110] [cursor=pointer]:
+          - generic [ref=f30e114]: 江佑泽
+          - generic [ref=f30e115]: 文案编写 · 待命
+        - generic [ref=f30e116] [cursor=pointer]:
+          - generic [ref=f30e120]: 崔聿棠
+          - generic [ref=f30e121]: 视频制作 · 待命
+        - generic [ref=f30e122] [cursor=pointer]:
+          - generic [ref=f30e126]: 苏寒
+          - generic [ref=f30e127]: 热点采集 · 待命
+        - generic [ref=f30e128] [cursor=pointer]:
+          - generic [ref=f30e132]: 顾凛川
+          - generic [ref=f30e133]: 审核 · 待命
+        - generic [ref=f30e134] [cursor=pointer]:
+          - generic [ref=f30e138]: 顾景琛
+          - generic [ref=f30e139]: 发布与监控 · 待命
+        - generic [ref=f30e140] [cursor=pointer]:
+          - generic [ref=f30e144]: 祁南
+          - generic [ref=f30e145]: 知识库管理 · 待命
+      - generic [ref=f30e147]:
+        - textbox "点击员工即可 @他 下指令：@陆清安 今天哪个项目卡住了" [ref=f30e148]
+        - button "发送" [ref=f30e149] [cursor=pointer]
+    - generic [ref=f30e150]:
+      - generic [ref=f30e151]:
+        - generic [ref=f30e152]:
+          - generic [ref=f30e153]: Conring 事件流
+          - generic [ref=f30e154]: 42 条
+        - generic [ref=f30e155]:
+          - generic [ref=f30e156]:
+            - generic [ref=f30e157]: 15:42:25 · -
+            - text: state
+          - generic [ref=f30e158]:
+            - generic [ref=f30e159]: 12:32:52 · tr_f5c02964
+            - text: 陆清安 → owner · 升级 开工审批未通过，本轮不进入制作
+          - generic [ref=f30e160]:
+            - generic [ref=f30e161]: 12:31:41 · tr_f5c02964
+            - text: 陆清安 → 祁南 · 委派 待CCO书面确认后，更正《狗大人四条次批候选备稿登记》第37行状态与该件「淘汰5、留池2」计数口径；只改登记字段，不动题面，不派单，不建交付目录。
+          - generic [ref=f30e162]:
+            - generic [ref=f30e163]: 12:30:41 · tr_f5c02964
+            - text: 陆清安 → 沈青禾 · 委派 两处请书面确认：①《冷空气一到…》在备稿登记件第37行标「次批备稿·不派单」，与纪要定稿清单第50行冲突；②6条形态栏空缺，文人莫克两条按纪要第34行填字卡＋静帧、无旁白。均不改定稿题面、不派单。
+          - generic [ref=f30e164]:
+            - generic [ref=f30e165]: 12:27:48 · tr_f5c02964
+            - text: 祁南 → 扶频 · 交付 已按管理层 cto 扶频指令，把「半夜告警」原稿题面《半夜三点它叫了两声，我起来查了三个地方》逐字补登进 2026-11-12 批次条目，并注明来源 pm_gou 邮件 UID254 为「转述·原件未核」。一、补登位置：① KB-2026-11-12-004（OPC/知识库/2026-11-12-pm_gou四条去向登记-入池3-超额备稿1-tr_ad892190.md）新增第七节「补登 ·「半夜告警」原稿题面（cto 指令）」，题面逐字照录一字未改，明写对应本件第二节第 4 条、来源 UID254（转述）、原件可核性、定稿状态、制作位与作业边界，并在 frontmatter 检索标签追加「题面补登／uid254／半夜告警」；② OPC/知识库/00-索引.md「批次 2026-11-12 · tr_ad892190」小节追加补登注一行（含逐字题面与未核说明）。二、状态未动：该条仍为「超额备稿·留池备稿·未定稿·未批」，不占制作位、不进当日产能、次批第一顺位；未自行定稿、未建新件（无新目录无新条目）、未派单、未渲染、未外发；原第 4 行「（简称，原稿未落；题面待 pm_gou 补交）」按当时实况原文保留未改写，只在其后补注，符合「只增不删、原文一字不改」口径。三、原件核实边界：本人邮箱 kb_manager@mail.conring.cn INBOX 共 61 封、返回最大 uid=62（最新一封 12:17:02），mail_list 实测无 254；全库检索 UID254／uid254／UID=254 命中 0 条 → uid254 记为他端编号，不套用本端 uid，原件待核；若 pm_gou 交回原件且题面一字不符，另立「已核版」并列存档、不替换本行。四、回执已发 cto@mail.conring.cn，主题为「【回执】「半夜告警」原稿题面已逐字补登 · KB-2026-11-12-004 · tr_ad892190（来源 pm_gou UID254 转述·原件未核）」，Sent uid37（12:27:11）已回读确认，并在条目第七节留痕。五、提请注意（未代判）：题面调性适配（狗大人＝幽默·松弛）不属知识库判定，归 CCO 与评审会；全批 production.start 仍未获批、published=0，本补登不构成候选通过、不构成定稿、不构成开工。
+          - generic [ref=f30e166]:
+            - generic [ref=f30e167]: 12:24:15 · tr_f5c02964
+            - text: 扶频 → 祁南 · 委派 把「半夜告警」原稿题面《半夜三点它叫了两声，我起来查了三个地方》逐字补登 2026-11-12 批次条目，注明来源 pm_gou 邮件 UID254 转述、原件待核，不自行定稿或建件。
+          - generic [ref=f30e168]:
+            - generic [ref=f30e169]: 12:23:20 · tr_f5c02964
+            - text: 祁南 → 沈青禾 · 交付 已按管理层 cco 指令完成登记：(1) 新建登记件 OPC/知识库/2026-11-12-tr_f5c02964-狗大人四条次批候选备稿登记-三处由头修正.md（KB-2026-11-12-009），把米珂（pm_gou）本轮 4 条候选（mt_7d33559d/tr_f5c02964，12:00:43–12:17:16）逐字登记为「次批候选备稿」，并写明三条硬约束：不占今日名额、不派单、不占 TTS 位；今日 6 席仍为 tr_ad892190 定稿 6（6 条 blocked、published=0）。(2) 三处由头修正逐条落盘：第 1 条（冷空气一到……恒温区）撤「寒潮」由头（热点采集/2026-11-12.md 第 857 行，11:26 抖音第 9 位 9,117.8K）改零热点；第 2 条（甘特图）撤 astryx 由头，依据 交付物/tr_3d922f2e/06-log.md 第 17 行 scout 口径「astryx 仅可作同心圆技术观察，文人莫克与狗大人不宜直接选题」，新由头空缺按缺口登记未代拟；第 4 条（换裤子）708★ 只绑 10:05 第 779 行（vercel-labs/agent-browser，Rust），11:05 第 832 行、12:05 第 885 行同值不借。(3) 已同步在 OPC/知识库/00-索引.md 新增「登记 2026-11-12 · 狗大人四条次批候选备稿（cco 指令）」小节并登记 KB-2026-11-12-009。(4) 已以本人邮箱向 cco 沈青禾发回执（cc ceo、cto），Sent uid36 已回读核实。全程只写 .md：未删/未移/未改名任何文件，未改 公司/ 配置类文件与门禁数值，未派单、未渲染、未外发。
+          - generic [ref=f30e170]:
+            - generic [ref=f30e171]: 12:23:02 · tr_f5c02964
+            - text: 沈青禾 → 扶频 · 交付 已执行 CTO 指令并发出回执（本人 Sent uid59，收件 cto，抄送 ceo、pm_tongxinyuan）。一、匹配度量表定为定量 0–1（两位小数），1.00＝最贴本项目调性轴与 KPI（同心圆锚点「专业·可信／合规审核→审批最高级」），定性档只作同一套分值的标签映射、不另立第二套：≥0.85 强／0.70–0.84 中／0.55–0.69 弱／<0.55 不足；性质为 PM 自评「主观预估」，仅项目内可比、不跨项目横比，不作技术可行性与成片依据；候选位原则上 ≥0.70，弱档仅在补足每项目 3 条时以「产能保底」明标使用且不得抬分；老板 L0／CEO／CTO 指定条不因分值淘汰；每条分值须带依据与来源行号，无依据记「未评估」、不补分；历史台账不回算。二、同心圆第 1／第 4 条同属权责边界，结论：第 1 条《它只写方案，动手那一步留给你》0.86 强档入池、占同心圆候选第 1 位；第 4 条《它给的是分析，不是决定》0.55 弱档，与第 1 条同轴相邻，按「一源一条、一轴不两条」去重，改记超额留池·不计淘汰·不占候选位与制作位，题面与角度原样留档、列次批首位。三、连带更正我 Sent uid57 的 v1 台账：第 4 条原计入候选第 3 位，现由第 2 条《手册先写好，再让它上岗》0.81 顺位补入，并附事实层限制（热点采集第 829 行自注简介为仓库主页补写，成卡不点仓库名、不写简介原文，来源以苏寒补页面原文或改叙述为前置）；计数 16＝9 入选＋淘汰 4（文人莫克 2／狗大人 2／同心圆 0）＋留池 3（老板 astryx 截断条、CTO 候补条、同心圆第 4 条），9 条与每项目 3 条不变。文人莫克 PM 4 条本端仍无邮件、无匹配度可录，按「未评估」处理不代填。全件只到选题层，不构成 production.start，不派单、不渲染、不外发。
+          - generic [ref=f30e172]:
+            - generic [ref=f30e173]: 12:22:52 · -
+            - text: 沈青禾 → owner · 业务事件 邮件已发：[选题评审] GitHub 日榜 2026-11-12 11:05 今日新 · 定稿 6 条，待开工审批
+          - generic [ref=f30e174]:
+            - generic [ref=f30e175]: 12:22:52 · tr_f5c02964
+            - text: 陆清安 → owner · 审批
+          - generic [ref=f30e176]:
+            - generic [ref=f30e177]: 12:22:52 · tr_f5c02964
+            - text: 姜月初 → 崔聿棠 · 委派 承接本项目 2 条定稿选题，先出制作评估再制作样片
+          - generic [ref=f30e178]:
+            - generic [ref=f30e179]: 12:22:52 · tr_f5c02964
+            - text: 姜月初 → 江佑泽 · 委派 承接本项目 2 条定稿选题，先出制作评估再写稿
+          - generic [ref=f30e180]:
+            - generic [ref=f30e181]: 12:22:52 · tr_f5c02964
+            - text: 米珂 → 萧执 · 委派 承接本项目 2 条定稿选题，先出制作评估再制作样片
+          - generic [ref=f30e182]:
+            - generic [ref=f30e183]: 12:22:52 · tr_f5c02964
+            - text: 米珂 → 叶秋 · 委派 承接本项目 2 条定稿选题，先出制作评估再写稿
+          - generic [ref=f30e184]:
+            - generic [ref=f30e185]: 12:22:52 · tr_f5c02964
+            - text: 贺平生 → 陆离 · 委派 承接本项目 2 条定稿选题，先出制作评估再制作样片
+          - generic [ref=f30e186]:
+            - generic [ref=f30e187]: 12:22:52 · tr_f5c02964
+            - text: 贺平生 → 陆川 · 委派 承接本项目 2 条定稿选题，先出制作评估再写稿
+          - generic [ref=f30e188]:
+            - generic [ref=f30e189]: 12:22:52 · tr_f5c02964
+            - text: 沈青禾 → owner · 业务事件 CCO 已邮件汇报选题评审结果，等待开工审批
+          - generic [ref=f30e190]:
+            - generic [ref=f30e191]: 12:22:52 · tr_f5c02964
+            - text: 陆清安 → owner · 汇报
+          - generic [ref=f30e192]:
+            - generic [ref=f30e193]: 12:22:52 · tr_f5c02964
+            - text: 陆清安 → all · 决议 已主持并完成本批选题评审：按 3→9→6 口径从 CCO 9 条（每项目 3 条）中拍板 6 条，每项目 2 条——文人莫克《旧东西坏的不是它，是配它的那一半》《养老社区试住三天，看的是哪几眼》；狗大人《最贵的那个，给最便宜的那个写方案》《冷空气一到，它把我的沙发改成了它的恒温区》；同心圆《它只写方案，动手那一步留给你》《一条带辟谣标的通知，先查它从哪来》。三条留池并写明理由（文人莫克 astryx 条与今日定稿《灯能听懂话，开关还得摸得着》同轴且 scout 已判 astryx 不宜直接选题；狗大人纸箱条为产能保底、匹配度自评低；同心圆股票条金融品类避嫌难）。6 条一律停在 topic，未获老板本人点批 production.start 前不派单不渲染不外发，纪要不作开工授权。纪要已由本人邮箱 ceo@mail.conring.cn 发至 5 名关联人、抄送老板与小秘书，Sent uid70（正文），另发一封 uid71 补正结论第 3 条口径（改为已裁定 3→9→6，非另案待裁），两封均已回读确认在 Sent。
+          - generic [ref=f30e194]:
+            - generic [ref=f30e195]: 12:21:16 · tr_f5c02964
+            - text: 扶频 → 顾凛川 · 委派 同心圆第 3 条待审预扫：请给出「辟谣标仅作提示、不作可信凭证」的上屏表述边界，禁出现等同「已辟谣＝可信」字样；仅给口径，不出 PASS。
+          - generic [ref=f30e196]:
+            - generic [ref=f30e197]: 12:20:16 · tr_f5c02964
+            - text: 扶频 → 沈青禾 · 委派 请统一本轮「匹配度」量表档位（定量 0–1 或定性档）并回执，我不对分值立法。第 1／第 4 条同属权责边界，请确认去重与留池结论。
+          - generic [ref=f30e198]:
+            - generic [ref=f30e199]: 12:18:52 · tr_f5c02964
+            - text: 米珂 → 沈青禾 · 交付 按 CCO 12:16 回信（INBOX uid67）完成三事并已发回执（Sent uid41，抄送 CTO）：①本轮 11:05 四条按次批备稿顺位登记，排既有「半夜告警」之后——2《冷空气一到，它把我的沙发改成了它的恒温区》0.72／3《我给它的作息排了张甘特图，它每天照旧睡十六小时》0.69／4《我换了条裤子，它冲我叫了三声才认出是我》0.67／5《快递纸箱我留了一晚，它第二天开了个分公司》0.66（产能保底）；状态一律次批候选·备稿，不占今日名额、不派单、不建工程、不渲染、不占 TTS 位。②补交第 4 条「半夜告警」原稿题面（逐字取自 Sent uid38 第 4 条）：《半夜三点它叫了两声，我起来查了三个地方》，匹配度 0.68，5 镜×2 卡＝10 卡 45.0s（5×9.0s），角度为查门／院子／水碗三处皆正常、叫过就没事而真有事那次不叫，分轴为误报与查证成本；仅供立条，我不自行建件。③三处由头按回信先改、题面角度形式时长分轴一字未改：第 2 条撤 astryx 改零热点（scout 04:02 已记其只作同心圆技术观察）；第 4 条 708★ 只绑首次出现时点 10:05 第 779 行、撤 11:05 第 832 行；第 1 条撤抖音第 9 条（实为「寒潮结束全国大部气温回升」，与「冷空气一到」方向相反）改零热点；第 3 条原即零热点无需改。另附口径 v3 一行回执：原#3《给狗写简历，特长那一栏我卡了十分钟》维持备稿待批不撤号、两批互不占位。开工与发布仍待老板点批 production.start，未批不出《制作评估报告》、不派单不渲染；素材无外采缺口。
+          - generic [ref=f30e200]:
+            - generic [ref=f30e201]: 12:18:04 · tr_f5c02964
+            - text: 陆清安 → 沈青禾 · 交付 已裁定：选题数量口径唯一为 3→9→6（每项目 3 条→池 9→CCO 筛 6→评审会定 6，每项目 2 条），沿用本日 Sent uid54、更正以 uid55 为准，不换说法；第 34／46–49／100／168 行为现行口径不改，第 56／87／157 行及第 57 行「12 选 9（淘汰 ≥3）」、第 158 行交接物、第 213 行缺口表、内核与编排第 30 行注为未同步的旧口径，须一并订正。逐行改法已定并在留痕邮件中给全文：56 行改「PM 提交 3 条选题（每项目）」、57 行改「CCO 9 选 6（每项目 2 条，附未入选理由）」、87 行改「各 3 条选题（2026-11-09 修订）」、157 行改「选题卡（每项目 3 条）」。交接物口径另发现一处隐性自相矛盾：第 158 行「入选 9 条清单」与第 35／47 行「9 选 6」冲突（9 条是候选池，CCO 产出是 6 条入选），裁定拆为两行——「候选池 9 条汇总清单（PM 3×3，含指定与自选）」+「入选 6 条清单（每项目 2 条，附未入选理由）」，产出人／接收人／落盘路径均不变。缺口表第 213 行不得改写成「3 条已落地」：运行层实跑仍为 12+3→15→9→6，故该行改为登记「运行层 4 条口径与制度 3→9→6 不一致」的开放缺口，改造前 PM 实收第 4 条一律「留池备稿」（不废稿、不追溯、不淘汰、不占制作位、不进当日产能），内核与编排第 30 行注同步改为诚实表述，变更记录补一行。权限边界：本人只读，一个文件未改；落地仍走「CTO 扶频出修订清单→老板裁定→祁南落改归档」，批复前条文一字不动。已发内部邮件留痕 Sent uid68（件 1/2，结论一＋统一文本 1–5）与 uid69（件 2/2，统一文本 6–8＋必须纠正的事实＋待办），收件 cco／cto／三位 PM，抄送 boss／kb_manager；通道测试件 uid67 已在件 1 正文显式作废。定稿未批，不派单、不渲染、不发布。
+          - generic [ref=f30e202]:
+            - generic [ref=f30e203]: 12:17:45 · tr_f5c02964
+            - text: 沈青禾 → 祁南 · 委派 登记本轮4条为次批候选备稿（不占今日名额、不派单、不占TTS位），并登记三处由头修正：第2条撤astryx、第4条708★只绑10:05第779行、第1条撤寒潮由头改零热点。
+          - generic [ref=f30e204]:
+            - generic [ref=f30e205]: 12:17:17 · tr_f5c02964
+            - text: 陆清安 → 姜月初 · 委派 参会：对 CCO 9 条选题复核并定稿 6 条
+          - generic [ref=f30e206]:
+            - generic [ref=f30e207]: 12:17:17 · tr_f5c02964
+            - text: 陆清安 → 米珂 · 委派 参会：对 CCO 9 条选题复核并定稿 6 条
+          - generic [ref=f30e208]:
+            - generic [ref=f30e209]: 12:17:17 · tr_f5c02964
+            - text: 陆清安 → 贺平生 · 委派 参会：对 CCO 9 条选题复核并定稿 6 条
+          - generic [ref=f30e210]:
+            - generic [ref=f30e211]: 12:17:17 · tr_f5c02964
+            - text: 陆清安 → 沈青禾 · 委派 参会：对 CCO 9 条选题复核并定稿 6 条
+          - generic [ref=f30e212]:
+            - generic [ref=f30e213]: 12:17:17 · tr_f5c02964
+            - text: 陆清安 → 扶频 · 委派 参会：对 CCO 9 条选题复核并定稿 6 条
+          - generic [ref=f30e214]:
+            - generic [ref=f30e215]: 12:17:16 · tr_f5c02964
+            - text: 沈青禾 → 扶频 · topic.select
+          - generic [ref=f30e216]:
+            - generic [ref=f30e217]: 12:17:16 · tr_f5c02964
+            - text: 沈青禾 → 陆清安 · topic.select 本轮口径与结果：候选 16 条＝3 名 PM 各 4 条（文人莫克贺平生／狗大人米珂／同心圆姜月初，公司/员工名册.md 第 21–23 行）＋CEO 指定 2＋老板 L0 指定 1＋CTO 候补 1；入选 9 条（每项目恰 3 条），淘汰 5 条（文人莫克 2／狗大人 2／同心圆 1），留池·不淘汰 2 条（老板 astryx 11:05 条、CTO 候补条），计数闭合 16＝9＋5＋2。数量口径有制度冲突：公司/岗位职责.md 第 34、46–47 行写 3→9→6，第 56–57 行 RACI 与 OPC/知识库/00-索引.md 第 72–82 行第八批 tr_bc58759c 为 12→9（每项目淘汰 ≥1）；本轮按派单与 RACI 的 12→9 执行，冲突登记见 OPC/待办/2026-11-12.md 第 56 行，待 CEO 裁定。去重主线是同一由头的多路撞车：astryx 今日出现 4 处（CEO 条、CTO 候补、老板 L0、狗大人甘特图条），按 scout「astryx 素材仅可作同心圆技术观察，文人莫克与狗大人不宜直接选题」（OPC/交付物/tr_3d922f2e/06-log.md 第 17 行）只留 CEO 条且收窄为零仓库名零星数零界面，甘特图条淘汰、老板条与 CTO 条按留池·不淘汰处置；shadcn/improve 出现 2 处（CEO 狗大人条、同心圆条），分属两项目两落点保留，但已列同日同源过密的风险与替补策。老板 astryx 11:05 条（题面截断「TypeSc」原样保留、不补不并）不入 9 席，依据：由头已由今日定稿同心圆第 5 条《一夜涨两千多星的开源件，企业敢不敢直接上线》承接，且 astryx 条已按 tr_ad892190 补正单列「留池·不淘汰」（OPC/知识库/2026-11-12-tr_ad892190-三处补正登记…md 第 47–56 行；邮件 INBOX uid196 CEO 08:33「留池·不淘汰、题面截断不补、不占今日席位」），11:05 的 2,776★ 与 08:05/09:05/10:05 同值、按「同值只绑首次出现时点」不上屏（uid202、uid203）；若老板明示要占席，一句话即以该条替换同心圆第 3 位，不新开第 10 席。门禁：今日 6 条仍 stop topic、blocked，ap_f46f753f 02:31:54 老板驳回、ap_87bdbcc4 04:25:48 timeout 挂起（非驳回、可原内容重提），本清单只到选题层，不构成开工、不派单、不渲染、不外发（OPC/待办/2026-11-12.md 第 21–26 行、OPC/交付物/tr_ad892190/00-index.md 第 7–51 行）。清单已以 cco@mail.conring.cn 发 ceo、抄送 cto（Sent uid57，12:16:20 已回读）。文人莫克 4 条本端未见对应邮件（收件箱最新为 uid203 米珂、uid202 姜月初），题面按派单原文登记、截断处未补。
+          - generic [ref=f30e218]:
+            - generic [ref=f30e219]: 12:16:45 · tr_f5c02964
+            - text: 沈青禾 → 米珂 · 委派 本轮4条按次批备稿顺位登记，暂不改稿；补交11-12第4条「半夜告警」原稿题面（缺稿无法立条）；三处由头按回信先改，改后回执。
+          - generic [ref=f30e220]:
+            - generic [ref=f30e221]: 12:16:17 · tr_f5c02964
+            - text: 姜月初 → 沈青禾 · 交付 已按 CCO 沈青禾 uid91 指令出并被实发 v2 更正件（Sent uid31，收件人 cco@mail.conring.cn、cto@mail.conring.cn，发件人为本邮箱 pm_tongxinyuan@mail.conring.cn，无抄送、未群发），原 uid30 版声明作废。要点：①4 条全部补齐制度第 100 行要求的「匹配度」字段——第1条《它只写方案，动手那一步留给你》0.86、第2条《手册先写好，再让它上岗》0.81、第3条《一条带辟谣标的通知，先查它从哪来》0.78、第4条《它给的是分析，不是决定》0.55，每条附判定依据（0–1 尺度，1＝最贴「专业·可信／合规审核→审批（最高级）」轴），并注明为项目内判定、量表口径待 CCO 统一；②第 4 条按「超额留池·不计淘汰」登记，只留档、不进本轮候选、不占候选位与制作位、不计入淘汰计数，落实老板 11-09 修订的每项目 3 条口径；③第 3 条改口径：辟谣标只作提示、只说明该信息被标注过，不代表已核、不作可信凭证、不作事实来源，不上屏「已辟谣＝可信」，三个核查步骤收口为查官方渠道、用官方号码回拨（号码只取自官方渠道）、留凭据（截图/通话记录/工单号），并明确不评具体真假案例、不点平台名、不演示第三方界面；由头锁 11:26 抖音榜第 11「警惕“车辆召回”虚假信息」8,910.4K（带辟谣标），与 00:22 节第 10、9,141.3K 跨节不混用。去重：astryx 按「一源不两条」不另立；与今日定稿同心圆第 5、6 条及原#6 均不撞。门禁未动：4 条均停 topic，不派单、不建工程、不渲染、不落 mp4、不发布，本件不构成 production.start；TTS 音色四件套未签发故仅备无旁白字幕卡保底版。遗留需上级动作：统一匹配度量表（CCO）、签发音色（CTO）、RACI 第 56/57 行「4 条」残留文本由 CCO 统一、归档请祁南按 trace 落 OPC/交付物/。
+          - generic [ref=f30e222]:
+            - generic [ref=f30e223]: 12:13:02 · tr_f5c02964
+            - text: 沈青禾 → 姜月初 · 委派 第 4 条按超额留池登记、不计淘汰；请为 4 条补「匹配度」字段（制度第 100 行要求）；第 3 条改口径：辟谣标只作提示、不作凭证，三问限官方渠道、号码回拨、留凭据。
+          - generic [ref=f30e224]:
+            - generic [ref=f30e225]: 12:12:02 · tr_f5c02964
+            - text: 沈青禾 → 陆清安 · 委派 《岗位职责》第56／87／158行仍写「PM 提交 4 条／选题卡 4 条」，与第34／46／100行及 11-09 修订的 3 条冲突。请裁定统一文本，并同步 RACI 与交接物口径。
+          - generic [ref=f30e226]:
+            - generic [ref=f30e227]: 12:10:32 · tr_f5c02964
+            - text: 姜月初 → 扶频 · 交付
+          - generic [ref=f30e228]:
+            - generic [ref=f30e229]: 12:10:32 · tr_f5c02964
+            - text: 姜月初 → 沈青禾 · 交付 同心圆（数字分身服务平台·专业·可信）2026-11-12 候选选题 4 条已按 45s±2.5s 交付合同出稿，均停 topic、不占新 6 条与原 3 条制作位：①《它只写方案，动手那一步留给你》取 11:05 日榜 shadcn/improve（361★，自述只写 plans、不改源码），落建议权与执行权分离；②《手册先写好，再让它上岗》取 modern-web-guidance-src（159★，把最佳实践以技能注入智能体），落口径版本化与变更留痕；③《一条带辟谣标的通知，先查它从哪来》取 11:26 抖音榜第 11「警惕车辆召回虚假信息」（8,910.4K、带辟谣标），落通知渠道验真；④《它给的是分析，不是决定》取 daily_stock_analysis（278★），落分析可代做、决定不可代按，零收益数值零准确率承诺。今日热点 astryx（11:05·2,776★）为既有由头：已由今日定稿同心圆第 5 条《一夜涨两千多星的开源件，企业敢不敢直接上线》承接，并按 tr_ad892190 补正移入「留池·不淘汰」、题面截断不补，依「一源不两条」本轮不另立条。已以本人邮箱直发 CCO 沈青禾、CTO 扶频（单人双收，未群发），Sent 回读确认 uid30、12:08:38 已归档。数量按 RACI「PM 提交 4 条」报 4 条；岗位职责第 34／100 行写 3 条，冲突属待办第 6 项未决，本件不自行统一口径。
+          - generic [ref=f30e230]:
+            - generic [ref=f30e231]: 12:10:32 · tr_f5c02964
+            - text: 米珂 → 扶频 · 交付
+          - generic [ref=f30e232]:
+            - generic [ref=f30e233]: 12:10:32 · tr_f5c02964
+            - text: 米珂 → 沈青禾 · 交付 [object Object]
+          - generic [ref=f30e234]:
+            - generic [ref=f30e235]: 12:09:08 · tr_f5c02964
+            - text: 贺平生 → 扶频 · 交付
+          - generic [ref=f30e236]:
+            - generic [ref=f30e237]: 12:09:08 · tr_f5c02964
+            - text: 贺平生 → 沈青禾 · 交付 按老板 2026-11-09 修订口径（《项目与调性》第 19–22 行：50+ 受众、人文/历史/社科/哲学/人性、日常生活、养老心得与养老社区；长期：银发经济、旅居、老年人用 AI 心得）提交文人莫克今日 4 条候选。四条统一形态：字卡＋自制静帧（标「示意」）、无旁白不启 TTS、自制铺底 48kHz/2 声道、4 镜 14–16 卡、45s（合同窗 42.5–47.5s，制作对表 43.5–46.5s），依据《项目配置》第 44–48 行与 UID217 第 25–26 行。热点 meta/astryx 11:05 档 +2,776★ 已核（热点采集第 827 行；07:05 档 2,842★ 见第 523 行，两值不可混用），仅作第 1 条由头，零仓库名、零星数、零界面、不上屏；「热度 0.403」与三项目匹配度「未评估」按任务下发背景记录，库内未见 0.403 落盘，四条 reason 中的匹配度均为本人主观预估、不是 CCO 判定，也不代表系统侧已评估。条数口径仍有制度冲突（岗位职责第 34/100 行「3 条」对 RACI 第 56 行「4 条」，待办第 56 行列为待裁项），本件按任务口径交 4 条；若无第 4 位，可按「超额备稿·留池备稿」处置（索引第 129 行），不占制作位、不进当日产能。未获 production.start，本件不派单、不建工程、不渲染、不排期、不对外、不代写文案；仅只读查证并输出本 JSON，未发邮件、未改动任何文件。
+      - generic [ref=f30e238]:
+        - generic [ref=f30e239]:
+          - generic [ref=f30e240]: 员工详情
+          - generic [ref=f30e241]: 点击工位查看证据
+        - generic [ref=f30e242]: 点击任意员工查看任务、工具与证据
+      - generic [ref=f30e244]:
+        - generic [ref=f30e245]:
+          - generic [ref=f30e246]: ApprovalGate · 老板审批门
+          - generic [ref=f30e247]: 对外动作不可跳
+        - generic [ref=f30e248]: 最近审批：6 条内容开工审批（含成本/素材/合规检查） · timeout
+  - generic [ref=f30e250]:
+    - generic [ref=f30e251]:
+      - generic [ref=f30e252]: 内容流水线看板
+      - generic [ref=f30e253]: 热点 → 选题 → 文案 → 视频 → 审核 → 发布 → 归档
+    - generic [ref=f30e254]:
+      - generic [ref=f30e255]:
+        - generic [ref=f30e256]: 文人莫克
+        - generic "养老社区试住三天，看的是哪几眼" [ref=f30e258]: 选题
+        - generic "养老社区试住三天，看的是哪几眼" [ref=f30e259]: 文案
+        - generic "养老社区试住三天，看的是哪几眼" [ref=f30e260]: 视频
+        - generic "养老社区试住三天，看的是哪几眼" [ref=f30e261]: 审核
+        - generic "养老社区试住三天，看的是哪几眼" [ref=f30e262]: 待发布
+        - generic "养老社区试住三天，看的是哪几眼" [ref=f30e263]: 已发布
+        - generic "养老社区试住三天，看的是哪几眼" [ref=f30e264]: 已归档
+      - generic [ref=f30e265]:
+        - generic [ref=f30e266]: 狗大人
+        - generic "冷空气一到，它把我的沙发改成了它的恒温区" [ref=f30e268]: 选题
+        - generic "冷空气一到，它把我的沙发改成了它的恒温区" [ref=f30e269]: 文案
+        - generic "冷空气一到，它把我的沙发改成了它的恒温区" [ref=f30e270]: 视频
+        - generic "冷空气一到，它把我的沙发改成了它的恒温区" [ref=f30e271]: 审核
+        - generic "冷空气一到，它把我的沙发改成了它的恒温区" [ref=f30e272]: 待发布
+        - generic "冷空气一到，它把我的沙发改成了它的恒温区" [ref=f30e273]: 已发布
+        - generic "冷空气一到，它把我的沙发改成了它的恒温区" [ref=f30e274]: 已归档
+      - generic [ref=f30e275]:
+        - generic [ref=f30e276]: 同心圆
+        - generic "一条带辟谣标的通知，先查它从哪来" [ref=f30e278]: 选题
+        - generic "一条带辟谣标的通知，先查它从哪来" [ref=f30e279]: 文案
+        - generic "一条带辟谣标的通知，先查它从哪来" [ref=f30e280]: 视频
+        - generic "一条带辟谣标的通知，先查它从哪来" [ref=f30e281]: 审核
+        - generic "一条带辟谣标的通知，先查它从哪来" [ref=f30e282]: 待发布
+        - generic "一条带辟谣标的通知，先查它从哪来" [ref=f30e283]: 已发布
+        - generic "一条带辟谣标的通知，先查它从哪来" [ref=f30e284]: 已归档
+  - generic [ref=f30e285]:
+    - generic [ref=f30e286]:
+      - generic [ref=f30e287]: 交付成果清单 · 选题 / 文案 / 分镜剧本 / 最后样片
+      - generic [ref=f30e288]: 60 条 · 60 条有待处理问题
+    - generic [ref=f30e289]:
+      - generic [ref=f30e290]:
+        - generic [ref=f30e291]: 交付 60 条
+        - generic [ref=f30e292]: 体检异常 60 条
+        - generic [ref=f30e293]: 点击任一阶段格查看原文 / 样片方案
+      - table [ref=f30e294]:
+        - rowgroup [ref=f30e295]:
+          - row [ref=f30e296]:
+            - columnheader "项目" [ref=f30e297]
+            - columnheader "选题 / 阶段" [ref=f30e298]
+            - columnheader "选题" [ref=f30e299]
+            - columnheader "文案" [ref=f30e300]
+            - columnheader "分镜剧本" [ref=f30e301]
+            - columnheader "最后样片" [ref=f30e302]
+            - columnheader "体检" [ref=f30e303]
+        - rowgroup [ref=f30e304]:
+          - row [ref=f30e305]:
+            - cell "同心圆" [ref=f30e306]
+            - cell "一条带辟谣标的通知，先查它从哪来 blocked · tr_f5c02964 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e309]:
+              - text: 一条带辟谣标的通知，先查它从哪来
+              - generic [ref=f30e310]: blocked · tr_f5c02964
+              - generic [ref=f30e311]:
+                - link "选题 ↗" [ref=f30e312] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_8b11656f/01-topic.md
+                - link "文案 ↗" [ref=f30e313] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_8b11656f/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e314] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_8b11656f/03-storyboard.md
+                - link "样片 ↗" [ref=f30e315] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_8b11656f/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e316]
+            - cell "文案 · 缺失" [ref=f30e319]
+            - cell "分镜剧本 · 缺失" [ref=f30e322]
+            - cell "最后样片 · 缺失" [ref=f30e325]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e328]
+          - row [ref=f30e329]:
+            - cell "同心圆" [ref=f30e330]
+            - cell "它只写方案，动手那一步留给你 blocked · tr_f5c02964 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e333]:
+              - text: 它只写方案，动手那一步留给你
+              - generic [ref=f30e334]: blocked · tr_f5c02964
+              - generic [ref=f30e335]:
+                - link "选题 ↗" [ref=f30e336] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_e936e121/01-topic.md
+                - link "文案 ↗" [ref=f30e337] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_e936e121/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e338] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_e936e121/03-storyboard.md
+                - link "样片 ↗" [ref=f30e339] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/tongxinyuan-c_e936e121/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e340]
+            - cell "文案 · 缺失" [ref=f30e343]
+            - cell "分镜剧本 · 缺失" [ref=f30e346]
+            - cell "最后样片 · 缺失" [ref=f30e349]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e352]
+          - row [ref=f30e353]:
+            - cell "狗大人" [ref=f30e354]
+            - cell "冷空气一到，它把我的沙发改成了它的恒温区 blocked · tr_f5c02964 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e357]:
+              - text: 冷空气一到，它把我的沙发改成了它的恒温区
+              - generic [ref=f30e358]: blocked · tr_f5c02964
+              - generic [ref=f30e359]:
+                - link "选题 ↗" [ref=f30e360] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_e6c28f90/01-topic.md
+                - link "文案 ↗" [ref=f30e361] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_e6c28f90/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e362] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_e6c28f90/03-storyboard.md
+                - link "样片 ↗" [ref=f30e363] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_e6c28f90/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e364]
+            - cell "文案 · 缺失" [ref=f30e367]
+            - cell "分镜剧本 · 缺失" [ref=f30e370]
+            - cell "最后样片 · 缺失" [ref=f30e373]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e376]
+          - row [ref=f30e377]:
+            - cell "狗大人" [ref=f30e378]
+            - cell "最贵的那个，给最便宜的那个写方案 blocked · tr_f5c02964 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e381]:
+              - text: 最贵的那个，给最便宜的那个写方案
+              - generic [ref=f30e382]: blocked · tr_f5c02964
+              - generic [ref=f30e383]:
+                - link "选题 ↗" [ref=f30e384] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_87859e89/01-topic.md
+                - link "文案 ↗" [ref=f30e385] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_87859e89/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e386] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_87859e89/03-storyboard.md
+                - link "样片 ↗" [ref=f30e387] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/gou-c_87859e89/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e388]
+            - cell "文案 · 缺失" [ref=f30e391]
+            - cell "分镜剧本 · 缺失" [ref=f30e394]
+            - cell "最后样片 · 缺失" [ref=f30e397]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e400]
+          - row [ref=f30e401]:
+            - cell "文人莫克" [ref=f30e402]
+            - cell "养老社区试住三天，看的是哪几眼 blocked · tr_f5c02964 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e405]:
+              - text: 养老社区试住三天，看的是哪几眼
+              - generic [ref=f30e406]: blocked · tr_f5c02964
+              - generic [ref=f30e407]:
+                - link "选题 ↗" [ref=f30e408] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_d46aa73b/01-topic.md
+                - link "文案 ↗" [ref=f30e409] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_d46aa73b/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e410] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_d46aa73b/03-storyboard.md
+                - link "样片 ↗" [ref=f30e411] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_d46aa73b/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e412]
+            - cell "文案 · 缺失" [ref=f30e415]
+            - cell "分镜剧本 · 缺失" [ref=f30e418]
+            - cell "最后样片 · 缺失" [ref=f30e421]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e424]
+          - row [ref=f30e425]:
+            - cell "文人莫克" [ref=f30e426]
+            - cell "旧东西坏的不是它，是配它的那一半 blocked · tr_f5c02964 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e429]:
+              - text: 旧东西坏的不是它，是配它的那一半
+              - generic [ref=f30e430]: blocked · tr_f5c02964
+              - generic [ref=f30e431]:
+                - link "选题 ↗" [ref=f30e432] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_5941b850/01-topic.md
+                - link "文案 ↗" [ref=f30e433] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_5941b850/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e434] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_5941b850/03-storyboard.md
+                - link "样片 ↗" [ref=f30e435] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_f5c02964/wenren-c_5941b850/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e436]
+            - cell "文案 · 缺失" [ref=f30e439]
+            - cell "分镜剧本 · 缺失" [ref=f30e442]
+            - cell "最后样片 · 缺失" [ref=f30e445]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e448]
+          - row [ref=f30e449]:
+            - cell "同心圆" [ref=f30e450]
+            - cell "上线前那份体检单，谁审、谁改、谁签字 blocked · tr_ad892190 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e453]:
+              - text: 上线前那份体检单，谁审、谁改、谁签字
+              - generic [ref=f30e454]: blocked · tr_ad892190
+              - generic [ref=f30e455]:
+                - link "选题 ↗" [ref=f30e456] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_5e4af062/01-topic.md
+                - link "文案 ↗" [ref=f30e457] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_5e4af062/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e458] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_5e4af062/03-storyboard.md
+                - link "样片 ↗" [ref=f30e459] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_5e4af062/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e460]
+            - cell "文案 · 缺失" [ref=f30e463]
+            - cell "分镜剧本 · 缺失" [ref=f30e466]
+            - cell "最后样片 · 缺失" [ref=f30e469]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e472]
+          - row [ref=f30e473]:
+            - cell "同心圆" [ref=f30e474]
+            - cell "一夜涨两千多星的开源件，企业敢不敢直接上线 blocked · tr_ad892190 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e477]:
+              - text: 一夜涨两千多星的开源件，企业敢不敢直接上线
+              - generic [ref=f30e478]: blocked · tr_ad892190
+              - generic [ref=f30e479]:
+                - link "选题 ↗" [ref=f30e480] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_f53d245d/01-topic.md
+                - link "文案 ↗" [ref=f30e481] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_f53d245d/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e482] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_f53d245d/03-storyboard.md
+                - link "样片 ↗" [ref=f30e483] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/tongxinyuan-c_f53d245d/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e484]
+            - cell "文案 · 缺失" [ref=f30e487]
+            - cell "分镜剧本 · 缺失" [ref=f30e490]
+            - cell "最后样片 · 缺失" [ref=f30e493]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e496]
+          - row [ref=f30e497]:
+            - cell "狗大人" [ref=f30e498]
+            - cell "剪指甲那十分钟，它正式进入维护状态 blocked · tr_ad892190 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e501]:
+              - text: 剪指甲那十分钟，它正式进入维护状态
+              - generic [ref=f30e502]: blocked · tr_ad892190
+              - generic [ref=f30e503]:
+                - link "选题 ↗" [ref=f30e504] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_96b1bfd8/01-topic.md
+                - link "文案 ↗" [ref=f30e505] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_96b1bfd8/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e506] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_96b1bfd8/03-storyboard.md
+                - link "样片 ↗" [ref=f30e507] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_96b1bfd8/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e508]
+            - cell "文案 · 缺失" [ref=f30e511]
+            - cell "分镜剧本 · 缺失" [ref=f30e514]
+            - cell "最后样片 · 缺失" [ref=f30e517]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e520]
+          - row [ref=f30e521]:
+            - cell "狗大人" [ref=f30e522]
+            - cell "我给它记了半年零食账，它一次都没签过字 blocked · tr_ad892190 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e525]:
+              - text: 我给它记了半年零食账，它一次都没签过字
+              - generic [ref=f30e526]: blocked · tr_ad892190
+              - generic [ref=f30e527]:
+                - link "选题 ↗" [ref=f30e528] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_7437672f/01-topic.md
+                - link "文案 ↗" [ref=f30e529] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_7437672f/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e530] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_7437672f/03-storyboard.md
+                - link "样片 ↗" [ref=f30e531] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/gou-c_7437672f/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e532]
+            - cell "文案 · 缺失" [ref=f30e535]
+            - cell "分镜剧本 · 缺失" [ref=f30e538]
+            - cell "最后样片 · 缺失" [ref=f30e541]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e544]
+          - row [ref=f30e545]:
+            - cell "文人莫克" [ref=f30e546]
+            - cell "灯能听懂话，开关还得摸得着 blocked · tr_ad892190 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e549]:
+              - text: 灯能听懂话，开关还得摸得着
+              - generic [ref=f30e550]: blocked · tr_ad892190
+              - generic [ref=f30e551]:
+                - link "选题 ↗" [ref=f30e552] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_780ced39/01-topic.md
+                - link "文案 ↗" [ref=f30e553] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_780ced39/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e554] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_780ced39/03-storyboard.md
+                - link "样片 ↗" [ref=f30e555] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_780ced39/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e556]
+            - cell "文案 · 缺失" [ref=f30e559]
+            - cell "分镜剧本 · 缺失" [ref=f30e562]
+            - cell "最后样片 · 缺失" [ref=f30e565]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e568]
+          - row [ref=f30e569]:
+            - cell "文人莫克" [ref=f30e570]
+            - cell "手机上越刷越热的 AI 新闻，跟六十岁的您到底有什么关系 blocked · tr_ad892190 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e573]:
+              - text: 手机上越刷越热的 AI 新闻，跟六十岁的您到底有什么关系
+              - generic [ref=f30e574]: blocked · tr_ad892190
+              - generic [ref=f30e575]:
+                - link "选题 ↗" [ref=f30e576] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_4b732c9a/01-topic.md
+                - link "文案 ↗" [ref=f30e577] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_4b732c9a/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e578] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_4b732c9a/03-storyboard.md
+                - link "样片 ↗" [ref=f30e579] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ad892190/wenren-c_4b732c9a/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e580]
+            - cell "文案 · 缺失" [ref=f30e583]
+            - cell "分镜剧本 · 缺失" [ref=f30e586]
+            - cell "最后样片 · 缺失" [ref=f30e589]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e592]
+          - row [ref=f30e593]:
+            - cell "同心圆" [ref=f30e594]
+            - cell "一个分身，全家来问：使用端那份共享，要不要管 blocked · tr_3d922f2e 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e597]:
+              - text: 一个分身，全家来问：使用端那份共享，要不要管
+              - generic [ref=f30e598]: blocked · tr_3d922f2e
+              - generic [ref=f30e599]:
+                - link "选题 ↗" [ref=f30e600] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_542df7ee/01-topic.md
+                - link "文案 ↗" [ref=f30e601] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_542df7ee/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e602] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_542df7ee/03-storyboard.md
+                - link "样片 ↗" [ref=f30e603] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_542df7ee/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e604]
+            - cell "文案 · 缺失" [ref=f30e607]
+            - cell "分镜剧本 · 缺失" [ref=f30e610]
+            - cell "最后样片 · 缺失" [ref=f30e613]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e616]
+          - row [ref=f30e617]:
+            - cell "同心圆" [ref=f30e618]
+            - cell "GitHub 日榜 2026-11-12 03:05 今日新增最高：meta/astryx（+2,842★，TypeSc blocked · tr_3d922f2e 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e621]:
+              - text: GitHub 日榜 2026-11-12 03:05 今日新增最高：meta/astryx（+2,842★，TypeSc
+              - generic [ref=f30e622]: blocked · tr_3d922f2e
+              - generic [ref=f30e623]:
+                - link "选题 ↗" [ref=f30e624] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_2fb7dc64/01-topic.md
+                - link "文案 ↗" [ref=f30e625] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_2fb7dc64/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e626] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_2fb7dc64/03-storyboard.md
+                - link "样片 ↗" [ref=f30e627] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/tongxinyuan-c_2fb7dc64/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e628]
+            - cell "文案 · 缺失" [ref=f30e631]
+            - cell "分镜剧本 · 缺失" [ref=f30e634]
+            - cell "最后样片 · 缺失" [ref=f30e637]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e640]
+          - row [ref=f30e641]:
+            - cell "狗大人" [ref=f30e642]
+            - cell "它没写过一行文档，需求却从没歧义 blocked · tr_3d922f2e 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e645]:
+              - text: 它没写过一行文档，需求却从没歧义
+              - generic [ref=f30e646]: blocked · tr_3d922f2e
+              - generic [ref=f30e647]:
+                - link "选题 ↗" [ref=f30e648] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_2645407a/01-topic.md
+                - link "文案 ↗" [ref=f30e649] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_2645407a/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e650] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_2645407a/03-storyboard.md
+                - link "样片 ↗" [ref=f30e651] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_2645407a/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e652]
+            - cell "文案 · 缺失" [ref=f30e655]
+            - cell "分镜剧本 · 缺失" [ref=f30e658]
+            - cell "最后样片 · 缺失" [ref=f30e661]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e664]
+          - row [ref=f30e665]:
+            - cell "狗大人" [ref=f30e666]
+            - cell "我家的界面是给狗设计的，我只是暂住 blocked · tr_3d922f2e 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e669]:
+              - text: 我家的界面是给狗设计的，我只是暂住
+              - generic [ref=f30e670]: blocked · tr_3d922f2e
+              - generic [ref=f30e671]:
+                - link "选题 ↗" [ref=f30e672] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_0aabf669/01-topic.md
+                - link "文案 ↗" [ref=f30e673] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_0aabf669/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e674] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_0aabf669/03-storyboard.md
+                - link "样片 ↗" [ref=f30e675] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/gou-c_0aabf669/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e676]
+            - cell "文案 · 缺失" [ref=f30e679]
+            - cell "分镜剧本 · 缺失" [ref=f30e682]
+            - cell "最后样片 · 缺失" [ref=f30e685]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e688]
+          - row [ref=f30e689]:
+            - cell "文人莫克" [ref=f30e690]
+            - cell "入冬第一锅汤，火候在三处 blocked · tr_3d922f2e 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e693]:
+              - text: 入冬第一锅汤，火候在三处
+              - generic [ref=f30e694]: blocked · tr_3d922f2e
+              - generic [ref=f30e695]:
+                - link "选题 ↗" [ref=f30e696] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_efd12fff/01-topic.md
+                - link "文案 ↗" [ref=f30e697] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_efd12fff/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e698] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_efd12fff/03-storyboard.md
+                - link "样片 ↗" [ref=f30e699] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_efd12fff/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e700]
+            - cell "文案 · 缺失" [ref=f30e703]
+            - cell "分镜剧本 · 缺失" [ref=f30e706]
+            - cell "最后样片 · 缺失" [ref=f30e709]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e712]
+          - row [ref=f30e713]:
+            - cell "文人莫克" [ref=f30e714]
+            - cell "手机上把字调到最大，为什么还是看不清 blocked · tr_3d922f2e 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e717]:
+              - text: 手机上把字调到最大，为什么还是看不清
+              - generic [ref=f30e718]: blocked · tr_3d922f2e
+              - generic [ref=f30e719]:
+                - link "选题 ↗" [ref=f30e720] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_cc74104b/01-topic.md
+                - link "文案 ↗" [ref=f30e721] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_cc74104b/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e722] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_cc74104b/03-storyboard.md
+                - link "样片 ↗" [ref=f30e723] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_3d922f2e/wenren-c_cc74104b/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e724]
+            - cell "文案 · 缺失" [ref=f30e727]
+            - cell "分镜剧本 · 缺失" [ref=f30e730]
+            - cell "最后样片 · 缺失" [ref=f30e733]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e736]
+          - row [ref=f30e737]:
+            - cell "同心圆" [ref=f30e738]
+            - cell "验收那一天，怎么证明它一直按你的口径说话 blocked · tr_6bb16b6a 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e741]:
+              - text: 验收那一天，怎么证明它一直按你的口径说话
+              - generic [ref=f30e742]: blocked · tr_6bb16b6a
+              - generic [ref=f30e743]:
+                - link "选题 ↗" [ref=f30e744] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_1e40d7e0/01-topic.md
+                - link "文案 ↗" [ref=f30e745] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_1e40d7e0/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e746] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_1e40d7e0/03-storyboard.md
+                - link "样片 ↗" [ref=f30e747] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_1e40d7e0/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e748]
+            - cell "文案 · 缺失" [ref=f30e751]
+            - cell "分镜剧本 · 缺失" [ref=f30e754]
+            - cell "最后样片 · 缺失" [ref=f30e757]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e760]
+          - row [ref=f30e761]:
+            - cell "同心圆" [ref=f30e762]
+            - cell "GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（ blocked · tr_6bb16b6a 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e765]:
+              - text: GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（
+              - generic [ref=f30e766]: blocked · tr_6bb16b6a
+              - generic [ref=f30e767]:
+                - link "选题 ↗" [ref=f30e768] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_15c47087/01-topic.md
+                - link "文案 ↗" [ref=f30e769] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_15c47087/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e770] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_15c47087/03-storyboard.md
+                - link "样片 ↗" [ref=f30e771] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/tongxinyuan-c_15c47087/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e772]
+            - cell "文案 · 缺失" [ref=f30e775]
+            - cell "分镜剧本 · 缺失" [ref=f30e778]
+            - cell "最后样片 · 缺失" [ref=f30e781]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e784]
+          - row [ref=f30e785]:
+            - cell "狗大人" [ref=f30e786]
+            - cell "狗的日更：一根电线杆就是一个站点 blocked · tr_6bb16b6a 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e789]:
+              - text: 狗的日更：一根电线杆就是一个站点
+              - generic [ref=f30e790]: blocked · tr_6bb16b6a
+              - generic [ref=f30e791]:
+                - link "选题 ↗" [ref=f30e792] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_1852d5f1/01-topic.md
+                - link "文案 ↗" [ref=f30e793] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_1852d5f1/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e794] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_1852d5f1/03-storyboard.md
+                - link "样片 ↗" [ref=f30e795] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_1852d5f1/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e796]
+            - cell "文案 · 缺失" [ref=f30e799]
+            - cell "分镜剧本 · 缺失" [ref=f30e802]
+            - cell "最后样片 · 缺失" [ref=f30e805]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e808]
+          - row [ref=f30e809]:
+            - cell "狗大人" [ref=f30e810]
+            - cell "400 个站点记得我，我记不住狗的驱虫日期 blocked · tr_6bb16b6a 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e813]:
+              - text: 400 个站点记得我，我记不住狗的驱虫日期
+              - generic [ref=f30e814]: blocked · tr_6bb16b6a
+              - generic [ref=f30e815]:
+                - link "选题 ↗" [ref=f30e816] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_b48e3ef4/01-topic.md
+                - link "文案 ↗" [ref=f30e817] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_b48e3ef4/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e818] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_b48e3ef4/03-storyboard.md
+                - link "样片 ↗" [ref=f30e819] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/gou-c_b48e3ef4/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e820]
+            - cell "文案 · 缺失" [ref=f30e823]
+            - cell "分镜剧本 · 缺失" [ref=f30e826]
+            - cell "最后样片 · 缺失" [ref=f30e829]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e832]
+          - row [ref=f30e833]:
+            - cell "文人莫克" [ref=f30e834]
+            - cell "半斤八两：一句老话里藏着两套秤 blocked · tr_6bb16b6a 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e837]:
+              - text: 半斤八两：一句老话里藏着两套秤
+              - generic [ref=f30e838]: blocked · tr_6bb16b6a
+              - generic [ref=f30e839]:
+                - link "选题 ↗" [ref=f30e840] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_31707008/01-topic.md
+                - link "文案 ↗" [ref=f30e841] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_31707008/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e842] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_31707008/03-storyboard.md
+                - link "样片 ↗" [ref=f30e843] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_31707008/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e844]
+            - cell "文案 · 缺失" [ref=f30e847]
+            - cell "分镜剧本 · 缺失" [ref=f30e850]
+            - cell "最后样片 · 缺失" [ref=f30e853]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e856]
+          - row [ref=f30e857]:
+            - cell "文人莫克" [ref=f30e858]
+            - cell "卫生间先装一根扶手：适老化改造，改的是地面和光 blocked · tr_6bb16b6a 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e861]:
+              - text: 卫生间先装一根扶手：适老化改造，改的是地面和光
+              - generic [ref=f30e862]: blocked · tr_6bb16b6a
+              - generic [ref=f30e863]:
+                - link "选题 ↗" [ref=f30e864] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_2e7b885a/01-topic.md
+                - link "文案 ↗" [ref=f30e865] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_2e7b885a/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e866] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_2e7b885a/03-storyboard.md
+                - link "样片 ↗" [ref=f30e867] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_6bb16b6a/wenren-c_2e7b885a/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e868]
+            - cell "文案 · 缺失" [ref=f30e871]
+            - cell "分镜剧本 · 缺失" [ref=f30e874]
+            - cell "最后样片 · 缺失" [ref=f30e877]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e880]
+          - row [ref=f30e881]:
+            - cell "同心圆" [ref=f30e882]
+            - cell "《换一家服务商，你的分身带得走吗》 blocked · tr_1bd1a9e5 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e885]:
+              - text: 《换一家服务商，你的分身带得走吗》
+              - generic [ref=f30e886]: blocked · tr_1bd1a9e5
+              - generic [ref=f30e887]:
+                - link "选题 ↗" [ref=f30e888] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_256fb80c/01-topic.md
+                - link "文案 ↗" [ref=f30e889] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_256fb80c/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e890] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_256fb80c/03-storyboard.md
+                - link "样片 ↗" [ref=f30e891] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_256fb80c/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e892]
+            - cell "文案 · 缺失" [ref=f30e895]
+            - cell "分镜剧本 · 缺失" [ref=f30e898]
+            - cell "最后样片 · 缺失" [ref=f30e901]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e904]
+          - row [ref=f30e905]:
+            - cell "同心圆" [ref=f30e906]
+            - cell "GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（ blocked · tr_1bd1a9e5 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e909]:
+              - text: GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（
+              - generic [ref=f30e910]: blocked · tr_1bd1a9e5
+              - generic [ref=f30e911]:
+                - link "选题 ↗" [ref=f30e912] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_bff06af0/01-topic.md
+                - link "文案 ↗" [ref=f30e913] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_bff06af0/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e914] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_bff06af0/03-storyboard.md
+                - link "样片 ↗" [ref=f30e915] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/tongxinyuan-c_bff06af0/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e916]
+            - cell "文案 · 缺失" [ref=f30e919]
+            - cell "分镜剧本 · 缺失" [ref=f30e922]
+            - cell "最后样片 · 缺失" [ref=f30e925]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e928]
+          - row [ref=f30e929]:
+            - cell "狗大人" [ref=f30e930]
+            - cell "我喊十遍它不开灯，我家狗嗷一嗓子就亮了 blocked · tr_1bd1a9e5 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e933]:
+              - text: 我喊十遍它不开灯，我家狗嗷一嗓子就亮了
+              - generic [ref=f30e934]: blocked · tr_1bd1a9e5
+              - generic [ref=f30e935]:
+                - link "选题 ↗" [ref=f30e936] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_c31dc9c4/01-topic.md
+                - link "文案 ↗" [ref=f30e937] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_c31dc9c4/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e938] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_c31dc9c4/03-storyboard.md
+                - link "样片 ↗" [ref=f30e939] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_c31dc9c4/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e940]
+            - cell "文案 · 缺失" [ref=f30e943]
+            - cell "分镜剧本 · 缺失" [ref=f30e946]
+            - cell "最后样片 · 缺失" [ref=f30e949]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e952]
+          - row [ref=f30e953]:
+            - cell "狗大人" [ref=f30e954]
+            - cell "给狗排的作息表它执行了三天，第四天它把我从名单里划掉了 blocked · tr_1bd1a9e5 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e957]:
+              - text: 给狗排的作息表它执行了三天，第四天它把我从名单里划掉了
+              - generic [ref=f30e958]: blocked · tr_1bd1a9e5
+              - generic [ref=f30e959]:
+                - link "选题 ↗" [ref=f30e960] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_9796aaa1/01-topic.md
+                - link "文案 ↗" [ref=f30e961] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_9796aaa1/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e962] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_9796aaa1/03-storyboard.md
+                - link "样片 ↗" [ref=f30e963] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/gou-c_9796aaa1/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e964]
+            - cell "文案 · 缺失" [ref=f30e967]
+            - cell "分镜剧本 · 缺失" [ref=f30e970]
+            - cell "最后样片 · 缺失" [ref=f30e973]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e976]
+          - row [ref=f30e977]:
+            - cell "文人莫克" [ref=f30e978]
+            - cell "理发卡里还剩两千八，店换了招牌 blocked · tr_1bd1a9e5 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e981]:
+              - text: 理发卡里还剩两千八，店换了招牌
+              - generic [ref=f30e982]: blocked · tr_1bd1a9e5
+              - generic [ref=f30e983]:
+                - link "选题 ↗" [ref=f30e984] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_6701ded2/01-topic.md
+                - link "文案 ↗" [ref=f30e985] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_6701ded2/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e986] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_6701ded2/03-storyboard.md
+                - link "样片 ↗" [ref=f30e987] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_6701ded2/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e988]
+            - cell "文案 · 缺失" [ref=f30e991]
+            - cell "分镜剧本 · 缺失" [ref=f30e994]
+            - cell "最后样片 · 缺失" [ref=f30e997]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1000]
+          - row [ref=f30e1001]:
+            - cell "文人莫克" [ref=f30e1002]
+            - cell "名字一样，人不一样：翻族谱先看字号、生卒、里居这三行 blocked · tr_1bd1a9e5 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1005]:
+              - text: 名字一样，人不一样：翻族谱先看字号、生卒、里居这三行
+              - generic [ref=f30e1006]: blocked · tr_1bd1a9e5
+              - generic [ref=f30e1007]:
+                - link "选题 ↗" [ref=f30e1008] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_d62ea175/01-topic.md
+                - link "文案 ↗" [ref=f30e1009] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_d62ea175/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1010] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_d62ea175/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1011] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1bd1a9e5/wenren-c_d62ea175/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1012]
+            - cell "文案 · 缺失" [ref=f30e1015]
+            - cell "分镜剧本 · 缺失" [ref=f30e1018]
+            - cell "最后样片 · 缺失" [ref=f30e1021]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1024]
+          - row [ref=f30e1025]:
+            - cell "同心圆" [ref=f30e1026]
+            - cell "它说的话，要不要挂一块牌子 blocked · tr_8a438dc6 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1029]:
+              - text: 它说的话，要不要挂一块牌子
+              - generic [ref=f30e1030]: blocked · tr_8a438dc6
+              - generic [ref=f30e1031]:
+                - link "选题 ↗" [ref=f30e1032] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_ebe76e50/01-topic.md
+                - link "文案 ↗" [ref=f30e1033] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_ebe76e50/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1034] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_ebe76e50/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1035] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_ebe76e50/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1036]
+            - cell "文案 · 缺失" [ref=f30e1039]
+            - cell "分镜剧本 · 缺失" [ref=f30e1042]
+            - cell "最后样片 · 缺失" [ref=f30e1045]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1048]
+          - row [ref=f30e1049]:
+            - cell "同心圆" [ref=f30e1050]
+            - cell "GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（ blocked · tr_8a438dc6 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1053]:
+              - text: GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（
+              - generic [ref=f30e1054]: blocked · tr_8a438dc6
+              - generic [ref=f30e1055]:
+                - link "选题 ↗" [ref=f30e1056] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_998d69aa/01-topic.md
+                - link "文案 ↗" [ref=f30e1057] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_998d69aa/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1058] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_998d69aa/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1059] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/tongxinyuan-c_998d69aa/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1060]
+            - cell "文案 · 缺失" [ref=f30e1063]
+            - cell "分镜剧本 · 缺失" [ref=f30e1066]
+            - cell "最后样片 · 缺失" [ref=f30e1069]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1072]
+          - row [ref=f30e1073]:
+            - cell "狗大人" [ref=f30e1074]
+            - cell "寒潮来了，它比我早知道 blocked · tr_8a438dc6 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1077]:
+              - text: 寒潮来了，它比我早知道
+              - generic [ref=f30e1078]: blocked · tr_8a438dc6
+              - generic [ref=f30e1079]:
+                - link "选题 ↗" [ref=f30e1080] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_401b863e/01-topic.md
+                - link "文案 ↗" [ref=f30e1081] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_401b863e/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1082] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_401b863e/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1083] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_401b863e/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1084]
+            - cell "文案 · 缺失" [ref=f30e1087]
+            - cell "分镜剧本 · 缺失" [ref=f30e1090]
+            - cell "最后样片 · 缺失" [ref=f30e1093]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1096]
+          - row [ref=f30e1097]:
+            - cell "狗大人" [ref=f30e1098]
+            - cell "我搜我自己，搜出七个不认识的我 blocked · tr_8a438dc6 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1101]:
+              - text: 我搜我自己，搜出七个不认识的我
+              - generic [ref=f30e1102]: blocked · tr_8a438dc6
+              - generic [ref=f30e1103]:
+                - link "选题 ↗" [ref=f30e1104] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_e0467c64/01-topic.md
+                - link "文案 ↗" [ref=f30e1105] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_e0467c64/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1106] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_e0467c64/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1107] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/gou-c_e0467c64/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1108]
+            - cell "文案 · 缺失" [ref=f30e1111]
+            - cell "分镜剧本 · 缺失" [ref=f30e1114]
+            - cell "最后样片 · 缺失" [ref=f30e1117]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1120]
+          - row [ref=f30e1121]:
+            - cell "文人莫克" [ref=f30e1122]
+            - cell "药盒分七天，分的是药，也是谁在替你记 blocked · tr_8a438dc6 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1125]:
+              - text: 药盒分七天，分的是药，也是谁在替你记
+              - generic [ref=f30e1126]: blocked · tr_8a438dc6
+              - generic [ref=f30e1127]:
+                - link "选题 ↗" [ref=f30e1128] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_3bc75b58/01-topic.md
+                - link "文案 ↗" [ref=f30e1129] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_3bc75b58/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1130] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_3bc75b58/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1131] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_3bc75b58/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1132]
+            - cell "文案 · 缺失" [ref=f30e1135]
+            - cell "分镜剧本 · 缺失" [ref=f30e1138]
+            - cell "最后样片 · 缺失" [ref=f30e1141]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1144]
+          - row [ref=f30e1145]:
+            - cell "文人莫克" [ref=f30e1146]
+            - cell "去儿女那座城住一个月，钥匙带不带 blocked · tr_8a438dc6 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1149]:
+              - text: 去儿女那座城住一个月，钥匙带不带
+              - generic [ref=f30e1150]: blocked · tr_8a438dc6
+              - generic [ref=f30e1151]:
+                - link "选题 ↗" [ref=f30e1152] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_fc5621cd/01-topic.md
+                - link "文案 ↗" [ref=f30e1153] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_fc5621cd/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1154] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_fc5621cd/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1155] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_8a438dc6/wenren-c_fc5621cd/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1156]
+            - cell "文案 · 缺失" [ref=f30e1159]
+            - cell "分镜剧本 · 缺失" [ref=f30e1162]
+            - cell "最后样片 · 缺失" [ref=f30e1165]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1168]
+          - row [ref=f30e1169]:
+            - cell "同心圆" [ref=f30e1170]
+            - cell "《替你点的那一下，签名写谁》 blocked · tr_bc58759c 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1173]:
+              - text: 《替你点的那一下，签名写谁》
+              - generic [ref=f30e1174]: blocked · tr_bc58759c
+              - generic [ref=f30e1175]:
+                - link "选题 ↗" [ref=f30e1176] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_62b5bfba/01-topic.md
+                - link "文案 ↗" [ref=f30e1177] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_62b5bfba/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1178] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_62b5bfba/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1179] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_62b5bfba/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1180]
+            - cell "文案 · 缺失" [ref=f30e1183]
+            - cell "分镜剧本 · 缺失" [ref=f30e1186]
+            - cell "最后样片 · 缺失" [ref=f30e1189]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1192]
+          - row [ref=f30e1193]:
+            - cell "同心圆" [ref=f30e1194]
+            - cell "GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（ blocked · tr_bc58759c 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1197]:
+              - text: GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（
+              - generic [ref=f30e1198]: blocked · tr_bc58759c
+              - generic [ref=f30e1199]:
+                - link "选题 ↗" [ref=f30e1200] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_d170dfca/01-topic.md
+                - link "文案 ↗" [ref=f30e1201] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_d170dfca/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1202] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_d170dfca/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1203] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/tongxinyuan-c_d170dfca/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1204]
+            - cell "文案 · 缺失" [ref=f30e1207]
+            - cell "分镜剧本 · 缺失" [ref=f30e1210]
+            - cell "最后样片 · 缺失" [ref=f30e1213]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1216]
+          - row [ref=f30e1217]:
+            - cell "狗大人" [ref=f30e1218]
+            - cell "家庭群三千条消息，AI 总结出三句话，句句在催我 blocked · tr_bc58759c 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1221]:
+              - text: 家庭群三千条消息，AI 总结出三句话，句句在催我
+              - generic [ref=f30e1222]: blocked · tr_bc58759c
+              - generic [ref=f30e1223]:
+                - link "选题 ↗" [ref=f30e1224] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_f196a3af/01-topic.md
+                - link "文案 ↗" [ref=f30e1225] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_f196a3af/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1226] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_f196a3af/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1227] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_f196a3af/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1228]
+            - cell "文案 · 缺失" [ref=f30e1231]
+            - cell "分镜剧本 · 缺失" [ref=f30e1234]
+            - cell "最后样片 · 缺失" [ref=f30e1237]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1240]
+          - row [ref=f30e1241]:
+            - cell "狗大人" [ref=f30e1242]
+            - cell "我家扫地机器人的地图上，狗有房间，我标着「障碍物」 blocked · tr_bc58759c 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1245]:
+              - text: 我家扫地机器人的地图上，狗有房间，我标着「障碍物」
+              - generic [ref=f30e1246]: blocked · tr_bc58759c
+              - generic [ref=f30e1247]:
+                - link "选题 ↗" [ref=f30e1248] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_83637992/01-topic.md
+                - link "文案 ↗" [ref=f30e1249] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_83637992/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1250] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_83637992/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1251] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/gou-c_83637992/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1252]
+            - cell "文案 · 缺失" [ref=f30e1255]
+            - cell "分镜剧本 · 缺失" [ref=f30e1258]
+            - cell "最后样片 · 缺失" [ref=f30e1261]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1264]
+          - row [ref=f30e1265]:
+            - cell "文人莫克" [ref=f30e1266]
+            - cell "索引替你走一遍：引得编得好，读的人就不必把书读完 blocked · tr_bc58759c 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1269]:
+              - text: 索引替你走一遍：引得编得好，读的人就不必把书读完
+              - generic [ref=f30e1270]: blocked · tr_bc58759c
+              - generic [ref=f30e1271]:
+                - link "选题 ↗" [ref=f30e1272] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_3ce75807/01-topic.md
+                - link "文案 ↗" [ref=f30e1273] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_3ce75807/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1274] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_3ce75807/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1275] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_3ce75807/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1276]
+            - cell "文案 · 缺失" [ref=f30e1279]
+            - cell "分镜剧本 · 缺失" [ref=f30e1282]
+            - cell "最后样片 · 缺失" [ref=f30e1285]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1288]
+          - row [ref=f30e1289]:
+            - cell "文人莫克" [ref=f30e1290]
+            - cell "凡例写在最前面：一份名录先交代它收了什么、没收录什么 blocked · tr_bc58759c 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1293]:
+              - text: 凡例写在最前面：一份名录先交代它收了什么、没收录什么
+              - generic [ref=f30e1294]: blocked · tr_bc58759c
+              - generic [ref=f30e1295]:
+                - link "选题 ↗" [ref=f30e1296] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_b05a1b64/01-topic.md
+                - link "文案 ↗" [ref=f30e1297] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_b05a1b64/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1298] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_b05a1b64/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1299] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_bc58759c/wenren-c_b05a1b64/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1300]
+            - cell "文案 · 缺失" [ref=f30e1303]
+            - cell "分镜剧本 · 缺失" [ref=f30e1306]
+            - cell "最后样片 · 缺失" [ref=f30e1309]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1312]
+          - row [ref=f30e1313]:
+            - cell "同心圆" [ref=f30e1314]
+            - cell "会话关掉之后，我给你的素材还在谁手里 blocked · tr_1f8a906b 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1317]:
+              - text: 会话关掉之后，我给你的素材还在谁手里
+              - generic [ref=f30e1318]: blocked · tr_1f8a906b
+              - generic [ref=f30e1319]:
+                - link "选题 ↗" [ref=f30e1320] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_cb581f90/01-topic.md
+                - link "文案 ↗" [ref=f30e1321] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_cb581f90/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1322] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_cb581f90/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1323] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_cb581f90/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1324]
+            - cell "文案 · 缺失" [ref=f30e1327]
+            - cell "分镜剧本 · 缺失" [ref=f30e1330]
+            - cell "最后样片 · 缺失" [ref=f30e1333]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1336]
+          - row [ref=f30e1337]:
+            - cell "同心圆" [ref=f30e1338]
+            - cell "GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（ blocked · tr_1f8a906b 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1341]:
+              - text: GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（
+              - generic [ref=f30e1342]: blocked · tr_1f8a906b
+              - generic [ref=f30e1343]:
+                - link "选题 ↗" [ref=f30e1344] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_842b4f9a/01-topic.md
+                - link "文案 ↗" [ref=f30e1345] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_842b4f9a/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1346] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_842b4f9a/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1347] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/tongxinyuan-c_842b4f9a/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1348]
+            - cell "文案 · 缺失" [ref=f30e1351]
+            - cell "分镜剧本 · 缺失" [ref=f30e1354]
+            - cell "最后样片 · 缺失" [ref=f30e1357]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1360]
+          - row [ref=f30e1361]:
+            - cell "狗大人" [ref=f30e1362]
+            - cell "狗粮换了包装，配方一个字没改，它一口就分出来 blocked · tr_1f8a906b 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1365]:
+              - text: 狗粮换了包装，配方一个字没改，它一口就分出来
+              - generic [ref=f30e1366]: blocked · tr_1f8a906b
+              - generic [ref=f30e1367]:
+                - link "选题 ↗" [ref=f30e1368] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_6e2b54de/01-topic.md
+                - link "文案 ↗" [ref=f30e1369] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_6e2b54de/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1370] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_6e2b54de/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1371] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_6e2b54de/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1372]
+            - cell "文案 · 缺失" [ref=f30e1375]
+            - cell "分镜剧本 · 缺失" [ref=f30e1378]
+            - cell "最后样片 · 缺失" [ref=f30e1381]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1384]
+          - row [ref=f30e1385]:
+            - cell "狗大人" [ref=f30e1386]
+            - cell "去年照片里那只瘦狗，邻居说不是我家的 blocked · tr_1f8a906b 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1389]:
+              - text: 去年照片里那只瘦狗，邻居说不是我家的
+              - generic [ref=f30e1390]: blocked · tr_1f8a906b
+              - generic [ref=f30e1391]:
+                - link "选题 ↗" [ref=f30e1392] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_d62380ea/01-topic.md
+                - link "文案 ↗" [ref=f30e1393] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_d62380ea/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1394] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_d62380ea/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1395] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/gou-c_d62380ea/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1396]
+            - cell "文案 · 缺失" [ref=f30e1399]
+            - cell "分镜剧本 · 缺失" [ref=f30e1402]
+            - cell "最后样片 · 缺失" [ref=f30e1405]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1408]
+          - row [ref=f30e1409]:
+            - cell "文人莫克" [ref=f30e1410]
+            - cell "副本活得比正本久 blocked · tr_1f8a906b 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1413]:
+              - text: 副本活得比正本久
+              - generic [ref=f30e1414]: blocked · tr_1f8a906b
+              - generic [ref=f30e1415]:
+                - link "选题 ↗" [ref=f30e1416] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_181b5562/01-topic.md
+                - link "文案 ↗" [ref=f30e1417] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_181b5562/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1418] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_181b5562/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1419] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_181b5562/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1420]
+            - cell "文案 · 缺失" [ref=f30e1423]
+            - cell "分镜剧本 · 缺失" [ref=f30e1426]
+            - cell "最后样片 · 缺失" [ref=f30e1429]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1432]
+          - row [ref=f30e1433]:
+            - cell "文人莫克" [ref=f30e1434]
+            - cell "一页几行，一秒几个字：行格和停留是同一道算式 blocked · tr_1f8a906b 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1437]:
+              - text: 一页几行，一秒几个字：行格和停留是同一道算式
+              - generic [ref=f30e1438]: blocked · tr_1f8a906b
+              - generic [ref=f30e1439]:
+                - link "选题 ↗" [ref=f30e1440] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_b25ef069/01-topic.md
+                - link "文案 ↗" [ref=f30e1441] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_b25ef069/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1442] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_b25ef069/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1443] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_1f8a906b/wenren-c_b25ef069/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1444]
+            - cell "文案 · 缺失" [ref=f30e1447]
+            - cell "分镜剧本 · 缺失" [ref=f30e1450]
+            - cell "最后样片 · 缺失" [ref=f30e1453]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1456]
+          - row [ref=f30e1457]:
+            - cell "同心圆" [ref=f30e1458]
+            - cell "《开源的是代码，不是它取回来的那份名单》 blocked · tr_77e4ad9d 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1461]:
+              - text: 《开源的是代码，不是它取回来的那份名单》
+              - generic [ref=f30e1462]: blocked · tr_77e4ad9d
+              - generic [ref=f30e1463]:
+                - link "选题 ↗" [ref=f30e1464] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_294b42b2/01-topic.md
+                - link "文案 ↗" [ref=f30e1465] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_294b42b2/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1466] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_294b42b2/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1467] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_294b42b2/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1468]
+            - cell "文案 · 缺失" [ref=f30e1471]
+            - cell "分镜剧本 · 缺失" [ref=f30e1474]
+            - cell "最后样片 · 缺失" [ref=f30e1477]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1480]
+          - row [ref=f30e1481]:
+            - cell "同心圆" [ref=f30e1482]
+            - cell "GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（ blocked · tr_77e4ad9d 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1485]:
+              - text: GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（
+              - generic [ref=f30e1486]: blocked · tr_77e4ad9d
+              - generic [ref=f30e1487]:
+                - link "选题 ↗" [ref=f30e1488] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_d0a519e4/01-topic.md
+                - link "文案 ↗" [ref=f30e1489] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_d0a519e4/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1490] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_d0a519e4/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1491] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/tongxinyuan-c_d0a519e4/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1492]
+            - cell "文案 · 缺失" [ref=f30e1495]
+            - cell "分镜剧本 · 缺失" [ref=f30e1498]
+            - cell "最后样片 · 缺失" [ref=f30e1501]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1504]
+          - row [ref=f30e1505]:
+            - cell "狗大人" [ref=f30e1506]
+            - cell "领养时它叫黑子，我改成「年糕」，三个月了它只对「黑子」回头 blocked · tr_77e4ad9d 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1509]:
+              - text: 领养时它叫黑子，我改成「年糕」，三个月了它只对「黑子」回头
+              - generic [ref=f30e1510]: blocked · tr_77e4ad9d
+              - generic [ref=f30e1511]:
+                - link "选题 ↗" [ref=f30e1512] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_99972699/01-topic.md
+                - link "文案 ↗" [ref=f30e1513] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_99972699/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1514] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_99972699/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1515] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_99972699/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1516]
+            - cell "文案 · 缺失" [ref=f30e1519]
+            - cell "分镜剧本 · 缺失" [ref=f30e1522]
+            - cell "最后样片 · 缺失" [ref=f30e1525]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1528]
+          - row [ref=f30e1529]:
+            - cell "狗大人" [ref=f30e1530]
+            - cell "病历本上写的是「豆豆」，我家狗叫「兜兜」：一个字，它多挨了三针 blocked · tr_77e4ad9d 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1533]:
+              - text: 病历本上写的是「豆豆」，我家狗叫「兜兜」：一个字，它多挨了三针
+              - generic [ref=f30e1534]: blocked · tr_77e4ad9d
+              - generic [ref=f30e1535]:
+                - link "选题 ↗" [ref=f30e1536] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_43e11314/01-topic.md
+                - link "文案 ↗" [ref=f30e1537] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_43e11314/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1538] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_43e11314/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1539] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/gou-c_43e11314/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1540]
+            - cell "文案 · 缺失" [ref=f30e1543]
+            - cell "分镜剧本 · 缺失" [ref=f30e1546]
+            - cell "最后样片 · 缺失" [ref=f30e1549]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1552]
+          - row [ref=f30e1553]:
+            - cell "文人莫克" [ref=f30e1554]
+            - cell "《影抄本：抄得越像，越说明不是原件》 blocked · tr_77e4ad9d 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1557]:
+              - text: 《影抄本：抄得越像，越说明不是原件》
+              - generic [ref=f30e1558]: blocked · tr_77e4ad9d
+              - generic [ref=f30e1559]:
+                - link "选题 ↗" [ref=f30e1560] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_c8984595/01-topic.md
+                - link "文案 ↗" [ref=f30e1561] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_c8984595/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1562] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_c8984595/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1563] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_c8984595/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1564]
+            - cell "文案 · 缺失" [ref=f30e1567]
+            - cell "分镜剧本 · 缺失" [ref=f30e1570]
+            - cell "最后样片 · 缺失" [ref=f30e1573]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1576]
+          - row [ref=f30e1577]:
+            - cell "文人莫克" [ref=f30e1578]
+            - cell "一个名字，被多少处登记过 blocked · tr_77e4ad9d 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1581]:
+              - text: 一个名字，被多少处登记过
+              - generic [ref=f30e1582]: blocked · tr_77e4ad9d
+              - generic [ref=f30e1583]:
+                - link "选题 ↗" [ref=f30e1584] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_7f1d66ab/01-topic.md
+                - link "文案 ↗" [ref=f30e1585] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_7f1d66ab/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1586] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_7f1d66ab/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1587] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_77e4ad9d/wenren-c_7f1d66ab/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1588]
+            - cell "文案 · 缺失" [ref=f30e1591]
+            - cell "分镜剧本 · 缺失" [ref=f30e1594]
+            - cell "最后样片 · 缺失" [ref=f30e1597]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1600]
+          - row [ref=f30e1601]:
+            - cell "同心圆" [ref=f30e1602]
+            - cell "不保证查得准，这句话该写在用户看得见的地方 blocked · tr_ebbd28b2 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1605]:
+              - text: 不保证查得准，这句话该写在用户看得见的地方
+              - generic [ref=f30e1606]: blocked · tr_ebbd28b2
+              - generic [ref=f30e1607]:
+                - link "选题 ↗" [ref=f30e1608] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_a2f3da36/01-topic.md
+                - link "文案 ↗" [ref=f30e1609] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_a2f3da36/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1610] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_a2f3da36/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1611] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_a2f3da36/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1612]
+            - cell "文案 · 缺失" [ref=f30e1615]
+            - cell "分镜剧本 · 缺失" [ref=f30e1618]
+            - cell "最后样片 · 缺失" [ref=f30e1621]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1624]
+          - row [ref=f30e1625]:
+            - cell "同心圆" [ref=f30e1626]
+            - cell "GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（ blocked · tr_ebbd28b2 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1629]:
+              - text: GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（
+              - generic [ref=f30e1630]: blocked · tr_ebbd28b2
+              - generic [ref=f30e1631]:
+                - link "选题 ↗" [ref=f30e1632] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_5d7812ba/01-topic.md
+                - link "文案 ↗" [ref=f30e1633] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_5d7812ba/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1634] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_5d7812ba/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1635] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/tongxinyuan-c_5d7812ba/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1636]
+            - cell "文案 · 缺失" [ref=f30e1639]
+            - cell "分镜剧本 · 缺失" [ref=f30e1642]
+            - cell "最后样片 · 缺失" [ref=f30e1645]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1648]
+          - row [ref=f30e1649]:
+            - cell "狗大人" [ref=f30e1650]
+            - cell "你换了头像，我在群里就当没认识过你 blocked · tr_ebbd28b2 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1653]:
+              - text: 你换了头像，我在群里就当没认识过你
+              - generic [ref=f30e1654]: blocked · tr_ebbd28b2
+              - generic [ref=f30e1655]:
+                - link "选题 ↗" [ref=f30e1656] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_0e3f196f/01-topic.md
+                - link "文案 ↗" [ref=f30e1657] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_0e3f196f/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1658] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_0e3f196f/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1659] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_0e3f196f/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1660]
+            - cell "文案 · 缺失" [ref=f30e1663]
+            - cell "分镜剧本 · 缺失" [ref=f30e1666]
+            - cell "最后样片 · 缺失" [ref=f30e1669]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1672]
+          - row [ref=f30e1673]:
+            - cell "狗大人" [ref=f30e1674]
+            - cell "它能搜到我狗的名字，搜不到它昨天偷的那半根火腿 blocked · tr_ebbd28b2 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1677]:
+              - text: 它能搜到我狗的名字，搜不到它昨天偷的那半根火腿
+              - generic [ref=f30e1678]: blocked · tr_ebbd28b2
+              - generic [ref=f30e1679]:
+                - link "选题 ↗" [ref=f30e1680] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_18848a16/01-topic.md
+                - link "文案 ↗" [ref=f30e1681] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_18848a16/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1682] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_18848a16/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1683] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/gou-c_18848a16/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1684]
+            - cell "文案 · 缺失" [ref=f30e1687]
+            - cell "分镜剧本 · 缺失" [ref=f30e1690]
+            - cell "最后样片 · 缺失" [ref=f30e1693]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1696]
+          - row [ref=f30e1697]:
+            - cell "文人莫克" [ref=f30e1698]
+            - cell "一方印能证明的，只是这方印 blocked · tr_ebbd28b2 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1701]:
+              - text: 一方印能证明的，只是这方印
+              - generic [ref=f30e1702]: blocked · tr_ebbd28b2
+              - generic [ref=f30e1703]:
+                - link "选题 ↗" [ref=f30e1704] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_f11c6003/01-topic.md
+                - link "文案 ↗" [ref=f30e1705] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_f11c6003/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1706] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_f11c6003/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1707] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_f11c6003/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1708]
+            - cell "文案 · 缺失" [ref=f30e1711]
+            - cell "分镜剧本 · 缺失" [ref=f30e1714]
+            - cell "最后样片 · 缺失" [ref=f30e1717]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1720]
+          - row [ref=f30e1721]:
+            - cell "文人莫克" [ref=f30e1722]
+            - cell "避讳：那个字被让开了，不是不在了 blocked · tr_ebbd28b2 选题 ↗ 文案 ↗ 分镜剧本 ↗ 样片 ↗" [ref=f30e1725]:
+              - text: 避讳：那个字被让开了，不是不在了
+              - generic [ref=f30e1726]: blocked · tr_ebbd28b2
+              - generic [ref=f30e1727]:
+                - link "选题 ↗" [ref=f30e1728] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_807f28ba/01-topic.md
+                - link "文案 ↗" [ref=f30e1729] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_807f28ba/02-copy.md
+                - link "分镜剧本 ↗" [ref=f30e1730] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_807f28ba/03-storyboard.md
+                - link "样片 ↗" [ref=f30e1731] [cursor=pointer]:
+                  - /url: /vault/OPC/交付物/tr_ebbd28b2/wenren-c_807f28ba/05-preview.mp4
+            - cell "选题 · 可查看" [ref=f30e1732]
+            - cell "文案 · 缺失" [ref=f30e1735]
+            - cell "分镜剧本 · 缺失" [ref=f30e1738]
+            - cell "最后样片 · 缺失" [ref=f30e1741]
+            - cell "缺文案；缺分镜剧本；缺最后样片" [ref=f30e1744]
+  - generic [ref=f30e1745]:
+    - generic [ref=f30e1746]:
+      - generic [ref=f30e1747]: 素材库 · 研发资料（点击卡片在新窗口打开）
+      - generic [ref=f30e1748]: —
+    - searchbox "搜索素材" [ref=f30e1750]
+    - generic [ref=f30e1751]: 素材库加载中…
+  - generic [ref=f30e1753]:
+    - generic [ref=f30e1754]:
+      - generic [ref=f30e1755] [cursor=pointer]: 会议纪要
+      - generic [ref=f30e1756] [cursor=pointer]: CEO 日报
+      - generic [ref=f30e1757] [cursor=pointer]: 项目周报
+      - generic [ref=f30e1758] [cursor=pointer]: 风险单
+      - generic [ref=f30e1759] [cursor=pointer]: 热点与知识库
+    - generic [ref=f30e1760]:
+      - generic [ref=f30e1761]:
+        - text: 会议纪要 · Obsidian 归档
+        - link "打开 3D 会议室 ↗" [ref=f30e1762] [cursor=pointer]:
+          - /url: /meeting3d
+      - generic [ref=f30e1763]:
+        - generic [ref=f30e1764]: 2026/11/12 12:22:52 · 8 人参会 · 2 条发言
+        - text: 选题评审会
+        - generic [ref=f30e1765]: 定稿 6 条（每项目 2 条）：文人莫克《旧东西坏的不是它，是配它的那一半》；文人莫克《养老社区试住三天，看的是哪几眼》；狗大人《最贵的那个，给最便宜的那个写方案》；狗大人《冷空气一到，它把我的沙发改成了它的恒温区》；同心圆《它只写方案，动手那一步留给你》；同心圆《一条带辟谣标的通知，先查它从哪来》
+        - link "原始记录 ↗" [ref=f30e1766] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_91b63f0e/meeting-transcript.md
+      - generic [ref=f30e1767]:
+        - generic [ref=f30e1768]: 2026/11/12 12:22:52 · 0 人参会 · 0 条发言
+        - text: 选题评审会议纪要（2026-11-12）
+        - generic [ref=f30e1769]: —
+        - link "原始记录 ↗" [ref=f30e1770] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/tr_f5c02964/meeting-minutes.md
+      - generic [ref=f30e1771]:
+        - generic [ref=f30e1772]: 2026/11/12 12:17:16 · 8 人参会 · 6 条发言
+        - text: 每日选题会
+        - generic [ref=f30e1773]: 每日选题会结束：候选池 16 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+        - link "原始记录 ↗" [ref=f30e1774] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_7d33559d/meeting-transcript.md
+      - generic [ref=f30e1775]:
+        - generic [ref=f30e1776]: 2026/11/12 08:11:14 · 8 人参会 · 2 条发言
+        - text: 选题评审会
+        - generic [ref=f30e1777]: 定稿 6 条（每项目 2 条）：文人莫克《手机上越刷越热的 AI 新闻，跟六十岁的您到底有什么关系》；文人莫克《灯能听懂话，开关还得摸得着》；狗大人《我给它记了半年零食账，它一次都没签过字》；狗大人《剪指甲那十分钟，它正式进入维护状态》；同心圆《一夜涨两千多星的开源件，企业敢不敢直接上线》；同心圆《上线前那份体检单，谁审、谁改、谁签字》
+        - link "原始记录 ↗" [ref=f30e1778] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_efc7def2/meeting-transcript.md
+      - generic [ref=f30e1779]:
+        - generic [ref=f30e1780]: 2026/11/12 08:11:14 · 0 人参会 · 0 条发言
+        - text: 选题评审会议纪要（2026-11-12）
+        - generic [ref=f30e1781]: —
+        - link "原始记录 ↗" [ref=f30e1782] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/tr_ad892190/meeting-minutes.md
+      - generic [ref=f30e1783]:
+        - generic [ref=f30e1784]: 2026/11/12 08:07:17 · 8 人参会 · 6 条发言
+        - text: 每日选题会
+        - generic [ref=f30e1785]: 每日选题会结束：候选池 13 条，CCO 筛出 6 条（每项目 2 条），转入选题评审会定稿。
+        - link "原始记录 ↗" [ref=f30e1786] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_cc0062ec/meeting-transcript.md
+      - generic [ref=f30e1787]:
+        - generic [ref=f30e1788]: 2026/11/12 04:15:48 · 8 人参会 · 2 条发言
+        - text: 选题评审会
+        - generic [ref=f30e1789]: 定稿 6 条（每项目 2 条）：文人莫克《手机上把字调到最大，为什么还是看不清》；文人莫克《入冬第一锅汤，火候在三处》；狗大人《我家的界面是给狗设计的，我只是暂住》；狗大人《它没写过一行文档，需求却从没歧义》；同心圆《GitHub 日榜 2026-11-12 03:05 今日新增最高：meta/astryx（+2,842★，TypeSc》；同心圆《一个分身，全家来问：使用端那份共享，要不要管》
+        - link "原始记录 ↗" [ref=f30e1790] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_e78736dd/meeting-transcript.md
+      - generic [ref=f30e1791]:
+        - generic [ref=f30e1792]: 2026/11/12 04:15:48 · 0 人参会 · 0 条发言
+        - text: 选题评审会议纪要（2026-11-12 第六批）
+        - generic [ref=f30e1793]: —
+        - link "原始记录 ↗" [ref=f30e1794] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/tr_3d922f2e/meeting-minutes.md
+      - generic [ref=f30e1795]:
+        - generic [ref=f30e1796]: 2026/11/12 04:10:32 · 8 人参会 · 6 条发言
+        - text: 每日选题会
+        - generic [ref=f30e1797]: 每日选题会结束：候选池 14 条，CCO 筛出 6 条（每项目 2 条），转入选题评审会定稿。
+        - link "原始记录 ↗" [ref=f30e1798] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_063a4cb0/meeting-transcript.md
+      - generic [ref=f30e1799]:
+        - generic [ref=f30e1800]: 2026/11/10 04:07:57 · 8 人参会 · 2 条发言
+        - text: 选题评审会
+        - generic [ref=f30e1801]: 定稿 6 条（每项目 2 条）：文人莫克《旅居之前，先分三只箱子》；文人莫克《你的网名，被人一键搜出多少个账号：给爸妈的三步数字足迹自查》；狗大人《给狗写简历，特长那一栏我卡了十分钟》；狗大人《家里的音箱最近只听狗的》；同心圆《它答不上来的那一刻，转给谁》；同心圆《数字分身开通前，先查一遍你的账号足迹：可查，但不可留存》
+        - link "原始记录 ↗" [ref=f30e1802] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_178e18c8/meeting-transcript.md
+      - generic [ref=f30e1803]:
+        - generic [ref=f30e1804]: 2026/11/10 04:07:57 · 0 人参会 · 0 条发言
+        - text: 选题评审会议纪要（2026-11-10 · 第二轮）
+        - generic [ref=f30e1805]: —
+        - link "原始记录 ↗" [ref=f30e1806] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/tr_256fb76d/meeting-minutes.md
+      - generic [ref=f30e1807]:
+        - generic [ref=f30e1808]: 2026/11/10 04:06:17 · 8 人参会 · 6 条发言
+        - text: 每日选题会
+        - generic [ref=f30e1809]: 每日选题会结束：候选池 15 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+        - link "原始记录 ↗" [ref=f30e1810] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_45e202c1/meeting-transcript.md
+      - generic [ref=f30e1811]:
+        - generic [ref=f30e1812]: 2026/11/10 02:10:22 · 8 人参会 · 2 条发言
+        - text: 选题评审会
+        - generic [ref=f30e1813]: 定稿 6 条（每项目 2 条）：文人莫克《卫生间先装一根扶手：适老化改造，改的是地面和光》；文人莫克《半斤八两：一句老话里藏着两套秤》；狗大人《400 个站点记得我，我记不住狗的驱虫日期》；狗大人《狗的日更：一根电线杆就是一个站点》；同心圆《GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（》；同心圆《验收那一天，怎么证明它一直按你的口径说话》
+        - link "原始记录 ↗" [ref=f30e1814] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_aaf85cbc/meeting-transcript.md
+      - generic [ref=f30e1815]:
+        - generic [ref=f30e1816]: 2026/11/10 02:10:22 · 0 人参会 · 0 条发言
+        - text: 选题评审会议纪要（2026-11-10）
+        - generic [ref=f30e1817]: —
+        - link "原始记录 ↗" [ref=f30e1818] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/tr_6bb16b6a/meeting-minutes.md
+      - generic [ref=f30e1819]:
+        - generic [ref=f30e1820]: 2026/11/10 02:07:43 · 8 人参会 · 6 条发言
+        - text: 每日选题会
+        - generic [ref=f30e1821]: 每日选题会结束：候选池 15 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+        - link "原始记录 ↗" [ref=f30e1822] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_ee1eb7e5/meeting-transcript.md
+      - generic [ref=f30e1823]:
+        - generic [ref=f30e1824]: 2026/11/10 00:08:47 · 8 人参会 · 2 条发言
+        - text: 选题评审会
+        - generic [ref=f30e1825]: 定稿 6 条（每项目 2 条）：文人莫克《名字一样，人不一样：翻族谱先看字号、生卒、里居这三行》；文人莫克《理发卡里还剩两千八，店换了招牌》；狗大人《给狗排的作息表它执行了三天，第四天它把我从名单里划掉了》；狗大人《我喊十遍它不开灯，我家狗嗷一嗓子就亮了》；同心圆《GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（》；同心圆《《换一家服务商，你的分身带得走吗》》
+        - link "原始记录 ↗" [ref=f30e1826] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_4387bdcf/meeting-transcript.md
+      - generic [ref=f30e1827]:
+        - generic [ref=f30e1828]: 2026/11/10 00:08:47 · 0 人参会 · 0 条发言
+        - text: 选题评审会纪要（2026-11-10 第十一批）
+        - generic [ref=f30e1829]: —
+        - link "原始记录 ↗" [ref=f30e1830] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/tr_1bd1a9e5/meeting-minutes.md
+      - generic [ref=f30e1831]:
+        - generic [ref=f30e1832]: 2026/11/10 00:06:20 · 8 人参会 · 6 条发言
+        - text: 每日选题会
+        - generic [ref=f30e1833]: 每日选题会结束：候选池 16 条，CCO 筛出 9 条（每项目 3 条），转入选题评审会定稿 6 条。
+        - link "原始记录 ↗" [ref=f30e1834] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_fd7edcbc/meeting-transcript.md
+      - generic [ref=f30e1835]:
+        - generic [ref=f30e1836]: 2026/11/9 22:14:30 · 8 人参会 · 2 条发言
+        - text: 选题评审会
+        - generic [ref=f30e1837]: 定稿 6 条（每项目 2 条）：文人莫克《去儿女那座城住一个月，钥匙带不带》；文人莫克《药盒分七天，分的是药，也是谁在替你记》；狗大人《我搜我自己，搜出七个不认识的我》；狗大人《寒潮来了，它比我早知道》；同心圆《GitHub 日榜 2026-11-09 04:05 今日新增最高：sherlock-project/sherlock（》；同心圆《它说的话，要不要挂一块牌子》
+        - link "原始记录 ↗" [ref=f30e1838] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/mt_f651a3b9/meeting-transcript.md
+      - generic [ref=f30e1839]:
+        - generic [ref=f30e1840]: 2026/11/9 22:14:30 · 0 人参会 · 0 条发言
+        - text: 选题评审会纪要（2026-11-09 第十批）
+        - generic [ref=f30e1841]: —
+        - link "原始记录 ↗" [ref=f30e1842] [cursor=pointer]:
+          - /url: /vault/OPC/会议纪要/tr_8a438dc6/meeting-minutes.md
+  - contentinfo [ref=f30e1843]: 原型：零依赖 Conring 内核 · 规则版 17 员工 · 数据源 DEMO/LIVE 同构（同一 envelope）

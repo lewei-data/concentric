@@ -310,6 +310,12 @@ def build(state, health, force_probe=False):
             "localJobsAvailable": jobs_file_ok,
             "localJobs": local_jobs,
             "pipelineRender": render_items,
+            # 尚无出片结果、卡在门禁的内容：这些就是「视频生成环节」当前的实际待办
+            "pendingRender": [
+                {"id": it.get("id") or "", "title": it.get("title") or "",
+                 "stage": it.get("stage") or "", "blockedBy": it.get("blockedBy") or ""}
+                for it in pipeline if it.get("blockedBy")
+            ][-12:],
         },
         "alerts": alerts[:24],
         "actions": {

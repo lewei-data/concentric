@@ -79,6 +79,14 @@
   - [x] SubTask 13.5: `npm run build` + `systemctl restart opc-workbench` + playwright-cli 实测（根路径、`/legacy`、Office/Meeting 3D，控制台 0 报错、侧栏真实数据）
   - [x] SubTask 13.6: 同步 `README.md` 与规格文档（`modules/web.md`、`spec.md`、`checklist.md`）
 
+- [x] Task 14: 首页新增「创意灵感」与「运维监控」两个导航（2026-11-12，运行代码改动）
+  - [x] SubTask 14.1: `prototype/insights.py` 聚合热点线索 / 热点简报角度 / 视频拆解 / 知识库结论 / 评审会定稿，按三类输出，60s 缓存
+  - [x] SubTask 14.2: `prototype/ops_monitor.py` 聚合 `Kernel.snapshot()`、`/api/health`、`media-gen/output/jobs.json` 与 `:9200`/`:9103` 探测，产出任务/视频/告警/待出片
+  - [x] SubTask 14.3: `server.py` 新增 `GET /api/inspiration`、`GET /api/ops` 与仅老板的 `POST /api/ops/recover`（patrol/reload/approve/reject）
+  - [x] SubTask 14.4: `InspirationPage.tsx`、`OpsPage.tsx` 两页 + 顶栏入口 + 路由 + 响应式样式；两页订阅 SSE 并轮询兜底
+  - [x] SubTask 14.5: `py_compile` + `npm run build` + 重启服务 + playwright-cli 实测（两页真实数据、筛选、展开、热加载动作、0 控制台报错）
+  - [x] SubTask 14.6: 同步 `README.md`、`modules/web.md`、`modules/prototype-server.md`、`spec.md`、`checklist.md`
+
 # Task Dependencies
 
 - Task 9 依赖 Task 1~8
@@ -86,3 +94,4 @@
 - Task 11 依赖 Task 1~10（复用已核实的系统级事实，避免重复取证）
 - Task 12 依赖 Task 11 的 `modules/web.md`；仅改规格文档，不改运行代码
 - Task 13 依赖 Task 12 的 web 契约；改运行代码，需构建与重启服务后实测
+- Task 14 依赖 Task 13 的顶栏与路由结构；新增两个后端聚合模块与两个前端页面，需构建、重启与浏览器实测

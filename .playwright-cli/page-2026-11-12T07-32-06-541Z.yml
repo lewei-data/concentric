@@ -1,0 +1,9 @@
+- generic [ref=e4]:
+  - heading "登录工作台" [level=1] [ref=e5]
+  - generic [ref=e6]:
+    - generic [ref=e7]: 账号
+    - textbox "账号" [ref=e8]
+  - generic [ref=e9]:
+    - generic [ref=e10]: 密码
+    - textbox "密码" [ref=e11]
+  - button "登录" [ref=e12] [cursor=pointer]
