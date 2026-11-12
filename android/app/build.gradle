@@ -8,8 +8,8 @@ import java.util.Properties
 // 版本号：唯一来源。APK 文件名、dist 交付物、README 都引用这里的值。
 // 升级版本只改这两行即可，无需改动任何脚本或 CI。
 // ---------------------------------------------------------------------------
-def appVersionName = "0.11.4"
-def appVersionCode = 41
+def appVersionName = "0.11.5"
+def appVersionCode = 42
 def apkPrefix = "voice-mcp-v${appVersionName}-b${appVersionCode}"
 
 // release 签名（供内部自测安装）：

@@ -101,6 +101,27 @@ type NodeMonitor = {
   nodes: MonitorNode[];
   history: NodeTrendPoint[];
 };
+type LlmModel = {
+  id: string;
+  name: string;
+  url: string;
+  protocol: string;
+  status: "enabled" | "disabled" | "exhausted" | string;
+  totalTokens: number;
+  usedTokens: number;
+  availableTokens: number; // -1 表示不限额
+  note: string;
+  updatedAt: string;
+  updatedBy: string;
+};
+type LlmView = {
+  available: boolean;
+  error?: string;
+  models: LlmModel[];
+  enabled?: number;
+  exhausted?: number;
+  disabled?: number;
+};
 type OpsData = {
   ok: boolean;
   generatedAt?: string;
@@ -133,6 +154,7 @@ type OpsData = {
     manualOnly: string;
   };
   nodes?: NodeMonitor;
+  llm?: LlmView;
   notes?: string[];
 };
 
@@ -172,7 +194,19 @@ const STATUS_CN: Record<string, string> = {
   succeeded: "成功", failed: "失败", running: "执行中", queued: "排队中",
   interrupted: "已中断", unknown: "未知", ok: "通过", pending: "待出片",
   timeout: "审批超时", completed: "已完成", aborted: "已熔断",
+  enabled: "启用", disabled: "已停用", exhausted: "额度耗尽",
 };
+
+const LLM_STATUS_CN: Record<string, string> = {
+  enabled: "启用", disabled: "已停用", exhausted: "额度耗尽",
+};
+
+function fmtTokens(n?: number | null) {
+  const v = Math.max(0, Math.floor(n || 0));
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(v % 1_000_000 ? 1 : 0)}M`;
+  if (v >= 1000) return `${(v / 1000).toFixed(v % 1000 ? 1 : 0)}k`;
+  return String(v);
+}
 
 const LEVEL_CN: Record<string, string> = { critical: "严重", warning: "告警", info: "提示" };
 
@@ -252,8 +286,64 @@ export function OpsPage() {
     }
   };
 
+  const llmSwitch = async (m: LlmModel, nextStatus: "enabled" | "disabled", confirmText?: string) => {
+    if (confirmText && !window.confirm(confirmText)) return;
+    setBusy(`llm:${m.id}`);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/ops/llm", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_status", id: m.id, status: nextStatus }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string; reason?: string };
+      if (!res.ok || !body.ok) throw new Error(body.reason || body.error || `HTTP ${res.status}`);
+      setFeedback({ ok: true, text: `${m.name} 已${nextStatus === "enabled" ? "启用" : "停用"}` });
+      await load();
+    } catch (e) {
+      setFeedback({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const llmQuota = async (m: LlmModel) => {
+    const current = m.totalTokens > 0 ? String(m.totalTokens) : "0";
+    const input = window.prompt(
+      `调整 ${m.name} 的总 token 额度（已用 ${fmtTokens(m.usedTokens)}；0 表示不限额）：`,
+      current,
+    );
+    if (input === null) return;
+    const n = Number(input.replace(/[,_\s]/g, ""));
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      setFeedback({ ok: false, text: "额度必须是 ≥0 的整数（0 表示不限额）" });
+      return;
+    }
+    setBusy(`llm:${m.id}`);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/ops/llm", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", id: m.id, totalTokens: n }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string; reason?: string };
+      if (!res.ok || !body.ok) throw new Error(body.reason || body.error || `HTTP ${res.status}`);
+      setFeedback({ ok: true, text: `${m.name} 总额度已调整为 ${n === 0 ? "不限" : fmtTokens(n)}` });
+      await load();
+    } catch (e) {
+      setFeedback({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy("");
+    }
+  };
+
   const service = data?.service;
   const stats = data?.stats || {};
+  const llm = data?.llm;
+  const llmModels = llm?.models || [];
   const alerts = data?.alerts || [];
   const services = data?.video?.services || [];
   const jobs = data?.video?.localJobs || [];
@@ -324,6 +414,121 @@ export function OpsPage() {
           <b>{stats.mediaJobs ?? "-"}</b>
           <small>失败 {stats.mediaJobsFailed ?? "-"} · 滞留 {stats.mediaJobsStuck ?? "-"}</small>
         </div>
+      </section>
+
+      <section className="ops-card" aria-label="大模型开关">
+        <h2>
+          大模型开关 <small className="muted">（CTO 运维控制 · 过程库 llm_models · 调用前检查）</small>
+        </h2>
+        {!llm?.available ? (
+          <p className="muted">{llm?.error || "大模型注册表暂不可用。"}</p>
+        ) : (
+          <>
+            <div className="node-summary">
+              <div><b>{llmModels.length}</b><small>登记模型</small></div>
+              <div><b className={llm.enabled ? "ok-text" : "ops-bad"}>{llm.enabled ?? 0}</b><small>启用中</small></div>
+              <div><b className={llm.exhausted ? "ops-bad" : ""}>{llm.exhausted ?? 0}</b><small>额度耗尽</small></div>
+              <div><b className={llm.disabled ? "ops-bad" : ""}>{llm.disabled ?? 0}</b><small>已停用</small></div>
+            </div>
+            <div className="table-wrap">
+              <table className="table ops-table">
+                <thead>
+                  <tr>
+                    <th>模型</th><th>协议</th><th>URL</th>
+                    <th>可用 / 总 token</th><th>状态</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {llmModels.map((m) => {
+                    const limited = m.totalTokens > 0;
+                    const pct = limited ? Math.min(100, (m.usedTokens / m.totalTokens) * 100) : 0;
+                    return (
+                      <tr key={m.id}>
+                        <td>
+                          <b>{m.name}</b>
+                          {m.note && <small className="muted"> · {m.note}</small>}
+                        </td>
+                        <td className="mono">{m.protocol || "—"}</td>
+                        <td className="mono ops-error">{m.url || "—"}</td>
+                        <td>
+                          {limited ? (
+                            <>
+                              <span className={m.availableTokens <= 0 ? "ops-bad" : undefined}>
+                                {fmtTokens(m.availableTokens)}
+                              </span>
+                              {" / "}{fmtTokens(m.totalTokens)}
+                              <span className="llm-quota-bar" title={`已用 ${m.usedTokens} / ${m.totalTokens}`}>
+                                <i style={{ width: `${pct}%` }} />
+                              </span>
+                              <small className="muted">已用 {fmtTokens(m.usedTokens)}</small>
+                            </>
+                          ) : (
+                            <>
+                              不限额
+                              <small className="muted"> · 已用 {fmtTokens(m.usedTokens)}</small>
+                            </>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            className={`ops-pill ${m.status === "enabled" ? "ok" : m.status === "exhausted" ? "bad" : "warn"}`}
+                          >
+                            {LLM_STATUS_CN[m.status] || m.status}
+                          </span>
+                          <small className="muted"> {shortTime(m.updatedAt)} · {m.updatedBy || "—"}</small>
+                        </td>
+                        <td className="nowrap">
+                          {m.status === "enabled" ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost ops-mini-btn"
+                              disabled={!!busy}
+                              onClick={() => void llmSwitch(
+                                m, "disabled",
+                                `确认停用模型 ${m.name}？停用后 Hermes 所有调用将被拦截并降级为规则模式。`,
+                              )}
+                            >
+                              {busy === `llm:${m.id}` ? "处理中…" : "停用"}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-ghost ops-mini-btn"
+                              disabled={!!busy}
+                              onClick={() => void llmSwitch(
+                                m, "enabled",
+                                m.status === "exhausted"
+                                  ? `${m.name} 额度仍为耗尽状态，启用后调用仍会被拦截。建议先调整总额度再启用。仍要启用？`
+                                  : `确认启用模型 ${m.name}？`,
+                              )}
+                            >
+                              {busy === `llm:${m.id}` ? "处理中…" : "启用"}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn btn-ghost ops-mini-btn"
+                            disabled={!!busy}
+                            onClick={() => void llmQuota(m)}
+                          >
+                            调整额度
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!llmModels.length && (
+                    <tr><td colSpan={6} className="muted">尚未登记任何模型（重启主服务后会写入默认模型）。</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="muted ops-hint">
+              Hermes 每次发起调用前检查此处状态：已停用或额度耗尽的模型会被拦截并降级为规则模式；
+              调用成功后按实际用量扣减额度，耗尽时自动标记「额度耗尽」。调整总 token 额度后若额度恢复充足会自动恢复「启用」。
+            </p>
+          </>
+        )}
       </section>
 
       <section className="ops-card ops-nodes" aria-label="节点监控">

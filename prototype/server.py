@@ -49,6 +49,26 @@ TIMEOUT = int(os.environ.get("OPC_HERMES_TIMEOUT", "600"))
 WORKERS = int(os.environ.get("OPC_HERMES_WORKERS", "6"))
 APPROVAL_TIMEOUT = int(os.environ.get("OPC_APPROVAL_TIMEOUT", "600"))
 MODEL = os.environ.get("OPC_HERMES_MODEL", "deepseek-v4.1-flash")
+# 大模型注册表（llm_models 表）的内置初始条目：仅在表为空时写入，之后以库里/CTO 修改为准
+LLM_DEFAULTS = [
+    {
+        "id": "hermes-default",
+        "name": MODEL,
+        "url": os.environ.get("OPC_LLM_BASE_URL", ""),
+        "protocol": os.environ.get("OPC_LLM_PROTOCOL", "hermes-cli"),
+        "totalTokens": int(os.environ.get("OPC_LLM_TOTAL_TOKENS", "20000000")),
+        "note": "默认模型（Hermes CLI 调用）",
+    },
+    {
+        # 本地推理通道（llama.cpp，OpenAI 兼容）：无时间要求任务的优先通道，纯 CPU 约 4.4 tok/s
+        "id": "qwen38-local",
+        "name": "qwen3.8-flash-next",
+        "url": os.environ.get("OPC_LLM_LOCAL_BASE_URL", "http://192.168.21.208:8080/v1"),
+        "protocol": "openai-chat",
+        "totalTokens": int(os.environ.get("OPC_LLM_LOCAL_TOTAL_TOKENS", "0")),   # 本地推理，0=不限额
+        "note": "本地推理通道（llama.cpp @ 192.168.21.208:8080，慢速，适合无实时性要求任务）",
+    },
+]
 # CTO 成本护栏：单轮 trace 累计 / 单次调用 token 上限；金额阈值默认关闭（0=不启用）
 # 标定依据（2026-11-07 实测，hermes --usage-file 的 total_including_auxiliary.total_tokens）：
 #   单次员工调用（含工具轮次）约 7k–650k；选题阶段约 2.6M；一轮完整编排实测 12.4M（含返工）。
@@ -782,6 +802,45 @@ def _org_validate_config(text):
     return True
 
 
+def _llm_store():
+    """过程库单例（llm_models 所在）；未启用时返回 None。"""
+    return DBX.store() if DBX else None
+
+
+def _llm_consume(model, tokens):
+    """调用成功后把本次 token 用量记到大模型注册表（扣额度/自动熔断）。"""
+    st = _llm_store()
+    if st:
+        st.llm_consume(model, tokens)
+
+
+def _llm_view():
+    """大模型注册表视图（运维页 /api/ops）：camelCase + 汇总。"""
+    st = _llm_store()
+    if not st:
+        return {"available": False, "error": "过程库未启用（OPC_DB=0），大模型注册表不可用",
+                "models": []}
+    models = []
+    for r in st.llm_models():
+        total, used = _to_int(r.get("total_tokens"), 0), _to_int(r.get("used_tokens"), 0)
+        models.append({
+            "id": r.get("id") or "", "name": r.get("name") or "",
+            "url": r.get("url") or "", "protocol": r.get("protocol") or "",
+            "status": r.get("status") or "enabled",
+            "totalTokens": total, "usedTokens": used,
+            "availableTokens": (total - used) if total > 0 else -1,   # -1 = 不限额
+            "note": r.get("note") or "",
+            "updatedAt": r.get("updated_at") or "", "updatedBy": r.get("updated_by") or "",
+        })
+    return {
+        "available": True,
+        "models": models,
+        "enabled": sum(1 for m in models if m["status"] == "enabled"),
+        "exhausted": sum(1 for m in models if m["status"] == "exhausted"),
+        "disabled": sum(1 for m in models if m["status"] == "disabled"),
+    }
+
+
 class HermesAdapter:
     """把一名员工的活交给真实 Hermes 一次性会话，并强约束 JSON 输出。"""
 
@@ -839,6 +898,16 @@ class HermesAdapter:
     def ask(self, agent, task, context="", extra="", schema=None):
         if not self.available():
             return None, {"engine": "rule", "latencyMs": 0, "profile": agent["id"], "usage": {}}
+        # 大模型开关：停用 / 额度耗尽的模型不允许发起调用（CTO 在运维页控制）
+        st = _llm_store()
+        if st:
+            gate_ok, gate_reason = st.llm_gate(MODEL)
+            if not gate_ok:
+                with self.lock:
+                    self.failures += 1
+                print(f"[hermes] {agent['id']} 调用被拦截：{gate_reason}", flush=True)
+                return None, {"engine": "rule", "reason": gate_reason, "llmBlocked": True,
+                              "profile": agent["id"], "latencyMs": 0, "usage": {}}
         p = self.prompt(agent, task, context, extra, schema)
         t0 = time.time()
         reason = ""
@@ -854,6 +923,8 @@ class HermesAdapter:
                                       capture_output=True, text=True, timeout=TIMEOUT, env=env)
                 raw = (proc.stdout or "").strip()
                 usage = self._read_usage(usage_path)
+                if usage.get("totalTokens"):
+                    _llm_consume(MODEL, usage.get("totalTokens"))   # 扣减注册表额度
                 data = self._extract(raw)
                 ms = int((time.time() - t0) * 1000)
                 with self.lock:
@@ -1062,6 +1133,7 @@ class Kernel:
         if self.db:
             try:
                 self.db.run_start(self._run_id, os.getpid(), MODEL)
+                self.db.llm_seed(LLM_DEFAULTS)   # llm_models 空表时写入内置模型条目
                 self.db.chat_upsert_thread("web:workbench", "web", "工作台 · 老板指令",
                                            [{"id": "owner", "name": "老板"}],
                                            self.startedAt, self.startedAt)
@@ -4048,7 +4120,8 @@ class Handler(BaseHTTPRequestHandler):
                 health = {"ok": True, "version": "3.0", "engine": MODE,
                           "hermes": HERMES.stats(), "time": iso_now()}
                 return self._json(ops_monitor.build(KERNEL.snapshot(), health,
-                                                    runs=KERNEL.pipeline_runs_view()))
+                                                    runs=KERNEL.pipeline_runs_view(),
+                                                    llm=_llm_view()))
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/events":
@@ -4440,6 +4513,34 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **KERNEL.reload_config()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
+        # ---------- 大模型开关：CTO 运维控制（仅老板） ----------
+        if path == "/api/ops/llm":
+            if user.get("role") != "老板":
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅老板可修改大模型开关与额度"}, 403)
+            st = _llm_store()
+            if not st:
+                return self._json({"ok": False, "error": "过程库未启用，无法修改大模型配置"}, 503)
+            mid = str(body.get("id") or "")
+            action = str(body.get("action") or "set_status")
+            who = user.get("name") or user.get("user") or ""
+            if action == "set_status":
+                status = str(body.get("status") or "")
+                if status not in ("enabled", "disabled"):
+                    return self._json({"ok": False, "error": "invalid status",
+                                       "expected": "enabled|disabled"}, 400)
+                if not st.llm_set_status(mid, status, who):
+                    return self._json({"ok": False, "error": "模型不存在或更新失败"}, 404)
+            elif action == "update":
+                fields = {k: body[k] for k in ("name", "url", "protocol", "note", "totalTokens")
+                          if k in body}
+                if not st.llm_update(mid, fields, who):
+                    return self._json({"ok": False, "error": "模型不存在或无可更新字段"}, 404)
+            else:
+                return self._json({"ok": False, "error": "invalid action",
+                                   "expected": "set_status|update"}, 400)
+            return self._json({"ok": True, "action": action, "llm": _llm_view(),
+                               "by": who, "at": iso_now()})
         # ---------- CTO 运维处置：把巡检派单 / 热加载 / 审批收敛到一处（仅老板） ----------
         if path == "/api/ops/recover":
             if user.get("role") != "老板":

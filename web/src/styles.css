@@ -2626,6 +2626,25 @@ a:hover {
 .ops-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .ops-hint { margin: 8px 0 0; font-size: 11.5px; line-height: 1.55; }
 
+/* 大模型开关：额度用量条（表格内联，宽度随使用率变化） */
+.llm-quota-bar {
+  display: inline-block;
+  width: 72px;
+  height: 6px;
+  margin: 0 6px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.llm-quota-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--ok, #22a06b);
+}
+
+
 .ops-approval {
   display: flex;
   align-items: center;

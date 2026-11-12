@@ -272,6 +272,22 @@ CREATE TABLE IF NOT EXISTS ingest_cursor (
   updated_at TEXT,
   PRIMARY KEY(source, table_name)
 );
+
+-- ---------- 大模型注册表：系统可用模型配置与 token 额度（CTO 运维开关） ----------
+-- status: enabled（启用）/ disabled（停用）/ exhausted（额度耗尽，自动标记）
+-- total_tokens=0 表示不限额；可用 = total - used
+CREATE TABLE IF NOT EXISTS llm_models (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  url          TEXT,
+  protocol     TEXT,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  used_tokens  INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL DEFAULT 'enabled',
+  note         TEXT,
+  updated_at   TEXT,
+  updated_by   TEXT
+);
 """
 
 
@@ -634,6 +650,142 @@ class Store:
         """某 trace 已登记发布的内容单 id 集合（幂等判重）。"""
         rows = self._rows("SELECT item_id FROM release_ledger WHERE trace_id=?", (trace_id,))
         return {r.get("item_id") for r in rows if r.get("item_id")}
+
+    # ---------- 大模型注册表（CTO 运维开关） ----------
+    def llm_seed(self, defaults):
+        """llm_models 表为空时写入内置模型条目；已登记过则不动（保留 CTO 的修改）。
+
+        额度从部署时起算（used_tokens=0），不回填 token_usage 历史——历史是"所有模型"
+        的累计消耗，回填会让新注册表一上线就被判额度耗尽。
+        """
+        with self._lock:
+            try:
+                row = self._conn.execute("SELECT COUNT(*) FROM llm_models").fetchone()
+                if row and row[0]:
+                    return
+                for m in defaults:
+                    self._conn.execute(
+                        """INSERT INTO llm_models(id,name,url,protocol,total_tokens,used_tokens,
+                           status,note,updated_at) VALUES(?,?,?,?,?,?,?,?,?)""",
+                        (m["id"], m["name"], m.get("url") or "", m.get("protocol") or "",
+                         _int(m.get("totalTokens")), 0, m.get("status") or "enabled",
+                         m.get("note") or "", now_iso()))
+                self._conn.commit()
+                _log(f"llm_models 初始化完成（{len(defaults)} 条，额度从部署时起算）")
+            except sqlite3.Error as e:
+                _log(f"llm_seed 失败：{e}")
+
+    def llm_models(self):
+        """全部模型配置行（含可用额度换算）。"""
+        rows = self._rows("SELECT * FROM llm_models ORDER BY id")
+        for r in rows:
+            total, used = _int(r.get("total_tokens")), _int(r.get("used_tokens"))
+            if total > 0 and used >= total and r.get("status") == "enabled":
+                r["status"] = "exhausted"   # 展示层兜底：额度耗尽但状态未标
+        return rows
+
+    def llm_gate(self, model_name):
+        """Hermes 调用前检查：模型已停用或额度耗尽时拦截。返回 (放行, 原因)。"""
+        try:
+            rows = self._rows("SELECT * FROM llm_models WHERE name=? OR id=? LIMIT 1",
+                              (model_name, model_name))
+            if not rows:
+                return True, ""     # 未登记的模型不拦截（向后兼容）
+            m = rows[0]
+            status = str(m.get("status") or "enabled")
+            total, used = _int(m.get("total_tokens")), _int(m.get("used_tokens"))
+            if status == "disabled":
+                return False, f"模型 {m['name']} 已被停用（CTO 运维开关）"
+            if status == "exhausted" or (total > 0 and used >= total):
+                if status != "exhausted":
+                    self.llm_set_status(m["id"], "exhausted", "system")
+                return False, (f"模型 {m['name']} token 额度已耗尽"
+                               f"（已用 {used} / 总额 {total or '不限'}），需 CTO 追加额度后恢复")
+            return True, ""
+        except Exception as e:
+            _log(f"llm_gate 失败（放行）：{type(e).__name__}: {e}")
+            return True, ""         # 注册表自身故障不阻断业务
+
+    def llm_consume(self, model_name, tokens):
+        """调用成功后扣减额度（同步写，不进缓冲）；达到上限自动标记 exhausted。"""
+        tokens = _int(tokens)
+        if tokens <= 0:
+            return
+        with self._lock:
+            try:
+                row = self._conn.execute(
+                    "SELECT id,total_tokens,used_tokens FROM llm_models WHERE name=? OR id=? LIMIT 1",
+                    (model_name, model_name)).fetchone()
+                if row is None:
+                    return
+                total, used = _int(row["total_tokens"]), _int(row["used_tokens"])
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE llm_models SET used_tokens=used_tokens+?, updated_at=? WHERE id=?",
+                        (tokens, now_iso(), row["id"]))
+                    if total > 0 and used + tokens >= total:
+                        self._conn.execute(
+                            "UPDATE llm_models SET status='exhausted', updated_at=?, updated_by='system' "
+                            "WHERE id=?", (now_iso(), row["id"]))
+                        _log(f"llm_models：{row['id']} 额度耗尽（{used + tokens}/{total}），已自动停止调用")
+            except sqlite3.Error as e:
+                _log(f"llm_consume 失败：{e}")
+
+    def llm_set_status(self, model_id, status, by=""):
+        """手动改开关状态：enabled / disabled / exhausted（CTO 或系统）。"""
+        if status not in ("enabled", "disabled", "exhausted"):
+            return False
+        with self._lock:
+            try:
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE llm_models SET status=?, updated_at=?, updated_by=? WHERE id=?",
+                        (status, now_iso(), by or "system", model_id))
+                return True
+            except sqlite3.Error as e:
+                _log(f"llm_set_status 失败：{e}")
+                return False
+
+    def llm_update(self, model_id, fields, by=""):
+        """CTO 编辑模型配置（name/url/protocol/note/totalTokens）；额度变化联动状态：
+        改后已用 ≥ 总额 → exhausted；原 exhausted 且额度恢复足够 → enabled。"""
+        with self._lock:
+            try:
+                sets, params = [], []
+                for key, col in (("name", "name"), ("url", "url"),
+                                 ("protocol", "protocol"), ("note", "note")):
+                    if key in fields:
+                        sets.append(f"{col}=?")
+                        params.append(str(fields.get(key) or ""))
+                if fields.get("totalTokens") is not None:
+                    sets.append("total_tokens=?")
+                    params.append(_int(fields.get("totalTokens")))
+                if not sets:
+                    return False
+                sets += ["updated_at=?", "updated_by=?"]
+                params += [now_iso(), by or "system", model_id]
+                with self._conn:
+                    self._conn.execute(f"UPDATE llm_models SET {', '.join(sets)} WHERE id=?", params)
+                    row = self._conn.execute(
+                        "SELECT total_tokens,used_tokens,status FROM llm_models WHERE id=?",
+                        (model_id,)).fetchone()
+                    if row is not None:
+                        total, used, status = (_int(row["total_tokens"]), _int(row["used_tokens"]),
+                                               str(row["status"] or "enabled"))
+                        if total > 0 and used >= total:
+                            new_status = "exhausted"
+                        elif status == "exhausted":
+                            new_status = "enabled"   # 追加额度后自动恢复
+                        else:
+                            new_status = None
+                        if new_status and new_status != status:
+                            self._conn.execute("UPDATE llm_models SET status=?, updated_by='system' "
+                                               "WHERE id=?", (new_status, model_id))
+                return True
+            except sqlite3.Error as e:
+                _log(f"llm_update 失败：{e}")
+                return False
+
 
     def approval_for(self, trace_id, action):
         """取某 trace 指定动作的最新审批单（含已决状态），用于重启后幂等复用。"""

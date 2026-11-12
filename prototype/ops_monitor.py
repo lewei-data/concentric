@@ -350,8 +350,9 @@ def _render_view(pipeline):
     return out[-20:]
 
 
-def build(state, health, force_probe=False, runs=None):
-    """返回 /api/ops 的响应体；state 为 Kernel.snapshot()，runs 为流水线运行记录。"""
+def build(state, health, force_probe=False, runs=None, llm=None):
+    """返回 /api/ops 的响应体；state 为 Kernel.snapshot()，runs 为流水线运行记录，
+    llm 为大模型注册表视图（server._llm_view()）。"""
     state = state or {}
     runs = runs or []
     break_runs = [r for r in runs if r.get("status") in ("interrupted", "timeout")]
@@ -493,6 +494,26 @@ def build(state, health, force_probe=False, runs=None):
             "source": "/api/reports?kind=incident", "at": r.get("createdAt") or "",
             "action": "阅读结论后决定是否需要巡检派单",
         })
+    # 大模型注册表：停用 / 额度耗尽的模型会直接拦截 Hermes 调用，必须醒目提示
+    llm = llm or {}
+    for m in llm.get("models") or []:
+        status = str(m.get("status") or "enabled")
+        if status == "enabled":
+            continue
+        avail = m.get("availableTokens")
+        avail_txt = "不限" if avail == -1 else f"{avail or 0}"
+        alerts.append({
+            "id": f"llm-{m.get('id')}", "level": "critical" if status == "exhausted" else "warning",
+            "title": (f"大模型额度耗尽：{m.get('name')}" if status == "exhausted"
+                      else f"大模型已停用：{m.get('name')}"),
+            "detail": (f"可用 token {avail_txt}（已用 {m.get('usedTokens') or 0}"
+                       f" / 总额 {m.get('totalTokens') or '不限'}）"
+                       f" · 最后变更 {m.get('updatedAt') or '—'}（{m.get('updatedBy') or '—'}）"),
+            "source": "过程库 llm_models", "at": m.get("updatedAt") or "",
+            "action": ("在「大模型开关」追加总 token 额度即可自动恢复调用"
+                       if status == "exhausted"
+                       else "在「大模型开关」重新启用，否则 Hermes 调用将全部降级为规则模式"),
+        })
     order = {"critical": 0, "warning": 1, "info": 2}
     alerts.sort(key=lambda x: order.get(x.get("level"), 9))
 
@@ -530,6 +551,10 @@ def build(state, health, force_probe=False, runs=None):
             "nodesFailed": (node_view.get("summary") or {}).get("failed", 0),
             "runsTotal": len(runs),
             "runsInterrupted": len(break_runs),
+            "llmTotal": len(llm.get("models") or []),
+            "llmEnabled": llm.get("enabled") or 0,
+            "llmExhausted": llm.get("exhausted") or 0,
+            "llmDisabled": llm.get("disabled") or 0,
         },
         "runs": runs,
         "pipeline": {
@@ -556,6 +581,7 @@ def build(state, health, force_probe=False, runs=None):
             ][-12:],
         },
         "nodes": node_view,
+        "llm": llm if llm else {"available": False, "models": []},
         "alerts": alerts[:24],
         "actions": {
             "pendingApprovals": [{"id": a.get("id"), "title": a.get("title"),
@@ -573,6 +599,7 @@ def build(state, health, force_probe=False, runs=None):
         },
         "notes": [
             "主服务状态来自 /api/state 与 /api/health；Hermes 统计、成本与流水线均为内存态，重启后归零。",
+            "大模型注册表来自过程库 llm_models 表：Hermes 每次调用前检查开关与额度，成功后按实际用量扣减；额度耗尽自动停用，CTO 追加总额度后自动恢复。",
             "视频任务视图 = 主流水线 render 结果 + media-gen/output/jobs.json 落盘任务；媒体服务在线时额外探测其任务队列。",
             "媒体引擎 :9200 与 media-gen :9103 为独立服务，离线时仍展示历史任务并给出告警。",
             "节点监控来自 CTO 节点台账 ops/nodes.db（SQLite）：ops-patrol-30m 每 30 分钟执行 opsctl.py check，写入 nodes / services / checks / patrols；页面只读展示，不触发巡检。",
