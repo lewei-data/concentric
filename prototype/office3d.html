@@ -1568,14 +1568,15 @@ function updateHud() {
 }
 
 /* ================= 会议室大屏：交付进度板 + 跑马灯 ================= */
-const S_STAGE_CN = { topic: '选题', copy: '文案', video: '分镜成片', review: '审核',
+const S_STAGE_CN = { topic: '选题', copy: '文案', sample: '样片', final: '定版', review: '审核',
                      approved: '待审批', published: '已发布', archived: '已归档', blocked: '已阻断' };
-const S_STAGE_ORDER = ['topic', 'copy', 'video', 'review', 'approved', 'published', 'archived'];
-const S_STAGE_TONE = { topic: '#60A5FA', copy: '#818CF8', video: '#A78BFA', review: '#FBBF24',
-                       approved: '#34D399', published: '#22D3EE', archived: '#94A3B8', blocked: '#F87171' };
+const S_STAGE_ORDER = ['topic', 'copy', 'sample', 'final', 'review', 'approved', 'published', 'archived'];
+const S_STAGE_TONE = { topic: '#60A5FA', copy: '#818CF8', sample: '#A78BFA', final: '#C084FC',
+                       review: '#FBBF24', approved: '#34D399', published: '#22D3EE',
+                       archived: '#94A3B8', blocked: '#F87171' };
 const S_PROJECT_TONE = { wenren: '#3B82F6', gou: '#F97316', tongxinyuan: '#8B5CF6' };
-const S_ACTIVE_STAGES = new Set(['topic', 'copy', 'video', 'review', 'approved']);
-const S_DELIVERY_STAGES = new Set(['topic', 'copy', 'video', 'approved', 'published', 'archived']);
+const S_ACTIVE_STAGES = new Set(['topic', 'copy', 'sample', 'final', 'review', 'approved']);
+const S_DELIVERY_STAGES = new Set(['topic', 'copy', 'sample', 'final', 'approved', 'published', 'archived']);
 const S_FONT = '"PingFang SC","Microsoft YaHei",sans-serif';
 const SLOGAN_CN = '同心同频　共谱华章';
 

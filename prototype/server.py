@@ -986,6 +986,30 @@ class PipelineContext:
         self.pending = []                 # 已挂起的发布审批
         self.pub_ctx = ""                 # 发布结论（归档/汇报引用）
 
+    # 断点续跑用的快照字段：只放阶段间真正需要的状态，set 序列化成 list
+    STATE_FIELDS = ("selected", "final", "eliminated", "pool_size", "meeting_doc",
+                    "participants", "conclusion", "review_ids", "passed_items",
+                    "review_history", "pending", "pub_ctx")
+
+    def to_state(self):
+        """阶段边界快照：进程重启后据此恢复上下文（至少一次语义，重跑当前阶段）。"""
+        out = {k: getattr(self, k) for k in self.STATE_FIELDS}
+        out["items"] = self.items
+        out["render_blocked"] = sorted(self.render_blocked)
+        out["sample_blocked"] = sorted(self.sample_blocked)
+        return out
+
+    def load_state(self, state):
+        """把快照写回上下文；缺失字段保留默认值，避免旧数据缺列直接报错。"""
+        for k in self.STATE_FIELDS:
+            if k in state:
+                setattr(self, k, state[k])
+        if isinstance(state.get("items"), dict):
+            self.items = state["items"]
+        self.render_blocked = set(state.get("render_blocked") or [])
+        self.sample_blocked = set(state.get("sample_blocked") or [])
+        return self
+
 
 class Kernel:
     def __init__(self):
@@ -1050,6 +1074,131 @@ class Kernel:
                 print(f"[boot] 消息摄取启动失败：{type(e).__name__}: {e}", flush=True)
         self._sync_stop = threading.Event()
         threading.Thread(target=self._background_sync, daemon=True).start()
+        # 审批超时巡检：进程内等待由 ev.wait 兜底，这里补上「重启后无人等待」的遗留 pending 单
+        self._sweep_stop = threading.Event()
+        threading.Thread(target=self._approval_sweeper, daemon=True).start()
+        self._restore_pending_approvals()
+        self._mark_interrupted_runs()
+
+    # ---------- 运行态：审批巡检 / 断点续跑 ----------
+    def _approval_sweeper(self):
+        """每 15 秒巡检一次 pending 审批，超时自动挂起并唤醒等待方。"""
+        while not self._sweep_stop.wait(15):
+            try:
+                self._sweep_approvals()
+            except Exception as e:
+                print(f"[approval] 超时巡检异常：{type(e).__name__}: {e}", flush=True)
+
+    def _sweep_approvals(self):
+        now = datetime.now(TZ)
+        expired = []
+        with self.lock:
+            for a in self.approvals:
+                if a.get("status") != "pending":
+                    continue
+                try:
+                    created = datetime.fromisoformat(a.get("createdAt") or "")
+                except (TypeError, ValueError):
+                    continue
+                limit = a.get("timeoutSec") or APPROVAL_TIMEOUT
+                if (now - created).total_seconds() < limit:
+                    continue
+                a["status"] = "timeout"
+                a["decidedAt"] = iso_now()
+                a["timeoutReason"] = f"等待老板审批超过 {limit}s，已按挂起处理（巡检）"
+                expired.append(a)
+        for a in expired:
+            self.emit("approval", a.get("traceId", ""), a)
+            ev = self.approval_events.get(a["id"])
+            if ev:
+                ev.set()
+            self.send("escalation", "ceo", "owner", a.get("traceId", ""),
+                      {"text": f"审批超时挂起：{a.get('title') or a.get('action')}"}, priority=2)
+
+    def _restore_pending_approvals(self):
+        """重启后把库里仍 pending 的审批单拉回内存，老板打开工作台就能看到待办。"""
+        if not self.db:
+            return
+        try:
+            rows = self.db.approvals_pending()
+        except Exception as e:
+            print(f"[boot] 读取待审批失败：{type(e).__name__}: {e}", flush=True)
+            return
+        known = {a.get("id") for a in self.approvals}
+        added = 0
+        for row in rows:
+            try:
+                raw = json.loads(row.get("raw") or "{}")
+            except ValueError:
+                raw = {}
+            raw.setdefault("id", row.get("id"))
+            raw.setdefault("traceId", row.get("trace_id"))
+            raw.setdefault("action", row.get("action"))
+            raw.setdefault("status", "pending")
+            raw.setdefault("createdAt", row.get("created_at"))
+            if raw["id"] in known:
+                continue
+            if not raw.get("timeoutSec"):
+                raw["timeoutSec"] = APPROVAL_TIMEOUT
+            self.approvals.append(raw)
+            added += 1
+        if added:
+            print(f"[boot] 从过程库恢复 {added} 条待审批单", flush=True)
+
+    def _mark_interrupted_runs(self):
+        """启动时把上次进程留下的 running 运行态标成 interrupted；按需自动续跑。"""
+        if not self.db:
+            return
+        try:
+            rows = self.db.pipeline_runs("running")
+        except Exception as e:
+            print(f"[boot] 读取运行态失败：{type(e).__name__}: {e}", flush=True)
+            return
+        for row in rows:
+            trace = row.get("trace_id")
+            try:
+                self.db.pipeline_run_end(trace, "interrupted")
+            except Exception:
+                pass
+            with self.lock:
+                if self.traces.get(trace, {}).get("status") == "running":
+                    self.traces[trace]["status"] = "interrupted"
+                    self.traces[trace]["closedAt"] = iso_now()
+            print(f"[boot] 上次未跑完：{trace} 停在阶段 {row.get('stage')}（已标记 interrupted）", flush=True)
+        if rows and os.environ.get("OPC_RESUME_AUTO", "0") == "1":
+            for row in rows:
+                try:
+                    self.resume_pipeline(row.get("trace_id"), auto=True)
+                except Exception as e:
+                    print(f"[boot] 自动续跑失败 {row.get('trace_id')}：{type(e).__name__}: {e}", flush=True)
+
+    def resume_pipeline(self, trace, auto=False):
+        """按过程库里的断点阶段续跑（至少一次：重启时该阶段会重跑一次）。"""
+        if not self.db:
+            raise RuntimeError("过程库未启用（OPC_DB=0），无法续跑")
+        if self.active_trace and self.active_trace != trace:
+            raise RuntimeError(f"已有任务在跑（{self.active_trace}），稍后再续跑")
+        row = self.db.pipeline_run(trace)
+        if not row:
+            raise RuntimeError("过程库里没有这条 trace 的运行记录")
+        if row.get("status") == "completed":
+            raise RuntimeError("该 trace 已完成，无需续跑")
+        if not row.get("stage"):
+            raise RuntimeError("该 trace 还没有阶段断点，无法续跑")
+        hotspot = json.loads(row.get("hotspot") or "null") or self.last_hotspot \
+            or {"title": "断点续跑", "tags": []}
+        state = json.loads(row.get("state") or "{}")
+        with self.lock:
+            tr = self.traces.setdefault(trace, {"traceId": trace, "createdAt": iso_now(),
+                                               "hotspot": hotspot})
+            tr["status"] = "running"
+            tr.pop("closedAt", None)
+            tr["resumedAt"] = iso_now()
+        self.send("status", "ceo", "owner", trace,
+                  {"text": f"按断点续跑：从阶段 {row.get('stage')} 恢复"}, priority=2)
+        threading.Thread(target=self.run_pipeline, args=(trace, hotspot),
+                         kwargs={"start": row.get("stage"), "state": state}, daemon=True).start()
+        return {"traceId": trace, "from": row.get("stage"), "auto": auto}
 
     def _restore_history(self):
         """重启后恢复历史：交付物读磁盘，报告/审批/热点/知识/消息读运行时日志。"""
@@ -1683,10 +1832,18 @@ class Kernel:
         threading.Thread(target=self.run_pipeline, args=(trace, hotspot), daemon=True).start()
         return trace, hotspot
 
-    def run_pipeline(self, trace, hotspot):
+    def run_pipeline(self, trace, hotspot, start=None, state=None):
         self.active_trace = trace
+        if self.db:
+            try:
+                if start:
+                    self.db.pipeline_run_stage(trace, start, 0, state or {})
+                else:
+                    self.db.pipeline_run_start(trace, hotspot)
+            except Exception as e:
+                print(f"[pipeline] 运行态入库失败（不影响执行）：{type(e).__name__}: {e}", flush=True)
         try:
-            self._pipeline(trace, hotspot)
+            self._pipeline(trace, hotspot, start=start, state=state)
         except BudgetAbort as exc:
             # CTO 已判定超阈值并通知老板：这里只负责按“停止”收口
             with self.lock:
@@ -1726,6 +1883,12 @@ class Kernel:
             self._persist_trace(trace)
             self.export_trace_docs(trace)   # 收口之后再落盘，交付文档才能记录到最终状态
             self.save_runtime()             # 本轮报告/消息/知识入库，重启后可恢复
+            if self.db:
+                try:
+                    final = (self.traces.get(trace) or {}).get("status") or "incomplete"
+                    self.db.pipeline_run_end(trace, final)
+                except Exception as e:
+                    print(f"[pipeline] 运行态收口失败：{type(e).__name__}: {e}", flush=True)
 
     # ---------- 选题流程护栏 ----------
     PIDS = ("wenren", "gou", "tongxinyuan")
@@ -1949,22 +2112,67 @@ class Kernel:
         """审批超时：流程定义优先，未配置时沿用 OPC_APPROVAL_TIMEOUT。"""
         return c.stage.timeout_sec or APPROVAL_TIMEOUT
 
-    def _pipeline(self, trace, hotspot):
+    def _pipeline(self, trace, hotspot, start=None, state=None):
         """按流程定义（config/pipeline.yaml）顺序执行阶段。
 
         每个阶段一个 _stage_<id> 方法，阶段间状态放 PipelineContext；
         新增/调整阶段只改定义文件与对应实现，不再维护一条硬编码长函数。
+        每次进入阶段前把「阶段 + 上下文快照」写入过程库，进程重启可从这里续跑。
         """
         c = PipelineContext(self, trace, hotspot)
-        for st in PIPELINE.stages:
-            if not st.enabled:
-                continue
+        if state:
+            c.load_state(state)
+            # 续跑时把快照里的内容单挂回总线，否则前端/报表看不到这些单
+            with self.lock:
+                known = {x.get("id") for x in self.contents}
+                for item in c.items.values():
+                    if item.get("id") not in known:
+                        self.contents.append(item)
+        stages = [st for st in PIPELINE.stages if st.enabled]
+        begin = 0
+        if start:
+            idx = next((i for i, st in enumerate(stages) if st.id == start), None)
+            if idx is None:
+                raise RuntimeError(f"断点阶段 {start} 不在流程定义里，无法续跑")
+            begin = idx
+            print(f"[pipeline] {trace} 从阶段 {start}（#{idx}）续跑", flush=True)
+        for pos in range(begin, len(stages)):
+            st = stages[pos]
             fn = getattr(self, "_stage_" + st.id, None)
             if fn is None:
                 raise RuntimeError(f"流程定义里的阶段 {st.id} 没有实现 _stage_{st.id}")
             c.stage = st
+            self._run_checkpoint(trace, st, pos, c)
             if fn(c) is _PIPELINE_STOP:
                 return
+
+    def _run_checkpoint(self, trace, st, pos, c):
+        """阶段边界写档：stage 是即将执行的阶段，状态快照随行。"""
+        self._write_stage_checkpoint(trace, st, pos, c)
+        if not self.db:
+            return
+        try:
+            self.db.pipeline_run_stage(trace, st.id, pos, c.to_state())
+        except Exception as e:
+            print(f"[pipeline] 断点写档失败（不影响执行）：{type(e).__name__}: {e}", flush=True)
+
+    def _write_stage_checkpoint(self, trace, st, pos, c):
+        """按 om_stage 对齐的断点文件（OpenMontage 侧没有原生 checkpoint 协议）。
+
+        与过程库同源：trace_id + stage + om_stage，外部编排器或排障时可直接读文件，
+        不必连库；checkpoints.jsonl 保留整轮轨迹，checkpoint.json 只留当前断点。
+        """
+        try:
+            d = os.path.join(VAULT, "OPC", "运行态", trace)
+            os.makedirs(d, exist_ok=True)
+            payload = {"traceId": trace, "stage": st.id, "omStage": st.om_stage,
+                       "stageIndex": pos, "items": len(c.items), "at": iso_now()}
+            with open(os.path.join(d, "checkpoint.json"), "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            with open(os.path.join(d, "checkpoints.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except OSError as e:
+            print(f"[pipeline] 断点文件写入失败：{e}", flush=True)
 
     def _stage_topic_meeting(self, c):
         """1. 每日选题会：PM 各交 4 条（池 12）+ CEO/CTO 指定选题 + scout 简报，同波 6 个调用"""
@@ -2197,6 +2405,45 @@ class Kernel:
                       {"task": f"承接本项目 {len(c.final[pid])} 条定稿选题，先出制作评估再制作样片"}, project=pid)
 
 
+    def _open_approval(self, c, draft):
+        """审批单幂等开单：同一 trace + 动作已有单就复用，重启续跑不会重复打扰老板。
+
+        返回 (审批单, 唤醒事件 or None, 是否新建)。
+        - 已有已决单：不新建、不等待（事件为 None）
+        - 已有待决单：复用记录并重新登记唤醒事件，等待老板处理
+        - 无记录：与改造前一致，新建 + 推送 + 写库
+        """
+        existing = None
+        if self.db:
+            try:
+                existing = self.db.approval_for(c.trace, draft["action"])
+            except Exception as e:
+                print(f"[approval] 读库失败，按新单处理：{type(e).__name__}: {e}", flush=True)
+        with self.lock:
+            if not existing:
+                self.approvals.append(draft)
+                ev = threading.Event()
+                self.approval_events[draft["id"]] = ev
+                row, created = draft, True
+            else:
+                row = next((a for a in self.approvals if a["id"] == existing["id"]), None)
+                if row is None:
+                    row = dict(existing.get("raw") or {})
+                    for k in ("id", "traceId", "action", "status", "createdAt", "decidedAt", "timeoutSec"):
+                        if existing.get(k) not in (None, ""):
+                            row[k] = existing[k]
+                    self.approvals.append(row)
+                if row.get("status") != "pending":
+                    return row, None, False
+                ev = self.approval_events.get(row["id"]) or threading.Event()
+                self.approval_events[row["id"]] = ev
+                created = False
+        # 新建单与“重启后重新挂起”都推一次提醒，保证老板能看到待办
+        self.send("approval", "ceo", "owner", c.trace,
+                  {"approval": row} if created else {"approval": row, "reopened": True}, priority=2)
+        self.emit("approval", c.trace, row)
+        return row, ev, created
+
     def _stage_production_approval(self, c):
         """4.5 开工审批：老板批准选题与成本/素材/合规摘要后才进入制作"""
         # 4.5 开工审批：老板批准选题与成本/素材/合规摘要后才进入制作
@@ -2209,14 +2456,9 @@ class Kernel:
             "title": f"{len(c.items)} 条内容开工审批（含成本/素材/合规检查）",
             "checks": self._production_checks(c.items),
         }
-        with self.lock:
-            self.approvals.append(prod_approval)
-            prod_ev = threading.Event()
-            self.approval_events[prod_approval["id"]] = prod_ev
-        self.send("approval", "ceo", "owner", c.trace, {"approval": prod_approval}, priority=2)
-        self.emit("approval", c.trace, prod_approval)
-
-        prod_ok = prod_ev.wait(timeout=self._stage_timeout(c))
+        prod_approval, prod_ev, _ = self._open_approval(c, prod_approval)
+        prod_ok = (prod_approval["status"] == "approved") if prod_ev is None \
+            else prod_ev.wait(timeout=self._stage_timeout(c))
         with self.lock:
             prod_appr = next(a for a in self.approvals if a["id"] == prod_approval["id"])
             self.approval_events.pop(prod_approval["id"], None)
@@ -2615,17 +2857,13 @@ class Kernel:
                     "titles": [i["title"] for i in c.passed_items.values()],
                     "title": f"{len(c.passed_items)} 条内容发布审批（含同心圆对外承诺）",
                     "checks": self._publish_checks(c.items, c.passed_items, c.review_history)}
-        with self.lock:
-            self.approvals.append(approval)
-            ev = threading.Event()
-            self.approval_events[approval["id"]] = ev
-        self.send("approval", "ceo", "owner", c.trace, {"approval": approval}, priority=2)
-        self.emit("approval", c.trace, approval)
+        approval, ev, _ = self._open_approval(c, approval)
         for item in c.passed_items.values():
             item["stage"] = "approved"
             self.items_emit(c.trace, item)
 
-        approved = ev.wait(timeout=self._stage_timeout(c))
+        approved = (approval["status"] == "approved") if ev is None \
+            else ev.wait(timeout=self._stage_timeout(c))
         with self.lock:
             appr = next(a for a in self.approvals if a["id"] == approval["id"])
             self.approval_events.pop(approval["id"], None)
@@ -2997,6 +3235,8 @@ class Kernel:
     def decide_approval(self, approval_id, decision, decided_by=""):
         with self.lock:
             appr = next((a for a in self.approvals if a["id"] == approval_id), None)
+        if not appr and self.db:
+            appr = self._approval_from_db(approval_id)   # 重启后内存里没有，从过程库补
         if not appr:
             return None
         if appr["status"] != "pending":
@@ -3017,6 +3257,29 @@ class Kernel:
         if ev:
             ev.set()
         return appr
+
+    def _approval_from_db(self, approval_id):
+        """从过程库补一张待决审批单到内存（进程重启后审批仍可被处理）。"""
+        try:
+            rows = self.db.approvals_pending()
+        except Exception:
+            return None
+        row = next((r for r in rows if r.get("id") == approval_id), None)
+        if not row:
+            return None
+        try:
+            raw = json.loads(row.get("raw") or "{}")
+        except ValueError:
+            raw = {}
+        raw.setdefault("id", approval_id)
+        raw.setdefault("traceId", row.get("trace_id"))
+        raw.setdefault("action", row.get("action"))
+        raw.setdefault("createdAt", row.get("created_at"))
+        raw["status"] = "pending"
+        raw.setdefault("timeoutSec", APPROVAL_TIMEOUT)
+        with self.lock:
+            self.approvals.append(raw)
+        return raw
 
     # ---------- 人设串味注入 ----------
     def persona_injection(self):
@@ -4081,10 +4344,15 @@ class Handler(BaseHTTPRequestHandler):
                     if not appr:
                         return self._json({"ok": False, "error": "approval not found"}, 404)
                     result = {"approval": appr}
+                elif action == "resume":
+                    tid = str(body.get("traceId") or body.get("id") or "")
+                    if not tid:
+                        return self._json({"ok": False, "error": "缺少续跑的 traceId"}, 400)
+                    result = KERNEL.resume_pipeline(tid)
                 else:
                     return self._json({"ok": False, "error": "invalid action",
-                                       "expected": "patrol|reload|approve|reject"}, 400)
-            except ValueError as e:
+                                       "expected": "patrol|reload|approve|reject|resume"}, 400)
+            except (ValueError, RuntimeError) as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)

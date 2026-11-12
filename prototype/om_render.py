@@ -595,7 +595,9 @@ def produce(item, project, tone="", spec=None):
                 "video": video, "videoUrl": files["video"], "coverUrl": files["cover"],
                 "duration": round(duration, 2), "scenes": scenes or [],
                 "engine": "MCP-TTS(CosyVoice2) + OpenMontage/Remotion",
-                "renderedAt": _now()}
+                "renderedAt": _now(),
+                # 与 OPC 流水线对齐的溯源字段：OM 产物里同样能查到 trace_id / 阶段
+                "traceId": item.get("traceId"), "itemId": item.get("id"), "omStage": "compose"}
 
     # 命中缓存：分镜/文案/音色都没变，且旧片仍能过验收门，直接复用
     try:
@@ -708,6 +710,8 @@ def produce(item, project, tone="", spec=None):
 
         # 3) OpenMontage(Remotion) 渲染
         props = {
+            "meta": {"source": "opc", "traceId": item.get("traceId"),
+                     "itemId": item.get("id"), "omStage": "compose"},
             "cuts": [{"id": f"cut-{i+1:02d}", "source": "", **sc} for i, sc in enumerate(scenes)],
             "overlays": [],
             "captions": words,
@@ -756,7 +760,9 @@ def produce(item, project, tone="", spec=None):
         shutil.move(tmp_video, video_path)
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump({"hash": digest, "duration": duration, "scenes": scenes,
-                       "check": check, "video": video_path, "renderedAt": _now()},
+                       "check": check, "video": video_path, "renderedAt": _now(),
+                       "traceId": item.get("traceId"), "itemId": item.get("id"),
+                       "omStage": "compose"},
                       f, ensure_ascii=False, indent=2)
         _log(f"{item['id']} 出片完成：{duration:.1f}s，总耗时 {time.time() - t_start:.1f}s，验收通过")
         return result(True, check=check, video=video_path, duration=duration, scenes=scenes)

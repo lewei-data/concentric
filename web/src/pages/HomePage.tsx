@@ -328,7 +328,7 @@ export function HomePage() {
       { key: "idea", label: "创意池", value: ins?.counts?.total ?? 0, hint: "热点 / 视频 / 蒸馏" },
       { key: "topic", label: "选题", value: stageCount("topic") },
       { key: "copy", label: "文案定稿", value: stageCount("copy") },
-      { key: "video", label: "分镜 / 制作", value: stageCount("video") },
+      { key: "video", label: "分镜 / 制作", value: stageCount("sample") + stageCount("final") },
       { key: "review", label: "待评审", value: stageCount("review") },
       { key: "approved", label: "待发布", value: stageCount("approved") },
       { key: "published", label: "已发布", value: (stageCount("published") + stageCount("archived")) || metrics.published },

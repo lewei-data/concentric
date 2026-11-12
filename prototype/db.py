@@ -5,7 +5,8 @@
 - 单写连接（check_same_thread=False）+ 进程内锁；读用独立只读连接。
 - 普通写入进缓冲，200ms 或 200 条触发一次事务，避免每事件一次 fsync。
 - 所有异常只记日志，绝不向上抛：写库失败时主流程照旧走内存/JSON。
-- 开关：OPC_DB=1 启用；路径 OPC_DB_PATH（默认与本文件同目录 opc.db）。
+- 开关：OPC_DB=1 启用（默认开启）；路径 OPC_DB_PATH（默认与本文件同目录 opc.db）。
+  流水线运行态/审批/内容已按“写库为准、内存为缓存”使用，设 OPC_DB=0 可整体退回内存模式。
 """
 import json
 import os
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("OPC_DB_PATH", os.path.join(BASE_DIR, "opc.db"))
-ENABLED = os.environ.get("OPC_DB", "0") == "1"
+ENABLED = os.environ.get("OPC_DB", "1") == "1"
 TZ = timezone(timedelta(hours=8))
 FLUSH_MS = 200
 FLUSH_ROWS = 200
@@ -174,6 +175,21 @@ CREATE TABLE IF NOT EXISTS runs (
   ended_at   TEXT,
   version    TEXT
 );
+
+-- 流水线运行态：一条 trace 一行，stage/state 用于进程重启后从断点续跑
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  trace_id    TEXT PRIMARY KEY,
+  status      TEXT NOT NULL,
+  stage       TEXT,
+  stage_index INTEGER,
+  hotspot     TEXT,
+  state       TEXT,
+  started_at  TEXT,
+  updated_at  TEXT,
+  closed_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status, updated_at DESC);
+
 
 CREATE TABLE IF NOT EXISTS stats_daily (
   day                  TEXT PRIMARY KEY,
@@ -518,6 +534,71 @@ class Store:
 
     def run_end(self, run_id):
         self.put("UPDATE runs SET ended_at=? WHERE run_id=?", (now_iso(), run_id))
+
+    # ---------- 流水线运行态（断点续跑） ----------
+    def pipeline_run_start(self, trace_id, hotspot):
+        """开一条流水线运行记录；同一 trace 重复调用只重置状态，不覆盖热点。"""
+        self.put("""INSERT INTO pipeline_runs(trace_id,status,stage,stage_index,hotspot,state,
+                    started_at,updated_at,closed_at) VALUES(?,?,?,?,?,?,?,?,NULL)
+                    ON CONFLICT(trace_id) DO UPDATE SET status=excluded.status,
+                      closed_at=NULL, updated_at=excluded.updated_at""",
+                 (trace_id, "running", None, 0, jdump(hotspot), None, now_iso(), now_iso()))
+        self.flush()      # 断点必须落盘：进程被 kill 时不能丢
+
+    def pipeline_run_stage(self, trace_id, stage, index, state):
+        """阶段边界写档：stage 是"即将执行"的阶段，重启后从这里重跑（至少一次语义）。"""
+        self.put("""UPDATE pipeline_runs SET status='running', stage=?, stage_index=?, state=?,
+                    updated_at=? WHERE trace_id=?""",
+                 (stage, _int(index), jdump(state), now_iso(), trace_id))
+        self.flush()      # 每轮至多 16 次，代价可忽略
+
+    def pipeline_run_end(self, trace_id, status="completed"):
+        self.put("""UPDATE pipeline_runs SET status=?, closed_at=?, updated_at=? WHERE trace_id=?""",
+                 (status, now_iso(), now_iso(), trace_id))
+        self.flush()
+
+    def pipeline_runs(self, status=""):
+        """按状态列出流水线运行记录（最近在前）。"""
+        sql = "SELECT * FROM pipeline_runs"
+        params = ()
+        if status:
+            sql += " WHERE status=?"
+            params = (status,)
+        sql += " ORDER BY updated_at DESC LIMIT 50"
+        return self._rows(sql, params)
+
+    def pipeline_run(self, trace_id):
+        rows = self._rows("SELECT * FROM pipeline_runs WHERE trace_id=?", (trace_id,))
+        return rows[0] if rows else None
+
+    def approval_for(self, trace_id, action):
+        """取某 trace 指定动作的最新审批单（含已决状态），用于重启后幂等复用。"""
+        rows = self._rows("""SELECT * FROM approvals WHERE trace_id=? AND action=?
+                             ORDER BY created_at DESC LIMIT 1""", (trace_id, action))
+        if not rows:
+            return None
+        row = rows[0]
+        try:
+            row["raw"] = json.loads(row.get("raw") or "{}")
+        except (TypeError, ValueError):
+            row["raw"] = {}
+        return row
+
+    def approvals_pending(self):
+        """所有仍为 pending 的审批单（超时清理与重启恢复用）。"""
+        return self._rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at")
+
+    def _rows(self, sql, params=()):
+        """只读查询返回 dict 列表；库不可用时返回空列表（调用方按无数据处理）。"""
+        try:
+            conn = self.read_conn()
+            try:
+                return [dict(r) for r in conn.execute(sql, params).fetchall()]
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            _log(f"查询失败 {sql[:60]}：{e}")
+            return []
 
     # ---------- 统一消息 ----------
     def chat_upsert_thread(self, tid, source, title, participants, created_at, last_at):
