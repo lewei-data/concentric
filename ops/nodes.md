@@ -1,6 +1,6 @@
 # CTO 节点台账
 
-> 由 `opsctl` 自动生成于 2026-11-13 03:52:52；权威数据在 `nodes.db`，本文件每次巡检后重写。
+> 由 `opsctl` 自动生成于 2026-11-13 04:54:58；权威数据在 `nodes.db`，本文件每次巡检后重写。
 
 ## 节点
 
@@ -14,27 +14,27 @@
 
 | 节点 | 服务 | 端口 | 协议 | 级别 | 最近状态 | 耗时 | 检查时间 | 说明 |
 |---|---|---|---|---|---|---|---|---|
-| comfy-21-157 | SSH | 22 | ssh | high | 正常 | 4622ms | 11-13 03:52 | localhost.localdomain /  03:52:44 up 131 days |
-| comfy-21-157 | 模型资产 | - | files | high | 正常 | 6793ms | 11-13 03:52 | 权重 7/7 正常 |
-| comfy-21-157 | ComfyUI 出图 | 8188 | http | high | 正常 | 11ms | 11-13 03:52 | HTTP 200 |
-| comfy-21-157 | ComfyUI 视频 | 8189 | http | high | 正常 | 4ms | 11-13 03:52 | HTTP 200 |
-| comfy-21-157 | 出图能力 | - | nodes | high | 正常 | 223ms | 11-13 03:52 | 节点 8/8 就绪 |
-| comfy-21-157 | 视频音频能力 | - | nodes | high | 正常 | 570ms | 11-13 03:52 | 节点 8/8 就绪 |
-| gw-21-208 | HTTP | 80 | tcp | mid | 正常 | 1ms | 11-13 03:52 | TCP 80 可连 |
-| gw-21-208 | HTTPS | 443 | tcp | high | 正常 | 0ms | 11-13 03:52 | TCP 443 可连 |
-| gw-21-208 | ai.boraydata.com | 443 | http | high | 正常 | 168ms | 11-13 03:52 | HTTP 200 |
-| sup206 | 邮件 MCP | 9100 | mcp | high | 正常 | 7ms | 11-13 03:52 | MCP initialize HTTP 200 |
-| sup206 | TTS MCP | 9101 | mcp | high | 正常 | 5ms | 11-13 03:52 | MCP initialize HTTP 200 |
-| sup206 | ASR MCP | 9102 | mcp | mid | 正常 | 5ms | 11-13 03:52 | MCP initialize HTTP 200 |
-| sup206 | 媒体引擎 | 9200 | http | high | 正常 | 89ms | 11-13 03:52 | HTTP 200 |
-| sup206 | 调度服务 | 9120 | http | mid | 正常 | 3ms | 11-13 03:52 | HTTP 200 |
-| sup206 | 调度 WS | 9121 | http | low | 正常 | 2ms | 11-13 03:52 | HTTP 426 |
-| sup206 | 媒体生成 MCP | 9103 | http | mid | 正常 | 6ms | 11-13 03:52 | HTTP 200 |
+| comfy-21-157 | SSH | 22 | ssh | high | 正常 | 10207ms | 11-13 04:54 | localhost.localdomain /  04:54:49 up 131 days |
+| comfy-21-157 | 模型资产 | - | files | high | 正常 | 8262ms | 11-13 04:54 | 权重 7/7 正常 |
+| comfy-21-157 | ComfyUI 出图 | 8188 | http | high | 正常 | 12ms | 11-13 04:54 | HTTP 200 |
+| comfy-21-157 | ComfyUI 视频 | 8189 | http | high | 正常 | 5ms | 11-13 04:54 | HTTP 200 |
+| comfy-21-157 | 出图能力 | - | nodes | high | 正常 | 231ms | 11-13 04:54 | 节点 8/8 就绪 |
+| comfy-21-157 | 视频音频能力 | - | nodes | high | 正常 | 224ms | 11-13 04:54 | 节点 8/8 就绪 |
+| gw-21-208 | HTTP | 80 | tcp | mid | 正常 | 0ms | 11-13 04:54 | TCP 80 可连 |
+| gw-21-208 | HTTPS | 443 | tcp | high | 正常 | 0ms | 11-13 04:54 | TCP 443 可连 |
+| gw-21-208 | ai.boraydata.com | 443 | http | high | 正常 | 98ms | 11-13 04:54 | HTTP 200 |
+| sup206 | 邮件 MCP | 9100 | mcp | high | 正常 | 6ms | 11-13 04:54 | MCP initialize HTTP 200 |
+| sup206 | TTS MCP | 9101 | mcp | high | 正常 | 8ms | 11-13 04:54 | MCP initialize HTTP 200 |
+| sup206 | ASR MCP | 9102 | mcp | mid | 正常 | 7ms | 11-13 04:54 | MCP initialize HTTP 200 |
+| sup206 | 媒体引擎 | 9200 | http | high | 正常 | 12ms | 11-13 04:54 | HTTP 200 |
+| sup206 | 调度服务 | 9120 | http | mid | 正常 | 3ms | 11-13 04:54 | HTTP 200 |
+| sup206 | 调度 WS | 9121 | http | low | 正常 | 3ms | 11-13 04:54 | HTTP 426 |
+| sup206 | 媒体生成 MCP | 9103 | http | mid | 正常 | 7ms | 11-13 04:54 | HTTP 200 |
 
 ## 最近一次巡检
 
-- 时间：2026-11-13 03:21:39
-- 结果：2026-11-13 03:21 巡检正常：16/16 项服务在线
+- 时间：2026-11-13 04:23:39
+- 结果：2026-11-13 04:23 巡检正常：16/16 项服务在线
 - 报告：（无异常，未生成详细报告）
 
 ## 维护约定

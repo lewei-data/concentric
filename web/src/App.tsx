@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Authenticated, Refine } from "@refinedev/core";
 import routerProvider from "@refinedev/react-router-v6";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
@@ -5,15 +6,26 @@ import { authProvider } from "./authProvider";
 import { dataProvider } from "./dataProvider";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
-import { HotspotsPage } from "./pages/HotspotsPage";
-import { InspirationPage } from "./pages/InspirationPage";
-import { KnowledgePage } from "./pages/KnowledgePage";
 import { LoginPage } from "./pages/LoginPage";
-import { MessagesPage } from "./pages/MessagesPage";
-import { OpsPage } from "./pages/OpsPage";
-import { OrgPage } from "./pages/OrgPage";
-import { ScenePage } from "./pages/ScenePage";
-import { WorksPage } from "./pages/WorksPage";
+
+// 路由级代码分割：非首屏页面按需加载，主包只保留首页 + 登录页
+const HotspotsPage = lazy(() => import("./pages/HotspotsPage").then((m) => ({ default: m.HotspotsPage })));
+const InspirationPage = lazy(() => import("./pages/InspirationPage").then((m) => ({ default: m.InspirationPage })));
+const KnowledgePage = lazy(() => import("./pages/KnowledgePage").then((m) => ({ default: m.KnowledgePage })));
+const MessagesPage = lazy(() => import("./pages/MessagesPage").then((m) => ({ default: m.MessagesPage })));
+const OpsPage = lazy(() => import("./pages/OpsPage").then((m) => ({ default: m.OpsPage })));
+const OrgPage = lazy(() => import("./pages/OrgPage").then((m) => ({ default: m.OrgPage })));
+const ScenePage = lazy(() => import("./pages/ScenePage").then((m) => ({ default: m.ScenePage })));
+const WorksPage = lazy(() => import("./pages/WorksPage").then((m) => ({ default: m.WorksPage })));
+
+// 懒加载路由的过渡画面：只占 outlet 区域，顶部导航保持不动
+function PageFallback() {
+  return (
+    <div style={{ display: "grid", placeItems: "center", minHeight: "40vh", color: "#64748b", fontSize: 14 }}>
+      加载中…
+    </div>
+  );
+}
 
 export default function App() {
   return (
@@ -39,15 +51,15 @@ export default function App() {
             }
           >
             <Route path="/" element={<HomePage />} />
-            <Route path="/inspiration" element={<InspirationPage />} />
-            <Route path="/ops" element={<OpsPage />} />
-            <Route path="/works" element={<WorksPage />} />
-            <Route path="/hotspots" element={<HotspotsPage />} />
-            <Route path="/knowledge" element={<KnowledgePage />} />
-            <Route path="/messages" element={<MessagesPage />} />
-            <Route path="/org" element={<OrgPage />} />
-            <Route path="/office" element={<ScenePage scene="office" />} />
-            <Route path="/meeting" element={<ScenePage scene="meeting" />} />
+            <Route path="/inspiration" element={<Suspense fallback={<PageFallback />}><InspirationPage /></Suspense>} />
+            <Route path="/ops" element={<Suspense fallback={<PageFallback />}><OpsPage /></Suspense>} />
+            <Route path="/works" element={<Suspense fallback={<PageFallback />}><WorksPage /></Suspense>} />
+            <Route path="/hotspots" element={<Suspense fallback={<PageFallback />}><HotspotsPage /></Suspense>} />
+            <Route path="/knowledge" element={<Suspense fallback={<PageFallback />}><KnowledgePage /></Suspense>} />
+            <Route path="/messages" element={<Suspense fallback={<PageFallback />}><MessagesPage /></Suspense>} />
+            <Route path="/org" element={<Suspense fallback={<PageFallback />}><OrgPage /></Suspense>} />
+            <Route path="/office" element={<Suspense fallback={<PageFallback />}><ScenePage scene="office" /></Suspense>} />
+            <Route path="/meeting" element={<Suspense fallback={<PageFallback />}><ScenePage scene="meeting" /></Suspense>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

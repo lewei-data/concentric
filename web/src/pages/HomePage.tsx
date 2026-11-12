@@ -96,6 +96,13 @@ function assetUrl(path?: string): string {
   return `${prefix}${path}`;
 }
 
+// 应用构建产物（dist/assets）里的资源：相对「应用根」，公网同样要补 /workbench 前缀。
+// 缩略图放在这里（immutable 长缓存），不动后端的 /avatars 路由。
+function appAssetUrl(path: string): string {
+  const prefix = appRoot().replace(/\/$/, "");
+  return `${prefix}/app/${path.replace(/^\//, "")}`;
+}
+
 // 岗位职责：短句，控制在 7-8 个汉字，避免把工位撑开
 function dutyFor(role: string, scope?: string): string {
   const r = role || "";
@@ -176,7 +183,14 @@ export function HomePage() {
   const [ops, setOps] = useState<OpsResp | null>(null);
   const [error, setError] = useState("");
   const [approvalMsg, setApprovalMsg] = useState("");
-  const [soundOn, setSoundOn] = useState(true);
+  // 音效开关持久化：刷新后保持上次选择（默认开）
+  const [soundOn, setSoundOn] = useState(() => {
+    try {
+      return window.localStorage.getItem("floor-sound") !== "0";
+    } catch {
+      return true;
+    }
+  });
   const audioRef = useRef<AudioContext | null>(null);
   const lastHoverRef = useRef(0);
 
@@ -559,7 +573,17 @@ export function HomePage() {
             <button
               type="button"
               className={`floor-sound${soundOn ? " is-on" : ""}`}
-              onClick={() => setSoundOn((v) => !v)}
+              onClick={() =>
+                setSoundOn((v) => {
+                  const next = !v;
+                  try {
+                    window.localStorage.setItem("floor-sound", next ? "1" : "0");
+                  } catch {
+                    /* 隐私模式等场景忽略写入失败 */
+                  }
+                  return next;
+                })
+              }
               aria-pressed={soundOn}
               title="悬停工位时播放轻提示音"
             >
@@ -589,13 +613,20 @@ export function HomePage() {
                       const dr = deskRole(a.role, group.key === "mgmt");
                       const status = a.status || "idle";
                       const statusText = STATUS_TEXT[status] || status;
+                      // 工位小头像用 128px 缩略图（/app/assets 下，长缓存）；悬停大图用原图
                       const photo = assetUrl(a.avatar || `/avatars/${a.id}.png`);
+                      const thumb = appAssetUrl(`assets/avatars-thumb/${a.id}.png`);
                       return (
                         <article
                           key={a.id}
                           className={`desk is-${status} role-${dr.key}${a.id === "secretary" ? " desk-secretary" : ""}`}
                           style={{ "--d": `${(i % 6) * 0.05}s` } as React.CSSProperties}
-                          onPointerEnter={playHover}
+                          onPointerEnter={(e) => {
+                            // 原图体积大：首次悬停才加载，平时不占带宽
+                            const img = e.currentTarget.querySelector<HTMLImageElement>(".desk-photo-img");
+                            if (img && img.dataset.src && !img.getAttribute("src")) img.src = img.dataset.src;
+                            playHover();
+                          }}
                         >
                           <span className="desk-edge" aria-hidden="true" />
 
@@ -603,14 +634,19 @@ export function HomePage() {
                             <span className="desk-avatar desk-avatar-fallback">{(a.name || "?").slice(0, 1)}</span>
                             <img
                               className="desk-avatar desk-avatar-img"
-                              src={photo}
+                              src={thumb}
                               alt={`${a.name} 头像`}
                               loading="lazy"
                               decoding="async"
                               onError={(e) => {
+                                // 回退链：缩略图 → 原头像 → 通用兜底 → 隐藏留姓氏
                                 const img = e.currentTarget;
-                                if (img.dataset.fb !== "1") {
+                                const step = Number(img.dataset.fb || 0);
+                                if (step === 0) {
                                   img.dataset.fb = "1";
+                                  img.src = photo;
+                                } else if (step === 1) {
+                                  img.dataset.fb = "2";
                                   img.src = assetUrl("/avatars/scout.png");
                                 } else {
                                   img.style.display = "none";
@@ -631,13 +667,12 @@ export function HomePage() {
                             <StatusIcon status={status} />
                           </span>
 
-                          {/* 悬停：照片铺满桌面，保持比例裁剪 */}
+                          {/* 悬停：照片铺满桌面，保持比例裁剪；原图由 onPointerEnter 按需注入 */}
                           <span className="desk-photo" aria-hidden="true">
                             <img
                               className="desk-photo-img"
-                              src={photo}
+                              data-src={photo}
                               alt=""
-                              loading="lazy"
                               decoding="async"
                               onError={(e) => {
                                 e.currentTarget.closest(".desk-photo")?.classList.add("is-broken");
