@@ -27,9 +27,21 @@ type AgentDetail = Agent & {
 type Policy = { key: string; title: string; path: string; editable: boolean; exists: boolean; bytes: number };
 type Project = { id: string; name: string };
 type Audit = { ts: string; by: string; role: string; action: string; target: string; detail: string };
+type LlmChannel = { id: string; name: string; status: string; protocol: string; url: string };
+type LlmProfile = {
+  id: string;
+  name: string;
+  role: string;
+  model: string;
+  provider: string;
+  baseUrl: string;
+  channelId: string;
+  channelName: string;
+};
 
 const TABS = [
   ["staff", "人员与岗位"],
+  ["channel", "模型通道"],
   ["policy", "制度"],
   ["soul", "性格与技能"],
   ["memory", "记忆"],
@@ -67,15 +79,27 @@ export function OrgPage() {
   const [skillName, setSkillName] = useState("");
   const [skillBody, setSkillBody] = useState("");
   const [audits, setAudits] = useState<Audit[]>([]);
+  const [llmChannels, setLlmChannels] = useState<LlmChannel[]>([]);
+  const [llmProfiles, setLlmProfiles] = useState<LlmProfile[]>([]);
+  const [bulkChannel, setBulkChannel] = useState("");
+  const [channelBusy, setChannelBusy] = useState("");
+  const [profilesRoot, setProfilesRoot] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
   const loadOrg = async () => {
     try {
-      const data = await api<{ agents: Agent[]; policies: Policy[]; projects: Project[] }>("/api/org");
+      const data = await api<{
+        agents: Agent[]; policies: Policy[]; projects: Project[];
+        profilesRoot?: string;
+        llmChannels?: LlmChannel[]; llmProfiles?: LlmProfile[];
+      }>("/api/org");
       setAgents(data.agents);
       setPolicies(data.policies);
       setProjects(data.projects);
+      setProfilesRoot(data.profilesRoot || "");
+      setLlmChannels(data.llmChannels || []);
+      setLlmProfiles(data.llmProfiles || []);
       setErr("");
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
@@ -210,6 +234,28 @@ export function OrgPage() {
     }
   };
 
+  const applyChannel = async (profile: string, channelId: string, label: string, all = false) => {
+    const confirmMsg = all
+      ? `确认把「${label}」应用到全部员工（覆盖各自的模型通道设置）？`
+      : `确认把员工「${label}」的模型通道切换为所选通道？`;
+    if (!window.confirm(confirmMsg)) return;
+    setChannelBusy(`${profile}:${channelId}`);
+    setMsg("");
+    setErr("");
+    try {
+      const data = await post<{ applied?: string[]; failed?: string[] }>("/api/ops/llm/profile",
+        all ? { all: true, channelId } : { profile, channelId });
+      await loadOrg();
+      const failed = (data.failed || []).join("；");
+      if (failed) setErr(`部分失败：${failed}`);
+      else setMsg(`已应用「${label}」到 ${data.applied?.length ?? 0} 个员工的 profile（gateway 任务下次运行生效）`);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setChannelBusy("");
+    }
+  };
+
   return (
     <section className="page">
       <div className="page-head">
@@ -296,6 +342,86 @@ export function OrgPage() {
               </div>
             </aside>
           )}
+        </div>
+      )}
+
+      {tab === "channel" && (
+        <div className="panel-grid single">
+          <div className="card">
+            <div className="toolbar">
+              <select className="input" value={bulkChannel} onChange={(e) => setBulkChannel(e.target.value)}>
+                <option value="" disabled>选择通道…</option>
+                {llmChannels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}{m.status !== "enabled" ? "（未启用）" : ""} · {m.protocol}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={!!channelBusy || !bulkChannel}
+                onClick={() => {
+                  const label = llmChannels.find((m) => m.id === bulkChannel)?.name || bulkChannel;
+                  void applyChannel("*", bulkChannel, label, true);
+                }}
+              >
+                {channelBusy === "*:*" || channelBusy.startsWith("*:")
+                  ? "应用中…（逐个写入 profile）"
+                  : "应用到全部员工"}
+              </button>
+              <span className="muted">
+                写入各 profile 的 config.yaml（model.default / provider / base_url / api_key），
+                gateway 定时任务与消息会话下次运行生效；主服务编排链路的故障转移在「运维监控 → 大模型开关」按优先级处理。
+              </span>
+            </div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr><th>员工</th><th>岗位</th><th>当前通道</th><th>模型 / Provider</th><th>切换</th></tr>
+                </thead>
+                <tbody>
+                  {llmProfiles.map((p) => (
+                    <tr key={p.id}>
+                      <td><b>{p.name}</b><small className="muted">（{p.id}）</small></td>
+                      <td>{p.role || "—"}</td>
+                      <td className="nowrap">
+                        {p.channelId
+                          ? <span className="org-pill-ok">{p.channelName}</span>
+                          : <span className="muted">未识别（{p.model || "—"} @ {p.provider || "—"}）</span>}
+                      </td>
+                      <td className="mono nowrap">{p.model || "—"}{p.provider ? ` @ ${p.provider}` : ""}</td>
+                      <td>
+                        <select
+                          className="input"
+                          value={p.channelId || ""}
+                          disabled={!!channelBusy}
+                          onChange={(e) => {
+                            const cid = e.target.value;
+                            const label = llmChannels.find((m) => m.id === cid)?.name || cid;
+                            void applyChannel(p.id, cid, `${p.name} → ${label || "恢复默认"}`);
+                          }}
+                        >
+                          <option value="" disabled>选择通道…</option>
+                          {llmChannels.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}{m.status !== "enabled" ? "（未启用）" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                  {!llmProfiles.length && (
+                    <tr><td colSpan={5} className="muted">未找到 hermes profile 目录（{profilesRoot || "/opt/sefs/hermes/profiles"}）。</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="muted">
+              通道注册与额度/启停管理在「运维监控 → 大模型开关」；此处仅按员工分配通道。仅老板可修改，全部操作记入审计。
+            </p>
+          </div>
         </div>
       )}
 

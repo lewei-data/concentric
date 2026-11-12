@@ -276,6 +276,9 @@ CREATE TABLE IF NOT EXISTS ingest_cursor (
 -- ---------- 大模型注册表：系统可用模型配置与 token 额度（CTO 运维开关） ----------
 -- status: enabled（启用）/ disabled（停用）/ exhausted（额度耗尽，自动标记）
 -- total_tokens=0 表示不限额；可用 = total - used
+-- alias: Hermes 调用该通道时附加的 --model 别名（空=走内置默认模型）
+-- priority: 通道选择优先级，数字越小越优先（默认通道优先于慢速本地通道）
+-- provider/api_key: 把通道写入 profile config.yaml 时使用（api_key 不对前端展示）
 CREATE TABLE IF NOT EXISTS llm_models (
   id           TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
@@ -284,6 +287,10 @@ CREATE TABLE IF NOT EXISTS llm_models (
   total_tokens INTEGER NOT NULL DEFAULT 0,
   used_tokens  INTEGER NOT NULL DEFAULT 0,
   status       TEXT NOT NULL DEFAULT 'enabled',
+  alias        TEXT NOT NULL DEFAULT '',
+  priority     INTEGER NOT NULL DEFAULT 100,
+  provider     TEXT NOT NULL DEFAULT '',
+  api_key      TEXT NOT NULL DEFAULT '',
   note         TEXT,
   updated_at   TEXT,
   updated_by   TEXT
@@ -344,6 +351,26 @@ class Store:
             if "resume_tries" not in cols:
                 self._conn.execute("ALTER TABLE pipeline_runs "
                                    "ADD COLUMN resume_tries INTEGER NOT NULL DEFAULT 0")
+            # 老库补列：大模型注册表的 hermes 别名与优先级（通道选择/故障转移用）
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(llm_models)")}
+            if cols:
+                for col, ddl in (("alias", "TEXT NOT NULL DEFAULT ''"),
+                                 ("priority", "INTEGER NOT NULL DEFAULT 100"),
+                                 ("provider", "TEXT NOT NULL DEFAULT ''"),
+                                 ("api_key", "TEXT NOT NULL DEFAULT ''")):
+                    if col not in cols:
+                        self._conn.execute(f"ALTER TABLE llm_models ADD COLUMN {col} {ddl}")
+                # 既有登记行补默认值（只补未设置过的，不覆盖 CTO 手工调整）
+                self._conn.execute("UPDATE llm_models SET alias='qwen38' "
+                                   "WHERE id='qwen38-local' AND alias=''")
+                self._conn.execute("UPDATE llm_models SET priority=10 "
+                                   "WHERE id='hermes-default' AND priority=100")
+                self._conn.execute("UPDATE llm_models SET priority=50 "
+                                   "WHERE id='qwen38-local' AND priority=100")
+                self._conn.execute("UPDATE llm_models SET provider='opencode-go' "
+                                   "WHERE id='hermes-default' AND (provider IS NULL OR provider='')")
+                self._conn.execute("UPDATE llm_models SET provider='custom', api_key='sk-local' "
+                                   "WHERE id='qwen38-local' AND (provider IS NULL OR provider='')")
             row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (1)")
@@ -684,27 +711,42 @@ class Store:
                 r["status"] = "exhausted"   # 展示层兜底：额度耗尽但状态未标
         return rows
 
-    def llm_gate(self, model_name):
-        """Hermes 调用前检查：模型已停用或额度耗尽时拦截。返回 (放行, 原因)。"""
+    @staticmethod
+    def _llm_unavailable(m):
+        status = str(m.get("status") or "enabled")
+        total, used = _int(m.get("total_tokens")), _int(m.get("used_tokens"))
+        return status in ("disabled", "exhausted") or (total > 0 and used >= total)
+
+    def llm_pick(self, preferred=""):
+        """挑选可用大模型通道：优先 preferred（名称/id 匹配且可用），否则按 priority
+        升序取第一个可用通道。返回 (通道行|None, 拦截原因)。
+
+        - 注册表为空 / 查询故障 → 返回默认兜底通道（沿用内置 MODEL 直调，不拦截业务）；
+        - 全部通道停用或额度耗尽 → 返回 (None, 原因)，调用方拦截本次请求。
+        """
+        fallback = {"id": "", "name": preferred, "alias": "", "status": "enabled"}
         try:
-            rows = self._rows("SELECT * FROM llm_models WHERE name=? OR id=? LIMIT 1",
-                              (model_name, model_name))
-            if not rows:
-                return True, ""     # 未登记的模型不拦截（向后兼容）
-            m = rows[0]
-            status = str(m.get("status") or "enabled")
-            total, used = _int(m.get("total_tokens")), _int(m.get("used_tokens"))
-            if status == "disabled":
-                return False, f"模型 {m['name']} 已被停用（CTO 运维开关）"
-            if status == "exhausted" or (total > 0 and used >= total):
-                if status != "exhausted":
-                    self.llm_set_status(m["id"], "exhausted", "system")
-                return False, (f"模型 {m['name']} token 额度已耗尽"
-                               f"（已用 {used} / 总额 {total or '不限'}），需 CTO 追加额度后恢复")
-            return True, ""
+            rows = self._rows("SELECT * FROM llm_models ORDER BY priority ASC, id ASC")
         except Exception as e:
-            _log(f"llm_gate 失败（放行）：{type(e).__name__}: {e}")
-            return True, ""         # 注册表自身故障不阻断业务
+            _log(f"llm_pick 查询失败（走默认通道）：{type(e).__name__}: {e}")
+            return fallback, ""
+        if not rows:
+            return fallback, ""     # 未登记任何模型：向后兼容，直调默认模型
+        for m in rows:
+            if preferred and preferred in (m.get("name"), m.get("id")) \
+                    and not self._llm_unavailable(m):
+                return m, ""
+        for m in rows:              # 首选通道不可用 → 按优先级故障转移
+            if not self._llm_unavailable(m):
+                return m, ""
+        # 全部不可用：首选通道若为额度耗尽，补标 exhausted 便于运维页对齐
+        for m in rows:
+            if m.get("name") == preferred or m.get("id") == preferred:
+                total, used = _int(m.get("total_tokens")), _int(m.get("used_tokens"))
+                if str(m.get("status") or "") == "enabled" and total > 0 and used >= total:
+                    self.llm_set_status(m["id"], "exhausted", "system")
+        detail = "；".join(f"{m.get('name')}（{m.get('status')}）" for m in rows)
+        return None, f"无可用大模型通道：{detail}。需 CTO 在运维页启用通道或追加额度。"
 
     def llm_consume(self, model_name, tokens):
         """调用成功后扣减额度（同步写，不进缓冲）；达到上限自动标记 exhausted。"""

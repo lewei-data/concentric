@@ -106,6 +106,8 @@ type LlmModel = {
   name: string;
   url: string;
   protocol: string;
+  alias: string;
+  priority: number;
   status: "enabled" | "disabled" | "exhausted" | string;
   totalTokens: number;
   usedTokens: number;
@@ -446,6 +448,7 @@ export function OpsPage() {
                       <tr key={m.id}>
                         <td>
                           <b>{m.name}</b>
+                          {m.alias && <small className="muted"> · 别名 {m.alias}</small>}
                           {m.note && <small className="muted"> · {m.note}</small>}
                         </td>
                         <td className="mono">{m.protocol || "—"}</td>
@@ -526,6 +529,7 @@ export function OpsPage() {
             <p className="muted ops-hint">
               Hermes 每次发起调用前检查此处状态：已停用或额度耗尽的模型会被拦截并降级为规则模式；
               调用成功后按实际用量扣减额度，耗尽时自动标记「额度耗尽」。调整总 token 额度后若额度恢复充足会自动恢复「启用」。
+              员工（profile）的模型通道设置已移至「组织配置 → 模型通道」。
             </p>
           </>
         )}

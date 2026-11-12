@@ -590,6 +590,24 @@ a:hover {
   margin-top: 4px;
 }
 
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  user-select: none;
+  cursor: pointer;
+}
+
+.login-remember input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #2f6fed;
+  cursor: pointer;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -2625,6 +2643,28 @@ a:hover {
 
 .ops-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .ops-hint { margin: 8px 0 0; font-size: 11.5px; line-height: 1.55; }
+
+/* 大模型开关：员工通道选择下拉（表格内联） */
+.llm-select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text, #1f2937);
+  max-width: 220px;
+}
+
+/* 组织配置：当前通道标签 */
+.org-pill-ok {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #147258;
+  background: #e6f4ef;
+  border: 1px solid #b6dfcf;
+}
 
 /* 大模型开关：额度用量条（表格内联，宽度随使用率变化） */
 .llm-quota-bar {

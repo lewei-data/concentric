@@ -44,12 +44,15 @@ WEB_MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript;
             ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff"}
 TZ = timezone(timedelta(hours=8))
 CLI = os.environ.get("OPC_HERMES_CLI", "/opt/sefs/hermes/run-hermes.sh")
+# hermes 本体（config set 等本地子命令用；不经 run-hermes.sh 的 DNS 隔离包装）
+HERMES_BIN = os.environ.get("OPC_HERMES_BIN", "/home/boray/.local/bin/hermes")
 MODE = os.environ.get("OPC_HERMES_MODE", "hermes")
 TIMEOUT = int(os.environ.get("OPC_HERMES_TIMEOUT", "600"))
 WORKERS = int(os.environ.get("OPC_HERMES_WORKERS", "6"))
 APPROVAL_TIMEOUT = int(os.environ.get("OPC_APPROVAL_TIMEOUT", "600"))
 MODEL = os.environ.get("OPC_HERMES_MODEL", "deepseek-v4.1-flash")
 # 大模型注册表（llm_models 表）的内置初始条目：仅在表为空时写入，之后以库里/CTO 修改为准
+# priority 小者优先；alias 是 hermes 调用时附加的 --model 别名（空=内置默认模型）
 LLM_DEFAULTS = [
     {
         "id": "hermes-default",
@@ -57,6 +60,10 @@ LLM_DEFAULTS = [
         "url": os.environ.get("OPC_LLM_BASE_URL", ""),
         "protocol": os.environ.get("OPC_LLM_PROTOCOL", "hermes-cli"),
         "totalTokens": int(os.environ.get("OPC_LLM_TOTAL_TOKENS", "20000000")),
+        "alias": "",
+        "priority": 10,
+        "provider": os.environ.get("OPC_LLM_PROVIDER", "opencode-go"),
+        "apiKey": "",
         "note": "默认模型（Hermes CLI 调用）",
     },
     {
@@ -66,6 +73,10 @@ LLM_DEFAULTS = [
         "url": os.environ.get("OPC_LLM_LOCAL_BASE_URL", "http://192.168.21.208:8080/v1"),
         "protocol": "openai-chat",
         "totalTokens": int(os.environ.get("OPC_LLM_LOCAL_TOTAL_TOKENS", "0")),   # 本地推理，0=不限额
+        "alias": "qwen38",
+        "priority": 50,
+        "provider": "custom",
+        "apiKey": "sk-local",
         "note": "本地推理通道（llama.cpp @ 192.168.21.208:8080，慢速，适合无实时性要求任务）",
     },
 ]
@@ -815,30 +826,123 @@ def _llm_consume(model, tokens):
 
 
 def _llm_view():
-    """大模型注册表视图（运维页 /api/ops）：camelCase + 汇总。"""
+    """大模型注册表视图（运维页 /api/ops）：camelCase + 汇总 + 员工通道设置。"""
     st = _llm_store()
     if not st:
         return {"available": False, "error": "过程库未启用（OPC_DB=0），大模型注册表不可用",
-                "models": []}
+                "models": [], "profiles": []}
     models = []
     for r in st.llm_models():
         total, used = _to_int(r.get("total_tokens"), 0), _to_int(r.get("used_tokens"), 0)
         models.append({
             "id": r.get("id") or "", "name": r.get("name") or "",
             "url": r.get("url") or "", "protocol": r.get("protocol") or "",
+            "alias": r.get("alias") or "",
+            "priority": _to_int(r.get("priority"), 100),
             "status": r.get("status") or "enabled",
             "totalTokens": total, "usedTokens": used,
             "availableTokens": (total - used) if total > 0 else -1,   # -1 = 不限额
             "note": r.get("note") or "",
             "updatedAt": r.get("updated_at") or "", "updatedBy": r.get("updated_by") or "",
         })
-    return {
+    view = {
         "available": True,
         "models": models,
         "enabled": sum(1 for m in models if m["status"] == "enabled"),
         "exhausted": sum(1 for m in models if m["status"] == "exhausted"),
         "disabled": sum(1 for m in models if m["status"] == "disabled"),
+        "profiles": _llm_profiles_view(models),
     }
+    return view
+
+
+# ---------------- 员工（profile）通道设置：读 config.yaml + 应用通道 ----------------
+
+def _parse_profile_model(path):
+    """读取 profile config.yaml 顶层 model 段的 default/provider/base_url（只读文本解析）。"""
+    out = {"default": "", "provider": "", "base_url": ""}
+    try:
+        top = None
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                ln = raw.rstrip("\n")
+                if ln and not ln[0].isspace() and not ln.startswith("#"):
+                    top = ln.split(":", 1)[0].strip()
+                    continue
+                if top != "model":
+                    continue
+                m = re.match(r'^\s{2,}(default|provider|base_url):\s*"?(.*?)"?\s*(?:#.*)?$', ln)
+                if m:
+                    out[m.group(1)] = m.group(2).strip()
+    except OSError:
+        pass
+    return out
+
+
+def _llm_profiles_view(models):
+    """全部 hermes profile 的当前模型通道设置（按 AGENT_SPEC 显示中文名）。"""
+    names = {a[0]: a[1] for a in AGENT_SPEC}
+    roles = {a[0]: a[2] for a in AGENT_SPEC}
+    by_model = {}
+    for m in models:
+        by_model.setdefault(m["name"], m["id"])
+    # provider 兜底匹配：custom+本地 URL → 本地通道；其他按模型名匹配
+    out = []
+    try:
+        entries = sorted(os.listdir(ORG_PROFILES))
+    except OSError:
+        entries = []
+    for pid in entries:
+        cfg = os.path.join(ORG_PROFILES, pid, "config.yaml")
+        if not os.path.isfile(cfg):
+            continue
+        cur = _parse_profile_model(cfg)
+        channel_id = ""
+        for m in models:
+            if m["name"] != cur["default"]:
+                continue
+            if m["id"] == "qwen38-local" and cur["provider"] not in ("custom", ""):
+                continue
+            if m["id"] == "hermes-default" and cur["provider"] not in ("opencode-go", ""):
+                continue
+            channel_id = m["id"]
+            break
+        out.append({
+            "id": pid, "name": names.get(pid, pid), "role": roles.get(pid, ""),
+            "model": cur["default"], "provider": cur["provider"], "baseUrl": cur["base_url"],
+            "channelId": channel_id,
+            "channelName": next((m["name"] for m in models if m["id"] == channel_id), ""),
+        })
+    return out
+
+
+def _hermes_cfg_set(profile, key, value):
+    """hermes config set（HERMES_HOME 指向该 profile）；官方接口，自带校验。返回 (ok, 输出)。"""
+    env = dict(os.environ)
+    env["HERMES_HOME"] = os.path.join(ORG_PROFILES, profile)
+    try:
+        proc = subprocess.run([HERMES_BIN, "config", "set", key, str(value)],
+                              capture_output=True, text=True, timeout=30, env=env)
+        return proc.returncode == 0, (proc.stdout or proc.stderr or "")[-200:]
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
+def _llm_profile_apply(profile, channel_row):
+    """把注册表通道写入 profile config.yaml 的 model 段。返回错误串（空=成功）。"""
+    base_url = (channel_row.get("url") or "").strip()
+    api_key = (channel_row.get("api_key") or "").strip()
+    plan = [("model.default", channel_row.get("name") or ""),
+            ("model.provider", channel_row.get("provider") or "custom")]
+    if base_url:
+        plan.append(("model.base_url", base_url))
+    if api_key:
+        plan.append(("model.api_key", api_key))
+    for key, value in plan:
+        ok, out = _hermes_cfg_set(profile, key, value)
+        if not ok:
+            return f"{key}: {out}"
+    return ""
 
 
 class HermesAdapter:
@@ -898,16 +1002,20 @@ class HermesAdapter:
     def ask(self, agent, task, context="", extra="", schema=None):
         if not self.available():
             return None, {"engine": "rule", "latencyMs": 0, "profile": agent["id"], "usage": {}}
-        # 大模型开关：停用 / 额度耗尽的模型不允许发起调用（CTO 在运维页控制）
+        # 大模型通道选择：按注册表优先级挑可用通道（停用/额度耗尽自动故障转移到下一个）；
+        # 全部不可用时拦截本次调用（CTO 在运维页控制）
         st = _llm_store()
+        channel = None
         if st:
-            gate_ok, gate_reason = st.llm_gate(MODEL)
-            if not gate_ok:
+            channel, gate_reason = st.llm_pick(MODEL)
+            if channel is None:
                 with self.lock:
                     self.failures += 1
                 print(f"[hermes] {agent['id']} 调用被拦截：{gate_reason}", flush=True)
                 return None, {"engine": "rule", "reason": gate_reason, "llmBlocked": True,
                               "profile": agent["id"], "latencyMs": 0, "usage": {}}
+        model_name = (channel or {}).get("name") or MODEL
+        alias = str((channel or {}).get("alias") or "")
         p = self.prompt(agent, task, context, extra, schema)
         t0 = time.time()
         reason = ""
@@ -919,12 +1027,16 @@ class HermesAdapter:
                 os.close(fd)
                 env = dict(os.environ)
                 env["HERMES_PROFILE"] = agent["id"]   # 每人一个独立 profile（配置/技能/记忆隔离）
-                proc = subprocess.run([CLI, "-z", q, "--usage-file", usage_path],
-                                      capture_output=True, text=True, timeout=TIMEOUT, env=env)
+                cmd = [CLI, "-z", q]
+                if alias and alias != MODEL:          # 通道带 hermes 别名时切换模型（如本地 qwen38）
+                    cmd += ["--model", alias]
+                cmd += ["--usage-file", usage_path]
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, env=env)
                 raw = (proc.stdout or "").strip()
                 usage = self._read_usage(usage_path)
                 if usage.get("totalTokens"):
-                    _llm_consume(MODEL, usage.get("totalTokens"))   # 扣减注册表额度
+                    _llm_consume((channel or {}).get("id") or MODEL,
+                                 usage.get("totalTokens"))   # 扣减实际所用通道的额度
                 data = self._extract(raw)
                 ms = int((time.time() - t0) * 1000)
                 with self.lock:
@@ -932,7 +1044,9 @@ class HermesAdapter:
                 if data:
                     with self.lock:
                         self.latencies.append(ms)
-                    return data, {"engine": "hermes", "model": MODEL, "latencyMs": ms,
+                    return data, {"engine": "hermes", "model": model_name,
+                                  "channel": (channel or {}).get("id") or "",
+                                  "latencyMs": ms,
                                   "attempts": attempt, "profile": agent["id"], "usage": usage}
                 reason = f"非 JSON 输出：{raw[:120]}"
             except Exception as exc:
@@ -4167,11 +4281,16 @@ class Handler(BaseHTTPRequestHandler):
         # ---------- 组织配置（制度 / 岗位 / 人员 / 性格 / 技能 / 记忆） ----------
         if path == "/api/org":
             try:
+                llm = _llm_view()
                 return self._json({
                     "ok": True, "agents": _org_agents(), "policies": _org_policies(),
                     "profilesRoot": ORG_PROFILES,
                     "projects": [{"id": k, "name": v["name"]} for k, v in PROJECTS.items()]
                                + [{"id": "all", "name": "全公司"}],
+                    "llmChannels": [{"id": m["id"], "name": m["name"], "status": m["status"],
+                                     "protocol": m["protocol"], "url": m["url"]}
+                                    for m in llm.get("models") or []],
+                    "llmProfiles": llm.get("profiles") or [],
                 })
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
@@ -4514,6 +4633,45 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
         # ---------- 大模型开关：CTO 运维控制（仅老板） ----------
+        if path == "/api/ops/llm/profile":
+            if user.get("role") != "老板":
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅老板可修改员工模型通道"}, 403)
+            st = _llm_store()
+            if not st:
+                return self._json({"ok": False, "error": "过程库未启用"}, 503)
+            who = user.get("name") or user.get("user") or ""
+            channel_id = str(body.get("channelId") or "")
+            targets = []
+            if body.get("all"):
+                targets = [p["id"] for p in _llm_view().get("profiles") or []]
+            else:
+                pid = str(body.get("profile") or "")
+                if not pid or not os.path.isfile(os.path.join(ORG_PROFILES, pid, "config.yaml")):
+                    return self._json({"ok": False, "error": f"未知 profile：{pid or '空'}"}, 400)
+                targets = [pid]
+            chan = None
+            if channel_id:
+                chan = next((r for r in st.llm_models() if r.get("id") == channel_id), None)
+                if chan is None:
+                    return self._json({"ok": False, "error": f"未知通道：{channel_id}"}, 400)
+                if chan.get("status") != "enabled":
+                    return self._json({"ok": False, "error": f"通道 {chan.get('name')} 未启用"}, 400)
+            done, failed = [], []
+            for pid in targets:
+                if chan is None:
+                    # 清空覆盖：恢复 profile 原生默认（云端主模型）
+                    chan = next((r for r in st.llm_models() if r.get("id") == "hermes-default"), None)
+                err = _llm_profile_apply(pid, chan) if chan else "注册表无 hermes-default 通道"
+                (failed if err else done).append(f"{pid}: {err}" if err else pid)
+                _org_audit(user, "llm-profile-channel", pid,
+                           f"channel={channel_id or 'hermes-default'} {'OK' if not err else 'FAIL'}")
+            if failed:
+                return self._json({"ok": False, "error": "部分失败",
+                                   "done": done, "failed": failed}, 500)
+            return self._json({"ok": True, "applied": done,
+                               "channel": channel_id or "hermes-default", "by": who,
+                               "at": iso_now()})
         if path == "/api/ops/llm":
             if user.get("role") != "老板":
                 return self._json({"ok": False, "error": "forbidden",
