@@ -1,6 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useGetIdentity } from "@refinedev/core";
-import { appRoot } from "../appRoot";
 import { authProvider } from "../authProvider";
 import type { OpcUser } from "../types";
 
