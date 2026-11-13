@@ -1,9 +1,9 @@
 {
   "checked_at": "2026-11-10",
   "version": "0.4.0",
-  "total": 31,
-  "pass": 31,
-  "fail": 0,
+  "total": 30,
+  "pass": 23,
+  "fail": 7,
   "checks": [
     {
       "name": "Java 纯逻辑校验环境可用",
@@ -12,13 +12,8 @@
     },
     {
       "name": "VerifyStream 编译通过",
-      "ok": true,
-      "detail": "ע: ĳЩ�����ļ�ʹ�û򸲸����ѹ�ʱ�� API��\nע: �й���ϸ��Ϣ, ��ʹ�� -Xlint:deprecation ���±��롣\n"
-    },
-    {
-      "name": "VerifyStream 全部断言通过",
-      "ok": true,
-      "detail": "  PASS  ������ƵͬԴ����·�������� asset_url_base\n  PASS  live playlist ͬԴ����·��\n  PASS  ������ļ����Ų� asset_url_base\n  PASS  ������ CDN ��ַ���ܾ�\n  PASS  ͬ host ��ͬ�˿ڱ��ܾ�\n  PASS  http �� https ��Ϊ��ͬԴ\n  PASS  Ĭ�� 443 �˿��ж�ͬԴ\n  PASS  file:// ����·������Ϊ����ַ\n  PASS  �յ�ַ��ȫ����\n  PASS  HLS �ж����� query\n  PASS  MP4 �ж�Ϊ����ʽ���� HLS\n  PASS  ���� URL ����ͬԴ��ַ\n  PASS  attempt=0 �������Բ���\n  PASS  ���� query �����Բ����� & ����\nVERIFY STREAM: 14 PASS / 0 FAIL\n"
+      "ok": false,
+      "detail": "/opt/sefs/opc-workbench/android/app/src/main/java/com/boray/voicemcp/McpConfig.java:84: 错误: 找不到符号\n    public String dispatchUrl = DispatchApi.PUBLIC_BASE;\n                                ^\n  符号:   变量 DispatchApi\n  位置: 类 McpConfig\n/opt/sefs/opc-workbench/android/app/src/main/java/com/boray/voicemcp/McpConfig.java:86: 错误: 找不到符号\n    public String dispatchUrlLan = DispatchApi.LAN_BASE;\n               "
     },
     {
       "name": "call_start 形态：扁平标准返回",
@@ -92,7 +87,7 @@
     },
     {
       "name": "StreamContract 工具常量齐全",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -102,17 +97,17 @@
     },
     {
       "name": "自我介绍页：流式播放 + 服务端未就绪降级",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
       "name": "通话页：call_start/turn/stop + live 播放 + 上行语音 + 降级",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
       "name": "档案页两个入口与状态提示",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -137,13 +132,13 @@
     },
     {
       "name": "布局 id 齐全 activity_live_call.xml",
-      "ok": true,
-      "detail": "missing=[]"
+      "ok": false,
+      "detail": "missing=['btnTalk']"
     },
     {
       "name": "版本号三处一致 0.4.0 / 6",
-      "ok": true,
-      "detail": "gradle=0.4.0/6 cfg=0.4.0"
+      "ok": false,
+      "detail": "gradle=0.12.0/43 cfg=0.12.0"
     },
     {
       "name": "仍然零第三方依赖",

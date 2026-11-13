@@ -2460,3 +2460,45 @@ except Exception as e:
    避免任何一处忘记解包又把整条下行打死。
 2. `tts_text` 的返回值改成命名结构（如 `dataclass Wav(data, mime)`）或在类型注释里写死，
    这类「返回 tuple 但按 bytes 用」的错很难在 review 里看出来。
+
+---
+
+## 53. 同心圆 0.12.0：启动登录（本机号码 / 手机号+密码）+ 后台处理模式校对
+
+### 53.1 登录链路（新增）
+
+| 项 | 实现 |
+| --- | --- |
+| 入口 | `LoginActivity` 改为唯一 LAUNCHER；`MainActivity` 不再导出，未登录一律回登录页 |
+| 本机号码 | API 33+ `READ_PHONE_NUMBERS`、≤32 `READ_PHONE_STATE`；`SubscriptionManager.getActiveSubscriptionInfoList()` 逐卡取号（API 33+ `getPhoneNumber(subId)`，旧版 `SubscriptionInfo.getNumber()`），`getLine1Number()` 兜底，号码归一化后按 SIM 去重 |
+| 交互 | 一个号码 → 弹「是否使用本机号码登录」确认；双卡多个 → 列表选一个（另有「手动输入其他号码」）；读不到 / 拒绝权限 → 直接手动输入。本机号码**只自动填账号**，服务端没有免密登录，密码必须输入 |
+| 后端 | `POST https://ai.boraydata.com/workbench/api/login {"account": 手机号, "password": 密码}`，与 Web 端同一套账号（users.db 手机号 / Obsidian 登录凭据.md）；成功返回 `{"ok":true,"user":{...}}` + `Set-Cookie: opc_sess=...; Path=/; Max-Age=604800` |
+| 会话 | 私有 SP `conring_auth` 存 Cookie/手机号/姓名/角色；`GET /api/session` 启动校验（401 回登录页、网络不通按离线继续）；`POST /api/logout` 退出。登录地址在登录页 / 设置页可改（如内网 `http://192.168.31.206:8848`） |
+| 生效范围 | Cookie 同步进 `McpConfig.sessionCookie`，由 `McpClient` / `SseListener` / `DispatchApi` 回传；首页、设置页、`ListenService`、开机自启都做登录门禁；设置页显示账号并提供「退出登录 / 切换账号」 |
+
+顺带修掉一个旧问题：`SettingsActivity.read()` 原先 `new McpConfig()`，每次点「保存设置」
+都会把 `dispatchUrl / dispatchUrlLan / dispatchWsLan` 重置回默认值；现在从 `McpConfig.load()` 起读。
+
+### 53.2 后台处理模式校对（服务端 2026-11-14 实况）
+
+| 层 | 服务端现状 | 0.12.0 客户端对齐 |
+| --- | --- | --- |
+| `dispatchd.py` | `/submit` **没有** `mode`/`priority`/`lane` 入参，由 `source`+`modality` 分类 P0/P1/P2；P1/P2 进优先级队列（2 worker），P0 专属线程；支持 `session_key` / 自动 resume（`resumed:true`），`REATTACH_GRACE` 已由 30s 提到 **300s** | `GRACE_MS` 28s → 300s；submit 带 `session_key=登录手机号`，解析 `resumed`；`verify_v30_contract.py` 的 30s 断言同步 |
+| `realtime_ws.py` | 改成**妙记式听写**：每句语音立刻「收到」ack、ASR 只落草稿（transcript，不跑 hermes）；听到「没了 / 结束 / 就这些」或静音 12s 收尾 → 先发 `reply mode="readback"` 复述 → 一次性 `run_hermes` → 正式 `reply` + 流式 TTS（`BATCH_TIMEOUT=600`） | 旧逻辑按 `turn` 从 1 严格递增排队，而 transcript 也消耗轮次、收尾两帧共用同一 turn，**回复会被永久卡在 `pendingReplies`**；改为 `TreeMap<Integer, List<CallReply>>` + 300ms 窗口全量放行（允许跳号 / 同轮多帧），`CallReply.isReadback()` 单独成行，字幕改「已记下…／已复述，正在整段执行…」 |
+| `mcp-asr/server.py` v2.2.0 | `voice_chat` **仍是**异步两段式（`_JOB_Q` 固定 3 worker）+ `voice_job` 长轮询，`wait` 仍支持；0.11.0 的「统一走 dispatch」只发生在**客户端电话链路** | `VoiceOutbox` / `ListenService` 的离线兜底与保持监听保留，注释和设置页文案改成「双轨」说明，避免误当废弃代码删除 |
+| 客户端开关 | 服务端不读取 `asyncMode` / `keepListening`，它们只是本机「同步等待 / 后台常驻」开关 | 保持原语义，文案标注清楚 |
+
+### 53.3 验证
+
+| 项目 | 结果 |
+| --- | --- |
+| `./gradlew collectApks --offline` | debug + release 双包 → `dist/voice-mcp-v0.12.0-b43-*.apk` |
+| `tools/verify_v34_login.py`（本轮新增） | **38 / 38** |
+| `verify_v33_entry.py` / `verify_v31_sessions.py` / `verify_v30_contract.py` | 40 / 40、76 / 76、64 / 64 |
+| 公网接口实测 | `/workbench/api/logininfo` 200；`/workbench/api/login` 错误口令返回 401 `账号或密码不正确`；`/workbench/api/session` 未带 Cookie 返回 401；`/conring/dispatch/health` 200 |
+| 隔离冒烟（`OPC_USERS_DB` 指向临时库、`OPC_DB=0`、独立端口） | 注册 → `POST /api/login {account:手机号,password}` 200 + `Set-Cookie: opc_sess=…; Max-Age=604800` → 带 Cookie 的 `GET /api/session` 200 → 错误口令 401 → `POST /api/logout` 200 + `Max-Age=0`，**SMOKE OK**（未触碰生产注册表） |
+
+> 历史脚本 `verify_v21_contract.py` / `verify_v24_contract.py` / `verify_v25_contract.py` 仍有
+> 硬编码 0.3.2/0.4.0 版本、旧 UI（`btnTalk`）与旧纯 JVM 源清单（缺 `DispatchApi.java`）造成的
+> 既有失败项，与本次改动无关；本轮未新增失败。
+

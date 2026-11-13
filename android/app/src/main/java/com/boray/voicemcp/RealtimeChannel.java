@@ -22,21 +22,29 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *       语音延迟更低，且能拿到 {@code text/voice_text/attachments/mode} 分层数据。</li>
  * </ul>
  *
- * <p>协议（服务端 realtime_ws.py，2026-11-11 实测）：
+ * <p>协议（服务端 realtime_ws.py，2026-11-14 校对）：
  * <pre>
  * 上行  {"type":"hello"} / 二进制 WAV 帧 / {"type":"audio_end"} / {"type":"ping"} / {"type":"close"}
- * 下行  session_started / hello_ok / transcript{text} /
- *      二进制音频（44B 头 + 100ms 分块，多句连续）/
- *      reply{text,voice_text,mode,attachments} / reply_end / barge_in / pong / error / bye / timeout
+ * 下行  session_started / hello_ok / transcript{text,turn,confidence} /
+ *      二进制音频（"收到" ack / TTS，44B 头 + 100ms 分块）/
+ *      reply{text,voice_text,mode,attachments,turn,greeting} /
+ *      reply_end / barge_in / pong / error / bye / timeout
  * </pre>
  *
- * <p>断线不用重建会话：服务端保留 30s 等待重连，channel_id 不变即恢复。
+ * <p><b>后台处理模式（0.12.0 校对）</b>：服务端已改成「妙记式听写」——
+ * 每句语音立刻回一声「收到」、ASR 只落草稿（transcript），不再每轮跑一次 hermes；
+ * 听到「没了 / 结束 / 就这些」或静音 12s 才收尾，先发一条
+ * {@code reply mode="readback"} 复述整段口述，再一次性执行并回正式 reply。
+ * 所以 reply 的 turn 会跳号（transcript 也占轮次）、同一 turn 还会连发两条，
+ * 客户端不能按 turn 严格递增排队，否则回复会被永久卡在队列里。
+ *
+ * <p>断线不用重建会话：服务端 REATTACH_GRACE 已从 30s 提到 300s，channel_id 不变即恢复。
  */
 public final class RealtimeChannel {
 
     private static final String TAG = "RealtimeChannel";
-    /** 服务端 REATTACH_GRACE，超时后任务会被判失败 */
-    private static final long GRACE_MS = 28_000;
+    /** 服务端 REATTACH_GRACE=300s；与其同步，别在服务端还等着时放弃重连 */
+    private static final long GRACE_MS = 300_000;
     private static final long PING_MS = 12_000;
     /** 连续多少次 ping 没有 pong 就认为连接已死 */
     private static final int PING_MISS_LIMIT = 3;
@@ -102,8 +110,11 @@ public final class RealtimeChannel {
                 t.setDaemon(true);
                 return t;
             });
-    /** 多轮并行：服务端可能先发第 3 轮的 reply、再发第 1 轮的，这里按轮次排好再交给界面 */
-    private final java.util.TreeMap<Integer, CallReply> pendingReplies = new java.util.TreeMap<>();
+    /**
+     * 短时间窗内按轮次整理乱序帧。妙记式下同一 turn 会有 readback + 正式回复两条，
+     * 所以用 List 存一桶；turn 跳号是常态（transcript 也占轮次），全部都要放行。
+     */
+    private final java.util.TreeMap<Integer, List<CallReply>> pendingReplies = new java.util.TreeMap<>();
     private int nextTurn = 1;
     private final Runnable flushReplies = this::drainReplies;
     private volatile long lastPongAt = 0;
@@ -386,40 +397,42 @@ public final class RealtimeChannel {
         }
     }
 
-    /** 按 turn 排序后再回调：turn<=0 是主动话术，立即显示 */
+    /**
+     * 只做 300ms 的乱序整理，不再要求 turn 从 1 连续递增：
+     * 妙记式下 transcript 消耗轮次，第一条 reply 的 turn 往往已经是 4、5，
+     * 旧的「等 nextTurn」逻辑会把所有回复永久留在队列里。
+     * turn<=0 是服务端主动话术（问候/催问），立即显示。
+     */
     private void enqueueReply(CallReply r) {
         if (r == null) return;
         if (r.turn <= 0) {
             listener.onReply(r);
             return;
         }
-        if (r.turn == nextTurn) {
-            listener.onReply(r);
-            nextTurn = r.turn + 1;
-            drainReplies();
-            return;
-        }
-        if (r.turn > nextTurn) {
-            synchronized (pendingReplies) {
-                pendingReplies.put(r.turn, r);
+        synchronized (pendingReplies) {
+            List<CallReply> bucket = pendingReplies.get(r.turn);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                pendingReplies.put(r.turn, bucket);
             }
-            // 缺号时别无限等：300ms 后按现有顺序补发
-            ui.removeCallbacks(flushReplies);
-            ui.postDelayed(flushReplies, 300);
-            return;
+            bucket.add(r);                    // 同 turn：readback 在前、正式回复在后
         }
-        listener.onReply(r);          // 迟到/重复的旧轮次，直接给
+        ui.removeCallbacks(flushReplies);
+        ui.postDelayed(flushReplies, 300);
     }
 
+    /** 按 turn 升序把队列全部放行；同轮次保持服务端下发顺序，不丢帧 */
     private void drainReplies() {
         while (true) {
-            CallReply n;
+            List<CallReply> bucket;
             synchronized (pendingReplies) {
-                n = pendingReplies.remove(nextTurn);
+                if (pendingReplies.isEmpty()) return;
+                int key = pendingReplies.firstKey();
+                bucket = pendingReplies.remove(key);
+                nextTurn = key + 1;
             }
-            if (n == null) break;
-            listener.onReply(n);
-            nextTurn++;
+            if (bucket == null) continue;
+            for (CallReply r : bucket) listener.onReply(r);
         }
     }
 
@@ -464,6 +477,6 @@ public final class RealtimeChannel {
         }
         if (userClosed.get()) return;
         fatal.set(true);
-        listener.onClosed("实时通道断开超过 30s");
+        listener.onClosed("实时通道断开超过 5 分钟（重连窗口已过）");
     }
 }

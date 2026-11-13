@@ -1,0 +1,198 @@
+{
+  "version": "0.12.0",
+  "total": 38,
+  "pass": 38,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "登录页是 LAUNCHER",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页不再暴露为启动入口",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "READ_PHONE_NUMBERS 权限",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "READ_PHONE_STATE 只到 API 32",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "双卡列表读取",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "号码归一化（+86 / 11 位）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "运行时申请号码权限",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "单个号码弹确认",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "多个号码列选择",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "读不到号码退回手动输入",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "登录页有手机号/密码/服务地址",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "手机号格式校验",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "密码非空校验",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "调用 /api/login",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "请求体 account/password",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "解析 Set-Cookie",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "会话恢复 /api/session",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "退出 /api/logout",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "离线不锁死",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "会话写入配置供网络层复用",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "保存设置不重置 dispatch/登录地址",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "首页 onCreate/onResume 拦截",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "开机自启检查登录态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "后台监听检查登录态",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "MCP 请求带 Cookie",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "SSE 长连接带 Cookie",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dispatch 请求带 Cookie",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "设置页账号与退出入口",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "重连窗口 30s → 300s",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "识别复述帧 readback",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "同 turn 多帧 + 允许跳号",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "缺号 300ms 兜底补发仍在",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "逐句记录的状态提示",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "submit 带 session_key / 解析 resumed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "双轨后台链路说明保留",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "设置页说明最新后台模式",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "版本 0.12.0 / b43",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CLIENT_VERSION 同步",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

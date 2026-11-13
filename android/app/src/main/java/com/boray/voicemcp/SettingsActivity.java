@@ -26,10 +26,10 @@ public class SettingsActivity extends Activity {
 
     private EditText etUrl, etTool, etAudioKey, etLanguage, etModel, etVoice, etProfile;
     private EditText etToken, etProtocol, etTimeout, etListenInterval, etMailUrl;
-    private EditText etAvatarId, etMode, etBandwidth;
+    private EditText etAvatarId, etMode, etBandwidth, etAuthBase;
     private CompoundButton cbAutoPlay, cbDemo, cbReport, cbReportVideo;
     private CompoundButton cbKeep, cbAsync, cbSse, cbMail, cbDelegate, cbAutoSync;
-    private TextView tvProbe;
+    private TextView tvProbe, tvAccount;
     private McpConfig cfg;
 
     @Override
@@ -64,6 +64,11 @@ public class SettingsActivity extends Activity {
         cbDelegate = findViewById(R.id.cbDelegate);
         cbAutoSync = findViewById(R.id.cbAutoSync);
         tvProbe = findViewById(R.id.tvProbe);
+        etAuthBase = findViewById(R.id.etAuthBase);
+        tvAccount = findViewById(R.id.tvAccount);
+
+        refreshAccount();
+        findViewById(R.id.btnLogout).setOnClickListener(v -> confirmLogout());
 
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
         findViewById(R.id.btnEmployees).setOnClickListener(v ->
@@ -89,6 +94,10 @@ public class SettingsActivity extends Activity {
             }
             if (next.tool.isEmpty() || next.audioKey.isEmpty()) {
                 toast("工具名和音频参数名不能为空");
+                return;
+            }
+            if (!next.authBase.startsWith("http://") && !next.authBase.startsWith("https://")) {
+                toast("登录服务地址必须以 http:// 或 https:// 开头");
                 return;
             }
             next.save(this);
@@ -156,6 +165,38 @@ public class SettingsActivity extends Activity {
         });
     }
 
+    private void refreshAccount() {
+        String phone = AuthSession.phone(this);
+        String name = AuthSession.name(this);
+        String role = AuthSession.role(this);
+        if (!AuthSession.isLoggedIn(this) || phone.isEmpty()) {
+            tvAccount.setText("未登录");
+            return;
+        }
+        tvAccount.setText("已登录：" + (name.isEmpty() ? PhoneNumbers.mask(phone) : name)
+                + "  " + PhoneNumbers.mask(phone)
+                + (role.isEmpty() ? "" : "  ·  " + role));
+    }
+
+    /** 退出登录：服务端注销 + 清本机会话 + 停后台监听 + 回登录页 */
+    private void confirmLogout() {
+        new AlertDialog.Builder(this)
+                .setTitle("退出登录")
+                .setMessage("退出后需要重新输入手机号与密码，后台监听也会停止。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("退出", (d, w) -> executor.execute(() -> {
+                    AuthSession.logout(SettingsActivity.this);
+                    ui.post(() -> {
+                        ListenService.stop(SettingsActivity.this);
+                        Intent i = new Intent(SettingsActivity.this, LoginActivity.class);
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                        startActivity(i);
+                        finish();
+                    });
+                }))
+                .show();
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -188,10 +229,15 @@ public class SettingsActivity extends Activity {
         etBandwidth.setText(String.valueOf(c.bandwidthKbps));
         cbDelegate.setChecked(c.delegate);
         cbAutoSync.setChecked(c.autoSyncProfile);
+        etAuthBase.setText(c.authBase);
     }
 
+    /**
+     * 从已保存配置起读：dispatch 三个地址、登录地址、会话 Cookie 都不在表单里，
+     * 直接 new McpConfig() 会在点「保存设置」时把它们悄悄重置回默认值。
+     */
     private McpConfig read() {
-        McpConfig c = new McpConfig();
+        McpConfig c = McpConfig.load(this);
         c.url = text(etUrl);
         c.tool = text(etTool);
         c.audioKey = text(etAudioKey);
@@ -232,6 +278,8 @@ public class SettingsActivity extends Activity {
         c.bandwidthKbps = Math.max(0, Math.min(c.bandwidthKbps, 1000000));
         c.delegate = cbDelegate.isChecked();
         c.autoSyncProfile = cbAutoSync.isChecked();
+        String base = text(etAuthBase);
+        c.authBase = base.isEmpty() ? AuthSession.DEFAULT_AUTH_BASE : base;
         return c;
     }
 

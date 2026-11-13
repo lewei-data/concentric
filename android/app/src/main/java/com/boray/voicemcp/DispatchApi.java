@@ -80,6 +80,8 @@ public final class DispatchApi {
         public String lane = "";
         public String priority = "";
         public String message = "";
+        /** 服务端 0.11.2：凭 session_key / channel_id 接回了旧会话 */
+        public boolean resumed = false;
         /** 这条响应是不是走内网拿到的 */
         public boolean lan = false;
 
@@ -131,6 +133,12 @@ public final class DispatchApi {
             body.put("modality", modality == null || modality.isEmpty() ? "voice" : modality);
             if (channel != null && !channel.isEmpty()) body.put("channel", channel);
             body.put("timeout_sec", 600);
+            // 0.11.2 服务端新增 session_key：同一账号断线重连 / 换通道重提可自动 resume，
+            // 不再每挂一次就新建一个 hermes 会话（响应带 resumed:true）。
+            if (c != null) {
+                String account = AuthSession.phone(c);
+                if (!account.isEmpty()) body.put("session_key", account);
+            }
             if (profile != null && !profile.isEmpty()) body.put("profile", profile);
             if (voice != null && !voice.isEmpty()) body.put("voice", voice);
         } catch (Exception ignored) {
@@ -163,6 +171,8 @@ public final class DispatchApi {
 
     /** 公网优先；上一次走内网成功则内网优先，缩短重连等待 */
     private static String[][] routes(Context c) {
+        // 后台服务冷启动时静态缓存是空的，趁有 Context 补一次会话 Cookie
+        if (c != null) AuthSession.prime(c);
         String pub = publicBase(c);
         String lan = lanBase(c);
         if (preferred == 2) return new String[][]{{"2", lan}, {"1", pub}};
@@ -187,6 +197,7 @@ public final class DispatchApi {
             s.realtimeUrl = j.optString("realtime_url", "");
             s.lane = j.optString("lane", "");
             s.priority = j.optString("priority", "");
+            s.resumed = j.optBoolean("resumed", false);
             s.ok = !s.taskId.isEmpty();
             if (!s.ok) s.message = "提交失败：没有 task_id";
             else if (!"ws".equalsIgnoreCase(s.channelKind)) {
@@ -320,6 +331,7 @@ public final class DispatchApi {
 
     /** /health：判断公网/内网哪条线路当前可用 */
     public static String health(Context c) {
+        if (c != null) AuthSession.prime(c);
         for (String base : new String[]{publicBase(c), lanBase(c)}) {
             try {
                 return get(base + "/health", 3000, 4000);
@@ -337,6 +349,8 @@ public final class DispatchApi {
         conn.setConnectTimeout(connectMs);
         conn.setReadTimeout(readMs);
         conn.setRequestProperty("Accept", "application/json");
+        String cookie = AuthSession.cachedHeader();
+        if (!cookie.isEmpty()) conn.setRequestProperty("Cookie", cookie);
         try (InputStream in = conn.getInputStream()) {
             return readAll(in);
         } finally {
@@ -352,6 +366,8 @@ public final class DispatchApi {
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         conn.setRequestProperty("Accept", "application/json");
+        String cookie = AuthSession.cachedHeader();
+        if (!cookie.isEmpty()) conn.setRequestProperty("Cookie", cookie);
         byte[] body = json.getBytes(StandardCharsets.UTF_8);
         conn.setFixedLengthStreamingMode(body.length);
         try (OutputStream os = conn.getOutputStream()) {

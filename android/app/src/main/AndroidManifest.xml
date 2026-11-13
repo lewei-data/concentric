@@ -12,6 +12,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 启动时读本机号码：Android 13+ 用 READ_PHONE_NUMBERS，更早版本用 READ_PHONE_STATE -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
@@ -32,14 +36,21 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!-- 0.12.0：启动先走登录页（本机号码提示 / 手机号+密码），登录后才进首页 -->
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".LoginActivity"
+            android:exported="true"
+            android:label="@string/login_title"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
 
         <activity
             android:name=".SettingsActivity"

@@ -66,6 +66,66 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
 
+            <!-- 0.12.0：工作台账号与登录 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:layout_marginBottom="8dp"
+                android:text="账号与登录"
+                android:textColor="@color/primary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/tvAccount"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="未登录"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="登录服务地址（/api/login · /api/session）"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/etAuthBase"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:inputType="textUri"
+                    android:padding="12dp"
+                    android:singleLine="true"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnLogout"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="14dp"
+                    android:background="@drawable/bg_pill_outline"
+                    android:stateListAnimator="@null"
+                    android:text="退出登录 / 切换账号"
+                    android:textAllCaps="false"
+                    android:textColor="@color/primary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
             <!-- 连接 -->
             <TextView
                 android:layout_width="match_parent"
@@ -665,7 +725,7 @@
                 android:background="@drawable/bg_card_soft"
                 android:lineSpacingExtra="3dp"
                 android:padding="14dp"
-                android:text="服务端 voice_chat 已改为「立即回执 + job_id」：后台监听服务用 voice_job 长轮询取结果并直接播报；同时保持 SSE 长连接接收服务端推送、定时检查 CEO 新邮件。所有消息会长期保存在本机历史里。"
+                android:text="后台处理双轨（0.12.0 校对）：电话指令走 dispatch 实时通道，服务端按「妙记式」逐句记录、说收尾词或静音 12 秒后复述并一次性执行；离线兜底与保持监听仍用 voice_chat「立即回执 + job_id」+ voice_job 长轮询，另有 SSE 推送与 CEO 新邮件检查。所有消息会长期保存在本机历史里。"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
 

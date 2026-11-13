@@ -126,6 +126,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        AuthSession.prime(this);
+        if (!requireLogin()) return;
         setContentView(R.layout.activity_main);
         WindowInsetsHelper.apply(this);
 
@@ -234,11 +236,36 @@ public class MainActivity extends Activity {
         }
         findViewById(R.id.cardEmployee).setOnClickListener(v ->
                 startActivity(new Intent(this, EmployeeListActivity.class)));
+        verifySessionAsync();
+    }
+
+    /** 未登录 / 会话被服务端判失效 → 回登录页，并停掉后台监听 */
+    private boolean requireLogin() {
+        if (AuthSession.isLoggedIn(this)) return true;
+        Intent i = new Intent(this, LoginActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(i);
+        finish();
+        return false;
+    }
+
+    /** 服务端会话重启即失效：后台校验一次；网络不通时按离线条用，不打断使用 */
+    private void verifySessionAsync() {
+        // 独立线程：登录服务不可达时最多等 8s，别占住录音用的 executor
+        new Thread(() -> {
+            AuthSession.Result r = AuthSession.check(this);
+            ui.post(() -> {
+                if (isFinishing() || r.ok) return;
+                ListenService.stop(this);
+                requireLogin();
+            });
+        }, "auth-check").start();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        if (!requireLogin()) return;
         isVisible = true;
         ringing = VoiceCallService.isActive() && !VoiceCallService.isConnected();
         if (ringing) tone.startDialing();
@@ -640,7 +667,9 @@ public class MainActivity extends Activity {
     }
 
     private void refreshEndpointLabel() {
-        tvEndpoint.setText("端点：" + cfg.summary());
+        String who = AuthSession.phone(this);
+        String account = who.isEmpty() ? "已登录" : "已登录 " + PhoneNumbers.mask(who);
+        tvEndpoint.setText("端点：" + cfg.summary() + "  ·  " + account);
         tvBadge.setText(cfg.demo ? "演示模式" : (cfg.asyncMode ? "异步监听" : "已就绪"));
     }
 

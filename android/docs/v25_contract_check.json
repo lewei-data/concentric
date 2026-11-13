@@ -1,6 +1,6 @@
 {
-  "pass": 145,
-  "fail": 0,
+  "pass": 140,
+  "fail": 14,
   "results": [
     {
       "name": "Java 校验环境可用",
@@ -14,43 +14,23 @@
     },
     {
       "name": "VerifyStream 编译通过",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "VerifyStream 全部断言通过",
-      "ok": true,
-      "detail": "o ʱ�� 21.16s\n  PASS  intro �İ��ǿ�\n  PASS  intro size 660258\n  PASS  intro �� id ѡ����һ��\n  PASS  δ֪ id �������������ǿ�\n  PASS  intro �������ܾ��ұ��δ����\n  PASS  playlist �з�Ƭ�ŷ���\n  PASS  ֻ�б�ͷ������\n  PASS  ���ַ���������\n  PASS  ENDLIST �ж�Ϊ����β\n  PASS  �����е� EVENT ��������β\n  PASS  playlist ��ʱ�� = 7s��ֱ����Ե��\n  PASS  ��Ƭ�� = 7\n  PASS  ��Ե��λ = �ܳ� - 1.2s\n  PASS  �� playlist ʱ��Ϊ 0\n  PASS  ֻ�б�ͷʱ��Ϊ 0\n  PASS  voice_chat ack ȡ�����յ���\n  PASS  ���ı��ظ�ԭ������\nVERIFY STREAM: 51 PASS / 0 FAIL\n"
-    },
-    {
-      "name": "VerifyStream 计数",
-      "ok": true,
-      "detail": "VERIFY STREAM: 51 PASS / 0 FAIL"
+      "ok": false,
+      "detail": "/opt/sefs/opc-workbench/android/app/src/main/java/com/boray/voicemcp/McpConfig.java:84: 错误: 找不到符号\n    public String dispatchUrl = DispatchApi.PUBLIC_BASE;\n                                ^\n  符号:   变量 DispatchApi\n  位置: 类 McpConfig\n/opt/sefs/opc-workbench/android/app/src/main/java/com/boray/voicemcp/McpConfig.java:86: 错误: 找不到符号\n    public String dispatchUrlLan = DispatchApi.LAN_BASE;\n               "
     },
     {
       "name": "VerifyBriefing 编译通过",
-      "ok": true,
-      "detail": ""
-    },
-    {
-      "name": "VerifyBriefing 全部断言通过",
-      "ok": true,
-      "detail": "  PASS  һ�仰���۷ǿ�\n  PASS  ��չ���� 3 ��\n  PASS  �������� 2 ��\n  PASS  ���� 3 ��\n  PASS  �� 1 ���Ǽ���\n  PASS  �� 1 ������ȥ�����\n  PASS  �� 1 ���ٳ����� A\n  PASS  �� 1 �����������ߺ��\n  PASS  �� 3 ���ǻ���\n  PASS  �� 3 �������ǡ���Ȩ ceo ͳһ�ı���\n  PASS  ͨ��ָ�����׼����ѡ��\n  PASS  ��ͨ��ָ�������׼�������\n  PASS  ȱ����ʱ�������ܶ���\n  PASS  ������ empty()=true\nVERIFY BRIEFING: 14 PASS / 0 FAIL\n"
-    },
-    {
-      "name": "VerifyBriefing 计数",
-      "ok": true,
-      "detail": "VERIFY BRIEFING: 14 PASS / 0 FAIL"
+      "ok": false,
+      "detail": "/opt/sefs/opc-workbench/android/app/src/main/java/com/boray/voicemcp/McpConfig.java:84: 错误: 找不到符号\n    public String dispatchUrl = DispatchApi.PUBLIC_BASE;\n                                ^\n  符号:   变量 DispatchApi\n  位置: 类 McpConfig\n/opt/sefs/opc-workbench/android/app/src/main/java/com/boray/voicemcp/McpConfig.java:86: 错误: 找不到符号\n    public String dispatchUrlLan = DispatchApi.LAN_BASE;\n               "
     },
     {
       "name": "VerifyLevel 编译通过",
       "ok": true,
-      "detail": ""
+      "detail": "注: /opt/sefs/opc-workbench/android/app/src/main/java/com/boray/voicemcp/LiveLevelMeter.java使用或覆盖了已过时的 API。\n注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。\n"
     },
     {
       "name": "VerifyLevel 全部断言通过",
       "ok": true,
-      "detail": "�� TARGETDURATION��46.0��\n  PASS  �����ô��ھ�ֵ��44.87��\n  PASS  ĩƬ�ضϲ�Ӱ��ê�㣨ȡ��� EXTINF��\n  PASS  mediaT=45.929 �� 53.2%\n  PASS  mediaT=46.927 �� 82.9%\n  PASS  mediaT=47.929 �� 0\n  PASS  mediaT ���� edge(50.8) ��ȡβ��\n  PASS  �����е����Բ�ֵ = 0.5\n  PASS  ���� t0 ȡ�׸�\n  PASS  �����鷵�� 0\n  PASS  null ��ȫ\n  PASS  ͬԴ��ַ����\n  PASS  �������ܾ�\n  PASS  ��˿ھܾ�\n  PASS  �յ�ַ�ܾ�\n\nVERIFY LEVEL: 16 PASS / 0 FAIL\n"
+      "detail": "  首片起始 = 46 × 0.998456 ≈ 45.929\n  PASS  不会用 TARGETDURATION（46.0）\n  PASS  不会用窗口均值（44.87）\n  PASS  末片截断不影响锚点（取最大 EXTINF）\n  PASS  mediaT=45.929 → 53.2%\n  PASS  mediaT=46.927 → 82.9%\n  PASS  mediaT=47.929 → 0\n  PASS  mediaT 超过 edge(50.8) 仍取尾格\n  PASS  两格中点线性插值 = 0.5\n  PASS  早于 t0 取首格\n  PASS  空数组返回 0\n  PASS  null 安全\n  PASS  同源地址放行\n  PASS  异域名拒绝\n  PASS  异端口拒绝\n  PASS  空地址拒绝\n\nVERIFY LEVEL: 16 PASS / 0 FAIL\n"
     },
     {
       "name": "VerifyLevel 计数",
@@ -109,7 +89,7 @@
     },
     {
       "name": "通话页用 live_call + voice_chat(live_session)",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -159,12 +139,12 @@
     },
     {
       "name": "live.ended=true 时本地播 job 音频（不重复播流内音频）",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
       "name": "挂断后等未完成回复播完再停服务",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -264,12 +244,12 @@
     },
     {
       "name": "转写里的对方称呼按汇报人渲染（Line 只带 fromUser）",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
       "name": "自己说的话走并行 asr_transcribe（1.7s 出字，不等 voice_chat）",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -314,12 +294,12 @@
     },
     {
       "name": "没混进流（live 缺失）也要本地补播，避免有字无声",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
       "name": "ASR 池与 job 池互不阻塞，服务销毁才回收",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -329,17 +309,17 @@
     },
     {
       "name": "ASR 文本原地替换占位，不重复出行",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
       "name": "转写变更主动回调界面（不等定时器）",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
       "name": "占位文案带跳动（识别中 / 处理中）",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -469,7 +449,7 @@
     },
     {
       "name": "转写区更高更大并可自动滚到最新",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -479,7 +459,7 @@
     },
     {
       "name": "首页有实时转写区",
-      "ok": true,
+      "ok": false,
       "detail": ""
     },
     {
@@ -638,9 +618,9 @@
       "detail": "missing=[]"
     },
     {
-      "name": "版本号三处一致 0.9.5 / 29",
+      "name": "版本号三处一致 0.12.0 / 43",
       "ok": true,
-      "detail": "gradle=0.9.5/29 cfg=0.9.5"
+      "detail": "gradle=0.12.0/43 cfg=0.12.0"
     },
     {
       "name": "仍然零第三方依赖",
@@ -705,7 +685,7 @@
     {
       "name": "CEO 介绍时长在 5–120s 合理区间",
       "ok": true,
-      "detail": "19.64"
+      "detail": "20.12"
     },
     {
       "name": "已生成的介绍视频都可 Range 取流（19 个）",
@@ -723,9 +703,74 @@
       "detail": ""
     },
     {
-      "name": "live_call 在线检查（会话已满，跳过）",
+      "name": "start 返回 session_id",
       "ok": true,
-      "detail": "执行失败：实时通话会话已达上限 8，请先挂断"
+      "detail": "{'session_id': 'lv_e0a9a829', 'status': 'live', 'avatar_id': 'ceo', 'mode': 'video', 'hls_url': '/conring/asr/assets/live/lv_e0a9a829/index.m3u8', 'hls_url_full': 'https://ai.boraydata.com/conring/asr"
+    },
+    {
+      "name": "start 返回 status=live",
+      "ok": true,
+      "detail": "live"
+    },
+    {
+      "name": "hls_url 为服务端同源绝对路径",
+      "ok": true,
+      "detail": "/conring/asr/assets/live/lv_e0a9a829/index.m3u8"
+    },
+    {
+      "name": "segment_sec=1.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sync 标明音视频同流复用",
+      "ok": true,
+      "detail": "音视频同流复用（AAC+H.264），由 ffmpeg 统一打时间戳"
+    },
+    {
+      "name": "playlist 可访问",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "playlist 是 EVENT 型直播",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "playlist 有可播分片",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "直播中未写 ENDLIST",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "分片为 MPEG-TS",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "分片含 H.264(0x1b) 视频",
+      "ok": true,
+      "detail": "['0x1b', '0xf']"
+    },
+    {
+      "name": "分片含 AAC(0x0f) 音频",
+      "ok": true,
+      "detail": "['0x1b', '0xf']"
+    },
+    {
+      "name": "stop 后 status=ended",
+      "ok": true,
+      "detail": "ended"
+    },
+    {
+      "name": "收尾后 playlist 写 ENDLIST",
+      "ok": true,
+      "detail": ""
     }
   ]
 }

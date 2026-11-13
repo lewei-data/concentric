@@ -51,6 +51,14 @@ public final class CallReply {
         return voiceText.isEmpty() && detail.isEmpty() && attachments.isEmpty();
     }
 
+    /**
+     * 服务端「妙记式」收尾会先发一条复述帧（{@code mode=readback}），
+     * 同一 turn 稍后才发正式执行结果；复述不能当成任务已完成来展示。
+     */
+    public boolean isReadback() {
+        return "readback".equalsIgnoreCase(mode);
+    }
+
     public static CallReply parse(org.json.JSONObject j) {
         CallReply r = new CallReply();
         if (j == null) return r;

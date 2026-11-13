@@ -2,8 +2,9 @@
 
 DEFAULT_AGENT_SPEC = [
     ("secretary", "小秘书", "小秘书（老板影子分身）", "all",
-     ["metric.read", "report.render", "kb.read", "kb.search", "mail.read", "mail.send", "cron.write"],
-     "全公司（代老板处理日常、巡检汇报与催办）"),
+     ["metric.read", "report.render", "kb.read", "kb.search", "mail.read", "mail.send",
+      "cron.write", "browser_exec"],
+     "全公司（代老板处理日常、巡检汇报与催办；消息中心可操控浏览器查资料）"),
     ("cco", "沈青禾", "首席创意官", "all",
      ["style.guide", "copy.read", "asset.read", "kb.read", "mail.read", "mail.send"],
      "全公司 + 三项目创意"),

@@ -1,6 +1,6 @@
 {
-  "version": "0.11.2",
-  "versionCode": 39,
+  "version": "0.12.0",
+  "versionCode": 43,
   "total": 40,
   "pass": 40,
   "fail": 0,
@@ -193,12 +193,12 @@
     {
       "name": "版本 ≥ 0.11.2",
       "ok": true,
-      "detail": "0.11.2"
+      "detail": "0.12.0"
     },
     {
       "name": "versionCode ≥ 39",
       "ok": true,
-      "detail": "39"
+      "detail": "43"
     },
     {
       "name": "CLIENT_VERSION 同步",

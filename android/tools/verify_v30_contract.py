@@ -86,7 +86,8 @@ def main():
     check("barge_in", "barge_in" in channel)
     check("bye / timeout / error", has(channel, '"bye"', '"timeout"', '"error"'))
     check("4404 视为会话结束", "4404" in channel)
-    check("30s 内原 channel 重连", "GRACE_MS" in channel and "28_000" in channel)
+    # 0.12.0：服务端 REATTACH_GRACE 已从 30s 改到 300s，客户端重连窗口同步
+    check("300s 内原 channel 重连", "GRACE_MS" in channel and "300_000" in channel)
     check("心跳 12s", "PING_MS = 12_000" in channel)
     check("上行分块 3200B/100ms", "AUDIO_CHUNK = 3200" in channel and "sleep(20)" in channel)
 

@@ -642,7 +642,8 @@ public class VoiceCallService extends Service {
         if (first) {
             ensureLogSession("ws");
             ui.removeCallbacks(chase);
-            subtitle = "直接说话，我在听。";
+            // 服务端妙记式：逐句只记录，收尾才一次性执行，先把规则告诉老板
+            subtitle = "直接说，逐句记下；说「没了」或停顿后统一执行。";
             setMicRunning(true);
         } else {
             subtitle = "已恢复连接";
@@ -678,7 +679,15 @@ public class VoiceCallService extends Service {
                 } else {
                     addLine(true, text, false);
                 }
-                subtitle = "我听到：「" + text + "」";
+                // 妙记式：这句只入草稿，服务端不会立刻回正式结果。
+                // ack「收到」的音频造成的「处理中」占位要换成明确状态，别让老板以为卡住。
+                if (pendingAnswer != null
+                        && (pendingAnswer.text == null || pendingAnswer.text.isEmpty())) {
+                    setLine(pendingAnswer,
+                            "（已记下，继续说；说「没了」或停顿 12 秒后统一执行）", false);
+                    pendingAnswer = null;
+                }
+                subtitle = "已记下：「" + text + "」";
             });
         }
 
@@ -691,7 +700,7 @@ public class VoiceCallService extends Service {
                     if (pendingAnswer == null) pendingAnswer = addPendingLine(false);
                 });
             }
-            subtitle = "正在听 / 思考…";
+            subtitle = "已收到，继续说…";
         }
 
         @Override
@@ -701,6 +710,21 @@ public class VoiceCallService extends Service {
             ui.post(() -> {
                 lastReply = reply;
                 String spoken = reply.spoken();
+                // 妙记式收尾：先复述整段口述，同一 turn 稍后才回正式执行结果。
+                // 复述单独一行、不写详情、不占住「正式回复」的占位行。
+                if (reply.isReadback()) {
+                    if (!spoken.isEmpty()) {
+                        if (pendingAnswer != null
+                                && (pendingAnswer.text == null || pendingAnswer.text.isEmpty())) {
+                            setLine(pendingAnswer, "〔复述〕" + spoken, false);
+                        } else {
+                            addLine(false, "〔复述〕" + spoken, false);
+                        }
+                    }
+                    pendingAnswer = null;
+                    subtitle = "已复述，正在整段执行…";
+                    return;
+                }
                 if (!spoken.isEmpty()) {
                     // 多轮并行时新一轮不能被上一轮的行「覆盖」，已有文字就另起一行
                     if (pendingAnswer != null

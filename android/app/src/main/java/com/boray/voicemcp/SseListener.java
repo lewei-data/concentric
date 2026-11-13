@@ -48,6 +48,10 @@ public final class SseListener {
                 if (cfg.token != null && !cfg.token.isEmpty()) {
                     conn.setRequestProperty("Authorization", "Bearer " + cfg.token);
                 }
+                // 0.12.0：SSE 长连接同样回传登录会话
+                if (cfg.sessionCookie != null && !cfg.sessionCookie.isEmpty()) {
+                    conn.setRequestProperty("Cookie", cfg.sessionCookie);
+                }
                 synchronized (this) { current = conn; }
 
                 int code = conn.getResponseCode();

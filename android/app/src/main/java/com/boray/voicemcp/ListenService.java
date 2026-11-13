@@ -68,6 +68,8 @@ public class ListenService extends Service {
 
     public static void start(Context c) {
         if (McpConfig.load(c).demo) return;
+        // 0.12.0：后台处理只在已登录后运行，退出登录不再偷偷拉起
+        if (!AuthSession.isLoggedIn(c)) return;
         Intent i = new Intent(c, ListenService.class).setAction(ACTION_START);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) c.startForegroundService(i);
         else c.startService(i);
@@ -110,6 +112,7 @@ public class ListenService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        AuthSession.prime(this);
         prefs = prefs(this);
         nm = getSystemService(NotificationManager.class);
         PushProcessor.ensureChannels(this);

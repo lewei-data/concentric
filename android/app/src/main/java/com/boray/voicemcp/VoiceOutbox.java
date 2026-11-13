@@ -269,7 +269,11 @@ public final class VoiceOutbox {
     }
 
     /**
-     * 把到点的录音依次重发（voice_chat，async）。放后台线程调用。
+     * 把到点的录音依次重发（MCP voice_chat，异步 job）。放后台线程调用。
+     *
+     * <p>0.12.0 后台处理模式校对：mcp-asr v2.2.0 仍保留 voice_chat + voice_job
+     * （_JOB_Q 固定 3 个 worker）这条异步队列；0.11.0 起「电话指令」主链路才统一改走
+     * dispatch WS / passthrough。所以这里的离线兜底链路依然有效，不是废弃代码。
      * 成功：记 job_id 并交给 ListenService 长轮询取结果；失败：指数退避，下次再来。
      */
     public static void flush(Context c, McpConfig cfg) {

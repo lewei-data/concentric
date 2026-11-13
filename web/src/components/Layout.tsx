@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useGetIdentity } from "@refinedev/core";
 import { authProvider } from "../authProvider";
 import type { OpcUser } from "../types";
+import AssistantWidget from "./AssistantWidget";
 
 function ConcentricLogo() {
   return (
@@ -61,6 +62,7 @@ export function Layout() {
   };
 
   const navItems = [...PRIMARY_NAV];
+  if (isOwner) navItems.push({ to: "/messages", label: "消息中心", end: false });
 
   return (
     <div className="app">
@@ -163,6 +165,7 @@ export function Layout() {
       <main className={isScene ? "content content-scene" : "content"}>
         <Outlet />
       </main>
+      {isOwner && <AssistantWidget />}
     </div>
   );
 }

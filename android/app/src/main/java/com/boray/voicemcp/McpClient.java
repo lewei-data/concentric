@@ -132,6 +132,10 @@ public final class McpClient {
             if (cfg.token != null && !cfg.token.isEmpty()) {
                 conn.setRequestProperty("Authorization", "Bearer " + cfg.token);
             }
+            // 0.12.0：同域工作台会话，服务端以后给 /conring/* 加鉴权也能直接用
+            if (cfg.sessionCookie != null && !cfg.sessionCookie.isEmpty()) {
+                conn.setRequestProperty("Cookie", cfg.sessionCookie);
+            }
             synchronized (this) {
                 if (sessionId != null && !sessionId.isEmpty()) {
                     conn.setRequestProperty("Mcp-Session-Id", sessionId);

@@ -120,6 +120,7 @@ import mail as MAILM
 from hermes_adapter import HERMES
 from deps import *  # noqa: F401,F403 —— 基础设施单例（DBX/ING/DL/WK/OMR/asset_fill/insights/ops_monitor）
 from kernel import BusyError, _kernel_for, _kernel_reset
+import voice_bridge
 from users import (SESSIONS, SESS_LOCK, SESSION_COOKIE, SESSION_TTL,
                    LOGIN_FAILS, LOGIN_LOCK)
 
@@ -839,6 +840,21 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
             return self._json({"ok": False, "error": "not found"}, 404)
+        # ---------- 消息中心 · 聊天附件（仅老板） ----------
+        if path.startswith("/chat-files/"):
+            if not self._owner_only():
+                return
+            got = self._chat_file(path[len("/chat-files/"):])
+            if not got:
+                return self._json({"error": "not found"}, 404)
+            mime, blob = got
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(blob)))
+            self.send_header("Cache-Control", "private, max-age=60")
+            self.end_headers()
+            self.wfile.write(blob)
+            return
         # ---------- 组织配置（制度 / 岗位 / 人员 / 性格 / 技能 / 记忆） ----------
         if path == "/api/org":
             try:
@@ -1226,6 +1242,156 @@ class Handler(BaseHTTPRequestHandler):
         view["subscribed"] = subs
         return view
 
+    # ---------- 消息中心 · 桌面精灵（小秘书对话：文字 / 语音 / 文件） ----------
+    _CHAT_AUDIO_EXT = {"wav", "mp3", "ogg", "m4a", "amr", "webm", "aac", "flac"}
+    _CHAT_FILE_MAX = 25 * 1024 * 1024
+    _CHAT_FILES_RE = re.compile(
+        r"[\w\u4e00-\u9fa5\-]+\.(wav|webm|mp3|m4a|ogg|flac|aac|png|jpg|jpeg|gif|pdf|txt|md|docx|xlsx|pptx|zip)", re.I)
+    _CHAT_MIME = {"wav": "audio/wav", "webm": "audio/webm", "mp3": "audio/mpeg",
+                  "m4a": "audio/mp4", "ogg": "audio/ogg", "flac": "audio/flac",
+                  "aac": "audio/aac", "png": "image/png", "jpg": "image/jpeg",
+                  "jpeg": "image/jpeg", "gif": "image/gif", "pdf": "application/pdf",
+                  "txt": "text/plain; charset=utf-8", "md": "text/plain; charset=utf-8",
+                  "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                  "zip": "application/zip"}
+
+    def _chat_dir(self):
+        d = os.path.join(OWNER_DATA_DIR, "workspace", "chat")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _chat_put_inbound(self, db, *, modality, content, content_kind="text",
+                          meta=None, asr=None):
+        """老板从 Web 发来的一条消息 → web:secretary 线程；返回线程 ID。"""
+        tid = f"web:secretary"
+        now = iso_now()
+        db.chat_upsert_thread(tid, "web", "Web · 小秘书",
+                              [{"id": "boss", "name": "老板"},
+                               {"id": "secretary", "name": "小秘书"}], now, now)
+        db.chat_insert({"thread_id": tid, "source": "web", "modality": modality,
+                        "direction": "inbound", "sender_id": "boss", "sender_name": "老板",
+                        "content": str(content)[:4000], "content_kind": content_kind,
+                        "origin_table": "chat_web", "origin_id": uid("cw"),
+                        "asr": asr, "meta": meta, "created_at": now})
+        return tid
+
+    def _chat_reply_async(self, k, tid, user_text, note=""):
+        """后台调小秘书（hermes）回复；回复落库 + TTS 语音 + SSE 推送。"""
+        chat_dir = self._chat_dir()
+        secret_name = k.agents.get("secretary", {}).get("name", "小秘书")
+
+        def work():
+            reply, audio, err = "", "", ""
+            try:
+                task = user_text if not note else f"{user_text}\n（附带：{note}）"
+                data, meta = k.call_agent(
+                    "secretary",
+                    f"老板通过 Web 消息中心给你发来一条消息，请直接回应或执行：\n{task}",
+                    context="这是老板的私人指令通道（Web 桌面精灵）。回复简短口语化、先给结论；"
+                            "老板在 Web 端能看到你引用的资料链接。需要查资料/操作网页可用 browser_exec。",
+                    schema={"summary": "给老板的回复文本（≤200字，先结论）", "done": "是否已完成，布尔",
+                            "detail": "可选：执行结果细节或资料出处"})
+                if isinstance(data, dict):
+                    reply = str(data.get("summary") or data.get("reply")
+                                or data.get("detail") or "").strip()
+                if not reply:
+                    reply = "（我没有得出有效结论，请换种说法再试一次）"
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+                print(f"[chat] 小秘书处理失败：{err}", flush=True)
+                reply = f"我这边处理出错了（{type(e).__name__}），请稍后再试或换个说法。"
+            try:
+                wav = voice_bridge.tts_synthesize(reply, os.path.join(
+                    chat_dir, f"{datetime.now(TZ).strftime('%Y%m%d-%H%M%S')}-reply.wav"))
+                if wav:
+                    audio = f"/chat-files/{os.path.basename(wav)}"
+            except Exception as e:
+                print(f"[chat] TTS 失败：{type(e).__name__}: {e}", flush=True)
+            try:
+                now = iso_now()
+                k.db.chat_insert({
+                    "thread_id": tid, "source": "web", "modality": "voice" if audio else "text",
+                    "direction": "outbound", "sender_id": "secretary", "sender_name": secret_name,
+                    "content": reply, "content_kind": "text",
+                    "origin_table": "chat_web", "origin_id": uid("cw"), "reply_to": None,
+                    "meta": {"audio": audio, "error": err}, "created_at": now})
+                k.emit("chat.message", "", {"threadId": tid, "source": "web",
+                                            "direction": "outbound", "content": reply[:160],
+                                            "audio": audio})
+            except Exception as e:
+                print(f"[chat] 回复落库失败：{type(e).__name__}: {e}", flush=True)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _chat_file(self, name):
+        """读取 workspace/chat 下老板自己的聊天附件（realpath 防目录穿越）。"""
+        if not self._CHAT_FILES_RE.fullmatch(name):
+            return None
+        base = os.path.realpath(self._chat_dir())
+        full = os.path.realpath(os.path.join(base, name))
+        if not full.startswith(base + os.sep) or not os.path.isfile(full):
+            return None
+        ext = name.rsplit(".", 1)[-1].lower()
+        mime = self._CHAT_MIME.get(ext, "application/octet-stream")
+        try:
+            with open(full, "rb") as f:
+                return mime, f.read()
+        except OSError:
+            return None
+
+    def _chat_binary_post(self, path):
+        """桌面精灵的二进制直传路由：/api/chat/voice（音频）、/api/chat/upload（文件）。"""
+        if not self._owner_only():
+            return
+        k = self._kernel()
+        if not k.db:
+            return self._json({"ok": False, "enabled": False, "error": "过程库未启用"}, 503)
+        try:
+            blob = self._raw_body()
+            if not blob:
+                return self._json({"ok": False, "error": "请求体为空"}, 400)
+            if len(blob) > self._CHAT_FILE_MAX:
+                return self._json({"ok": False, "error": "超过 25MB 上限"}, 413)
+            qs = parse_qs(urlparse(self.path).query)
+            stamp = datetime.now(TZ).strftime("%Y%m%d-%H%M%S")
+            if path == "/api/chat/voice":
+                ext = (qs.get("ext") or ["webm"])[0]
+                if ext not in self._CHAT_AUDIO_EXT:
+                    ext = "webm"
+                fname = f"{stamp}-voice.{ext}"
+                with open(os.path.join(self._chat_dir(), fname), "wb") as f:
+                    f.write(blob)
+                try:
+                    transcript = voice_bridge.asr_transcribe(base64.b64encode(blob).decode())
+                except Exception as e:
+                    return self._json({"ok": False,
+                                       "error": f"语音识别失败：{type(e).__name__}"}, 502)
+                if not transcript.strip():
+                    return self._json({"ok": False, "error": "没有识别到语音内容"}, 400)
+                tid = self._chat_put_inbound(k.db, modality="voice", content=transcript,
+                                             asr=1, meta={"audio": f"/chat-files/{fname}"})
+                self._chat_reply_async(k, tid, transcript, note="这是一条语音消息的转写")
+                return self._json({"ok": True, "threadId": tid, "transcript": transcript})
+            # /api/chat/upload
+            name = (qs.get("name") or ["附件"])[0]
+            name = os.path.basename(name.replace("\\", "/"))[:80] or "附件"
+            fname = f"{stamp}-{re.sub(r'[\\/:*?\"<>|]', '_', name)}"
+            if not self._CHAT_FILES_RE.fullmatch(fname):
+                fname = f"{stamp}-file.bin"
+            with open(os.path.join(self._chat_dir(), fname), "wb") as f:
+                f.write(blob)
+            tid = self._chat_put_inbound(k.db, modality="file", content=f"发来文件：{name}",
+                                         content_kind="file",
+                                         meta={"file": f"/chat-files/{fname}", "name": name,
+                                               "size": len(blob)})
+            self._chat_reply_async(k, tid, f"老板发来了一个文件：{name}（{len(blob)} 字节）",
+                                   note="文件已存到你的工作区 chat 目录，可先确认能否读取并给老板反馈")
+            return self._json({"ok": True, "threadId": tid, "file": fname})
+        except Exception as e:
+            return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+
     def _hotspot_subscribe(self, body):
         subs = body.get("sources")
         if not isinstance(subs, list):
@@ -1540,6 +1706,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self._require_auth():
             return
+        # 二进制直传路由（不走 JSON 解析，body 是原始音频/文件）
+        if path in ("/api/chat/voice", "/api/chat/upload"):
+            return self._chat_binary_post(path)
         body = self._body()
         if path == "/api/register":
             return self._register(body)
@@ -1564,6 +1733,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._account_avatar_upload()
         if path == "/api/hotspot/subscribe":
             return self._hotspot_subscribe(body)
+        # ---------- 消息中心 · 桌面精灵（小秘书对话） ----------
+        if path in ("/api/chat/send", "/api/chat/voice", "/api/chat/upload"):
+            if not self._owner_only():
+                return
+            if not self._kernel().db:
+                return self._json({"ok": False, "enabled": False, "error": "过程库未启用"}, 503)
+            try:
+                if path == "/api/chat/send":
+                    text = str(body.get("text") or "").strip()
+                    if not text:
+                        return self._json({"ok": False, "error": "消息内容不能为空"}, 400)
+                    tid = self._chat_put_inbound(
+                        self._kernel().db, modality="text", content=text)
+                    self._chat_reply_async(self._kernel(), tid, text)
+                    return self._json({"ok": True, "threadId": tid})
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/login":
             return self._login(body)
         if path == "/api/logout":

@@ -13,6 +13,9 @@ public class BootReceiver extends BroadcastReceiver {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(a)
                 && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(a)) return;
         McpConfig cfg = McpConfig.load(context);
-        if (cfg.keepListening && !cfg.demo) ListenService.start(context);
+        // 0.12.0：未登录（或会话已过期）不在开机时拉起后台监听
+        if (cfg.keepListening && !cfg.demo && AuthSession.isLoggedIn(context)) {
+            ListenService.start(context);
+        }
     }
 }

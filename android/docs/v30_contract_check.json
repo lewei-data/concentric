@@ -1,6 +1,6 @@
 {
-  "version": "0.11.2",
-  "versionCode": 39,
+  "version": "0.12.0",
+  "versionCode": 43,
   "total": 64,
   "pass": 64,
   "fail": 0,
@@ -186,7 +186,7 @@
       "detail": ""
     },
     {
-      "name": "30s 内原 channel 重连",
+      "name": "300s 内原 channel 重连",
       "ok": true,
       "detail": ""
     },
@@ -318,12 +318,12 @@
     {
       "name": "CLIENT_VERSION 与构建版本一致",
       "ok": true,
-      "detail": "0.11.2"
+      "detail": "0.12.0"
     },
     {
       "name": "versionCode ≥ 30",
       "ok": true,
-      "detail": "39"
+      "detail": "43"
     }
   ]
 }

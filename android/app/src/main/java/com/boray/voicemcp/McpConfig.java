@@ -20,7 +20,7 @@ import android.os.Build;
  */
 public final class McpConfig {
 
-    public static final String CLIENT_VERSION = "0.11.5";
+    public static final String CLIENT_VERSION = "0.12.0";
 
     public static final String DEFAULT_URL = "https://ai.boraydata.com/conring/asr/mcp";
     public static final String TTS_URL = "https://ai.boraydata.com/conring/tts/mcp";
@@ -29,8 +29,12 @@ public final class McpConfig {
     public static final String DEFAULT_TOOL = "voice_chat";
     public static final String DEFAULT_AUDIO_KEY = "audio_base64";
     public static final String DEFAULT_PROTOCOL = "2025-03-26";
+    /** 工作台登录入口（nginx /workbench/ 前缀） */
+    public static final String DEFAULT_AUTH_BASE = "https://ai.boraydata.com/workbench";
 
-    private static final String PREF = "voice_mcp_config";
+    /** AuthSession 会把会话 Cookie 写进同一份配置，供纯 JVM 校验脚本之外的网络层复用 */
+    public static final String PREF_NAME = "voice_mcp_config";
+    private static final String PREF = PREF_NAME;
 
     public String url = DEFAULT_URL;
     public String tool = DEFAULT_TOOL;
@@ -83,6 +87,16 @@ public final class McpConfig {
     /** 内网 WS（端口 9121）：ws://192.168.31.206:9121 */
     public String dispatchWsLan = DispatchApi.LAN_WS_BASE;
 
+    /* ===== 0.12.0 工作台登录 ===== */
+    /** 登录服务地址：POST /api/login、GET /api/session、POST /api/logout 都挂在这个 base 下 */
+    public String authBase = DEFAULT_AUTH_BASE;
+    /**
+     * 登录会话 Cookie 请求头（"opc_sess=..."）。由 AuthSession 登录/退出时写进同一份配置，
+     * load() 直接读出；save() 不覆盖它（否则点「保存设置」会把登录态抹掉）。
+     * 这里只放请求头副本，不引入 AuthSession 依赖，纯 JVM 契约校验仍能单独编译本类。
+     */
+    public String sessionCookie = "";
+
     public static McpConfig load(Context c) {
         SharedPreferences p = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
         McpConfig x = new McpConfig();
@@ -115,6 +129,8 @@ public final class McpConfig {
         x.dispatchUrl = p.getString("dispatchUrl", DispatchApi.PUBLIC_BASE);
         x.dispatchUrlLan = p.getString("dispatchUrlLan", DispatchApi.LAN_BASE);
         x.dispatchWsLan = p.getString("dispatchWsLan", DispatchApi.LAN_WS_BASE);
+        x.authBase = p.getString("authBase", DEFAULT_AUTH_BASE);
+        x.sessionCookie = p.getString("sessionCookie", "");
         return x;
     }
 
@@ -149,6 +165,7 @@ public final class McpConfig {
         e.putString("dispatchUrl", dispatchUrl);
         e.putString("dispatchUrlLan", dispatchUrlLan);
         e.putString("dispatchWsLan", dispatchWsLan);
+        e.putString("authBase", authBase);
         e.apply();
     }
 
@@ -166,6 +183,7 @@ public final class McpConfig {
         x.delegate = delegate; x.autoSyncProfile = autoSyncProfile;
         x.dispatchUrl = dispatchUrl; x.dispatchUrlLan = dispatchUrlLan;
         x.dispatchWsLan = dispatchWsLan;
+        x.authBase = authBase; x.sessionCookie = sessionCookie;
         return x;
     }
 
