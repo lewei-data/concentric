@@ -62,6 +62,9 @@ export default function App() {
             <Route path="/messages" element={<Suspense fallback={<PageFallback />}><MessagesPage /></Suspense>} />
             <Route path="/org" element={<Suspense fallback={<PageFallback />}><OrgPage /></Suspense>} />
             <Route path="/account" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />
+            <Route path="/account/assets" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />
+            <Route path="/account/settings" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />
+            <Route path="/account/help" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />
             <Route path="/office" element={<Suspense fallback={<PageFallback />}><ScenePage scene="office" /></Suspense>} />
             <Route path="/meeting" element={<Suspense fallback={<PageFallback />}><ScenePage scene="meeting" /></Suspense>} />
           </Route>

@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useGetIdentity } from "@refinedev/core";
 import { authProvider } from "../authProvider";
 import type { OpcUser } from "../types";
@@ -25,15 +26,17 @@ const PRIMARY_NAV = [
   { to: "/inspiration", label: "创意灵感" },
   { to: "/works", label: "作品档案" },
   { to: "/factory", label: "制片工厂" },
-  { to: "/hotspots", label: "热点" },
   { to: "/knowledge", label: "知识库" },
-  { to: "/org", label: "组织配置" },
   { to: "/ops", label: "运维监控" },
+  { to: "/hotspots", label: "热点" },
 ];
 
 export function Layout() {
   const { data: identity } = useGetIdentity<OpcUser>();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   // 统一消息只对老板开放，后端 /api/chat/* 对其他角色返回 403，这里同步隐藏入口
   const isOwner = String(identity?.role ?? "").includes("老板");
   const isScene =
@@ -42,17 +45,22 @@ export function Layout() {
   const displayName = identity?.name ?? identity?.user ?? "未登录";
   const initial = displayName.slice(0, 1).toUpperCase();
 
+  // 点击菜单外部 / 切换路由时收起下拉
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+
   const handleLogout = async () => {
     await authProvider.logout({});
     window.location.assign("/app/login");
   };
 
   const navItems = [...PRIMARY_NAV];
-  if (isOwner) {
-    const at = navItems.findIndex((i) => i.to === "/org");
-    navItems.splice(at < 0 ? navItems.length : at, 0,
-      { to: "/messages", label: "消息中心", end: false });
-  }
 
   return (
     <div className="app">
@@ -80,25 +88,75 @@ export function Layout() {
             <NavLink to="/meeting" className="nav-3d">会议室</NavLink>
           </nav>
 
-          <div className="userbox">
+          <div className="userbox" ref={menuRef}>
             <button
               type="button"
               className="user-entry"
-              title="进入用户中心（基本信息 / 设置 / 数据资产导出与导入）"
-              onClick={() => { window.location.assign("/app/account"); }}
+              title="个人菜单（基本信息 / 组织配置 / 退出登录）"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
             >
-              <span className="user-avatar" aria-hidden="true">{initial}</span>
+              {identity?.avatar ? (
+                <img className="user-avatar-img" src={identity.avatar} alt="" />
+              ) : (
+                <span className="user-avatar" aria-hidden="true">{initial}</span>
+              )}
               <span className="user-meta">
                 <b>{displayName}</b>
                 <small>{identity?.role || "成员"}</small>
               </span>
+              <span className="user-caret" aria-hidden="true">▾</span>
             </button>
+            {menuOpen && (
+              <div className="user-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); navigate("/account"); }}
+                >
+                  个人信息
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); navigate("/account/assets"); }}
+                >
+                  数据资产
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); navigate("/account/settings"); }}
+                >
+                  系统配置
+                </button>
+                <div className="user-menu-sep" aria-hidden="true" />
+                {isOwner && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); navigate("/org"); }}
+                  >
+                    组织配置
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); navigate("/account/help"); }}
+                >
+                  帮助
+                </button>
+                <button type="button" role="menuitem" className="user-menu-danger"
+                        onClick={() => void handleLogout()}>
+                  退出
+                </button>
+              </div>
+            )}
             <span className="live-badge" title="已连接实时事件流">
               <i aria-hidden="true" />实时
             </span>
-            <button type="button" className="btn btn-ghost logout-btn" onClick={handleLogout}>
-              退出
-            </button>
           </div>
         </div>
       </header>
