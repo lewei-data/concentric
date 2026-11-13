@@ -43,6 +43,19 @@ SERVICES = [
      "health": "/health", "jobs": "/v1/jobs?limit=20"},
 ]
 
+# ---------- OpenMontage 渲染渠道 ----------
+# 调研结论（2026-11-13）：OpenMontage 渲染走 CLI 子进程（om_render.py 在
+# remotion-composer 目录执行 `npx remotion render`），无 HTTP 渲染 API；
+# 唯一服务化组件是 Backlot 看板（FastAPI，127.0.0.1:4750，/api/health、/api/projects），
+# 属可选常驻服务（未运行时渲染不受影响），故离线按 standby 处理不告警。
+OM_ROOT = os.environ.get("OPC_OPENMONTAGE_DIR", "/opt/sefs/OpenMontage")
+OM_COMPOSER = os.path.join(OM_ROOT, "remotion-composer")
+OM_ENTRY = os.path.join(OM_COMPOSER, "src", "index.tsx")
+OM_BACKLOT_URL = os.environ.get("OPC_BACKLOT_URL", "http://127.0.0.1:4750")
+OM_TTL = 30
+_OM = {"at": 0.0, "data": None}
+_OM_LOCK = threading.Lock()
+
 
 def _now() -> str:
     return datetime.now(TZ).isoformat(timespec="seconds")
@@ -326,6 +339,69 @@ def _nodes_view(force=False):
     return data
 
 
+def _openmontage(force=False):
+    """OpenMontage 渲染渠道监控：CLI 出片通道健康 + Backlot 看板服务探针。
+
+    - CLI 通道：npx 可执行 + remotion-composer/node_modules + src/index.tsx 入口，
+      与 om_render.py / video_compose.py 的可用性判定同口径；任一缺失则出片必失败。
+    - Backlot 看板：唯一服务化 API 通道（127.0.0.1:4750），探活并拉取看板项目摘要；
+      非常驻必需，离线展示 standby，不产生告警。
+    """
+    with _OM_LOCK:
+        cached = _OM["data"]
+        fresh = cached is not None and (time.time() - _OM["at"]) < OM_TTL
+    if fresh and not force:
+        return cached
+
+    import shutil
+    npx = shutil.which("npx") or ""
+    checks = {
+        "root": os.path.isdir(OM_ROOT),
+        "npx": bool(npx),
+        "nodeModules": os.path.isdir(os.path.join(OM_COMPOSER, "node_modules")),
+        "entry": os.path.isfile(OM_ENTRY),
+    }
+    missing = [name for name, ok in checks.items() if not ok]
+    cli = {
+        "available": not missing,
+        "npxPath": npx,
+        "composerDir": OM_COMPOSER,
+        "entry": OM_ENTRY,
+        "checks": checks,
+        "reason": "" if not missing else "缺失：" + "、".join(
+            {"root": "OpenMontage 根目录", "npx": "npx 可执行文件",
+             "nodeModules": "remotion-composer/node_modules（未安装依赖）",
+             "entry": "渲染入口 src/index.tsx"}[name] for name in missing),
+    }
+    ok, health = _probe_json(OM_BACKLOT_URL + "/api/health", timeout=1.2)
+    projects, projects_note = [], ""
+    if ok:
+        ok2, payload = _probe_json(OM_BACKLOT_URL + "/api/projects", timeout=1.5)
+        if ok2 and isinstance(payload, list):
+            projects = [p for p in payload if isinstance(p, dict)]
+            projects_note = f"看板项目 {len(projects)} 个"
+        else:
+            projects_note = f"项目列表不可读（{payload.get('error') or payload.get('http')}）"
+    else:
+        projects_note = "服务未运行（待机）——渲染走 CLI 通道，不受影响"
+    backlot = {
+        "url": OM_BACKLOT_URL, "online": ok,
+        "app": (health or {}).get("app") or "",
+        "projectsNote": projects_note,
+        "projects": [{"id": p.get("id") or p.get("project_id") or "",
+                      "name": p.get("name") or p.get("title") or p.get("id") or "",
+                      "status": p.get("status") or ""}
+                     for p in projects[:8]],
+    }
+    view = {
+        "root": OM_ROOT, "channel": "cli", "cli": cli, "backlot": backlot,
+        "checkedAt": _now(),
+    }
+    with _OM_LOCK:
+        _OM["at"], _OM["data"] = time.time(), view
+    return view
+
+
 def _render_view(pipeline):
     out = []
     for it in pipeline:
@@ -368,6 +444,7 @@ def build(state, health, force_probe=False, runs=None, llm=None):
     node_view = _nodes_view(force_probe)
     local_jobs, jobs_file_ok = _local_jobs()
     render_items = _render_view(pipeline)
+    om_view = _openmontage(force_probe)
     stage_counts = Counter(str(it.get("stage") or "unknown") for it in pipeline)
     blocked = [it for it in pipeline if it.get("blockedBy")]
     blocked_by = Counter(str(it.get("blockedBy") or "unknown") for it in blocked)
@@ -442,6 +519,15 @@ def build(state, health, force_probe=False, runs=None, llm=None):
             "detail": "；".join(f"{r['title']}（{r['error'] or r['state']}）"[:70] for r in render_failed[:3]),
             "source": "/api/state.pipeline", "at": _now(),
             "action": "排查 om_render / TTS / Remotion，返工后重新出片",
+        })
+    # OpenMontage 渲染渠道：CLI 通道不可用意味着所有样片/成片渲染必然失败
+    if om_view["cli"].get("available") is False:
+        alerts.append({
+            "id": "om-cli-unavailable", "level": "critical",
+            "title": "OpenMontage 出片通道不可用",
+            "detail": f"{om_view['cli'].get('reason')}（{om_view['cli'].get('composerDir')}）",
+            "source": "OpenMontage CLI 探测", "at": om_view.get("checkedAt") or "",
+            "action": "安装 npx 与 remotion-composer 依赖（npm install），确认渲染入口存在",
         })
     for gate, count in blocked_by.most_common(4):
         alerts.append({
@@ -547,6 +633,9 @@ def build(state, health, force_probe=False, runs=None, llm=None):
             "mediaJobs": len(local_jobs),
             "mediaJobsFailed": len(failed_jobs),
             "mediaJobsStuck": len(stuck_jobs),
+            "omChannelOk": 1 if om_view["cli"].get("available") else 0,
+            "omBacklotOnline": 1 if om_view["backlot"].get("online") else 0,
+            "omBacklotProjects": len(om_view["backlot"].get("projects") or []),
             "nodesTotal": (node_view.get("summary") or {}).get("nodes", 0),
             "nodesFailed": (node_view.get("summary") or {}).get("failed", 0),
             "runsTotal": len(runs),
@@ -580,6 +669,7 @@ def build(state, health, force_probe=False, runs=None, llm=None):
                 for it in pipeline if it.get("blockedBy")
             ][-12:],
         },
+        "openmontage": om_view,
         "nodes": node_view,
         "llm": llm if llm else {"available": False, "models": []},
         "alerts": alerts[:24],
@@ -602,6 +692,9 @@ def build(state, health, force_probe=False, runs=None, llm=None):
             "大模型注册表来自过程库 llm_models 表：Hermes 每次调用前检查开关与额度，成功后按实际用量扣减；额度耗尽自动停用，CTO 追加总额度后自动恢复。",
             "视频任务视图 = 主流水线 render 结果 + media-gen/output/jobs.json 落盘任务；媒体服务在线时额外探测其任务队列。",
             "媒体引擎 :9200 与 media-gen :9103 为独立服务，离线时仍展示历史任务并给出告警。",
+            "OpenMontage 渲染走 CLI 子进程（npx remotion render，工作目录 remotion-composer），无 HTTP 渲染 API；"
+            "页面展示 CLI 通道健康（npx/依赖/入口）与唯一服务化组件 Backlot 看板（127.0.0.1:4750）的探活结果，"
+            "看板属可选服务，离线按待机处理不告警。",
             "节点监控来自 CTO 节点台账 ops/nodes.db（SQLite）：ops-patrol-30m 每 30 分钟执行 opsctl.py check，写入 nodes / services / checks / patrols；页面只读展示，不触发巡检。",
         ],
     }

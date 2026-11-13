@@ -101,7 +101,7 @@ export function FactoryPage() {
 
   const [data, setData] = useState<FactoryData | null>(null);
   const [loadErr, setLoadErr] = useState("");
-  const [selectedNo, setSelectedNo] = useState<string>("");
+  const [selectedNo, setSelectedNo] = useState<string>("");   // 空 = 全部车间
   const [stepOpen, setStepOpen] = useState<{ traceId: string; stageId: string; name: string } | null>(null);
   const [stepDetail, setStepDetail] = useState<StepDetail | null>(null);
   const [stepLoading, setStepLoading] = useState(false);
@@ -113,11 +113,6 @@ export function FactoryPage() {
       .then((d) => {
         setData(d);
         setLoadErr("");
-        setSelectedNo((cur) => {
-          if (cur) return cur;
-          const filled = d.products.find((p) => p.run.status === "running") || d.products[0];
-          return filled?.workshopNo ?? "01";
-        });
       })
       .catch((e) => setLoadErr(String(e.message || e)));
   }, []);
@@ -131,10 +126,12 @@ export function FactoryPage() {
   const workshops = data?.workshops ?? [];
   const stages = useMemo(() => data?.stages ?? [], [data]);
   const products = data?.products ?? [];
-  const workshopProducts = useMemo(
-    () => products.filter((p) => p.workshopNo === selectedNo),
+  const shownProducts = useMemo(
+    () => (selectedNo ? products.filter((p) => p.workshopNo === selectedNo) : products),
     [products, selectedNo],
   );
+  const runningCount = products.filter((p) => p.run.status === "running").length;
+  const selectedWorkshop = workshops.find((w) => w.no === selectedNo);
 
   const openStep = (traceId: string, stageId: string, name: string) => {
     setStepOpen({ traceId, stageId, name });
@@ -189,8 +186,8 @@ export function FactoryPage() {
         <div>
           <h1>制片工厂</h1>
           <p className="muted home-sub">
-            以 OpenMontage 的 13 类工艺划分车间；每个产品的制作工艺由 CCO 确定并记录到过程库，
-            横向工艺轴实时反映产品的加工过程，点击任一环节可查看详细处理记录。
+            全厂 13 个车间对应 OpenMontage 的 13 类工艺；每个车间可并行加工多条流水线（产品），
+            工艺由 CCO 确定并记录到过程库。上方实时监控各流水线的加工过程，点击环节查看详情。
           </p>
         </div>
         <div className="fac-meta">
@@ -198,8 +195,7 @@ export function FactoryPage() {
             <i aria-hidden="true" />实时监控
           </span>
           <span className="muted">
-            在制 {products.filter((p) => p.run.status === "running").length} · 已完工{" "}
-            {products.filter((p) => p.run.status === "completed").length}
+            在制 {runningCount} · 已完工 {products.filter((p) => p.run.status === "completed").length}
           </span>
         </div>
       </div>
@@ -207,76 +203,38 @@ export function FactoryPage() {
       {loadErr && <div className="fac-error">监控数据加载失败：{loadErr}</div>}
       {resumeMsg && <div className="fac-note">{resumeMsg}</div>}
 
-      {/* 车间总览：13 类工艺车间 */}
-      <div className="fac-board" role="list" aria-label="车间总览">
-        {workshops.map((w) => {
-          const items = products.filter((p) => p.workshopNo === w.no);
-          const busy = items.some((p) => p.run.status === "running");
-          const done = items.length > 0 && items.every((p) => p.run.status === "completed");
-          return (
-            <button
-              key={w.id}
-              type="button"
-              role="listitem"
-              className={`fac-card${selectedNo === w.no ? " is-active" : ""}${busy ? " is-busy" : ""}${done ? " is-done" : ""}`}
-              onClick={() => setSelectedNo(w.no)}
-            >
-              <div className="fac-card-top">
-                <span className="fac-no">{w.no}号车间</span>
-                <span className={`fac-gear${busy ? " spin" : ""}`} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16">
-                    <path
-                      fill="currentColor"
-                      d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2ZM10.6 2h2.8l.4 2.4c.6.2 1.2.5 1.7.9l2.3-.9 1.4 2.4-1.8 1.6c.1.6.1 1.2 0 1.8l1.8 1.6-1.4 2.4-2.3-.9c-.5.4-1.1.7-1.7.9l-.4 2.4h-2.8l-.4-2.4a6 6 0 0 1-1.7-.9l-2.3.9-1.4-2.4 1.8-1.6a6 6 0 0 1 0-1.8L4.8 6.8l1.4-2.4 2.3.9c.5-.4 1.1-.7 1.7-.9L10.6 2Z"
-                    />
-                  </svg>
-                </span>
-              </div>
-              <div className="fac-card-name">{w.name}</div>
-              <div className="fac-card-product">{w.product}</div>
-              <div className="fac-card-desc" title={w.desc}>{w.desc}</div>
-              <div className="fac-card-items">
-                {items.length === 0 ? (
-                  <span className="muted">暂无在制产品</span>
-                ) : (
-                  items.slice(0, 3).map((p) => (
-                    <span key={p.itemId} className={`fac-chip s-${p.run.status}`} title={p.title}>
-                      <i className="fac-dot" aria-hidden="true" />
-                      {p.title.length > 14 ? `${p.title.slice(0, 14)}…` : p.title}
-                    </span>
-                  ))
-                )}
-                {items.length > 3 && <span className="muted">+{items.length - 3}</span>}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      {/* 顶部：流水线监控（横向工艺轴） */}
+      <div className="fac-monitors">
+        <div className="fac-section-head">
+          <h2>
+            流水线监控
+            <span className="fac-section-tag">
+              {selectedWorkshop
+                ? `${selectedWorkshop.no}号车间 · ${selectedWorkshop.name}`
+                : "全部车间"}
+            </span>
+          </h2>
+          <div className="fac-section-ops">
+            {selectedNo && (
+              <button type="button" className="btn btn-ghost fac-btn" onClick={() => setSelectedNo("")}>
+                显示全部车间
+              </button>
+            )}
+            <span className="muted">共 {shownProducts.length} 条流水线</span>
+          </div>
+        </div>
 
-      {/* 选中车间：产品横向工艺轴 */}
-      {selectedNo && (
-        <div className="fac-detail">
-          {(() => {
-            const w = workshops.find((x) => x.no === selectedNo);
-            if (!w) return null;
+        {shownProducts.length === 0 ? (
+          <div className="fac-empty">
+            {selectedNo
+              ? "该车间暂无流水线。点击下方其他车间查看，或选择「显示全部车间」。"
+              : "暂无流水线。产品的制作工艺由 CCO 在「制作评估」环节参考 13 类工艺选定，"
+                + "选定后自动进入对应车间开始加工。"}
+          </div>
+        ) : (
+          shownProducts.map((p) => {
+            const w = workshops.find((x) => x.no === p.workshopNo);
             return (
-              <div className="fac-detail-head">
-                <h2>
-                  <span className="fac-no big">{w.no}号车间</span>
-                  {w.name} · {w.product}
-                </h2>
-                <span className="muted">{w.desc}</span>
-              </div>
-            );
-          })()}
-
-          {workshopProducts.length === 0 ? (
-            <div className="fac-empty">
-              该车间暂无在制产品。产品的制作工艺由 CCO 在「制作评估」环节参考 13 类工艺选定，
-              选定后自动进入对应车间加工。
-            </div>
-          ) : (
-            workshopProducts.map((p) => (
               <div key={p.itemId} className="fac-product">
                 <div className="fac-product-head">
                   <div className="fac-product-title">
@@ -284,8 +242,8 @@ export function FactoryPage() {
                     <span className={`fac-run s-${p.run.status}`}>{RUN_LABEL[p.run.status] || p.run.status}</span>
                   </div>
                   <div className="fac-product-meta muted">
-                    工艺：{p.craftName}（{p.craftId}）· 出片模式：{p.renderMode || "-"} · 决策：{p.decidedBy} ·{" "}
-                    {shortTime(p.decidedAt)} · trace {p.traceId}
+                    {w ? `${w.no}号车间` : p.workshopNo} · 工艺：{p.craftName} · 出片模式：{p.renderMode || "-"}
+                    · 决策：{p.decidedBy} · {shortTime(p.decidedAt)} · trace {p.traceId}
                   </div>
                   <div className="fac-product-reason" title={p.reason}>CCO 决策依据：{p.reason}</div>
                   <div className="fac-product-ctl">
@@ -349,10 +307,58 @@ export function FactoryPage() {
                   </div>
                 </div>
               </div>
-            ))
-          )}
+            );
+          })
+        )}
+      </div>
+
+      {/* 底部：车间清单（横排列表） */}
+      <div className="fac-list" role="list" aria-label="车间清单">
+        <div className="fac-row fac-row-head" aria-hidden="true">
+          <span>车间</span>
+          <span>工艺</span>
+          <span>产品</span>
+          <span>工艺说明</span>
+          <span>流水线</span>
+          <span>状态</span>
         </div>
-      )}
+        {workshops.map((w) => {
+          const items = products.filter((p) => p.workshopNo === w.no);
+          const busy = items.some((p) => p.run.status === "running");
+          const done = items.filter((p) => p.run.status === "completed").length;
+          const isActive = selectedNo === w.no;
+          return (
+            <button
+              key={w.id}
+              type="button"
+              role="listitem"
+              className={`fac-row${isActive ? " is-active" : ""}${busy ? " is-busy" : ""}`}
+              onClick={() => setSelectedNo(isActive ? "" : w.no)}
+              title={`点击${isActive ? "显示全部车间" : `只看 ${w.no} 号车间的流水线`}`}
+            >
+              <span className="fac-row-no">{w.no}号车间</span>
+              <span className="fac-row-name">{w.name}</span>
+              <span className="fac-row-product">{w.product}</span>
+              <span className="fac-row-desc">{w.desc}</span>
+              <span className="fac-row-count">
+                <i className={`fac-dot${busy ? " blink" : ""}`} aria-hidden="true" />
+                {items.length ? `${items.filter((p) => p.run.status === "running").length} 在制 · ${done} 完工` : "空闲"}
+              </span>
+              <span className="fac-row-state">
+                <span className={`fac-gear${busy ? " spin" : ""}`} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="15" height="15">
+                    <path
+                      fill="currentColor"
+                      d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2ZM10.6 2h2.8l.4 2.4c.6.2 1.2.5 1.7.9l2.3-.9 1.4 2.4-1.8 1.6c.1.6.1 1.2 0 1.8l1.8 1.6-1.4 2.4-2.3-.9c-.5.4-1.1.7-1.7.9l-.4 2.4h-2.8l-.4-2.4a6 6 0 0 1-1.7-.9l-2.3.9-1.4-2.4 1.8-1.6a6 6 0 0 1 0-1.8L4.8 6.8l1.4-2.4 2.3.9c.5-.4 1.1-.7 1.7-.9L10.6 2Z"
+                    />
+                  </svg>
+                </span>
+                {busy ? "加工中" : items.length ? "已完工" : "空闲"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* 工位详情弹窗 */}
       {stepOpen && (

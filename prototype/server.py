@@ -2903,7 +2903,8 @@ class Kernel:
             item["craft"] = craft["id"]
             item["craftNote"] = str(pick.get("reason")
                                     or "CCO 未明确，按科普类默认进动画讲解车间（01 号）")
-            self.db.upsert_product_craft({
+            if self.db:
+                self.db.upsert_product_craft({
                 "traceId": c.trace, "itemId": item["id"], "projectId": item.get("projectId", pid),
                 "title": item["title"], "workshopNo": craft["no"], "craftId": craft["id"],
                 "craftName": craft["name"], "product": craft["product"],

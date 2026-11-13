@@ -124,6 +124,29 @@ type LlmView = {
   exhausted?: number;
   disabled?: number;
 };
+type OmCli = {
+  available: boolean;
+  npxPath: string;
+  composerDir: string;
+  entry: string;
+  checks: Record<string, boolean>;
+  reason: string;
+};
+type OmProject = { id: string; name: string; status: string };
+type OmBacklot = {
+  url: string;
+  online: boolean;
+  app: string;
+  projectsNote: string;
+  projects: OmProject[];
+};
+type OmView = {
+  root: string;
+  channel: string;
+  cli: OmCli;
+  backlot: OmBacklot;
+  checkedAt: string;
+};
 type OpsData = {
   ok: boolean;
   generatedAt?: string;
@@ -148,6 +171,7 @@ type OpsData = {
     pipelineRender: RenderItem[];
     pendingRender: { id: string; title: string; stage: string; blockedBy: string }[];
   };
+  openmontage?: OmView;
   alerts?: OpsAlert[];
   runs?: OpsRun[];
   actions?: {
@@ -348,6 +372,8 @@ export function OpsPage() {
   const llmModels = llm?.models || [];
   const alerts = data?.alerts || [];
   const services = data?.video?.services || [];
+  const om = data?.openmontage;
+  const omChecks = om?.cli?.checks || {};
   const jobs = data?.video?.localJobs || [];
   const renders = data?.video?.pipelineRender || [];
   const pendingRender = data?.video?.pendingRender || [];
@@ -795,6 +821,36 @@ export function OpsPage() {
               <small>{s.url} · {s.jobsNote}</small>
             </div>
           ))}
+          {om && (
+            <>
+              <div className="ops-service om-channel">
+                <span className={`ops-pill ${om.cli.available ? "ok" : "bad"}`}>
+                  {om.cli.available ? "通道可用" : "通道不可用"}
+                </span>
+                <b>OpenMontage CLI 渲染通道</b>
+                <small
+                  className="mono"
+                  title={`工作目录 ${om.cli.composerDir} · 入口 ${om.cli.entry}`}
+                >
+                  npx {omChecks.npx ? "可用" : "缺失"} · 依赖{" "}
+                  {omChecks.nodeModules ? "已安装" : "未安装"} · 入口{" "}
+                  {omChecks.entry ? "存在" : "缺失"}
+                  {!om.cli.available && om.cli.reason ? ` · ${om.cli.reason}` : ""}
+                </small>
+              </div>
+              <div className="ops-service om-channel">
+                <span className={`ops-pill ${om.backlot.online ? "ok" : ""}`}>
+                  {om.backlot.online ? "看板在线" : "看板待机"}
+                </span>
+                <b>OpenMontage Backlot 看板</b>
+                <small title={om.backlot.projects?.map((p) => p.name).join("、") || om.backlot.url}>
+                  {om.backlot.url} · {om.backlot.projectsNote}
+                  {om.backlot.online && om.backlot.projects.length > 0 &&
+                    `：${om.backlot.projects.slice(0, 3).map((p) => p.name).join("、")}${om.backlot.projects.length > 3 ? " 等" : ""}`}
+                </small>
+              </div>
+            </>
+          )}
         </div>
 
         <h3>生成任务记录 <small className="muted">（{data?.video?.localJobsFile || "media-gen/output/jobs.json"}）</small></h3>
