@@ -497,9 +497,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "applied": "immediate", **info})
             if path == "/api/org/policy":
                 key = str(body.get("key") or "")
-                if key not in POLICY_FILES:
+                if key not in ORG.POLICY_FILES:
                     return self._json({"ok": False, "error": "未知制度文件"}, 404)
-                rel, title, editable = POLICY_FILES[key]
+                rel, title, editable = ORG.POLICY_FILES[key]
                 if not editable:
                     return self._json({"ok": False, "error": f"{title} 为只读视图"}, 403)
                 content = str(body.get("content") or "")
@@ -702,6 +702,11 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hotspots/"):
             rec = self._kernel().hotspot_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "hotspot not found"}, 404)
+        # ---------- 共享热点消息流（系统定时采集，公用区域，全用户可见） ----------
+        if path == "/api/hotspot/feed":
+            return self._json(self._hotspot_feed_view())
+        if path == "/api/hotspot/categories":
+            return self._json(self._hotspot_categories_view())
         if path == "/api/state":
             return self._json(self._kernel().snapshot())
         # ---------- CCO 创意灵感 / CTO 运维监控（只读聚合） ----------
@@ -852,9 +857,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/org/policy":
             key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
-            if key not in POLICY_FILES:
+            if key not in ORG.POLICY_FILES:
                 return self._json({"ok": False, "error": "未知制度文件"}, 404)
-            rel, title, editable = POLICY_FILES[key]
+            rel, title, editable = ORG.POLICY_FILES[key]
             try:
                 return self._json({"ok": True, "key": key, "title": title, "path": rel,
                                    "editable": editable,
@@ -1213,6 +1218,14 @@ class Handler(BaseHTTPRequestHandler):
         return {"ok": True, "sources": view["sources"], "items": view["items"],
                 "subscribed": subs, "subscribedItems": [s["id"] for s in mine]}
 
+    def _hotspot_categories_view(self):
+        """热点分类表（订阅页直接展示的清单）：分类说明 + 各源的采集说明与运行状态。"""
+        subs = self._subscriptions(os.path.abspath(
+            str((self._session_user() or {}).get("dataDir") or OWNER_DATA_DIR)))
+        view = hotspot_feed.categories_view()
+        view["subscribed"] = subs
+        return view
+
     def _hotspot_subscribe(self, body):
         subs = body.get("sources")
         if not isinstance(subs, list):
@@ -1237,7 +1250,7 @@ class Handler(BaseHTTPRequestHandler):
     def _send_file(self, path, filename):
         """附件下载：流式写回 + Content-Disposition（UTF-8 文件名）。"""
         size = os.path.getsize(path)
-        quoted = urllib.parse.quote(filename)
+        quoted = quote(filename)
         self.send_response(200)
         self.send_header("Content-Type", "application/zip")
         self.send_header("Content-Length", str(size))

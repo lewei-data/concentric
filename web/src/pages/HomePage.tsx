@@ -13,9 +13,9 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 const PROJECT_FALLBACK: Record<string, { name: string; color: string }> = {
-  wenren: { name: "文人莫克", color: "#2563EB" },
-  gou: { name: "狗大人", color: "#EA580C" },
-  tongxinyuan: { name: "同心圆", color: "#7C3AED" },
+  wenren: { name: "产品一组", color: "#2563EB" },
+  gou: { name: "产品二组", color: "#EA580C" },
+  tongxinyuan: { name: "产品三组", color: "#7C3AED" },
 };
 const PROJECT_ORDER = ["wenren", "gou", "tongxinyuan"];
 // 管理层：CEO / CCO / CTO + 小秘书

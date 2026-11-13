@@ -36,13 +36,16 @@ def _load_dl(vault_dir):
             os.environ["OPC_VAULT"] = saved
 
 DEFAULT_PROJECTS = {
-    "wenren": {"id": "wenren", "name": "文人莫克", "kind": "自媒体账号", "color": "#2563EB",
+    "wenren": {"id": "wenren", "name": "产品一组", "kind": "自媒体账号", "color": "#2563EB",
                "kpi": {"views": 0, "completion": 0.0, "fans": 0, "engagement": 0.0}},
-    "gou": {"id": "gou", "name": "狗大人", "kind": "自媒体账号", "color": "#EA580C",
+    "gou": {"id": "gou", "name": "产品二组", "kind": "自媒体账号", "color": "#EA580C",
             "kpi": {"views": 0, "completion": 0.0, "fans": 0, "engagement": 0.0}},
-    "tongxinyuan": {"id": "tongxinyuan", "name": "同心圆", "kind": "数字分身服务平台", "color": "#7C3AED",
+    "tongxinyuan": {"id": "tongxinyuan", "name": "产品三组", "kind": "数字分身服务平台", "color": "#7C3AED",
                     "kpi": {"uptime": 99.95, "tickets": 0, "delivery_hours": 48.0}},
 }
+
+# 旧默认项目名（存量用户名册/知识库里的"文人莫克/狗大人/同心圆"）→ 项目 ID 别名
+LEGACY_PROJECT_ALIASES = {"文人莫克": "wenren", "狗大人": "gou", "同心圆": "tongxinyuan"}
 DEFAULT_TONE = {"wenren": "克制·书卷气", "gou": "幽默·松弛", "tongxinyuan": "专业·可信"}
 
 OPENMONTAGE_CRAFTS = (
@@ -232,9 +235,25 @@ PROJECTS, TONE, HIGH_RISK_TOOLS = _load_project_cfg()
 PROJECT_BY_NAME = {v["name"]: k for k, v in PROJECTS.items()}
 PROJECT_BY_NAME["全公司"] = "all"     # 默认编制的 ceo/cco/cto/秘书等挂"全公司"
 
+
+def user_projects(vault_dir=""):
+    """用户工作区的项目配置：用户 vault 里放了自己的 公司/项目配置.md 就用它，
+    否则用内置默认（产品一组/产品二组/产品三组）——与全局 Obsidian 的 owner 配置隔离。"""
+    if vault_dir:
+        f = os.path.join(vault_dir, "公司", "项目配置.md")
+        if os.path.exists(f):
+            try:
+                p, t, _s, _h = _parse_project_cfg(f)
+                if p and t:
+                    return p, t
+            except Exception as e:
+                print(f"[boot] 用户项目配置解析失败({type(e).__name__}: {e})，回退内置默认", flush=True)
+    return json.loads(json.dumps(DEFAULT_PROJECTS, ensure_ascii=False)), dict(DEFAULT_TONE)
+
 def _parse_roster(path, by_name=None):
     mapping = dict(by_name or PROJECT_BY_NAME)
     mapping.setdefault("全公司", "all")     # 默认编制的 ceo/cco/cto/秘书等挂"全公司"
+    mapping.update(LEGACY_PROJECT_ALIASES)  # 存量名册里的旧默认项目名仍可解析
     spec, skipped = [], 0
     with open(path, encoding="utf-8") as f:
         for line in f:

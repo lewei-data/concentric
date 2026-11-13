@@ -21,6 +21,9 @@ type FeedSource = {
   category: string;
   live: boolean;
   note?: string;
+  desc?: string;
+  scope?: string;
+  interval?: string;
   count: number;
   lastRun: string;
   ok: boolean;
@@ -142,7 +145,12 @@ export function HotspotsPage() {
               type="button"
               className={`chip-btn ${feedSource === s.id ? "active" : ""}`}
               onClick={() => setFeedSource(s.id)}
-              title={s.live ? `最近采集 ${s.lastRun || "—"}` : s.error || "待接入"}
+              title={
+                s.live
+                  ? [s.desc, s.scope ? `采集范围：${s.scope}` : "", s.interval ? `间隔：${s.interval}` : "",
+                     `最近采集 ${s.lastRun || "—"}`].filter(Boolean).join("\n")
+                  : s.error || s.note || "待接入"
+              }
             >
               {s.name}{!s.live && "（待接入）"} · {s.count}
             </button>

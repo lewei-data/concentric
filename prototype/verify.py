@@ -125,7 +125,7 @@ def login():
     users = []
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from server import load_credentials
+        from users import load_credentials
         users = load_credentials()
     except Exception as e:
         print(f"[verify] 读取登录凭据失败：{e}")

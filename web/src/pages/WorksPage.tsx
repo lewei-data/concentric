@@ -8,9 +8,9 @@ const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 const PAGE_SIZE = 20;
 const PROJECTS = [
   { id: "", name: "全部项目" },
-  { id: "wenren", name: "文人莫克" },
-  { id: "gou", name: "狗大人" },
-  { id: "tongxinyuan", name: "同心圆" },
+  { id: "wenren", name: "产品一组" },
+  { id: "gou", name: "产品二组" },
+  { id: "tongxinyuan", name: "产品三组" },
 ];
 /* 状态与制片工厂生命周期一致：出厂=质检审核通过 */
 const STATUSES = ["", "生产中", "已出厂", "已完工", "已中断"];

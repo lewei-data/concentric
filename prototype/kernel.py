@@ -110,12 +110,21 @@ class Kernel:
         self.DL = DL if self.is_owner else (CC._load_dl(self.vault_dir) if DL else None)
         self.lock = threading.RLock()
         # 编制：优先读工作区自己的 员工名册.md，解析失败回退系统默认编制；
-        # 流水线关键员工缺失（旧模板/手工删减）时整份回退默认编制，保证编排可跑
+        # 流水线关键员工缺失（旧模板/手工删减）时整份回退默认编制，保证编排可跑。
+        # 项目组/调性：用户工作区默认用内置配置（产品一组/二组/三组），
+        # 用户 vault 里放了自己的 公司/项目配置.md 才用自己的；owner 用全局 Obsidian 配置。
         spec = CC.AGENT_SPEC
-        if self.data_dir:
+        self.projects = CC.PROJECTS
+        self.tone = CC.TONE
+        if self.data_dir and not self.is_owner:
+            self.projects, self.tone = CC.user_projects(self.vault_dir)
             roster = os.path.join(self.data_dir, "员工名册.md")
             try:
-                user_spec, skipped = CC._parse_roster(roster)
+                by_name = {v["name"]: k for k, v in self.projects.items()}
+                for _pid, _p in CC.DEFAULT_PROJECTS.items():
+                    by_name.setdefault(_p["name"], _pid)   # 用户自定义项目名后，旧名册仍可解析
+                by_name.setdefault("全公司", "all")
+                user_spec, skipped = CC._parse_roster(roster, by_name=by_name)
                 if len(user_spec) >= 3:
                     ids = {row[0] for row in user_spec}
                     missing = AGENTS_REQUIRED - ids
@@ -132,10 +141,10 @@ class Kernel:
             self.agents[aid] = {"id": aid, "name": name, "role": role, "projectId": project,
                                 "scope": scope, "tools": tools, "status": "idle", "task": "",
                                 "avatar": f"/avatars/{aid}.png",
-                                "tone": CC.TONE.get(project, "跨项目中台"),
+                                "tone": self.tone.get(project, "跨项目中台"),
                                 "vault": self.vault_dir,   # 员工知识库读写范围（多用户隔离）
                                 "highRisk": [t for t in tools if t in CC.HIGH_RISK_TOOLS]}
-        self.projects = json.loads(json.dumps(CC.PROJECTS, ensure_ascii=False))
+        self.projects = json.loads(json.dumps(self.projects, ensure_ascii=False))
         self.scene = "WORK"
         self.meeting = {"active": False, "title": "", "participants": [], "agenda": [], "startedAt": ""}
         self.meeting_log = {"id": "", "traceId": "", "status": "idle", "title": "",
@@ -775,7 +784,7 @@ class Kernel:
         if not a:
             raise ValueError(f"未知员工: {aid}")
         trace = (self.last_hotspot or {}).get("traceId", "")
-        project = CC.PROJECTS.get(a["projectId"], {}).get("name", "全公司")
+        project = self.projects.get(a["projectId"], {}).get("name", "全公司")
         self.send("delegation", "owner", aid, trace, {"task": text, "text": text},
                   project=a["projectId"], priority=1)
         ctx = f"当前场景 {self.scene}；你负责 {project}；老板直接点名向你下达指令"
@@ -819,7 +828,7 @@ class Kernel:
             pending = [a for a in self.approvals if a.get("status") == "pending"]
             idle = [a["id"] for a in self.agents.values() if a.get("status") == "idle"]
             working = [a["id"] for a in self.agents.values() if a.get("status") == "working"]
-            kpi = "；".join(f"{CC.PROJECTS[k]['name']}={CC.PROJECTS[k]['kpi']}" for k in CC.PROJECTS)
+            kpi = "；".join(f"{self.projects[k]['name']}={self.projects[k]['kpi']}" for k in self.projects)
             return (f"场景={self.scene}；在岗={working or '无'}；空闲={len(idle)}人；"
                     f"运行中trace={running[-1] if running else '无'}；待审批={len(pending)}；"
                     f"累计trace={self.stats.get('traces', 0)}；消息数={self.events}；项目KPI：{kpi}")
@@ -1036,7 +1045,7 @@ class Kernel:
         item = {"id": iid, "projectId": pid, "traceId": trace, "stage": "topic",
                 "title": title[:60],
                 "angle": str(idea.get("summary") or idea.get("detail") or title)[:80],
-                "owner": f"pm_{pid}", "toneProfile": CC.TONE[pid], "assets": [],
+                "owner": f"pm_{pid}", "toneProfile": self.tone[pid], "assets": [],
                 "reviewNote": "", "durationSec": 60,
                 "source": "创意灵感", "ideaId": str(idea.get("id") or ""),
                 "bossBrief": requirements}
@@ -1073,7 +1082,7 @@ class Kernel:
     def _idea_project(idea, project=""):
         """灵感归属项目：显式指定 > 灵感标签/来源里认得出的项目 > 默认同心圆（正式宣讲调性）。"""
         pid = str(project or "").strip().lower()
-        if pid in CC.PROJECTS:
+        if pid in self.projects:
             return pid
         hay = " ".join([str(idea.get("title") or ""), str(idea.get("summary") or ""),
                         str(idea.get("origin") or ""), str(idea.get("source") or ""),
@@ -1166,7 +1175,7 @@ class Kernel:
         forms = ("热点解读", "延伸视角", "互动话题", "反常识问答")
         while len(out) < 4:
             i = len(out)
-            base = CC.PROJECTS[pid]["name"]
+            base = self.projects[pid]["name"]
             angle = (hotspot.get("title") or "今日热点").strip()
             out.append({"projectId": pid, "title": f"{angle}｜{base}{forms[i]}",
                         "angle": f"从{base}定位切入{forms[i]}", "form": forms[i],
@@ -1303,7 +1312,7 @@ class Kernel:
                 p_ctx = json.dumps([items[i] for i in pid_ids], ensure_ascii=False)
                 jobs[pid] = HERMES.pool.submit(
                     self.call_agent, f"pm_{pid}",
-                    f"以 {CC.PROJECTS[pid]['name']} 产品经理身份评审本项目样片，判断能否进入定版。",
+                    f"以 {self.projects[pid]['name']} 产品经理身份评审本项目样片，判断能否进入定版。",
                     p_ctx, extra, schema)
         maps, metas = {}, {}
         for who, job in jobs.items():
@@ -1583,7 +1592,7 @@ class Kernel:
         for pid, pm in c.pms:
             futures[pm] = HERMES.pool.submit(
                 self.call_agent, pm,
-                f"提交 {CC.PROJECTS[pid]['name']} 今日 4 条候选选题，供 CCO 与 CTO 汇总。",
+                f"提交 {self.projects[pid]['name']} 今日 4 条候选选题，供 CCO 与 CTO 汇总。",
                 ctx,
                 f"本项目匹配度 {fit.get(pid, '未评估')}。额外 JSON 字段：topics(数组，恰好 4 条，"
                 "每条 {title, angle, form, durationSec, reason})。",
@@ -1688,13 +1697,14 @@ class Kernel:
             "summary, evidence, confidence, tools, final, minutes, recipients, cc")
         data = data or self._deg("ceo", "选题评审会")
         c.final = self._coerce_final(data, c.selected)
+        display = lambda xs: ["老板" if x == "owner" else self.agents.get(x, {}).get("name", x) for x in xs]
         minutes = str(data.get("minutes") or "").strip() or (
-            f"# 选题评审会\n\n- 议题：{c.hotspot['title']}\n- 参会：CEO 陆清安、CTO 扶频、CCO 沈青禾、"
-            f"产品经理 贺平生/米珂/姜月初\n- 结论：每项目定稿 2 条，共 6 条\n")
+            f"# 选题评审会\n\n- 议题：{c.hotspot['title']}\n- 参会："
+            + "、".join(display(["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"]))
+            + "\n- 结论：每项目定稿 2 条，共 6 条\n")
         recipients = [str(x) for x in (data.get("recipients") or [])] or \
             ["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"]
         cc = [str(x) for x in (data.get("cc") or [])] or ["owner"]
-        display = lambda xs: ["老板" if x == "owner" else self.agents.get(x, {}).get("name", x) for x in xs]
         c.meeting_doc = {}
         if self.DL:
             try:
@@ -1716,7 +1726,7 @@ class Kernel:
                    "mailUrl": (c.meeting_doc or {}).get("mail", ""),
                    "recipients": recipients, "cc": cc}, priority=1)
         c.conclusion = "定稿 6 条（每项目 2 条）：" + "；".join(
-            f"{CC.PROJECTS[pid]['name']}《{t['title']}》" for pid in self.PIDS for t in c.final[pid])
+            f"{self.projects[pid]['name']}《{t['title']}》" for pid in self.PIDS for t in c.final[pid])
         self.meeting_say("ceo", "结论：" + c.conclusion + "。后续按项目进入制作，会议纪要已归档到 Obsidian。",
                          "conclusion", c.trace)
         self.meeting_end(c.trace, c.conclusion, (c.meeting_doc or {}).get("minutes", ""))
@@ -1743,7 +1753,7 @@ class Kernel:
             "## 定稿清单",
         ]
         for pid in self.PIDS:
-            mail_lines.append(f"### {CC.PROJECTS[pid]['name']}")
+            mail_lines.append(f"### {self.projects[pid]['name']}")
             for t in c.final[pid]:
                 mail_lines.append(
                     f"- 《{t['title']}》｜角度：{t.get('angle', '—')}｜形态：{t.get('form', '—')}｜"
@@ -1781,7 +1791,7 @@ class Kernel:
                 iid = self._content_id(c.trace, pid, idx, t["title"])
                 item = {"id": iid, "projectId": pid, "traceId": c.trace, "stage": "topic",
                         "title": t["title"], "angle": t.get("angle", ""),
-                        "owner": f"pm_{pid}", "toneProfile": CC.TONE[pid], "assets": [],
+                        "owner": f"pm_{pid}", "toneProfile": self.tone[pid], "assets": [],
                         "reviewNote": "", "durationSec": t.get("durationSec", 45)}
                 with self.lock:
                     existing = next((x for x in self.contents if x.get("id") == iid), None)
@@ -1893,7 +1903,7 @@ class Kernel:
         data = {}
         try:
             data, meta = self.call_agent(
-                "cco", f"为 {CC.PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条确定短视频出片架构："
+                "cco", f"为 {self.projects[pid]['name']} 的 {len(items)} 条选题逐条确定短视频出片架构："
                 "普通科普类用 remotion（Remotion 最终合成，字幕/语音精确可控）；"
                 "休闲娱乐类在 full_video（全视频制作）与 voice_video（语音+视频）里按创意剧本择优。",
                 json.dumps([{"title": i["title"], "angle": i.get("angle", ""),
@@ -1931,7 +1941,7 @@ class Kernel:
                 f"{w['no']}号车间 {w['id']}（{w['name']}，产品：{w['product']}）：{w['desc']}"
                 for w in CC.OPENMONTAGE_CRAFTS)
             data, meta = self.call_agent(
-                "cco", f"为 {CC.PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条审批制作工艺。"
+                "cco", f"为 {self.projects[pid]['name']} 的 {len(items)} 条选题逐条审批制作工艺。"
                 f"参考 OpenMontage 的 13 类工艺（每类对应一个车间）：\n{crafts_brief}"
                 "（bossBrief 是老板通过创意灵感页下达的特定要求，工艺决策与理由必须满足它）",
                 json.dumps([{"title": i["title"], "angle": i.get("angle", ""),
@@ -1998,7 +2008,7 @@ class Kernel:
                 if t.get("bossBrief"))
             jobs[pid] = HERMES.pool.submit(
                 self.call_agent, pm,
-                f"为 {CC.PROJECTS[pid]['name']} 的 {len(c.final.get(pid) or [])} 条定稿选题细化制作方案：把分镜脚本补充完善到逐镜可执行"
+                f"为 {self.projects[pid]['name']} 的 {len(c.final.get(pid) or [])} 条定稿选题细化制作方案：把分镜脚本补充完善到逐镜可执行"
                 "（画面/台词/时长/所需素材），并按并行原则拆分任务——视频制作拆成逐镜子任务先开工，"
                 "文案岗同步领取成稿与补素材指令。"
                 + (f"老板特定要求（逐条落实，不得跑偏）：{boss_reqs}" if boss_reqs else ""),
@@ -2072,7 +2082,7 @@ class Kernel:
             jobs[iid] = HERMES.pool.submit(
                 self.call_agent, f"cw_{pid}",
                 f"为《{item['title']}》写一段成稿文案（≤80字），符合本项目人设，禁止串用其他项目风格。",
-                f"项目：{CC.PROJECTS[pid]['name']}；风格：{CC.TONE[pid]}；时长：{plan.get('durationSec', 45)}s；"
+                f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}；时长：{plan.get('durationSec', 45)}s；"
                 f"文案要求：{plan.get('copyBrief', '')}",
                 "额外 JSON 字段：copy(成稿文案≤80字)。",
                 "summary, evidence, confidence, tools, copy")
@@ -2089,7 +2099,7 @@ class Kernel:
             if meta.get("engine") != "hermes" or not (data or {}).get("copy"):
                 item.setdefault("degraded", []).append("copy")
             data = data or {"summary": "文案已交付（降级）", "evidence": [], "confidence": 0.2,
-                            "tools": [], "copy": f"{CC.PROJECTS[pid]['name']} 文案占位"}
+                            "tools": [], "copy": f"{self.projects[pid]['name']} 文案占位"}
             item["stage"] = "copy"
             item["copy"] = data.get("copy") or data.get("summary", "")
             self.send("result", f"cw_{pid}", f"pm_{pid}", c.trace,
@@ -2141,7 +2151,7 @@ class Kernel:
             try:
                 path = asset_fill.gen_image(
                     f"{g.get('why') or g.get('item') or item['title']}，"
-                    f"{CC.PROJECTS[pid]['name']} 风格竖版配图，{CC.TONE.get(pid, '')}",
+                    f"{self.projects[pid]['name']} 风格竖版配图，{self.tone.get(pid, '')}",
                     os.path.join(out_dir, f"gap{i + 1}.png"))
                 item["materials"]["generated"].append({"why": g.get("why"), "path": path})
             except Exception as e:
@@ -2182,7 +2192,7 @@ class Kernel:
                 f"按《制作评估报告》与 PM 细化分镜为《{item['title']}》出样片方案："
                 f"出片模式 {item.get('renderMode', 'remotion')}（{item.get('renderModeNote', '')}），"
                 "逐镜剧本、封面、配音/TTS。",
-                f"项目：{CC.PROJECTS[pid]['name']}；风格：{CC.TONE[pid]}；时长：{plan.get('durationSec', 45)}s；"
+                f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}；时长：{plan.get('durationSec', 45)}s；"
                 f"配音：{plan.get('tts', {})}；文案：{item.get('copy', '')}；"
                 f"细化分镜：{json.dumps(plan.get('storyboardShots') or [], ensure_ascii=False)}；"
                 f"分镜要点：{plan.get('storyboardNotes', '')}",
@@ -2235,7 +2245,7 @@ class Kernel:
         elif not OMR:
             item["renderCheck"] = {"pass": False, "reasons": ["渲染模块不可用"]}
         else:
-            res = OMR.produce(item, CC.PROJECTS[pid], CC.TONE.get(pid, ""),
+            res = OMR.produce(item, self.projects[pid], self.tone.get(pid, ""),
                               CC.DELIVERY.get(pid) or CC.DELIVERY["_default"])
             item["render"] = {k: v for k, v in res.items() if k != "check"}
             item["renderCheck"] = res.get("check") or {
@@ -2299,7 +2309,7 @@ class Kernel:
                 jobs[iid] = HERMES.pool.submit(
                     self.call_agent, f"vd_{pid}",
                     f"按三方样片评审意见返工《{item['title']}》的样片：重出逐镜剧本、封面与样片说明。",
-                    f"项目：{CC.PROJECTS[pid]['name']}；风格：{CC.TONE[pid]}；评审意见：{reasons}",
+                    f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}；评审意见：{reasons}",
                     "额外 JSON 字段：shots(数字), storyboard(≤220字，每镜可加 插图:1-2 个中文物件名，"
                     "如 相纸/药水盘/放大镜), cover(≤20字), sample(≤80字)。",
                     "summary, evidence, confidence, tools, shots, storyboard, cover, sample")
@@ -2316,7 +2326,7 @@ class Kernel:
                 # 返工必须重新出片，否则第二轮仍在评审同一份视频（空转）
                 if OMR and not item.get("renderSkipped"):
                     try:
-                        res = OMR.produce(item, CC.PROJECTS[pid], CC.TONE.get(pid, ""),
+                        res = OMR.produce(item, self.projects[pid], self.tone.get(pid, ""),
                                           CC.DELIVERY.get(pid) or CC.DELIVERY["_default"])
                         item["render"] = {k: v for k, v in res.items() if k != "check"}
                         item["renderCheck"] = res.get("check") or {
@@ -2349,7 +2359,7 @@ class Kernel:
             jobs[iid] = HERMES.pool.submit(
                 self.call_agent, f"vd_{pid}",
                 f"《{item['title']}》样片已通过 CCO/CTO/PM 评审，现执行定版：确认交付物清单与口径。",
-                f"项目：{CC.PROJECTS[pid]['name']}；文案：{item.get('copy', '')}；"
+                f"项目：{self.projects[pid]['name']}；文案：{item.get('copy', '')}；"
                 f"样片说明：{item.get('sampleNote', '')}",
                 "制度：定版不重剪，禁止声称做了帧级调整或重新剪辑；额外 JSON 字段："
                 "finalCut(定版说明≤120字，须写明「不改画面」), assets(数组，交付文件名)。",
@@ -2433,7 +2443,7 @@ class Kernel:
                 pid = item["projectId"]
                 rework[iid] = HERMES.pool.submit(
                     self.call_agent, f"cw_{pid}", f"按审核意见重写《{item['title']}》文案（≤80字）。",
-                    f"项目：{CC.PROJECTS[pid]['name']}；风格：{CC.TONE[pid]}",
+                    f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}",
                     f"审核驳回理由：{item['reviewNote']}。必须修正这些问题且保持本项目人设。",
                     "summary, evidence, confidence, tools, copy")
                 self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
@@ -2595,7 +2605,7 @@ class Kernel:
         }
         for pid in {i["projectId"] for i in c.passed_items.values()}:
             wave[f"pm_{pid}"] = HERMES.pool.submit(
-                self.call_agent, f"pm_{pid}", f"写一段 {CC.PROJECTS[pid]['name']} 项目周报结论。",
+                self.call_agent, f"pm_{pid}", f"写一段 {self.projects[pid]['name']} 项目周报结论。",
                 c.pub_ctx, "", "summary, evidence, confidence, tools")
 
         daily_data, daily_meta = wave["ceo"].result()
@@ -2623,7 +2633,7 @@ class Kernel:
             wd, wm = wave[f"pm_{pid}"].result()
             wd = wd or self._deg(f"pm_{pid}", "项目周报")
             weekly = {"id": uid("rp"), "traceId": c.trace, "kind": "weekly",
-                      "title": f"{CC.PROJECTS[pid]['name']} 项目周报",
+                      "title": f"{self.projects[pid]['name']} 项目周报",
                       "conclusion": wd.get("summary", ""), "evidence": wd.get("evidence", []),
                       "decisions": [], "engine": wm["engine"], "createdAt": iso_now()}
             with self.lock:
@@ -2778,7 +2788,7 @@ class Kernel:
 
     def review_with_model(self, item, trace):
         structural = []
-        expected = CC.TONE.get(item["projectId"])
+        expected = self.tone.get(item["projectId"])
         if item.get("toneProfile") != expected:
             structural.append(f"人设串味：标注「{item.get('toneProfile')}」，要求「{expected}」")
         bad_assets = [a for a in item.get("assets", []) if not self._asset_owned(item, a)]
@@ -2812,7 +2822,7 @@ class Kernel:
             a,
             f"审核定版成片：{item['title']}；文案：{item.get('copy', '')[:120]}；"
             f"定版说明：{(item.get('finalCut') or '—')[:120]}",
-            f"项目：{CC.PROJECTS[item['projectId']]['name']}；要求风格：{expected}；样片三方评审：{sample_note}",
+            f"项目：{self.projects[item['projectId']]['name']}；要求风格：{expected}；样片三方评审：{sample_note}",
             extra, "summary, evidence, confidence, tools, pass, reasons")
         self.record_usage("reviewer", meta, trace)
         if not data:
@@ -2841,8 +2851,8 @@ class Kernel:
         try:
             files = self.DL.plan(trace, item["projectId"], item["id"])
             item["files"] = files
-            project = dict(CC.PROJECTS.get(item["projectId"], {"name": item["projectId"], "color": "#64748B"}))
-            tone = item.get("toneProfile") or CC.TONE.get(item["projectId"], "")
+            project = dict(self.projects.get(item["projectId"], {"name": item["projectId"], "color": "#64748B"}))
+            tone = item.get("toneProfile") or self.tone.get(item["projectId"], "")
             snap = json.loads(json.dumps(item, ensure_ascii=False))
 
             def job():
@@ -2870,7 +2880,7 @@ class Kernel:
                 msgs = [dict(m) for m in self.messages if m.get("traceId") == trace]
                 apprs = [dict(a) for a in self.approvals if a.get("traceId") == trace]
                 tr = dict(self.traces.get(trace) or {})
-            names = {pid: p["name"] for pid, p in CC.PROJECTS.items()}
+            names = {pid: p["name"] for pid, p in self.projects.items()}
             self.DL.submit(lambda: self.DL.export_trace(trace, contents, msgs, apprs, names, tr))
         except Exception as e:
             print(f"[export] trace 文档失败 {type(e).__name__}: {e}", flush=True)
@@ -2960,7 +2970,7 @@ class Kernel:
         trace = uid("tr")
         item = {"id": uid("c"), "projectId": "gou", "traceId": trace, "stage": "review",
                 "title": "（测试）把文人莫克的稿子塞给狗大人", "owner": "cw_gou",
-                "toneProfile": CC.TONE["wenren"], "assets": ["asset://wenren/master.mp4"],
+                "toneProfile": self.tone["wenren"], "assets": ["asset://wenren/master.mp4"],
                 "copy": "书卷气、克制、不追网络梗。"}
         with self.lock:
             self.contents.append(item)

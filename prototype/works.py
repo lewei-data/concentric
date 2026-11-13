@@ -20,9 +20,9 @@ URL_PREFIX = "/vault/OPC/交付物"
 TZ = timezone(timedelta(hours=8))
 
 PROJECT_NAMES = {
-    "wenren": "文人莫克",
-    "gou": "狗大人",
-    "tongxinyuan": "同心圆",
+    "wenren": "产品一组",
+    "gou": "产品二组",
+    "tongxinyuan": "产品三组",
     "all": "全公司",
 }
 PROJECT_CODES = {"wenren": "WR", "gou": "GD", "tongxinyuan": "TXY", "all": "ALL"}

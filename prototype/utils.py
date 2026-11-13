@@ -1,7 +1,8 @@
 """通用小工具（时间 / ID / 数值转换 / 热点键）。"""
+import json
+import re
 import time
 import uuid
-import json
 from datetime import datetime, timedelta, timezone
 
 TZ = timezone(timedelta(hours=8))

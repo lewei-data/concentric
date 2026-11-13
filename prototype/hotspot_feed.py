@@ -22,14 +22,33 @@ DB_PATH = os.environ.get("OPC_DB_PATH", os.path.join(BASE_DIR, "opc.db"))
 UA = "Mozilla/5.0 (compatible; OPC-Workbench-Feed/1.0)"
 
 SOURCES = [
-    {"id": "hn", "name": "Hacker News 热榜", "category": "科技资讯", "live": True},
-    {"id": "github", "name": "GitHub 趋势仓库", "category": "开源项目", "live": True},
+    {"id": "hn", "name": "Hacker News 热榜", "category": "科技资讯", "live": True,
+     "desc": "全球科技创业与工程社区的热门讨论，偏 AI / 编程 / 创业 / 产品",
+     "scope": "HN 首页热榜前 30 条（Algolia 公开 API，按热度分排序）",
+     "interval": "30 分钟"},
+    {"id": "github", "name": "GitHub 趋势仓库", "category": "开源项目", "live": True,
+     "desc": "全球开源社区新晋热门项目，适合选题参考与技术选型",
+     "scope": "近 7 天新建仓库按 star 排序前 25 条（GitHub Search API）",
+     "interval": "30 分钟"},
     {"id": "douyin", "name": "抖音热榜", "category": "短视频", "live": False,
+     "desc": "全民短视频话题榜，偏社会热点 / 娱乐 / 民生",
+     "scope": "抖音站内热搜榜（Top 50）",
+     "interval": "待接入（规划 30 分钟）",
      "note": "无公开 API，待接入抓取通道"},
     {"id": "kuaishou", "name": "快手热榜", "category": "短视频", "live": False,
+     "desc": "快手站内全民话题榜，偏民生与下沉市场",
+     "scope": "快手站内热搜榜（Top 50）",
+     "interval": "待接入（规划 30 分钟）",
      "note": "无公开 API，待接入抓取通道"},
 ]
 SOURCES_BY_ID = {s["id"]: s for s in SOURCES}
+
+# 分类说明：订阅页分类表里每个大类的定位说明
+CATEGORY_DESC = {
+    "科技资讯": "科技圈在讨论什么：趋势、观点、产品动态",
+    "开源项目": "全球开源社区的新项目与上升势头",
+    "短视频": "短视频平台的全民话题与大众情绪",
+}
 
 
 def _conn():
@@ -169,7 +188,9 @@ def feed_view(sources=None, limit=100):
         counts = {r["source"]: r["n"] for r in con.execute(
             "SELECT source, COUNT(*) AS n FROM hotspot_feed GROUP BY source")}
         return {
-            "sources": [{**s, "count": counts.get(s["id"], 0),
+            "sources": [{**s, "desc": s.get("desc") or "", "scope": s.get("scope") or "",
+                         "interval": s.get("interval") or "",
+                         "count": counts.get(s["id"], 0),
                          "lastRun": (state.get(s["id"]) or {}).get("last_run") or "",
                          "ok": bool((state.get(s["id"]) or {}).get("ok")),
                          "error": (state.get(s["id"]) or {}).get("message") or ""}
@@ -179,6 +200,32 @@ def feed_view(sources=None, limit=100):
                        "extra": json.loads(r["extra"] or "{}"),
                        "collectedAt": r["collected_at"]} for r in rows],
         }
+    finally:
+        con.close()
+
+
+def categories_view():
+    """热点分类表：分类 → 源清单（说明 / 采集范围 / 间隔 / 运行状态），订阅页直接展示。"""
+    con = _conn()
+    try:
+        state = {r["source"]: dict(r) for r in con.execute("SELECT * FROM hotspot_feed_state")}
+        counts = {r["source"]: r["n"] for r in con.execute(
+            "SELECT source, COUNT(*) AS n FROM hotspot_feed GROUP BY source")}
+        cats = []
+        for cat in dict.fromkeys(s["category"] for s in SOURCES):   # 保序去重
+            srcs = []
+            for s in SOURCES:
+                if s["category"] != cat:
+                    continue
+                st = state.get(s["id"]) or {}
+                srcs.append({"id": s["id"], "name": s["name"], "live": s["live"],
+                             "desc": s.get("desc") or "", "scope": s.get("scope") or "",
+                             "interval": s.get("interval") or "", "note": s.get("note") or "",
+                             "count": counts.get(s["id"], 0),
+                             "lastRun": st.get("last_run") or "", "ok": bool(st.get("ok")),
+                             "error": st.get("message") or ""})
+            cats.append({"category": cat, "desc": CATEGORY_DESC.get(cat, ""), "sources": srcs})
+        return {"ok": True, "collectInterval": "30 分钟/轮", "categories": cats}
     finally:
         con.close()
 

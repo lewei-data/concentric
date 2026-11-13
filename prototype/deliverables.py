@@ -477,7 +477,8 @@ def load_knowledge(limit=40):
         title = re.sub(r"^知识条目\s*·\s*", "", title)
         project = fm.get("project") or "全公司"
         pid = "全公司"
-        for name, key in (("文人莫克", "wenren"), ("狗大人", "gou"), ("同心圆", "tongxinyuan")):
+        for name, key in (("产品一组", "wenren"), ("产品二组", "gou"), ("产品三组", "tongxinyuan"),
+                          ("文人莫克", "wenren"), ("狗大人", "gou"), ("同心圆", "tongxinyuan")):
             if name in project:
                 pid = key
                 break
@@ -510,7 +511,7 @@ def load_knowledge(limit=40):
     return out[-limit:]
 
 
-PROJECT_DISPLAY = {"wenren": "文人莫克", "gou": "狗大人", "tongxinyuan": "同心圆",
+PROJECT_DISPLAY = {"wenren": "产品一组", "gou": "产品二组", "tongxinyuan": "产品三组",
                    "all": "全公司", "全公司": "全公司"}
 
 

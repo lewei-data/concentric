@@ -8,6 +8,7 @@ import time
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 
+from opc_paths import MAIL_AUDIT, MAIL_CRED_FILE, MAIL_DOMAIN, MAIL_HOST, MAIL_SMTP_PORT
 from utils import iso_now, uid, _to_int
 def load_mail_accounts():
     """解析 .邮箱凭据.md：| 邮箱 | 姓名 | 密码 | → {邮箱: (姓名, 密码)}"""

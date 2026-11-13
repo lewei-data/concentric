@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 // 用户中心：独立页面 —— 个人基本信息 / 数据资产 / 系统配置 / 帮助
 // 路由：/account、/account/assets、/account/settings、/account/help
@@ -20,7 +20,13 @@ type AccountResp = {
   settings?: Settings;
 };
 type Settings = { sound: boolean; autoRefreshSec: number; signature: string };
-type SubSource = { id: string; name: string; category: string; live: boolean; note?: string; count?: number };
+type SubSource = {
+  id: string; name: string; category: string; live: boolean;
+  note?: string; count?: number; desc?: string; scope?: string; interval?: string;
+  lastRun?: string; ok?: boolean; error?: string;
+};
+type CategoryGroup = { category: string; desc: string; sources: SubSource[] };
+type CategoriesResp = { ok: boolean; collectInterval?: string; categories: CategoryGroup[]; subscribed?: string[] };
 
 function fmtBytes(n?: number): string {
   const v = Math.max(0, n || 0);
@@ -39,12 +45,13 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-const SECTIONS = [
-  { path: "/account", label: "个人基本信息" },
-  { path: "/account/assets", label: "数据资产" },
-  { path: "/account/settings", label: "系统配置" },
-  { path: "/account/help", label: "帮助" },
-];
+// 用户中心各页面只做一件事，页面间导航走右上角用户菜单，页内不再放栏目导航
+const SECTION_TITLES: Record<string, string> = {
+  "/account": "个人信息",
+  "/account/assets": "数据资产",
+  "/account/settings": "系统配置",
+  "/account/help": "帮助",
+};
 
 export function AccountPage() {
   const [data, setData] = useState<AccountResp | null>(null);
@@ -57,7 +64,8 @@ export function AccountPage() {
   const [profile, setProfile] = useState({ name: "", email: "" });
   const [avatarTs, setAvatarTs] = useState(Date.now());
   const [subs, setSubs] = useState<string[]>([]);
-  const [subsData, setSubsData] = useState<{ sources: SubSource[] } | null>(null);
+  const [cats, setCats] = useState<CategoryGroup[]>([]);
+  const [collectInterval, setCollectInterval] = useState("30 分钟/轮");
   const location = useLocation();
   const section = location.pathname.replace(/\/$/, "") || "/account";
 
@@ -71,18 +79,13 @@ export function AccountPage() {
       setErr(e instanceof Error ? e.message : String(e));
     }
     try {
-      const res = await fetch("/api/hotspot/subscribe", { credentials: "include" });
-      const body = (await res.json()) as { subscribed?: string[] };
-      setSubs(body.subscribed || []);
+      const res = await fetch("/api/hotspot/categories", { credentials: "include" });
+      const body = (await res.json()) as CategoriesResp;
+      setCats(body.categories || []);
+      if (body.collectInterval) setCollectInterval(body.collectInterval);
+      if (body.subscribed) setSubs(body.subscribed);
     } catch {
-      /* 订阅读取失败不阻断 */
-    }
-    try {
-      const res = await fetch("/api/hotspot/feed", { credentials: "include" });
-      const body = (await res.json()) as { sources?: SubSource[] };
-      setSubsData({ sources: body.sources || [] });
-    } catch {
-      /* 源列表读取失败不阻断 */
+      /* 分类表读取失败不阻断 */
     }
   };
 
@@ -237,18 +240,8 @@ export function AccountPage() {
 
   return (
     <div className="panel-grid single">
-      <div className="account-tabs" role="tablist" aria-label="用户中心栏目">
-        {SECTIONS.map((s) => (
-          <NavLink
-            key={s.path}
-            to={s.path}
-            role="tab"
-            className="account-tab"
-            aria-current={section === s.path ? "page" : undefined}
-          >
-            {s.label}
-          </NavLink>
-        ))}
+      <div className="page-head">
+        <h1>{SECTION_TITLES[section] || "个人信息"}</h1>
       </div>
 
       {/* ---------- 个人基本信息 ---------- */}
@@ -401,32 +394,68 @@ export function AccountPage() {
       {section === "/account/settings" && (
         <>
           <div className="card">
-            <h2>热点订阅 <small className="muted">（选择感兴趣的方向，热点页将优先展示）</small></h2>
+            <h2>热点订阅 <small className="muted">（勾选感兴趣的方向，即写入你的订阅表）</small></h2>
             <p className="muted">
-              热点消息流由系统定时采集（30 分钟一轮），全用户共享；
-              订阅后在「热点」页默认只显示你感兴趣的方向。不订阅则显示全部源。
+              热点消息流由系统定时采集（{collectInterval}），全用户共享；
+              订阅后在「热点」页默认只显示你订阅的源，不订阅则显示全部源。
             </p>
-            <div className="account-settings">
-              {(subsData?.sources || []).map((s) => (
-                <label className="account-row" key={s.id}>
-                  <span>
-                    <b>{s.name}</b>
-                    <small className="muted"> · {s.category}{!s.live ? ` · ${s.note || "待接入"}` : ""}</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={(subs || []).includes(s.id)}
-                    disabled={busy === "subs"}
-                    onChange={(e) => {
-                      const next = e.target.checked
-                        ? [...(subs || []), s.id]
-                        : (subs || []).filter((x) => x !== s.id);
-                      void saveSubs(next);
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>热点源</th>
+                  <th>内容说明</th>
+                  <th>采集范围</th>
+                  <th>采集间隔</th>
+                  <th>运行状态</th>
+                  <th>订阅</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cats.length === 0 && (
+                  <tr><td colSpan={6} className="muted">分类表加载中…</td></tr>
+                )}
+                {cats.map((c) => (
+                  <Fragment key={c.category}>
+                    <tr>
+                      <td colSpan={6}>
+                        <b>{c.category}</b>
+                        {c.desc && <small className="muted"> —— {c.desc}</small>}
+                      </td>
+                    </tr>
+                    {c.sources.map((s) => (
+                      <tr key={s.id}>
+                        <td><b>{s.name}</b>{!s.live && <small className="muted">（待接入）</small>}</td>
+                        <td className="muted">{s.desc || "—"}</td>
+                        <td className="muted">{s.scope || "—"}</td>
+                        <td>{s.interval || collectInterval}</td>
+                        <td>
+                          {s.live
+                            ? (s.ok
+                              ? <span>正常 <small className="muted">{s.lastRun || ""}</small></span>
+                              : <span className="error">{s.error || "异常"}</span>)
+                            : <span className="muted">{s.note || "待接入"}</span>}
+                          {typeof s.count === "number" && <small className="muted"> · 库内 {s.count} 条</small>}
+                        </td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`订阅 ${s.name}`}
+                            checked={(subs || []).includes(s.id)}
+                            disabled={busy === "subs"}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...(subs || []), s.id]
+                                : (subs || []).filter((x) => x !== s.id);
+                              void saveSubs(next);
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
             <div className="account-actions">
               <button
                 type="button"
@@ -481,7 +510,7 @@ export function AccountPage() {
       {/* ---------- 帮助 ---------- */}
       {section === "/account/help" && (
         <div className="card">
-          <h2>帮助</h2>
+          <h2>常见问题</h2>
           <details>
             <summary>我的数据存在哪里？</summary>
             <p className="muted">
