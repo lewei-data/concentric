@@ -1,10 +1,10 @@
 {
- "ts": "2026-11-13T10:34:40+0800",
+ "ts": "2026-11-13T11:36:40+0800",
  "total": 16,
  "ok": 16,
  "failed": 0,
  "critical_failed": 0,
- "summary": "2026-11-13 10:34 巡检正常：16/16 项服务在线",
+ "summary": "2026-11-13 11:36 巡检正常：16/16 项服务在线",
  "report_path": "",
  "results": [
   {
@@ -16,8 +16,8 @@
    "proto": "ssh",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 6361,
-   "detail": "localhost.localdomain /  10:34:46 up 131 days"
+   "latency_ms": 7845,
+   "detail": "localhost.localdomain /  11:36:47 up 131 days"
   },
   {
    "node": "comfy-21-157",
@@ -40,7 +40,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 13,
+   "latency_ms": 12,
    "detail": "HTTP 200"
   },
   {
@@ -64,7 +64,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 235,
+   "latency_ms": 232,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -76,7 +76,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 230,
+   "latency_ms": 227,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -112,7 +112,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 61,
+   "latency_ms": 60,
    "detail": "HTTP 200"
   },
   {
@@ -160,7 +160,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 15,
+   "latency_ms": 16,
    "detail": "HTTP 200"
   },
   {
