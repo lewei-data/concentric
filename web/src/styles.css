@@ -600,6 +600,34 @@ a:hover {
   cursor: pointer;
 }
 
+/* 注册入口：切换链接 + 校验码输入行 */
+.login-switch {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.login-switch .link {
+  border: none;
+  background: none;
+  color: var(--accent, #2f6fed);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+}
+.login-captcha {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.login-captcha .input {
+  flex: 1;
+}
+
 .login-remember input {
   width: 15px;
   height: 15px;
@@ -2691,6 +2719,52 @@ a:hover {
   color: var(--text, #1f2937);
   max-width: 220px;
 }
+
+/* 用户中心 */
+.user-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.user-entry:hover { background: rgba(47, 111, 237, 0.08); }
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.account-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.account-item small { color: var(--muted); font-size: 11px; }
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.account-settings { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 520px;
+}
+.account-row .input { max-width: 260px; }
+.card details { margin: 8px 0; }
+.card summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 
 /* 组织配置：当前通道标签 */
 .org-pill-ok {

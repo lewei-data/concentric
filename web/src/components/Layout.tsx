@@ -81,11 +81,18 @@ export function Layout() {
           </nav>
 
           <div className="userbox">
-            <span className="user-avatar" aria-hidden="true">{initial}</span>
-            <span className="user-meta">
-              <b>{displayName}</b>
-              <small>{identity?.role || "成员"}</small>
-            </span>
+            <button
+              type="button"
+              className="user-entry"
+              title="进入用户中心（基本信息 / 设置 / 数据资产导出与导入）"
+              onClick={() => { window.location.assign("/app/account"); }}
+            >
+              <span className="user-avatar" aria-hidden="true">{initial}</span>
+              <span className="user-meta">
+                <b>{displayName}</b>
+                <small>{identity?.role || "成员"}</small>
+              </span>
+            </button>
             <span className="live-badge" title="已连接实时事件流">
               <i aria-hidden="true" />实时
             </span>

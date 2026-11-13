@@ -1260,3 +1260,37 @@ def store():
                 _log(f"初始化失败，降级为旧路径：{type(e).__name__}: {e}")
                 _STORE = None
     return _STORE
+
+
+_STORES = {}                     # 路径 → Store（多用户工作区各一个库）
+_STORES_LOCK = threading.Lock()
+
+
+def drop_store(path):
+    """把某路径的 Store 实例移出缓存（数据导入后重建用）；不强制关闭连接，避免影响在用线程。"""
+    path = os.path.abspath(path)
+    with _STORES_LOCK:
+        return _STORES.pop(path, None)
+
+
+def store_for(path):
+    """按路径取/建 Store 实例（每个用户工作区一个独立 opc.db）。
+
+    默认路径复用 store() 单例；实例化失败缓存 None（下次调用重试）。
+    """
+    if not ENABLED:
+        return None
+    path = os.path.abspath(path)
+    if path == os.path.abspath(DB_PATH):
+        return store()
+    with _STORES_LOCK:
+        st = _STORES.get(path)
+        if st is None:
+            try:
+                st = Store(path)
+                _log(f"已启用，库文件 {path}")
+            except Exception as e:
+                _log(f"初始化失败({path})：{type(e).__name__}: {e}")
+                st = None
+            _STORES[path] = st
+    return st

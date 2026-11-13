@@ -15,6 +15,7 @@ const KnowledgePage = lazy(() => import("./pages/KnowledgePage").then((m) => ({ 
 const MessagesPage = lazy(() => import("./pages/MessagesPage").then((m) => ({ default: m.MessagesPage })));
 const OpsPage = lazy(() => import("./pages/OpsPage").then((m) => ({ default: m.OpsPage })));
 const OrgPage = lazy(() => import("./pages/OrgPage").then((m) => ({ default: m.OrgPage })));
+const AccountPage = lazy(() => import("./pages/AccountPage").then((m) => ({ default: m.AccountPage })));
 const ScenePage = lazy(() => import("./pages/ScenePage").then((m) => ({ default: m.ScenePage })));
 const WorksPage = lazy(() => import("./pages/WorksPage").then((m) => ({ default: m.WorksPage })));
 const FactoryPage = lazy(() => import("./pages/FactoryPage").then((m) => ({ default: m.FactoryPage })));
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="/knowledge" element={<Suspense fallback={<PageFallback />}><KnowledgePage /></Suspense>} />
             <Route path="/messages" element={<Suspense fallback={<PageFallback />}><MessagesPage /></Suspense>} />
             <Route path="/org" element={<Suspense fallback={<PageFallback />}><OrgPage /></Suspense>} />
+            <Route path="/account" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />
             <Route path="/office" element={<Suspense fallback={<PageFallback />}><ScenePage scene="office" /></Suspense>} />
             <Route path="/meeting" element={<Suspense fallback={<PageFallback />}><ScenePage scene="meeting" /></Suspense>} />
           </Route>

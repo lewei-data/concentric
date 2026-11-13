@@ -25,7 +25,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.normpath(os.path.join(BASE_DIR, ".."))
 VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
 CACHE_TTL = 60
-_CACHE = {"at": 0.0, "data": None}
+_CACHE = {"at": {}, "data": {}}   # vault → 缓存（多用户隔离：每个 vault 一份）
 _CACHE_LOCK = threading.Lock()
 
 CAT_HOTSPOT = "热点分析"
@@ -187,7 +187,7 @@ def _sections(text):
     return out
 
 
-def _video_ideas(vault):
+def _video_ideas(vault, include_repo_docs=True):
     items = []
     docs = []
     video_dir = os.path.join(vault, "素材")
@@ -198,12 +198,14 @@ def _video_ideas(vault):
                 if name.endswith(".md") and any(k in name for k in _VIDEO_NAMES):
                     docs.append((os.path.join(dirpath, name), True))
     # 仓库根目录的 CCO 创意说明（首发创意说明、得令风格三方案、方案一视频脚本）
-    try:
-        for name in os.listdir(REPO_ROOT):
-            if name.startswith("同心圆-") and name.endswith(".md"):
-                docs.append((os.path.join(REPO_ROOT, name), False))
-    except OSError:
-        pass
+    # 属于共享产品样例：仅存量公司空间（owner）读取，注册用户工作区不混入
+    if include_repo_docs:
+        try:
+            for name in os.listdir(REPO_ROOT):
+                if name.startswith("同心圆-") and name.endswith(".md"):
+                    docs.append((os.path.join(REPO_ROOT, name), False))
+        except OSError:
+            pass
 
     for path, in_vault in docs:
         rel = (os.path.relpath(path, vault) if in_vault
@@ -314,13 +316,14 @@ def build(kernel, refresh: bool = False, vault: str = None):
     """返回 /api/inspiration 的响应体。"""
     vault = vault or VAULT
     with _CACHE_LOCK:
-        cached = _CACHE["data"]
-        fresh = cached is not None and (time.time() - _CACHE["at"]) < CACHE_TTL
+        cached = _CACHE["data"].get(vault)
+        fresh = cached is not None and (time.time() - _CACHE["at"].get(vault, 0)) < CACHE_TTL
     if fresh and not refresh:
         return dict(cached, cached=True)
 
     hotspot_items, brief_count = _hotspot_ideas(kernel, vault)
-    video_items, video_docs = _video_ideas(vault)
+    video_items, video_docs = _video_ideas(
+        vault, include_repo_docs=getattr(kernel, "is_owner", True))
     distill_items, kb_entries, meeting_count = _distill_ideas(kernel, vault)
     items = hotspot_items + video_items + distill_items
     items.sort(key=lambda x: (str(x.get("at") or ""), str(x.get("title") or "")), reverse=True)
@@ -347,5 +350,6 @@ def build(kernel, refresh: bool = False, vault: str = None):
         ],
     }
     with _CACHE_LOCK:
-        _CACHE["at"], _CACHE["data"] = time.time(), data
+        _CACHE["at"][vault] = time.time()
+        _CACHE["data"][vault] = data
     return data

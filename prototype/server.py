@@ -23,7 +23,9 @@ import os
 import queue
 import re
 import secrets
+import io
 import shutil
+import zipfile
 import smtplib
 import ssl
 import subprocess
@@ -156,6 +158,15 @@ CRED_FILE = os.path.join(VAULT, "公司", "登录凭据.md")
 # 素材库：首页卡片的数据源 + 只读文件发布目录（materials.json 里写相对路径即可）
 MATERIALS_FILE = os.environ.get("OPC_MATERIALS_FILE", os.path.join(BASE_DIR, "materials.json"))
 MATERIALS_ROOT = os.environ.get("OPC_MATERIALS_ROOT", "/mnt/sefs/github-hotspots")
+# 多用户工作区：每个注册用户一个目录（opc.db / materials.json / workspace / 名册）；
+# 默认放在 /mnt/sefs/conring/users/<手机号>/，存量数据归属 OWNER_PHONE（默认 18911789286）
+LEGACY_USERS_DIR = os.path.join(BASE_DIR, "users")   # 旧位置：启动时自动搬到 USERS_DIR
+USERS_DIR = os.environ.get("OPC_USERS_DIR", "/mnt/sefs/conring/users")
+USERS_DB = os.environ.get("OPC_USERS_DB", os.path.join(BASE_DIR, "users.db"))
+OWNER_PHONE = os.environ.get("OPC_OWNER_PHONE", "18911789286")
+OWNER_DATA_DIR = os.path.join(USERS_DIR, OWNER_PHONE)
+CAPTCHA_TTL = 300                # 校验码有效期（秒）
+CAPTCHA_SECRET = secrets.token_hex(32)   # 进程级密钥：重启后旧校验码失效
 SESSION_COOKIE = "opc_sess"
 SESSION_TTL = 7 * 24 * 3600          # 7 天免登录
 SESSIONS = {}                        # token -> {"user": {...}, "exp": epoch}
@@ -228,6 +239,245 @@ def find_user(account):
             if v and v == acc:
                 return u
     return None
+
+
+# =============================================================================
+# 多用户：注册（手机号 + 密码 + 校验码）→ 独立工作区 → 按用户 Kernel/过程库
+# =============================================================================
+
+def _users_conn():
+    """用户注册表连接（users.db，WAL）；首次调用自动建表。"""
+    import sqlite3
+    con = sqlite3.connect(USERS_DB, timeout=5)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("""CREATE TABLE IF NOT EXISTS users (
+        phone         TEXT PRIMARY KEY,
+        name          TEXT,
+        password_hash TEXT,
+        salt          TEXT,
+        role          TEXT NOT NULL DEFAULT '老板',
+        source        TEXT NOT NULL DEFAULT 'register',
+        data_dir      TEXT NOT NULL,
+        created_at    TEXT,
+        last_login    TEXT
+    )""")
+    con.commit()
+    return con
+
+
+def _hash_password(password, salt):
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                               bytes.fromhex(salt), 120_000).hex()
+
+
+def _user_get(phone):
+    try:
+        con = _users_conn()
+        try:
+            row = con.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            con.close()
+    except Exception as e:
+        print(f"[users] 读取注册表失败：{type(e).__name__}: {e}", flush=True)
+        return None
+
+
+def _user_create(phone, password):
+    """注册新用户：users.db 记录 + 独立工作区（过程库/素材/工作目录/默认编制）。"""
+    import sqlite3
+    salt = secrets.token_hex(16)
+    row = {
+        "phone": phone, "name": phone, "password_hash": _hash_password(password, salt),
+        "salt": salt, "role": "老板", "source": "register",
+        "data_dir": os.path.join(USERS_DIR, phone), "created_at": iso_now(),
+    }
+    data_dir = row["data_dir"]
+    ws = os.path.join(data_dir, "workspace")
+    os.makedirs(ws, exist_ok=True)
+    os.makedirs(os.path.join(data_dir, "logs"), exist_ok=True)
+    # 过程库：完整 schema 的独立 opc.db（即使 OPC_DB 关闭也建库，注册即初始化）
+    try:
+        if DBX:
+            DBX.Store(os.path.join(data_dir, "opc.db"))
+    except Exception as e:
+        print(f"[users] {phone} 过程库初始化失败：{type(e).__name__}: {e}", flush=True)
+    # 素材清单（结构对齐全局 materials.json；root 指向用户素材目录）
+    mat = os.path.join(data_dir, "materials.json")
+    if not os.path.exists(mat):
+        with open(mat, "w", encoding="utf-8") as f:
+            json.dump({"updated": iso_now()[:10], "root": os.path.join(data_dir, "素材"),
+                       "items": []}, f, ensure_ascii=False, indent=2)
+    os.makedirs(os.path.join(data_dir, "素材"), exist_ok=True)
+    # 独立 vault 目录树：知识库/热点采集/交付物/会议纪要/邮件 全部用户私有
+    for sub in ("热点采集", "知识库", "交付物", "会议纪要", "邮件", "_归档"):
+        os.makedirs(os.path.join(data_dir, "vault", "OPC", sub), exist_ok=True)
+    # 默认编制名册（内置 19 人编制）+ 运行时日志
+    roster = os.path.join(data_dir, "员工名册.md")
+    if not os.path.exists(roster):
+        with open(roster, "w", encoding="utf-8") as f:
+            f.write(_user_roster_md())
+    journal = os.path.join(ws, "runtime.json")
+    if not os.path.exists(journal):
+        with open(journal, "w", encoding="utf-8") as f:
+            json.dump({}, f, ensure_ascii=False)
+    con = _users_conn()
+    try:
+        with con:
+            con.execute("""INSERT INTO users(phone,name,password_hash,salt,role,source,
+                           data_dir,created_at) VALUES(?,?,?,?,?,?,?,?)""",
+                        (row["phone"], row["name"], row["password_hash"], row["salt"],
+                         row["role"], row["source"], row["data_dir"], row["created_at"]))
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        con.close()
+    print(f"[users] 新用户注册 {phone}，工作区 {data_dir}", flush=True)
+    return row
+
+
+def _migrate_owner_workspace():
+    """存量数据一次性迁移：prototype/opc.db + materials.json → users/<OWNER_PHONE>/。
+
+    幂等：目标 opc.db 已存在则跳过；materials.json 缺失才拷贝。
+    另：旧位置的 users/<手机号>/ 目录整体搬到 USERS_DIR（默认位置变更时自动搬家）。
+    """
+    # 旧默认位置（prototype/users）→ 新位置（/mnt/sefs/conring/users）
+    if os.path.isdir(LEGACY_USERS_DIR) and LEGACY_USERS_DIR != USERS_DIR:
+        try:
+            os.makedirs(USERS_DIR, exist_ok=True)
+            for name in os.listdir(LEGACY_USERS_DIR):
+                src = os.path.join(LEGACY_USERS_DIR, name)
+                dst = os.path.join(USERS_DIR, name)
+                if not os.path.isdir(src) or os.path.exists(dst):
+                    continue
+                shutil.move(src, dst)
+                print(f"[migrate] 用户工作区已搬至新位置 → {dst}", flush=True)
+        except OSError as e:
+            print(f"[migrate] 用户工作区搬迁失败（不阻断启动）：{type(e).__name__}: {e}", flush=True)
+    db_src = os.path.join(BASE_DIR, "opc.db")
+    db_dst = os.path.join(OWNER_DATA_DIR, "opc.db")
+    if os.path.exists(db_src) and not os.path.exists(db_dst):
+        os.makedirs(OWNER_DATA_DIR, exist_ok=True)
+        for suffix in ("", "-wal", "-shm"):
+            src = db_src + suffix
+            if os.path.exists(src):
+                shutil.copy2(src, db_dst + suffix)
+        print(f"[migrate] 存量过程库已迁移 → {db_dst}", flush=True)
+    mat_dst = os.path.join(OWNER_DATA_DIR, "materials.json")
+    if os.path.exists(MATERIALS_FILE) and not os.path.exists(mat_dst):
+        os.makedirs(OWNER_DATA_DIR, exist_ok=True)
+        shutil.copy2(MATERIALS_FILE, mat_dst)
+        print(f"[migrate] 素材清单已迁移 → {mat_dst}", flush=True)
+    # 注册用户的默认名册升级：旧版本模板（缺管理层/配音或员工不全）刷新为最新完整编制；
+    # 仅当名册仍是自动生成（标题含"注册时自动生成"）时才覆盖，用户手工编辑过的不动
+    try:
+        con = _users_conn()
+        try:
+            for row in con.execute("SELECT phone,data_dir FROM users WHERE source='register'"):
+                roster = os.path.join(row["data_dir"], "员工名册.md")
+                try:
+                    with open(roster, encoding="utf-8") as f:
+                        head = f.read(400)
+                    spec_ids = {r[0] for r in _parse_roster(roster)[0]}
+                except OSError:
+                    continue
+                if "注册时自动生成" not in head:
+                    continue
+                missing = {"cco", "secretary", "ceo", "cto"} - spec_ids
+                if not missing and len(spec_ids) >= len(DEFAULT_AGENT_SPEC):
+                    continue
+                with open(roster, "w", encoding="utf-8") as f:
+                    f.write(_user_roster_md())
+                print(f"[migrate] {row['phone']} 默认名册已升级 → {len(DEFAULT_AGENT_SPEC)} 人",
+                      flush=True)
+        finally:
+            con.close()
+    except Exception as e:
+        print(f"[migrate] 用户名册升级失败（不阻断启动）：{type(e).__name__}: {e}", flush=True)
+    # 注册表登记存量用户（密码仍以 Obsidian 凭据为准，不落明文/哈希）；
+    # 已登记的旧路径记录同步刷新到当前 OWNER_DATA_DIR
+    try:
+        con = _users_conn()
+        try:
+            con.execute("""INSERT INTO users(phone,name,password_hash,salt,role,source,
+                           data_dir,created_at) VALUES(?,?,?,?,?,?,?,?)
+                           ON CONFLICT(phone) DO UPDATE SET data_dir=excluded.data_dir""",
+                        (OWNER_PHONE, "老板（存量）", "", "", "老板", "legacy",
+                         OWNER_DATA_DIR, iso_now()))
+            con.commit()
+        finally:
+            con.close()
+    except Exception as e:
+        print(f"[migrate] 注册表登记存量用户失败：{type(e).__name__}: {e}", flush=True)
+
+
+# ---------------- 简单校验码（无状态 HMAC 算术题，5 分钟有效） ----------------
+
+def _captcha_sign(answer, exp):
+    msg = f"{answer}|{exp}".encode()
+    return hmac.new(CAPTCHA_SECRET.encode(), msg, hashlib.sha256).hexdigest()[:24]
+
+
+def _captcha_issue():
+    a, b = secrets.randbelow(9) + 1, secrets.randbelow(9) + 1
+    answer = a + b
+    exp = int(time.time()) + CAPTCHA_TTL
+    token = f"{exp}.{_captcha_sign(answer, exp)}"
+    return {"id": uid("cap"), "question": f"{a} + {b} = ?", "token": token}
+
+
+def _captcha_verify(token, answer):
+    try:
+        exp_str, sig = str(token).split(".", 1)
+        exp = int(exp_str)
+    except (ValueError, AttributeError):
+        return False
+    if exp < time.time():
+        return False
+    return hmac.compare_digest(sig, _captcha_sign(str(answer).strip(), exp))
+
+
+def _load_dl(vault_dir):
+    """按 vault 根目录加载一份独立的 deliverables 模块实例。
+
+    deliverables 的路径常量（知识库/热点采集/交付物/会议纪要…）在 import 时由
+    OPC_VAULT 环境变量计算，因此给每个用户工作区 import 一份独立实例即可实现
+    知识库/热点/交付物完全隔离，互不影响 owner 的共享 vault。
+    """
+    import importlib.util
+    dl_path = os.path.join(BASE_DIR, "deliverables.py")
+    saved = os.environ.get("OPC_VAULT")
+    os.environ["OPC_VAULT"] = vault_dir
+    try:
+        spec = importlib.util.spec_from_file_location(
+            f"deliverables_user_{abs(hash(vault_dir))}", dl_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception as e:
+        print(f"[users] 用户 vault 交付模块加载失败（{vault_dir}）：{type(e).__name__}: {e}", flush=True)
+        return None
+    finally:
+        if saved is None:
+            os.environ.pop("OPC_VAULT", None)
+        else:
+            os.environ["OPC_VAULT"] = saved
+
+
+def _user_roster_md():
+    """默认编制名册（从内置 19 人编制生成，项目列用项目名以便名册解析回读）。"""
+    lines = ["# 员工名册（默认编制 · 注册时自动生成）", "",
+             "> 本工作空间的 AI 员工编制；可在此调整，保存后重启服务生效。",
+             ""]
+    lines.append("| ID | 姓名 | 岗位 | 项目 | 负责范围 | 工具白名单 |")
+    lines.append("|----|------|------|------|----------|------------|")
+    for aid, name, role, pid, tools, scope in DEFAULT_AGENT_SPEC:
+        pname = (PROJECTS.get(pid) or {}).get("name") or (
+            "全公司" if pid == "all" else pid)
+        lines.append(f"| {aid} | {name} | {role} | {pname} | {scope} | {'、'.join(tools)} |")
+    return "\n".join(lines) + "\n"
 
 
 # ---------------------------------------------------------------- 内部邮件
@@ -572,22 +822,58 @@ PROJECTS, TONE, HIGH_RISK_TOOLS = _load_project_cfg()
 STAGES = PIPELINE.item_stages          # 对外暴露的内容单状态名，唯一来源是流程定义
 DELIVERY = _load_delivery_cfg()
 
+# 内置默认编制：与 Obsidian 员工名册（19 人，boss 不占编制）保持一致，用于
+# ① owner 名册文件缺失时的回退；② 注册用户的默认编制模板（_user_roster_md）
 DEFAULT_AGENT_SPEC = [
-    ("ceo", "马斯克", "CEO", "all", ["project.read", "metric.read", "report.render", "kb.search"], "全公司"),
-    ("cto", "陈默", "CTO", "all", ["repo.read", "deploy.read", "arch.review", "kb.write"], "全公司 + 同心圆"),
-    ("pm_wenren", "苏晚", "产品经理", "wenren", ["hotspot.read", "metric.read", "backlog.write"], "文人莫克"),
-    ("pm_gou", "老白", "产品经理", "gou", ["hotspot.read", "metric.read", "backlog.write"], "狗大人"),
-    ("pm_tongxinyuan", "何清", "产品经理", "tongxinyuan", ["hotspot.read", "metric.read", "backlog.write"], "同心圆"),
-    ("cw_wenren", "江离", "文案编写", "wenren", ["kb.search", "style.guide", "copy.draft"], "文人莫克"),
-    ("cw_gou", "桃子", "文案编写", "gou", ["kb.search", "style.guide", "copy.draft"], "狗大人"),
-    ("cw_tongxinyuan", "林深", "文案编写", "tongxinyuan", ["kb.search", "style.guide", "copy.draft"], "同心圆"),
-    ("vd_wenren", "阿丘", "视频制作", "wenren", ["asset.read", "video.render", "cover.gen"], "文人莫克"),
-    ("vd_gou", "大脚", "视频制作", "gou", ["asset.read", "video.render", "cover.gen"], "狗大人"),
-    ("vd_tongxinyuan", "木木", "视频制作", "tongxinyuan", ["asset.read", "video.render", "cover.gen"], "同心圆"),
-    ("release_ops", "小满", "发布与监控", "all", ["publish.execute", "metric.read", "alert.raise"], "全公司"),
-    ("reviewer", "严苛", "审核", "all", ["review.check", "compliance.check", "copy.read"], "全公司"),
-    ("scout", "阿寻", "热点采集", "all", ["hotspot.fetch", "asset.fetch", "asset.tag"], "全公司"),
-    ("kb_manager", "书禾", "知识库管理", "all", ["kb.write", "kb.index", "kb.qa"], "全公司"),
+    ("secretary", "小秘书", "小秘书（老板影子分身）", "all",
+     ["metric.read", "report.render", "kb.read", "kb.search", "mail.read", "mail.send", "cron.write"],
+     "全公司（代老板处理日常、巡检汇报与催办）"),
+    ("cco", "沈青禾", "首席创意官", "all",
+     ["style.guide", "copy.read", "asset.read", "kb.read", "mail.read", "mail.send"],
+     "全公司 + 三项目创意"),
+    ("ceo", "陆清安", "CEO", "all",
+     ["project.read", "metric.read", "report.render", "kb.search", "kb.read", "mail.read", "mail.send"],
+     "全公司"),
+    ("cto", "扶频", "CTO", "all",
+     ["repo.read", "deploy.read", "arch.review", "kb.write", "kb.read",
+      "mcp.install", "plugin.install", "cron.write", "mail.read", "mail.send"],
+     "全公司 + 同心圆"),
+    ("pm_wenren", "贺平生", "产品经理", "wenren",
+     ["hotspot.read", "metric.read", "backlog.write", "kb.read", "mail.read", "mail.send"], "文人莫克"),
+    ("pm_gou", "米珂", "产品经理", "gou",
+     ["hotspot.read", "metric.read", "backlog.write", "kb.read", "mail.read", "mail.send"], "狗大人"),
+    ("pm_tongxinyuan", "姜月初", "产品经理", "tongxinyuan",
+     ["hotspot.read", "metric.read", "backlog.write", "kb.read", "mail.read", "mail.send"], "同心圆"),
+    ("cw_wenren", "陆川", "配音", "wenren",
+     ["kb.search", "style.guide", "copy.read", "media_tts", "media_job_status",
+      "kb.read", "mail.read", "mail.send"], "文人莫克"),
+    ("cw_gou", "叶秋", "配音", "gou",
+     ["kb.search", "style.guide", "copy.read", "media_tts", "media_job_status",
+      "kb.read", "mail.read", "mail.send"], "狗大人"),
+    ("cw_tongxinyuan", "江佑泽", "配音", "tongxinyuan",
+     ["kb.search", "style.guide", "copy.read", "media_tts", "media_job_status",
+      "kb.read", "mail.read", "mail.send"], "同心圆"),
+    ("vd_wenren", "陆离", "视频制作", "wenren",
+     ["asset.read", "video.render", "cover.gen", "media_tts", "media_asr",
+      "media_job_status", "kb.read", "mail.read", "mail.send"], "文人莫克"),
+    ("vd_gou", "萧执", "视频制作", "gou",
+     ["asset.read", "video.render", "cover.gen", "media_tts", "media_asr",
+      "media_job_status", "kb.read", "mail.read", "mail.send"], "狗大人"),
+    ("vd_tongxinyuan", "崔聿棠", "视频制作", "tongxinyuan",
+     ["asset.read", "video.render", "cover.gen", "media_tts", "media_asr",
+      "media_job_status", "kb.read", "mail.read", "mail.send"], "同心圆"),
+    ("release_ops", "顾景琛", "发布与监控", "all",
+     ["publish.execute", "metric.read", "alert.raise", "kb.read", "mail.read", "mail.send"], "全公司"),
+    ("reviewer", "顾凛川", "审核", "all",
+     ["review.check", "compliance.check", "copy.read", "media_asr", "media_tts",
+      "media_job_status", "kb.read", "mail.read", "mail.send", "terminal"], "全公司"),
+    ("scout", "苏寒", "热点采集", "all",
+     ["hotspot.fetch", "asset.fetch", "asset.tag", "kb.read", "mail.read", "mail.send"], "全公司"),
+    ("kb_manager", "祁南", "知识库管理", "all",
+     ["kb.write", "kb.index", "kb.qa", "kb.read", "mail.read", "mail.send"], "全公司"),
+    ("manual_scout", "灰太狼", "人工采集", "all",
+     ["browser.login", "browser.collect", "web.fetch", "file.write", "kb.read", "mail.read", "mail.send"],
+     "全公司"),
 ]
 
 # 员工编制以 Obsidian 名册为唯一数据源；文件缺失或解析异常时回退上面的内置编制
@@ -595,7 +881,9 @@ PROJECT_BY_NAME = {v["name"]: k for k, v in PROJECTS.items()}
 PROJECT_BY_NAME["全公司"] = "all"
 
 
-def _parse_roster(path):
+def _parse_roster(path, by_name=None):
+    mapping = dict(by_name or PROJECT_BY_NAME)
+    mapping.setdefault("全公司", "all")     # 默认编制的 ceo/cco/cto/秘书等挂"全公司"
     spec, skipped = [], 0
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -608,7 +896,7 @@ def _parse_roster(path):
             aid = cells[0]
             if aid.startswith("Agent") or set(aid) <= set("-: "):
                 continue
-            pid = PROJECT_BY_NAME.get(cells[3])
+            pid = mapping.get(cells[3])
             if not pid or not aid.replace("_", "").isalnum():
                 skipped += 1
                 continue
@@ -1078,11 +1366,13 @@ class HermesAdapter:
     def prompt(self, agent, task, context="", extra="", schema=None):
         project = PROJECTS.get(agent["projectId"])
         fields = schema or "summary(≤60字), evidence(2-4条字符串), confidence(0到1数字), tools(字符串数组)"
-        # 全员基础权限：只读访问 Obsidian 知识库（公司配置/名册/动态/热点采集等）
-        kb_read = ("允许使用 file 工具**只读**查阅 /opt/sefs/obsidian 下的 .md 文件"
-                   "（公司名册/项目配置/组织编制/动态快照/热点采集等），"
+        # 知识库范围 = 员工所在工作区的 vault（owner=共享 Obsidian；注册用户=自己的工作区）
+        vault = str(agent.get("vault") or VAULT)
+        # 全员基础权限：只读访问本工作区 vault 的知识库（名册/项目配置/热点采集等）
+        kb_read = (f"允许使用 file 工具**只读**查阅 {vault} 下的 .md 文件"
+                   "（名册/项目配置/热点采集/知识库等），"
                    "需要人名、岗位、项目、KPI 或历史结论作为依据时先查文件，并在 evidence（或 reasons）写明来源路径；"
-                   "禁止写入、编辑、删除、移动文件，禁止访问 /opt/sefs/obsidian 以外的路径。")
+                   f"禁止写入、编辑、删除、移动文件，禁止访问 {vault} 以外的路径。")
         # 全员邮件权限：以本人邮箱收发内部邮件（仅限内部域）
         mail_rule = ("允许使用邮件工具（mcp__mail__mail_check / mail_list / mail_read / mail_send）"
                      "以本人邮箱 <agent_id>@mail.conring.cn 收发内部邮件：发件人固定为本人，不可冒用他人身份；"
@@ -1090,16 +1380,16 @@ class HermesAdapter:
                      "禁止把邮箱密码或凭据文件内容写进邮件；邮件内容须符合本人岗位职责与项目口径。")
         # 角色附加权限（在基础只读之上）
         role_rules = {
-            "kb_manager": ("允许使用 file 工具在 /opt/sefs/obsidian 下**读写** .md 文件（整理知识条目、更新索引与笔记、写入 OPC/动态 文档）；"
+            "kb_manager": (f"允许使用 file 工具在 {vault} 下**读写** .md 文件（整理知识条目、更新索引与笔记、写入 OPC/知识库 文档）；"
                            "禁止删除、移动、重命名文件，禁止访问该目录以外的路径；"
                            "修改 公司/ 配置类文件（员工名册/项目配置）时保持原有表格与字段格式，并在 evidence 写明改动理由；"
                            "除 file 与邮件工具外禁止调用其它工具。"),
-            "cto": ("允许使用 file 工具在 /opt/sefs/obsidian 下**读写** .md 文件（更新组织编制、技术文档与动态快照）；"
+            "cto": (f"允许使用 file 工具在 {vault} 下**读写** .md 文件（更新组织编制、技术文档与动态快照）；"
                     "允许使用 terminal 工具执行 hermes 的 mcp / plugins / cron 子命令，按员工 profile 独立安装 MCP 与插件、管理定时任务；"
-                    "禁止删除、移动、重命名业务文件，禁止改动宿主系统配置与 /opt/sefs/obsidian 以外的业务数据，禁止执行与插件/MCP/定时无关的命令；"
+                    f"禁止删除、移动、重命名业务文件，禁止改动宿主系统配置与 {vault} 以外的业务数据，禁止执行与插件/MCP/定时无关的命令；"
                     "除 file、terminal、cronjob 与邮件工具外禁止调用其它工具。"),
             "scout": ("允许使用 web 检索工具做只读查证（只查公开信息，不登录、不提交、不发布），把来源 URL 写进 evidence；"
-                      "允许使用 file 工具把采集结果写入 /opt/sefs/obsidian/OPC/热点采集/ 下的 .md（只能写该目录，"
+                      f"允许使用 file 工具把采集结果写入 {vault}/OPC/热点采集/ 下的 .md（只能写该目录，"
                       "禁止改写 公司/、动态/ 等配置与状态文件）；除 web、file 与邮件工具外禁止调用其它工具。"),
             "release_ops": "允许使用 web 检索工具做只读监控（查公开数据与舆情，不登录、不提交、不发布），把来源 URL 写进 evidence；除 web、file 与邮件工具外禁止调用其它工具。",
             "reviewer": "允许使用 web 检索工具做只读查证（核对链接可达性与事实来源，不登录、不提交），把来源 URL 写进 reasons；除 web、file 与邮件工具外禁止调用其它工具。",
@@ -1316,14 +1606,47 @@ class PipelineContext:
 
 
 class Kernel:
-    def __init__(self):
+    def __init__(self, data_dir=""):
+        # 多用户：data_dir 非空 = 独立工作区（过程库/素材/vault/编制都在该目录下）；
+        # 空 = 全局兜底内核（存量老板空间，共用 Obsidian vault 与全局编制）。
+        self.data_dir = os.path.abspath(data_dir) if data_dir else ""
+        self.is_owner = self.data_dir == os.path.abspath(OWNER_DATA_DIR) or not self.data_dir
+        self.vault_dir = os.path.join(self.data_dir, "vault") if self.data_dir else VAULT
+        # 用户 vault 目录树补齐（老版本注册的用户自动补建，幂等）
+        if self.data_dir and not self.is_owner:
+            for sub in ("热点采集", "知识库", "交付物", "会议纪要", "邮件", "_归档"):
+                try:
+                    os.makedirs(os.path.join(self.vault_dir, "OPC", sub), exist_ok=True)
+                except OSError as e:
+                    print(f"[boot] 用户 vault 目录创建失败：{type(e).__name__}: {e}", flush=True)
+        # 交付/知识/热点模块：owner 用全局实例（共享 Obsidian vault）；用户各一份独立实例
+        self.DL = DL if self.is_owner else (_load_dl(self.vault_dir) if DL else None)
         self.lock = threading.RLock()
+        # 编制：优先读工作区自己的 员工名册.md，解析失败回退系统默认编制；
+        # 流水线关键员工缺失（旧模板/手工删减）时整份回退默认编制，保证编排可跑
+        spec = AGENT_SPEC
+        if self.data_dir:
+            roster = os.path.join(self.data_dir, "员工名册.md")
+            try:
+                user_spec, skipped = _parse_roster(roster)
+                if len(user_spec) >= 3:
+                    ids = {row[0] for row in user_spec}
+                    missing = AGENTS_REQUIRED - ids
+                    if missing:
+                        print(f"[boot] 用户名册缺流水线关键员工 {sorted(missing)}，回退默认编制",
+                              flush=True)
+                    else:
+                        spec = user_spec
+                        print(f"[boot] 用户编制 {roster} → {len(user_spec)} 人", flush=True)
+            except Exception as e:
+                print(f"[boot] 用户名册解析失败（用默认编制）：{type(e).__name__}: {e}", flush=True)
         self.agents = {}
-        for aid, name, role, project, tools, scope in AGENT_SPEC:
+        for aid, name, role, project, tools, scope in spec:
             self.agents[aid] = {"id": aid, "name": name, "role": role, "projectId": project,
                                 "scope": scope, "tools": tools, "status": "idle", "task": "",
                                 "avatar": f"/avatars/{aid}.png",
                                 "tone": TONE.get(project, "跨项目中台"),
+                                "vault": self.vault_dir,   # 员工知识库读写范围（多用户隔离）
                                 "highRisk": [t for t in tools if t in HIGH_RISK_TOOLS]}
         self.projects = json.loads(json.dumps(PROJECTS, ensure_ascii=False))
         self.scene = "WORK"
@@ -1333,15 +1656,15 @@ class Kernel:
                             "startedAt": "", "endedAt": "", "conclusion": "",
                             "transcriptUrl": "", "minutesUrl": ""}
         self.meeting_records = []
-        if DL:
+        if self.is_owner and DL:
             try:
-                self.meeting_records = DL.load_meeting_records()
+                self.meeting_records = self.DL.load_meeting_records()
             except Exception as e:
                 print(f"[boot] 读取会议历史失败：{type(e).__name__}: {e}", flush=True)
         self.messages, self.events = [], 0
         self.hotspots, self.contents, self.reports, self.approvals, self.knowledge = [], [], [], [], []
         self._hotspot_scan_at = 0.0        # 热点目录重扫节流（秒级时间戳）
-        self._kb_stamp = DL.knowledge_stamp() if DL else (0, 0.0)   # 知识库目录指纹
+        self._kb_stamp = self.DL.knowledge_stamp() if (self.is_owner and self.DL) else (0, 0.0)   # 知识库目录指纹
         try:
             self._cfg_stamp = (os.path.getmtime(PROJECT_FILE), os.path.getmtime(ROSTER_FILE))
         except OSError:
@@ -1356,23 +1679,30 @@ class Kernel:
         self.active_trace = ""
         self.last_hotspot = None
         self.startedAt = iso_now()          # 本次进程启动时间：快照用它区分“内存态归零”
-        self.journal_file = os.path.join(VAULT, "动态", "runtime.json")
+        # 素材清单 / 运行时日志 / 过程库：按用户工作区隔离；owner 沿用存量位置
+        self.materials_file = (os.path.join(self.data_dir, "materials.json")
+                               if self.data_dir else MATERIALS_FILE)
+        self.journal_file = (os.path.join(self.data_dir, "workspace", "runtime.json")
+                             if self.data_dir else os.path.join(VAULT, "动态", "runtime.json"))
+        db_path = (os.path.join(self.data_dir, "opc.db")
+                   if self.data_dir else DBX.DB_PATH if DBX else "")
         self.db = None
-        self._restore_history()
+        if self.is_owner:
+            self._restore_history()          # 存量运行时历史只归 owner；新用户从零开始
         # 过程数据入库：影子期双写，内存仍是读路径；库不可用时全部跳过
-        self.db = DBX.store() if DBX else None
+        self.db = DBX.store_for(db_path) if (DBX and db_path) else None
         self._run_id = uid("run")
         if self.db:
             try:
                 self.db.run_start(self._run_id, os.getpid(), MODEL)
-                self.db.llm_seed(LLM_DEFAULTS)   # llm_models 空表时写入内置模型条目
                 self.db.chat_upsert_thread("web:workbench", "web", "工作台 · 老板指令",
                                            [{"id": "owner", "name": "老板"}],
                                            self.startedAt, self.startedAt)
             except Exception as e:
                 print(f"[boot] 过程库初始化失败：{type(e).__name__}: {e}", flush=True)
         self.ingestor = None
-        if INGEST_ON and ING:
+        # 消息摄取读取的是全公司 dispatch 库，只归 owner 内核
+        if self.is_owner and INGEST_ON and ING:
             try:
                 self.ingestor = ING.Ingestor(self.db, on_event=self._ingest_event).start()
             except Exception as e:
@@ -1386,6 +1716,14 @@ class Kernel:
         self._mark_interrupted_runs()
 
     # ---------- 运行态：审批巡检 / 断点续跑 ----------
+    def stop(self):
+        """停止后台线程（数据导入重建内核时调用；进程内多内核互不影响）。"""
+        try:
+            self._sync_stop.set()
+            self._sweep_stop.set()
+        except Exception as e:
+            print(f"[kernel] 停止异常：{type(e).__name__}: {e}", flush=True)
+
     def _approval_sweeper(self):
         """每 15 秒巡检一次 pending 审批，超时自动挂起并唤醒等待方。"""
         while not self._sweep_stop.wait(15):
@@ -1537,9 +1875,9 @@ class Kernel:
 
     def _restore_history(self):
         """重启后恢复历史：交付物读磁盘，报告/审批/热点/知识/消息读运行时日志。"""
-        if DL:
+        if self.DL:
             try:
-                items = DL.load_deliverable_items()
+                items = self.DL.load_deliverable_items()
                 if items:
                     self.contents = items
                     print(f"[boot] 从 Obsidian 恢复 {len(items)} 条历史交付", flush=True)
@@ -1577,18 +1915,18 @@ class Kernel:
             self.stats["traces"] = disk_traces
         if not self.messages and DL:
             try:
-                self.messages = DL.load_recent_messages(120)
+                self.messages = self.DL.load_recent_messages(120)
             except Exception as e:
                 print(f"[boot] 恢复历史消息失败：{type(e).__name__}: {e}", flush=True)
-        if DL:
+        if self.DL:
             if not self.hotspots:
                 try:
-                    self.hotspots = DL.load_hotspots()
+                    self.hotspots = self.DL.load_hotspots()
                 except Exception as e:
                     print(f"[boot] 恢复历史热点失败：{type(e).__name__}: {e}", flush=True)
             # Obsidian 是唯一真源：md 文件优先，runtime.json 只在没有 md 时兜底
             try:
-                disk_kb = DL.load_knowledge(limit=200)
+                disk_kb = self.DL.load_knowledge(limit=200)
                 if disk_kb:
                     self.knowledge = [self._kb_norm(k) for k in disk_kb]
             except Exception as e:
@@ -1800,9 +2138,9 @@ class Kernel:
             out = json.loads(json.dumps(rec, ensure_ascii=False))
             self.meeting_records.insert(0, out)
             self.meeting_records = self.meeting_records[:40]
-        if DL:
+        if self.DL:
             try:
-                urls = DL.save_meeting_record(out)
+                urls = self.DL.save_meeting_record(out)
                 out.update({k: v for k, v in urls.items() if v})
                 with self.lock:
                     for r in self.meeting_records:
@@ -2069,9 +2407,9 @@ class Kernel:
         来源写清文件名与档位，避免再出现“热点源/RSS”这类无依据字段。
         """
         status = None
-        if DL:
+        if self.DL:
             try:
-                status = DL.load_collection_status()
+                status = self.DL.load_collection_status()
             except Exception as e:
                 print(f"[hotspot] 读取最新采集榜失败：{type(e).__name__}: {e}", flush=True)
         if status:
@@ -2872,9 +3210,9 @@ class Kernel:
         cc = [str(x) for x in (data.get("cc") or [])] or ["owner"]
         display = lambda xs: ["老板" if x == "owner" else self.agents.get(x, {}).get("name", x) for x in xs]
         c.meeting_doc = {}
-        if DL:
+        if self.DL:
             try:
-                c.meeting_doc = DL.export_meeting(c.trace, {
+                c.meeting_doc = self.DL.export_meeting(c.trace, {
                     "title": "选题评审会", "minutes": minutes,
                     "recipients": display(recipients), "cc": display(cc),
                     "final": c.final, "hotspot": c.hotspot})
@@ -3300,7 +3638,7 @@ class Kernel:
             hits = []
             if kws:
                 try:
-                    hits = asset_fill.search_library(MATERIALS_FILE, kws, limit=2)
+                    hits = asset_fill.search_library(self.materials_file, kws, limit=2)
                 except Exception as e:
                     print(f"[materials] {item['id']} 素材库检索失败："
                           f"{type(e).__name__}: {e}", flush=True)
@@ -3546,7 +3884,7 @@ class Kernel:
             item["finalAssets"] = []
             if DL and final_url and src and os.path.isfile(src):
                 try:
-                    dst = DL._local(final_url)
+                    dst = self.DL._local(final_url)
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     shutil.copyfile(src, dst)
                     item["finalAssets"] = [final_url]
@@ -3842,7 +4180,7 @@ class Kernel:
         if not DL:
             return str(url).startswith(f"asset://{item['projectId']}/")
         try:
-            prefix = DL.plan(item["traceId"], item["projectId"], item["id"])["dir"] + "/"
+            prefix = self.DL.plan(item["traceId"], item["projectId"], item["id"])["dir"] + "/"
         except Exception:
             return False
         return str(url).startswith(prefix)
@@ -3861,7 +4199,7 @@ class Kernel:
         for a in cands:
             if not a:
                 continue
-            cand = DL._local(a) if (DL and str(a).startswith("/vault/")) else str(a)
+            cand = self.DL._local(a) if (self.DL and str(a).startswith("/vault/")) else str(a)
             if os.path.isfile(cand):
                 path = cand
                 break
@@ -4015,14 +4353,14 @@ class Kernel:
         if not DL:
             return
         try:
-            files = DL.plan(trace, item["projectId"], item["id"])
+            files = self.DL.plan(trace, item["projectId"], item["id"])
             item["files"] = files
             project = dict(PROJECTS.get(item["projectId"], {"name": item["projectId"], "color": "#64748B"}))
             tone = item.get("toneProfile") or TONE.get(item["projectId"], "")
             snap = json.loads(json.dumps(item, ensure_ascii=False))
 
             def job():
-                res = DL.export_item(snap, project, tone)
+                res = self.DL.export_item(snap, project, tone)
                 if res.get("video_written") and (snap.get("renderCheck") or {}).get("pass"):
                     with self.lock:
                         cur = next((c for c in self.contents if c["id"] == item["id"]), None)
@@ -4032,7 +4370,7 @@ class Kernel:
                 elif res.get("error"):
                     print(f"[export] {item['id']} {res['error'][:120]}", flush=True)
 
-            DL.submit(job)
+            self.DL.submit(job)
         except Exception as e:
             print(f"[export] 排期失败 {type(e).__name__}: {e}", flush=True)
 
@@ -4047,7 +4385,7 @@ class Kernel:
                 apprs = [dict(a) for a in self.approvals if a.get("traceId") == trace]
                 tr = dict(self.traces.get(trace) or {})
             names = {pid: p["name"] for pid, p in PROJECTS.items()}
-            DL.submit(lambda: DL.export_trace(trace, contents, msgs, apprs, names, tr))
+            self.DL.submit(lambda: self.DL.export_trace(trace, contents, msgs, apprs, names, tr))
         except Exception as e:
             print(f"[export] trace 文档失败 {type(e).__name__}: {e}", flush=True)
 
@@ -4193,10 +4531,10 @@ class Kernel:
         """运行中重扫 OPC/知识库：md 有变化就以文件为准替换 Web 端知识库。"""
         if not DL:
             return
-        stamp = DL.knowledge_stamp()
+        stamp = self.DL.knowledge_stamp()
         if stamp == self._kb_stamp:
             return
-        items = DL.load_knowledge(limit=200)
+        items = self.DL.load_knowledge(limit=200)
         if not items:
             return
         fresh = [self._kb_norm(k) for k in items]
@@ -4208,7 +4546,9 @@ class Kernel:
             self.emit("knowledge", "", {"stage": "vault-sync", "count": len(fresh)})
 
     def _sync_config_from_vault(self):
-        """项目配置/员工名册改动后自动热加载，不用手动点重载。"""
+        """项目配置/员工名册改动后自动热加载，不用手动点重载（仅 owner，共享 Obsidian 配置）。"""
+        if not self.is_owner:
+            return
         try:
             stamp = (os.path.getmtime(PROJECT_FILE), os.path.getmtime(ROSTER_FILE))
         except OSError:
@@ -4231,11 +4571,11 @@ class Kernel:
             return
         self._hotspot_scan_at = now
         try:
-            self.collection = DL.load_collection_status()
+            self.collection = self.DL.load_collection_status()
         except Exception as e:
             print(f"[hotspot] 读取采集状态失败：{type(e).__name__}: {e}", flush=True)
         try:
-            disk = DL.load_hotspots()
+            disk = self.DL.load_hotspots()
         except Exception as e:
             print(f"[hotspot] 扫描热点目录失败：{type(e).__name__}: {e}", flush=True)
             return
@@ -4358,10 +4698,10 @@ class Kernel:
                 index[(trace, title)] = entry
                 made.append(entry)
         if made:
-            if DL:                                   # 写回 Obsidian，文件与 Web 同步落地
+            if self.DL:                                   # 写回 Obsidian，文件与 Web 同步落地
                 for k in made:
                     try:
-                        DL.save_knowledge(k)
+                        self.DL.save_knowledge(k)
                     except Exception as e:
                         print(f"[kb] 写回 Obsidian 失败：{type(e).__name__}: {e}", flush=True)
             self.emit("knowledge", trace, {
@@ -4434,7 +4774,53 @@ class Kernel:
                 for r in rows]
 
 
-KERNEL = Kernel()
+# ---------------- 多用户内核注册表：data_dir → Kernel（惰性创建） ----------------
+# 流水线关键员工：用户名册缺任何一个即整份回退默认编制（保证编排可跑）
+AGENTS_REQUIRED = {"pm_wenren", "pm_gou", "pm_tongxinyuan",
+                   "cw_wenren", "cw_gou", "cw_tongxinyuan",
+                   "vd_wenren", "vd_gou", "vd_tongxinyuan",
+                   "scout", "reviewer", "kb_manager", "release_ops"}
+KERNELS = {}
+KERNELS_LOCK = threading.Lock()
+
+
+def _kernel_for(data_dir):
+    """取/建某用户工作区的内核；owner 目录的内核在 boot 时即创建。"""
+    data_dir = os.path.abspath(data_dir or OWNER_DATA_DIR)
+    with KERNELS_LOCK:
+        k = KERNELS.get(data_dir)
+        if k is None:
+            try:
+                k = Kernel(data_dir=data_dir)
+            except Exception as e:
+                print(f"[kernel] 用户内核创建失败 {data_dir}：{type(e).__name__}: {e}", flush=True)
+                raise
+            KERNELS[data_dir] = k
+        return k
+
+
+def _kernel_reset(data_dir):
+    """数据导入后重置内核：停后台线程、丢 Store 缓存，下次访问按新数据重建。"""
+    data_dir = os.path.abspath(data_dir)
+    with KERNELS_LOCK:
+        k = KERNELS.pop(data_dir, None)
+    if k:
+        try:
+            k.stop()
+        except Exception as e:
+            print(f"[kernel] 旧内核停止异常（忽略）：{type(e).__name__}: {e}", flush=True)
+    if DBX:
+        DBX.drop_store(os.path.join(data_dir, "opc.db"))
+    return _kernel_for(data_dir)
+
+
+# 存量数据一次性迁移到 owner 工作区（幂等），然后建 owner 内核 + 全局大模型注册表
+_migrate_owner_workspace()
+KERNEL = _kernel_for(OWNER_DATA_DIR)
+if DBX:
+    _st = DBX.store()
+    if _st:
+        _st.llm_seed(LLM_DEFAULTS)   # 全局 llm_models 注册表（默认路径库），空表时初始化
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -4512,6 +4898,16 @@ class Handler(BaseHTTPRequestHandler):
                 return None
             return dict(rec["user"])
 
+    def _kernel(self):
+        """当前会话用户工作区的内核（未登录/兜底 → owner 存量空间）。"""
+        user = self._session_user() or {}
+        return _kernel_for(str(user.get("dataDir") or OWNER_DATA_DIR))
+
+    def _owner_tenant(self):
+        """存量公司空间（老板/员工）才能动共享资源：组织配置、全局模型注册表等。"""
+        user = self._session_user() or {}
+        return user.get("tenant") == "owner"
+
     def _owner_only(self):
         """统一消息只对老板开放：其他角色 403。"""
         user = self._session_user() or {}
@@ -4535,6 +4931,48 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         return False
 
+    def _register(self, body):
+        """注册：手机号 + 密码 + 简单校验码 → 独立工作区 → 自动登录。"""
+        ip = self.client_address[0]
+        now = time.time()
+        with LOGIN_LOCK:
+            fails, until = LOGIN_FAILS.get(f"reg:{ip}", [0, 0])
+        if until > now:
+            return self._json({"ok": False, "error": f"尝试过于频繁，请 {int(until - now)} 秒后再试"}, 429)
+
+        phone = re.sub(r"\D", "", str(body.get("phone") or ""))
+        password = str(body.get("password") or "")
+        answer = str(body.get("captcha") or body.get("captchaAnswer") or "")
+        token = str(body.get("captchaToken") or "")
+        if not re.fullmatch(r"1[3-9]\d{9}", phone):
+            return self._json({"ok": False, "error": "手机号格式不正确（11 位，1 开头）"}, 400)
+        if len(password) < 6:
+            return self._json({"ok": False, "error": "密码至少 6 位"}, 400)
+        if not _captcha_verify(token, answer):
+            with LOGIN_LOCK:
+                f2 = fails + 1
+                LOGIN_FAILS[f"reg:{ip}"] = [f2, now + 300 if f2 >= 5 else 0]
+            return self._json({"ok": False, "error": "校验码不正确或已过期，请刷新后重试"}, 400)
+
+        if _user_get(phone):
+            return self._json({"ok": False, "error": "该手机号已注册，请直接登录"}, 409)
+        if phone == OWNER_PHONE:
+            return self._json({"ok": False, "error": "该手机号不可注册"}, 400)
+        row = _user_create(phone, password)
+        if not row:
+            return self._json({"ok": False, "error": "注册失败，请稍后重试"}, 500)
+        with LOGIN_LOCK:
+            LOGIN_FAILS.pop(f"reg:{ip}", None)
+        # 注册即登录，直接进入自己的工作空间
+        user = {"id": phone, "role": "老板", "avatar": "", "name": phone,
+                "phone": phone, "dataDir": row["data_dir"], "tenant": "self"}
+        tok = secrets.token_urlsafe(32)
+        with SESS_LOCK:
+            SESSIONS[tok] = {"user": user, "exp": now + SESSION_TTL}
+        return self._json({"ok": True, "user": user},
+                          cookie=f"{SESSION_COOKIE}={tok}; Path=/; HttpOnly; SameSite=Lax; "
+                                 f"Max-Age={SESSION_TTL}")
+
     def _login(self, body):
         ip = self.client_address[0]
         now = time.time()
@@ -4550,6 +4988,27 @@ class Handler(BaseHTTPRequestHandler):
 
         account = str(body.get("account") or body.get("user") or "").strip()
         pwd = str(body.get("password") or "")
+        # 1) 注册用户（users.db，pbkdf2）优先；2) Obsidian 凭据（存量员工）兜底
+        reg = _user_get(account) if re.fullmatch(r"1[3-9]\d{9}", account) else None
+        if reg and reg.get("password_hash"):
+            if not hmac.compare_digest(_hash_password(pwd, reg["salt"]),
+                                       reg["password_hash"]):
+                with LOGIN_LOCK:
+                    f2 = fails + 1
+                    LOGIN_FAILS[ip] = [f2, now + 60 if f2 >= 5 else 0]
+                return self._json({"ok": False, "error": "账号或密码不正确"}, 401)
+            with LOGIN_LOCK:
+                LOGIN_FAILS.pop(ip, None)
+            user = {"id": reg["phone"], "role": "老板", "avatar": "",
+                    "name": reg["phone"], "phone": reg["phone"],
+                    "dataDir": reg["data_dir"], "tenant": "self"}
+            tok = secrets.token_urlsafe(32)
+            with SESS_LOCK:
+                SESSIONS[tok] = {"user": user, "exp": now + SESSION_TTL}
+            print(f"[auth] 注册用户登录成功 {ip} → {reg['phone']}", flush=True)
+            return self._json({"ok": True, "user": user},
+                              cookie=f"{SESSION_COOKIE}={tok}; Path=/; HttpOnly; SameSite=Lax; "
+                                     f"Max-Age={SESSION_TTL}")
         u = find_user(account)
         if not u or not hmac.compare_digest(pwd, u["password"]):
             with LOGIN_LOCK:
@@ -4567,7 +5026,9 @@ class Handler(BaseHTTPRequestHandler):
         if not avatar and role == "老板":
             avatar = "/avatars/boss.png"
         user = {"id": "boss" if role == "老板" else "staff",
-                "role": role, "avatar": avatar, "name": u["user"]}
+                "role": role, "avatar": avatar, "name": u["user"],
+                "phone": (u.get("phone") or "").strip(),
+                "dataDir": OWNER_DATA_DIR, "tenant": "owner"}
         tok = secrets.token_urlsafe(32)
         with SESS_LOCK:
             expired = [t for t, r in SESSIONS.items() if r["exp"] < now]
@@ -4582,7 +5043,7 @@ class Handler(BaseHTTPRequestHandler):
         """组织配置写入：白名单 + 路径校验 + 审计；返回 applied=immediate|restart。"""
         try:
             if path == "/api/org/reload":
-                info = KERNEL.reload_config()
+                info = self._kernel().reload_config()
                 _org_audit(user, "config.reload", "公司/员工名册.md", str(info))
                 return self._json({"ok": True, "applied": "immediate", **info})
             if path == "/api/org/policy":
@@ -4608,7 +5069,7 @@ class Handler(BaseHTTPRequestHandler):
                 tone = _org_tone(pid)
                 soul = _org_sync_soul(aid, name, role, project_label, tone)
                 _org_sync_org_table(aid, name, role, project_label, tone, tools)
-                info = KERNEL.reload_config()
+                info = self._kernel().reload_config()
                 _org_audit(user, "agent.update", aid,
                            f"{name}/{role}/{project_label}/{scope}/{','.join(tools)} soul={soul}")
                 return self._json({"ok": True, "applied": "immediate", "soulSynced": soul,
@@ -4677,6 +5138,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/logininfo":
             users = load_credentials()
             return self._json({"ok": True, "ready": bool(users), "file": "公司/登录凭据.md"})
+        if path == "/api/captcha":
+            return self._json({"ok": True, **_captcha_issue()})
         if path == "/api/session":
             user = self._session_user()
             if not user:
@@ -4756,49 +5219,50 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/meeting3d", "/meeting3d.html"):
             return self._static("meeting3d.html", "text/html; charset=utf-8")
         if path == "/api/meeting":
-            return self._json(KERNEL.meeting_payload())
+            return self._json(self._kernel().meeting_payload())
         if path.startswith("/api/meeting/"):
-            rec = KERNEL.meeting_detail(path.rsplit("/", 1)[-1])
+            rec = self._kernel().meeting_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "meeting not found"}, 404)
         if path == "/api/knowledge":
-            return self._json(KERNEL.knowledge_page(urlparse(self.path).query))
+            return self._json(self._kernel().knowledge_page(urlparse(self.path).query))
         if path.startswith("/api/knowledge/"):
-            rec = KERNEL.knowledge_detail(path.rsplit("/", 1)[-1])
+            rec = self._kernel().knowledge_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "knowledge not found"}, 404)
         # ---------- 作品档案（交付物统一管理：名称 + 时间 + 处理流程） ----------
         if path == "/api/works":
             if WK is None:
                 return self._json({"ok": False, "error": "作品档案模块未加载"}, 500)
-            with KERNEL.lock:
-                approvals = list(KERNEL.approvals)
-            idx = KERNEL._factory_works_index()
+            with self._kernel().lock:
+                approvals = list(self._kernel().approvals)
+            idx = self._kernel()._factory_works_index()
             factory, step_status = idx if idx else (None, None)
             return self._json(WK.page(parse_qs(urlparse(self.path).query), approvals,
                                       factory=factory, step_status=step_status))
         if path.startswith("/api/works/"):
             if WK is None:
                 return self._json({"ok": False, "error": "作品档案模块未加载"}, 500)
-            with KERNEL.lock:
-                approvals = list(KERNEL.approvals)
-            idx = KERNEL._factory_works_index()
+            with self._kernel().lock:
+                approvals = list(self._kernel().approvals)
+            idx = self._kernel()._factory_works_index()
             factory, step_status = idx if idx else (None, None)
             rec = WK.detail(path[len("/api/works/"):], approvals,
                             factory=factory, step_status=step_status)
             return self._json(rec) if rec else self._json({"error": "work not found"}, 404)
         if path == "/api/hotspots":
-            return self._json(KERNEL.hotspot_page(urlparse(self.path).query))
+            return self._json(self._kernel().hotspot_page(urlparse(self.path).query))
         if path.startswith("/api/hotspots/"):
-            rec = KERNEL.hotspot_detail(path.rsplit("/", 1)[-1])
+            rec = self._kernel().hotspot_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "hotspot not found"}, 404)
         if path == "/api/state":
-            return self._json(KERNEL.snapshot())
+            return self._json(self._kernel().snapshot())
         # ---------- CCO 创意灵感 / CTO 运维监控（只读聚合） ----------
         if path == "/api/inspiration":
             if insights is None:
                 return self._json({"ok": False, "error": "灵感聚合模块未加载"}, 500)
             try:
                 refresh = (parse_qs(urlparse(self.path).query).get("refresh") or [""])[0] == "1"
-                return self._json(insights.build(KERNEL, refresh=refresh))
+                return self._json(insights.build(self._kernel(), refresh=refresh,
+                                                 vault=self._kernel().vault_dir))
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/ops":
@@ -4807,8 +5271,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 health = {"ok": True, "version": "3.0", "engine": MODE,
                           "hermes": HERMES.stats(), "time": iso_now()}
-                return self._json(ops_monitor.build(KERNEL.snapshot(), health,
-                                                    runs=KERNEL.pipeline_runs_view(),
+                return self._json(ops_monitor.build(self._kernel().snapshot(), health,
+                                                    runs=self._kernel().pipeline_runs_view(),
                                                     llm=_llm_view()))
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
@@ -4816,7 +5280,30 @@ class Handler(BaseHTTPRequestHandler):
             return self._sse()
         # ---------- 制片工厂（车间监控：工艺决策 + 工位过程） ----------
         if path == "/api/factory":
-            return self._json(KERNEL.factory_view())
+            return self._json(self._kernel().factory_view())
+        # ---------- 用户中心 ----------
+        if path == "/api/account":
+            user = self._session_user() or {}
+            data_dir = os.path.abspath(str(user.get("dataDir") or OWNER_DATA_DIR))
+            created, k_agents = "", 0
+            if user.get("tenant") == "self":
+                row = _user_get(str(user.get("phone") or ""))
+                created = (row or {}).get("created_at") or ""
+            k_agents = len(self._kernel().agents)
+            assets, total, files = self._account_assets(data_dir)
+            return self._json({
+                "ok": True,
+                "user": {"phone": user.get("phone") or "", "name": user.get("name") or "",
+                         "role": user.get("role") or "", "tenant": user.get("tenant") or "",
+                         "createdAt": created},
+                "stats": {"agents": k_agents, "assetFiles": files, "assetBytes": total},
+                "assets": assets, "settings": self._account_settings(data_dir),
+            })
+        if path == "/api/account/export":
+            try:
+                return self._account_export()
+            except Exception as e:
+                return self._json({"ok": False, "error": f"导出失败：{type(e).__name__}: {e}"}, 500)
         if path.startswith("/api/factory/step/"):
             return self._json(self._factory_step(path[len("/api/factory/step/"):]))
         # OpenMontage Backlot 看板 JSON 代理（Backlot 无 CORS 头，浏览器不能直连；
@@ -4864,22 +5351,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(data)
         if path == "/api/reports":
             kind = (parse_qs(urlparse(self.path).query).get("kind") or [""])[0]
-            return self._json({"reports": [r for r in KERNEL.reports if (not kind or r["kind"] == kind)]})
+            return self._json({"reports": [r for r in self._kernel().reports if (not kind or r["kind"] == kind)]})
         # ---------- 统一消息（飞书 / APP / Web，只读） ----------
         if path.startswith("/api/chat/"):
             if not self._owner_only():
                 return
             qs = parse_qs(urlparse(self.path).query)
             arg = lambda k, d="": (qs.get(k) or [d])[0]
-            if not KERNEL.db:
+            if not self._kernel().db:
                 return self._json({"ok": False, "enabled": False, "error": "过程库未启用"}, 503)
             try:
                 if path == "/api/chat/threads":
-                    rows = KERNEL.db.chat_threads(arg("source"), _to_int(arg("limit", "50"), 50),
+                    rows = self._kernel().db.chat_threads(arg("source"), _to_int(arg("limit", "50"), 50),
                                                   arg("before"))
                     return self._json({"ok": True, "enabled": True, "threads": rows})
                 if path == "/api/chat/messages":
-                    rows = KERNEL.db.chat_messages(
+                    rows = self._kernel().db.chat_messages(
                         thread=arg("thread"), source=arg("source"), modality=arg("modality"),
                         direction=arg("direction"), q=arg("q"),
                         before_id=_to_int(arg("before", "0"), 0),
@@ -4887,9 +5374,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "enabled": True, "messages": rows})
                 if path == "/api/chat/stats":
                     return self._json({"ok": True, "enabled": True,
-                                       "stats": KERNEL.db.chat_stats(_to_int(arg("days", "7"), 7))})
+                                       "stats": self._kernel().db.chat_stats(_to_int(arg("days", "7"), 7))})
                 if path == "/api/chat/export":
-                    rows = KERNEL.db.chat_export(arg("start"), arg("end"),
+                    rows = self._kernel().db.chat_export(arg("start"), arg("end"),
                                                  _to_int(arg("limit", "10000"), 10000))
                     return self._json({"ok": True, "enabled": True, "count": len(rows), "messages": rows})
             except Exception as e:
@@ -4985,9 +5472,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _materials_index(self):
-        """首页「素材库」清单：读 prototype/materials.json，文件改了下次刷新即生效。"""
+        """首页「素材库」清单：读当前用户工作区的 materials.json，改文件下次刷新即生效。"""
         try:
-            with open(MATERIALS_FILE, encoding="utf-8") as f:
+            with open(self._kernel().materials_file, encoding="utf-8") as f:
                 data = json.load(f)
         except FileNotFoundError:
             return {"ok": False, "error": "materials.json 缺失", "items": []}
@@ -5049,9 +5536,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _vault(self, rel):
-        """Obsidian 交付物只读发布：/vault/... → VAULT/...，支持 Range（视频拖动进度条要用）。"""
-        root = os.path.realpath(VAULT)
-        full = os.path.realpath(os.path.join(VAULT, rel))
+        """交付物只读发布：/vault/... → 当前用户 vault/...，支持 Range（视频拖动进度条要用）。"""
+        vault_root = self._kernel().vault_dir
+        root = os.path.realpath(vault_root)
+        full = os.path.realpath(os.path.join(vault_root, rel))
         if not full.startswith(root + os.sep) or not os.path.isfile(full):
             return self._json({"error": "not found"}, 404)
         # 登录凭据与隐藏目录不对外发布
@@ -5143,42 +5631,236 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 502)
 
+    # ---------- 用户中心：基本信息 / 参数设置 / 数据资产导出与导入 ----------
+
+    _ASSET_LABELS = {
+        "opc.db": ("过程数据库", "trace / 审批 / 成本 / 消息记录"),
+        "materials.json": ("素材清单", "首页素材库索引"),
+        "素材": ("素材文件", "视频 / 音频 / 图片等个人素材"),
+        "vault": ("知识库与工作文档", "知识库 / 热点采集 / 交付物 / 会议纪要 / 邮件"),
+        "workspace": ("运行时与设置", "运行态日志与用户中心参数"),
+        "logs": ("日志", "运行日志"),
+        "员工名册.md": ("AI 员工编制", "名册快照"),
+    }
+
+    def _raw_body(self):
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        return self.rfile.read(n) if n > 0 else b""
+
+    def _send_file(self, path, filename):
+        """附件下载：流式写回 + Content-Disposition（UTF-8 文件名）。"""
+        size = os.path.getsize(path)
+        quoted = urllib.parse.quote(filename)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition",
+                         f"attachment; filename*=UTF-8''{quoted}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with open(path, "rb") as f:
+            shutil.copyfileobj(f, self.wfile, 256 * 1024)
+
+    def _account_assets(self, data_dir):
+        """数据资产清单：按顶层条目聚合文件数与体积（全部打包进导出 zip）。"""
+        items = []
+        for name, (label, desc) in self._ASSET_LABELS.items():
+            full = os.path.join(data_dir, name)
+            if not os.path.exists(full):
+                continue
+            files, total = 0, 0
+            if os.path.isdir(full):
+                for dp, dn, fn in os.walk(full):
+                    dn[:] = [d for d in dn if not d.startswith(".")]
+                    files += len(fn)
+                    for f in fn:
+                        try:
+                            total += os.path.getsize(os.path.join(dp, f))
+                        except OSError:
+                            pass
+            else:
+                files, total = 1, os.path.getsize(full)
+            items.append({"key": name, "label": label, "desc": desc,
+                          "files": files, "bytes": total, "included": True})
+        return items, sum(i["bytes"] for i in items), sum(i["files"] for i in items)
+
+    _SETTING_DEFAULTS = {"sound": True, "autoRefreshSec": 15, "signature": ""}
+
+    def _account_settings(self, data_dir):
+        path = os.path.join(data_dir, "workspace", "settings.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                saved = json.load(f)
+        except Exception:
+            saved = {}
+        return {**self._SETTING_DEFAULTS, **saved}
+
+    def _account_settings_save(self, data_dir, patch):
+        merged = self._account_settings(data_dir)
+        for key in self._SETTING_DEFAULTS:
+            if key in patch:
+                merged[key] = patch[key]
+        merged["autoRefreshSec"] = max(5, min(120, int(merged.get("autoRefreshSec") or 15)))
+        merged["signature"] = str(merged.get("signature") or "")[:50]
+        merged["sound"] = bool(merged.get("sound"))
+        os.makedirs(os.path.join(data_dir, "workspace"), exist_ok=True)
+        with open(os.path.join(data_dir, "workspace", "settings.json"),
+                  "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+        return merged
+
+    def _account_export(self):
+        """一键导出：过程库（sqlite backup 保证一致性）+ 素材 + vault + 名册 → zip 下载。"""
+        user = self._session_user() or {}
+        data_dir = os.path.abspath(str(user.get("dataDir") or OWNER_DATA_DIR))
+        phone = str(user.get("phone") or user.get("name") or "user")
+        tmp_fd, tmp_path = tempfile.mkstemp(prefix="opc-export-", suffix=".zip")
+        os.close(tmp_fd)
+        try:
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                manifest = {"version": 1, "phone": phone, "exportedAt": iso_now(),
+                            "dataDir": os.path.basename(data_dir), "items": []}
+                for name in sorted(os.listdir(data_dir)):
+                    full = os.path.join(data_dir, name)
+                    if name == "opc.db":
+                        # 过程库一致性快照（含 WAL 数据）
+                        try:
+                            import sqlite3
+                            src = sqlite3.connect(full, timeout=5)
+                            snap = tmp_path + ".db"
+                            with src:
+                                src.backup(snap)
+                            src.close()
+                            zf.write(snap, "opc.db")
+                            os.remove(snap)
+                        except Exception as e:
+                            zf.write(full, "opc.db")
+                            print(f"[export] {phone} 过程库快照失败（直拷）：{e}", flush=True)
+                    elif name.endswith(("-wal", "-shm")):
+                        continue
+                    elif os.path.isdir(full):
+                        for dp, dn, fn in os.walk(full):
+                            dn[:] = [d for d in dn if not d.startswith(".")]
+                            for f in fn:
+                                p = os.path.join(dp, f)
+                                zf.write(p, os.path.relpath(p, data_dir))
+                    else:
+                        zf.write(full, name)
+                    manifest["items"].append(name)
+                zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            _org_audit(user, "account-export", phone, f"items={len(manifest['items'])}")
+            fname = f"opc-{phone}-{iso_now()[:10]}.zip"
+            return self._send_file(tmp_path, fname)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    _IMPORT_MAX = 512 * 1024 * 1024   # 上传 zip 上限 512MB
+
+    def _account_import(self):
+        """上传 zip → 校验 → 替换个人数据 → 重置内核（下次访问按新数据重建）。"""
+        user = self._session_user() or {}
+        data_dir = os.path.abspath(str(user.get("dataDir") or OWNER_DATA_DIR))
+        raw = self._raw_body()
+        if not raw:
+            return self._json({"ok": False, "error": "请求体为空（应上传 zip 文件）"}, 400)
+        if len(raw) > self._IMPORT_MAX:
+            return self._json({"ok": False, "error": "压缩包超过 512MB 上限"}, 413)
+        import zipfile as _zip
+        try:
+            zf = _zip.ZipFile(io.BytesIO(raw))
+        except Exception as e:
+            return self._json({"ok": False, "error": f"不是有效的 zip 文件：{type(e).__name__}"}, 400)
+        names = zf.namelist()
+        # zip-slip 防护：拒绝绝对路径 / 路径穿越 / 符号链接
+        for n in names:
+            if n.startswith("/") or ".." in n.replace("\\", "/").split("/") or ":" in n:
+                return self._json({"ok": False, "error": f"压缩包含不安全路径：{n}"}, 400)
+        if not ("manifest.json" in names or "opc.db" in names):
+            return self._json({"ok": False, "error": "压缩包缺少 manifest.json / opc.db，"
+                               "请使用本系统导出的资产包"}, 400)
+        # 解压到暂存目录，校验通过后逐项替换
+        staging = tempfile.mkdtemp(prefix="opc-import-")
+        try:
+            zf.extractall(staging)
+            if "manifest.json" in names:
+                try:
+                    json.loads(open(os.path.join(staging, "manifest.json"),
+                                    encoding="utf-8").read())
+                except ValueError:
+                    return self._json({"ok": False, "error": "manifest.json 损坏"}, 400)
+            imported = []
+            for name in sorted(set(names)):
+                top = name.split("/")[0]
+                if top in imported or top in ("manifest.json",) or top.endswith(("-wal", "-shm")):
+                    continue
+                src = os.path.join(staging, top)
+                if not os.path.exists(src):
+                    continue
+                dst = os.path.join(data_dir, top)
+                if os.path.isdir(src):
+                    shutil.rmtree(dst, ignore_errors=True)
+                elif top == "opc.db":
+                    for suffix in ("-wal", "-shm"):
+                        try:
+                            os.remove(dst + suffix)
+                        except OSError:
+                            pass
+                try:
+                    shutil.move(src, dst)
+                    imported.append(top)
+                except OSError as e:
+                    return self._json({"ok": False, "error": f"写入 {top} 失败：{e}"}, 500)
+            _kernel_reset(data_dir)
+            _org_audit(user, "account-import", str(user.get("phone") or ""),
+                       f"items={','.join(imported)}")
+            print(f"[users] {user.get('phone')} 导入个人数据 {len(imported)} 项", flush=True)
+            return self._json({"ok": True, "imported": imported,
+                               "note": "个人数据已替换，工作台数据在下次刷新时按新数据重建"})
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
     def _factory_step(self, spec):
         """车间工位详情：/api/factory/step/<trace_id>/<stage_id> → 工位记录 + 时间段内事件。"""
         parts = spec.split("/", 1)
         if len(parts) != 2:
             return {"ok": False, "error": "路径格式：/api/factory/step/<trace_id>/<stage_id>"}
         trace_id, stage_id = parts[0], parts[1]
-        if not KERNEL.db:
+        if not self._kernel().db:
             return {"ok": False, "error": "过程库未启用（OPC_DB=0）"}
-        step = KERNEL.db.workshop_step(trace_id, stage_id)
+        step = self._kernel().db.workshop_step(trace_id, stage_id)
         if not step:
             return {"ok": False, "error": "step not found"}
         started, finished = step.get("started_at") or "", step.get("finished_at") or ""
         # 工位边界各放宽 2 秒：缓冲写库/同一秒内的事件不至于被时间窗切掉
         lo = _iso_shift(started, -2) if started else ""
         hi = _iso_shift(finished, +2) if finished else iso_now()   # 进行中：取到当前时刻
-        events = KERNEL.db.trace_events_between(trace_id, lo, hi)
+        events = self._kernel().db.trace_events_between(trace_id, lo, hi)
         return {"ok": True, "step": _step_view(step),
                 "events": events, "traceId": trace_id, "stageId": stage_id}
 
     def _trace(self, trace):
-        with KERNEL.lock:
-            msgs = [m for m in KERNEL.messages if m.get("traceId") == trace]
-            contents = [c for c in KERNEL.contents if c.get("traceId") == trace]
-            meta = dict(KERNEL.traces.get(trace) or {})
-            if trace not in KERNEL.traces and not msgs and not contents:
-                if KERNEL.db:
+        with self._kernel().lock:
+            msgs = [m for m in self._kernel().messages if m.get("traceId") == trace]
+            contents = [c for c in self._kernel().contents if c.get("traceId") == trace]
+            meta = dict(self._kernel().traces.get(trace) or {})
+            if trace not in self._kernel().traces and not msgs and not contents:
+                if self._kernel().db:
                     return self._trace_from_db(trace)
                 return None
             out = {"traceId": trace, "meta": meta,
                    "messages": msgs, "contents": contents,
-                   "approvals": [a for a in KERNEL.approvals if a.get("traceId") == trace],
-                   "reports": [r for r in KERNEL.reports if r.get("traceId") == trace],
-                   "knowledge": [k for k in KERNEL.knowledge if k.get("traceId") == trace],
+                   "approvals": [a for a in self._kernel().approvals if a.get("traceId") == trace],
+                   "reports": [r for r in self._kernel().reports if r.get("traceId") == trace],
+                   "knowledge": [k for k in self._kernel().knowledge if k.get("traceId") == trace],
                    "messageCount": len(msgs)}
         # 内存里没有这条 trace 的元数据（重启后）或事件：从过程库补齐
-        if KERNEL.db:
+        if self._kernel().db:
             db_meta, events = self._db_trace_parts(trace)
             if not out["meta"] and db_meta:
                 out["meta"] = db_meta
@@ -5188,7 +5870,7 @@ class Handler(BaseHTTPRequestHandler):
         return out
 
     def _db_trace_parts(self, trace):
-        row = KERNEL.db.trace_row(trace)
+        row = self._kernel().db.trace_row(trace)
         if not row:
             return None, []
 
@@ -5208,7 +5890,7 @@ class Handler(BaseHTTPRequestHandler):
                 meta[dst] = dec(row[src])
         if row.get("abort_reason"):
             meta["abortReason"] = row["abort_reason"]
-        return meta, KERNEL.db.trace_events(trace, 500)
+        return meta, self._kernel().db.trace_events(trace, 500)
 
     def _trace_from_db(self, trace):
         """内存已随重启清空的历史 trace：从过程库还原骨架 + 事件序列。"""
@@ -5230,8 +5912,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         q = queue.Queue(maxsize=500)
-        with KERNEL.lock:
-            KERNEL.subscribers.append(q)
+        with self._kernel().lock:
+            self._kernel().subscribers.append(q)
 
         def chunk(payload):
             raw = payload.encode()
@@ -5239,7 +5921,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         try:
-            chunk(f"data: {json.dumps({'kind': 'state', 'traceId': '', 'at': iso_now(), 'data': KERNEL.snapshot()}, ensure_ascii=False)}\n\n")
+            chunk(f"data: {json.dumps({'kind': 'state', 'traceId': '', 'at': iso_now(), 'data': self._kernel().snapshot()}, ensure_ascii=False)}\n\n")
             last = time.time()
             while True:
                 try:
@@ -5252,9 +5934,9 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ValueError):
             pass
         finally:
-            with KERNEL.lock:
-                if q in KERNEL.subscribers:
-                    KERNEL.subscribers.remove(q)
+            with self._kernel().lock:
+                if q in self._kernel().subscribers:
+                    self._kernel().subscribers.remove(q)
             self.wfile.write(b"0\r\n\r\n")
 
     def do_POST(self):
@@ -5262,6 +5944,23 @@ class Handler(BaseHTTPRequestHandler):
         if not self._require_auth():
             return
         body = self._body()
+        if path == "/api/register":
+            return self._register(body)
+        # ---------- 用户中心：参数设置 / 数据导入 ----------
+        if path == "/api/account/settings":
+            user = self._session_user() or {}
+            data_dir = os.path.abspath(str(user.get("dataDir") or OWNER_DATA_DIR))
+            if not isinstance(body, dict):
+                return self._json({"ok": False, "error": "参数应为对象"}, 400)
+            merged = self._account_settings_save(data_dir, body)
+            _org_audit(user, "account-settings", str(user.get("phone") or ""),
+                       json.dumps({k: merged[k] for k in merged}, ensure_ascii=False)[:160])
+            return self._json({"ok": True, "settings": merged})
+        if path == "/api/account/import":
+            try:
+                return self._account_import()
+            except Exception as e:
+                return self._json({"ok": False, "error": f"导入失败：{type(e).__name__}: {e}"}, 500)
         if path == "/api/login":
             return self._login(body)
         if path == "/api/logout":
@@ -5281,12 +5980,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._org_save(path, body, user)
         if path == "/api/patrol":
             try:
-                return self._json({"ok": True, **KERNEL.patrol()})
+                return self._json({"ok": True, **self._kernel().patrol()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/api/hotspots/inject":
             try:
-                trace, hotspot = KERNEL.inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
+                trace, hotspot = self._kernel().inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
             except BusyError as e:
                 return self._json({"ok": False, "error": str(e), "busy": True,
                                    "traceId": e.traceId}, 409)
@@ -5298,7 +5997,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "forbidden",
                                    "reason": "仅老板可从创意灵感发起制作"}, 403)
             try:
-                trace, hotspot = KERNEL.inject_idea(body.get("idea") or {},
+                trace, hotspot = self._kernel().inject_idea(body.get("idea") or {},
                                                     body.get("requirements") or "")
             except BusyError as e:
                 return self._json({"ok": False, "error": str(e), "busy": True,
@@ -5309,7 +6008,7 @@ class Handler(BaseHTTPRequestHandler):
                                "note": "已进入 hermes 流水线（制作评估起跑），指令已同步 CCO"})
         if path == "/api/meetings":
             try:
-                trace, hs = KERNEL.inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
+                trace, hs = self._kernel().inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
             except BusyError as e:
                 return self._json({"ok": False, "error": str(e), "busy": True,
                                    "traceId": e.traceId}, 409)
@@ -5324,20 +6023,23 @@ class Handler(BaseHTTPRequestHandler):
             if decision not in ("approve", "reject"):
                 return self._json({"ok": False, "error": "invalid decision",
                                    "expected": "approve|reject"}, 400)
-            appr = KERNEL.decide_approval(path.rsplit("/", 1)[-1], decision, user.get("name", ""))
+            appr = self._kernel().decide_approval(path.rsplit("/", 1)[-1], decision, user.get("name", ""))
             if not appr:
                 return self._json({"error": "approval not found"}, 404)
             return self._json({"ok": True, "approval": appr})
         if path == "/api/config/reload":
+            if not self._owner_tenant():
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "热加载只对存量公司空间开放"}, 403)
             try:
-                return self._json({"ok": True, **KERNEL.reload_config()})
+                return self._json({"ok": True, **self._kernel().reload_config()})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
         # ---------- 大模型开关：CTO 运维控制（仅老板） ----------
         if path == "/api/ops/llm/profile":
-            if user.get("role") != "老板":
+            if user.get("role") != "老板" or not self._owner_tenant():
                 return self._json({"ok": False, "error": "forbidden",
-                                   "reason": "仅老板可修改员工模型通道"}, 403)
+                                   "reason": "仅存量公司空间可修改员工模型通道（全局注册表）"}, 403)
             st = _llm_store()
             if not st:
                 return self._json({"ok": False, "error": "过程库未启用"}, 503)
@@ -5374,9 +6076,9 @@ class Handler(BaseHTTPRequestHandler):
                                "channel": channel_id or "hermes-default", "by": who,
                                "at": iso_now()})
         if path == "/api/ops/llm":
-            if user.get("role") != "老板":
+            if user.get("role") != "老板" or not self._owner_tenant():
                 return self._json({"ok": False, "error": "forbidden",
-                                   "reason": "仅老板可修改大模型开关与额度"}, 403)
+                                   "reason": "仅存量公司空间可修改大模型开关与额度（全局注册表）"}, 403)
             st = _llm_store()
             if not st:
                 return self._json({"ok": False, "error": "过程库未启用，无法修改大模型配置"}, 503)
@@ -5409,14 +6111,14 @@ class Handler(BaseHTTPRequestHandler):
             who = user.get("name") or user.get("user") or ""
             try:
                 if action == "patrol":
-                    result = KERNEL.patrol()
+                    result = self._kernel().patrol()
                 elif action == "reload":
-                    result = KERNEL.reload_config()
+                    result = self._kernel().reload_config()
                 elif action in ("approve", "reject"):
                     aid = str(body.get("id") or "")
                     if not aid:
                         return self._json({"ok": False, "error": "缺少审批 id"}, 400)
-                    appr = KERNEL.decide_approval(aid, action, who)
+                    appr = self._kernel().decide_approval(aid, action, who)
                     if not appr:
                         return self._json({"ok": False, "error": "approval not found"}, 404)
                     result = {"approval": appr}
@@ -5424,7 +6126,7 @@ class Handler(BaseHTTPRequestHandler):
                     tid = str(body.get("traceId") or body.get("id") or "")
                     if not tid:
                         return self._json({"ok": False, "error": "缺少续跑的 traceId"}, 400)
-                    result = KERNEL.resume_pipeline(tid)
+                    result = self._kernel().resume_pipeline(tid)
                 else:
                     return self._json({"ok": False, "error": "invalid action",
                                        "expected": "patrol|reload|approve|reject|resume"}, 400)
@@ -5436,7 +6138,7 @@ class Handler(BaseHTTPRequestHandler):
                                "by": who, "at": iso_now()})
         if path == "/api/delegate":
             try:
-                return self._json({"ok": True, **KERNEL.mgmt_delegate(
+                return self._json({"ok": True, **self._kernel().mgmt_delegate(
                     body.get("sender", ""), body.get("recipient", ""), body.get("text", ""))})
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
@@ -5444,40 +6146,40 @@ class Handler(BaseHTTPRequestHandler):
             text = (body.get("text") or "").strip()
             if not text:
                 return self._json({"ok": False, "error": "空指令"}, 400)
-            KERNEL._web_chat("inbound", text, "command", "owner", "老板", uid("web"))
+            self._kernel()._web_chat("inbound", text, "command", "owner", "老板", uid("web"))
             m = re.match(r"@(\S+)\s*([\s\S]*)", text)
             if m:
                 key, rest = m.group(1), m.group(2).strip()
-                cand = [a for a in KERNEL.agents.values() if a["id"] == key or a["name"] == key]
+                cand = [a for a in self._kernel().agents.values() if a["id"] == key or a["name"] == key]
                 if not cand:
-                    cand = [a for a in KERNEL.agents.values() if key in a["name"] or key in a["id"]]
+                    cand = [a for a in self._kernel().agents.values() if key in a["name"] or key in a["id"]]
                 if not cand:
                     return self._json({"ok": False, "error": f"没有找到员工 {key}"}, 404)
                 try:
-                    return self._json({"ok": True, **KERNEL.ask_agent(cand[0]["id"],
+                    return self._json({"ok": True, **self._kernel().ask_agent(cand[0]["id"],
                                        rest or "请汇报当前进展与卡点。")})
                 except ValueError as e:
                     return self._json({"ok": False, "error": str(e)}, 400)
             if "串味" in text or "persona" in text.lower():
-                return self._json({"ok": True, "personaTest": KERNEL.persona_injection()})
+                return self._json({"ok": True, "personaTest": self._kernel().persona_injection()})
             if "注入" in text or "热点" in text:
                 try:
-                    trace, hs = KERNEL.inject_hotspot()
+                    trace, hs = self._kernel().inject_hotspot()
                 except BusyError as e:
                     return self._json({"ok": False, "error": str(e), "busy": True,
                                        "traceId": e.traceId}, 409)
                 except ValueError as e:
                     return self._json({"ok": False, "error": str(e)}, 400)
                 return self._json({"ok": True, "traceId": trace, "hotspot": hs})
-            with KERNEL.lock:
-                blockers = [c for c in KERNEL.contents if c["stage"] in ("review", "approved")]
-                pending = [a for a in KERNEL.approvals if a["status"] == "pending"]
-            data, meta = KERNEL.call_agent("ceo", "回答老板：今天哪个项目卡住了，卡在哪。",
+            with self._kernel().lock:
+                blockers = [c for c in self._kernel().contents if c["stage"] in ("review", "approved")]
+                pending = [a for a in self._kernel().approvals if a["status"] == "pending"]
+            data, meta = self._kernel().call_agent("ceo", "回答老板：今天哪个项目卡住了，卡在哪。",
                                           f"待审/待发布 {len(blockers)} 条；待审批 {len(pending)} 个",
                                           "", "summary, evidence, confidence, tools")
             answer = data or {"summary": f"当前 {len(blockers)} 条待审、{len(pending)} 个审批待拍板",
                               "evidence": [], "confidence": 0.4, "tools": []}
-            KERNEL.send("result", "ceo", "owner", "", {"result": answer, "engine": meta["engine"]}, priority=1)
+            self._kernel().send("result", "ceo", "owner", "", {"result": answer, "engine": meta["engine"]}, priority=1)
             return self._json({"ok": True, "answer": answer, "engine": meta["engine"]})
         return self._json({"error": "not found"}, 404)
 
@@ -5500,9 +6202,9 @@ def main():
         print("\nbye")
     finally:
         srv.server_close()
-        if KERNEL.db:
-            KERNEL.db.run_end(KERNEL._run_id)
-            KERNEL.db.close()
+        if self._kernel().db:
+            self._kernel().db.run_end(self._kernel()._run_id)
+            self._kernel().db.close()
 
 
 if __name__ == "__main__":
