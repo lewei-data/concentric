@@ -345,8 +345,8 @@ def speak(text, voice=None, emotion=None, stem=None, out_dir=None):
 INTRO_LLM_TIMEOUT = float(_cfg("INTRO_LLM_TIMEOUT", "180"))
 INTRO_MAX_CHARS = int(_cfg("INTRO_MAX_CHARS", "140"))
 INTRO_LOCK_WAIT = float(_cfg("INTRO_LOCK_WAIT", "600"))
-INTRO_PIPELINE = "wav2lip-gan-v1"
-# 自我介绍视频开头先放 INTRO_OPEN_SEC 秒全身照（慢推），再切半身口型；配音延后同样时长保证口型对齐
+INTRO_PIPELINE = "fullbody-hold-v1"
+# 自我介绍视频：有全身照时整条只用全身照（慢推），配音从头开始；不再拼接半身口型段
 INTRO_OPEN_SEC = max(0.0, float(_cfg("INTRO_OPEN_SEC", "2.4")))
 LIPSYNC_ENABLE = _cfg("LIPSYNC", "1") not in ("0", "false", "False", "no")
 LIPSYNC_RUNNER = _cfg("LIPSYNC_RUNNER", os.path.join("/opt/sefs/mcp-asr/lipsync", "run_lipsync.py"))
@@ -527,12 +527,12 @@ def _intro_lipsync(aid, photo, wav_path, out_path):
     return out_path
 
 
-def _intro_open_filter():
-    """开头全身照：极慢推近 INTRO_OPEN_SEC 秒，和半身段无缝拼接。"""
+def _intro_fullbody_filter(total):
+    """整条视频只用全身照：按总时长均摊的一次极慢推近（无拼接）。"""
+    step = 0.06 / max(1.0, total * 25)
     return ("scale=1080:1440:force_original_aspect_ratio=increase,crop=1080:1440,"
-            "zoompan=z='min(zoom+0.0008,1.08)':d=1:x='iw/2-(iw/zoom/2)'"
-            ":y='ih/2-(ih/zoom/2)':s=720x960:fps=25,"
-            "trim=duration=%.3f,setpts=PTS-STARTPTS,setsar=1" % INTRO_OPEN_SEC)
+            "zoompan=z='min(zoom+%.6f,1.06)':d=1:x='iw/2-(iw/zoom/2)'"
+            ":y='ih/2-(ih/zoom/2)':s=720x960:fps=25,setsar=1" % step)
 
 
 def _intro_filter(kind):
@@ -591,10 +591,12 @@ def intro_build(aid, force=False, refresh_text=True, text=None, voice=None):
         tts = speak(script, voice=voice or prof.get("voice"), emotion=emotion,
                     stem="intro_%s_%d" % (aid, int(time.time())))
         wav_path = tts["audio_path"]
+        open_img = _intro_fullbody(aid) if INTRO_OPEN_SEC > 0 else ""
         kind, source = _intro_video_source(aid)
         source_label = "%s:%s" % (kind, os.path.basename(source)) if source else ""
         lipsync_tmp = ""
-        photo = _intro_photo(aid)
+        # 有全身照时整条片子只用它，不再做口型段（两段拼接会硬切换人/换背景）
+        photo = "" if open_img else _intro_photo(aid)
         if photo and lipsync_ready():
             lipsync_tmp = os.path.join(INTRO_DIR, ".%s.lipsync.mp4" % aid)
             try:
@@ -606,32 +608,24 @@ def intro_build(aid, force=False, refresh_text=True, text=None, voice=None):
                 if lipsync_tmp and os.path.exists(lipsync_tmp):
                     os.unlink(lipsync_tmp)
                 lipsync_tmp = ""
-        if not source:
-            raise RuntimeError("员工 %s 既没有 talk 视频也没有照片，无法生成画面" % aid)
+        if not source and not open_img:
+            raise RuntimeError("员工 %s 既没有全身照也没有 talk 视频/照片，无法生成画面" % aid)
         duration = _probe_duration(wav_path)
         tmp_out = os.path.join(INTRO_DIR, ".%s.intro.mp4" % aid)
-        open_img = _intro_fullbody(aid) if INTRO_OPEN_SEC > 0 else ""
         if open_img:
-            # 全身照推镜 → 半身口型：音轨整体延后 INTRO_OPEN_SEC，口型与配音仍然逐帧对齐
-            total = INTRO_OPEN_SEC + max(1.0, duration)
-            inputs = [FFMPEG_BIN, "-y", "-loglevel", "error",
-                      "-loop", "1", "-framerate", "25", "-i", open_img]
-            if kind in ("video", "lipsync"):
-                inputs += ["-stream_loop", "-1", "-i", source]
-            else:
-                inputs += ["-loop", "1", "-framerate", "25", "-i", source]
-            inputs += ["-i", wav_path]
-            fg = ("[0:v]%s[v0];[1:v]%s[v1];"
-                  "[v0][v1]concat=n=2:v=1:a=0,format=yuv420p[v];"
-                  "[2:a]adelay=%d:all=1,apad[a]"
-                  % (_intro_open_filter(), _intro_filter(kind), int(INTRO_OPEN_SEC * 1000)))
-            cmd = inputs + [
-                "-filter_complex", fg, "-map", "[v]", "-map", "[a]",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                "-pix_fmt", "yuv420p", "-r", "25",
-                "-c:a", "aac", "-b:a", "96k", "-ar", "24000", "-ac", "1",
-                "-t", "%.3f" % total,
-                "-movflags", "+faststart", tmp_out]
+            # 整条视频只放全身照：配音从头开始，一次运镜到底，不做任何拼接
+            total = max(1.0, duration)
+            kind, source = "fullbody", open_img
+            source_label = "fullbody:%s" % os.path.basename(open_img)
+            cmd = [FFMPEG_BIN, "-y", "-loglevel", "error",
+                   "-loop", "1", "-framerate", "25", "-i", open_img, "-i", wav_path,
+                   "-map", "0:v:0", "-map", "1:a:0",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-pix_fmt", "yuv420p", "-r", "25",
+                   "-vf", _intro_fullbody_filter(total),
+                   "-c:a", "aac", "-b:a", "96k", "-ar", "24000", "-ac", "1",
+                   "-t", "%.3f" % total,
+                   "-movflags", "+faststart", tmp_out]
         else:
             if kind in ("video", "lipsync"):
                 inputs = [FFMPEG_BIN, "-y", "-loglevel", "error",
