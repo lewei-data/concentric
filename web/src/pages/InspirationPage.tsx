@@ -61,6 +61,28 @@ async function getInspiration(refresh = false): Promise<InspirationData> {
   return (await res.json()) as InspirationData;
 }
 
+type ProduceResult = {
+  ok: boolean;
+  traceId?: string;
+  note?: string;
+  error?: string;
+  busy?: boolean;
+};
+
+async function startProduction(idea: Idea, requirements: string): Promise<ProduceResult> {
+  const res = await fetch("/api/inspiration/produce", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ idea, requirements }),
+  });
+  if (res.status === 401) {
+    window.location.assign("/app/login");
+    throw new Error("登录已过期");
+  }
+  return (await res.json()) as ProduceResult;
+}
+
 function shortTime(at?: string) {
   if (!at) return "—";
   const m = at.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
@@ -74,7 +96,42 @@ export function InspirationPage() {
   const [category, setCategory] = useState<Category>("全部");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [produce, setProduce] = useState<Idea | null>(null);
+  const [reqs, setReqs] = useState("");
+  const [producing, setProducing] = useState(false);
+  const [produceErr, setProduceErr] = useState("");
+  const [produceOk, setProduceOk] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openProduce = (it: Idea) => {
+    setProduce(it);
+    setReqs("");
+    setProduceOk("");
+    setProduceErr("");
+  };
+  const closeProduce = () => {
+    if (producing) return;
+    setProduce(null);
+    setProduceOk("");
+    setProduceErr("");
+  };
+  const confirmProduce = async () => {
+    if (!produce || producing) return;
+    setProducing(true);
+    setProduceErr("");
+    try {
+      const data = await startProduction(produce, reqs.trim());
+      if (!data.ok) {
+        setProduceErr(data.error || "发起失败，请稍后再试");
+        return;
+      }
+      setProduceOk(data.traceId || "");
+    } catch (e) {
+      setProduceErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProducing(false);
+    }
+  };
 
   const load = useCallback(async (force = false) => {
     try {
@@ -212,6 +269,13 @@ export function InspirationPage() {
                 <span>{shortTime(it.at)}</span>
               </div>
               <div className="ins-card-actions">
+                <button
+                  type="button"
+                  className="btn btn-produce"
+                  onClick={() => openProduce(it)}
+                >
+                  开始制作
+                </button>
                 {it.detail && (
                   <button
                     type="button"
@@ -250,6 +314,59 @@ export function InspirationPage() {
           页面只读展示；热点/知识库读路径目前仍以内存快照与 Obsidian 文件为准，过程库为影子双写。
         </p>
       </section>
+
+      {produce && (
+        <div className="idea-dialog-backdrop" onClick={closeProduce} role="presentation">
+          <div
+            className="idea-dialog"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="开始制作"
+          >
+            {produceOk ? (
+              <>
+                <h3>已进入制作流水线</h3>
+                <p className="idea-dialog-sub">
+                  指令已同步 CCO，正在从「制作评估」起跑：CCO 定工艺（发流水号进厂）→ 文案 → 样片 →
+                  OpenMontage 出片 → 终审。
+                </p>
+                <p className="idea-trace">
+                  流水号 trace：<code>{produceOk}</code>
+                </p>
+                <div className="idea-dialog-actions">
+                  <a className="btn btn-ghost" href="/app/factory">查看制片工厂 →</a>
+                  <button type="button" className="btn btn-ghost" onClick={closeProduce}>
+                    关闭
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>开始制作</h3>
+                <p className="idea-dialog-sub">灵感：《{produce.title}》</p>
+                <textarea
+                  className="input idea-reqs"
+                  rows={4}
+                  placeholder="输入特定要求（可选）——画面风格、时长、调性、必须出现的元素…&#10;示例：正式宣传片，画面精致唯美，配轻音乐。"
+                  value={reqs}
+                  onChange={(e) => setReqs(e.target.value)}
+                  disabled={producing}
+                />
+                {produceErr && <div className="idea-dialog-error">{produceErr}</div>}
+                <div className="idea-dialog-actions">
+                  <button type="button" className="btn btn-ghost" onClick={closeProduce} disabled={producing}>
+                    取消
+                  </button>
+                  <button type="button" className="btn btn-produce" disabled={producing} onClick={() => void confirmProduce()}>
+                    {producing ? "发起中…" : "确认开始制作"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

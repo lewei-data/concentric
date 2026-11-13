@@ -53,6 +53,19 @@ type OpsResp = {
   };
   alerts?: { id: string; level: string; title: string; detail: string; source?: string }[];
 };
+/* 制片工厂流水线（出厂后流程监控用） */
+type FactoryProduct = {
+  itemId: string;
+  traceId: string;
+  serialNo: string;
+  title: string;
+  workshopNo: string;
+  craftName: string;
+  decidedAt: string;
+  shippedAt: string;
+  run: { status: string; stage: string; stageIndex: number; updatedAt: string; closedAt: string };
+};
+type FactoryResp = { ok: boolean; products: FactoryProduct[] };
 
 async function apiGet<T>(url: string): Promise<T> {
   const res = await fetch(url, { credentials: "include" });
@@ -181,6 +194,7 @@ export function HomePage() {
   const [works, setWorks] = useState<WorksResp | null>(null);
   const [ins, setIns] = useState<InspirationResp | null>(null);
   const [ops, setOps] = useState<OpsResp | null>(null);
+  const [factory, setFactory] = useState<FactoryResp | null>(null);
   const [error, setError] = useState("");
   const [approvalMsg, setApprovalMsg] = useState("");
   // 音效开关持久化：刷新后保持上次选择（默认开）
@@ -258,23 +272,29 @@ export function HomePage() {
   const loadOps = useCallback(() => {
     apiGet<OpsResp>("/api/ops").then(setOps).catch(() => undefined);
   }, []);
+  const loadFactory = useCallback(() => {
+    apiGet<FactoryResp>("/api/factory").then(setFactory).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     loadState();
     loadWorks();
     loadIns();
     loadOps();
+    loadFactory();
     const t1 = window.setInterval(loadState, 10000);
     const t2 = window.setInterval(loadWorks, 30000);
     const t3 = window.setInterval(loadIns, 60000);
     const t4 = window.setInterval(loadOps, 15000);
+    const t5 = window.setInterval(loadFactory, 10000);
     return () => {
       window.clearInterval(t1);
       window.clearInterval(t2);
       window.clearInterval(t3);
       window.clearInterval(t4);
+      window.clearInterval(t5);
     };
-  }, [loadState, loadWorks, loadIns, loadOps]);
+  }, [loadState, loadWorks, loadIns, loadOps, loadFactory]);
 
   const agents = state?.agents ?? [];
   // 老板不占工位，工位图与在岗统计都排除
@@ -288,45 +308,47 @@ export function HomePage() {
   const projColor = (id?: string) =>
     state?.projects?.find((p) => p.id === id)?.color || PROJECT_FALLBACK[id || ""]?.color || "#6B7280";
 
-  const today = new Date().toISOString().slice(0, 10);
+  // 本地日期（YYYY-MM-DD）。不能用 toISOString()——那是 UTC 日期，
+  // +08:00 时区每天的 0-8 点会把「今天」算成昨天，当天出厂/完成等按日统计全为 0。
+  const today = new Date().toLocaleDateString("sv-SE");
 
+  // 指标统一用工厂口径（与制片工厂/作品档案一致的生命周期）：
+  // 进厂=CCO 审批发流水号 → 生产中 → 质检审核通过出厂
   const metrics = useMemo(() => {
     const totalWorks = facets?.total ?? items.length;
-    const doing = byStatus["制作中"] ?? 0;
-    const review = byStatus["待评审"] ?? 0;
-    const approved = byStatus["待发布"] ?? 0;
-    const published = (byStatus["已发布"] ?? 0) + (byStatus["已归档"] ?? 0);
+    const doing = byStatus["生产中"] ?? 0;
+    const shipped = byStatus["已出厂"] ?? 0;
+    const completed = byStatus["已完工"] ?? 0;
+    const interrupted = byStatus["已中断"] ?? 0;
     const doneToday = items.filter(
-      (w) => (w.statusKey === "published" || w.statusKey === "archived")
-        && (w.updatedAt || "").slice(0, 10) === today,
+      (w) => (w.shippedAt || "").slice(0, 10) === today,
     ).length;
     const failing = items.filter(
-      (w) => w.reviewPass === false
-        || w.statusKey === "review"
+      (w) => w.statusKey === "interrupted"
+        || w.reviewPass === false
         || (w.statusKey === "doing" && w.completeness < 50 && daysSince(w.updatedAt) >= 7),
     ).length;
-    return { totalWorks, doing, review, approved, published, doneToday, failing };
+    return { totalWorks, doing, shipped, completed, interrupted, doneToday, failing };
   }, [facets, byStatus, items, today]);
 
-  // 热门/上线表现：已发布/已归档优先，按评审通过 → 完整度 → 更新时间
+  // 热门/上线表现：已出厂优先，按质检结论 → 完整度 → 出厂时间
   const hotWorks = useMemo(() => {
-    const pool = items.filter((w) => w.statusKey === "published" || w.statusKey === "archived");
+    const pool = items.filter((w) => w.statusKey === "shipped");
     const base = pool.length ? pool : items;
     return [...base]
       .sort((a, b) =>
         (Number(b.reviewPass === true) - Number(a.reviewPass === true))
-        || (b.completeness - a.completeness)
-        || String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        || String(b.shippedAt || b.updatedAt).localeCompare(String(a.shippedAt || a.updatedAt)))
       .slice(0, 5);
   }, [items]);
 
-  // 滞销/受阻：未过审、待评审积压、长期停滞
+  // 滞销/受阻：流水中断、质检未通过、长期停滞
   const blockedWorks = useMemo(() => {
     const rows = items
       .map((w) => {
         let reason = "";
-        if (w.reviewPass === false) reason = "评审未通过";
-        else if (w.statusKey === "review") reason = "待评审积压";
+        if (w.statusKey === "interrupted") reason = "流水中断";
+        else if (w.reviewPass === false) reason = "质检未通过";
         else if (w.statusKey === "doing" && w.completeness < 50 && daysSince(w.updatedAt) >= 7) {
           reason = `停滞 ${daysSince(w.updatedAt)} 天`;
         }
@@ -336,18 +358,55 @@ export function HomePage() {
     return rows.slice(0, 5);
   }, [items]);
 
-  const funnel = useMemo(() => {
-    const stageCount = (s: string) => items.filter((w) => w.stage === s).length;
-    return [
-      { key: "idea", label: "创意池", value: ins?.counts?.total ?? 0, hint: "热点 / 视频 / 蒸馏" },
-      { key: "topic", label: "选题", value: stageCount("topic") },
-      { key: "copy", label: "文案定稿", value: stageCount("copy") },
-      { key: "video", label: "分镜 / 制作", value: stageCount("sample") + stageCount("final") },
-      { key: "review", label: "待评审", value: stageCount("review") },
-      { key: "approved", label: "待发布", value: stageCount("approved") },
-      { key: "published", label: "已发布", value: (stageCount("published") + stageCount("archived")) || metrics.published },
-    ];
-  }, [items, ins, metrics.published]);
+  // 出厂后流程：发布审批（老板拍板）→ 发布 → 知识归档 → 汇报
+  const POST_STAGES = [
+    { id: "publish_approval", label: "发布审批" },
+    { id: "release", label: "发布" },
+    { id: "archive", label: "知识归档" },
+    { id: "report", label: "汇报生成" },
+  ];
+  const POST_STATUS_TEXT: Record<string, string> = {
+    running: "进行中", completed: "已完成", interrupted: "已中断", timeout: "审批超时",
+    aborted: "已停止", error: "编排异常", blocked: "已阻断", rejected: "已驳回", incomplete: "未收口",
+  };
+  const shippedProducts = useMemo(
+    () => (factory?.products ?? []).filter((p) => p.shippedAt),
+    [factory],
+  );
+  const pendingTraceIds = useMemo(
+    () => new Set((state?.approvals ?? [])
+      .filter((a) => a.status === "pending")
+      .map((a) => String((a as unknown as { traceId?: string }).traceId || ""))),
+    [state],
+  );
+  const postStateOf = (p: FactoryProduct): { label: string; tone: "ok" | "boss" | "doing" | "stuck"; stepIdx: number } => {
+    const stage = p.run?.stage || "";
+    const status = p.run?.status || "";
+    const idx = POST_STAGES.findIndex((s) => s.id === stage);
+    const at = (i: number) => POST_STAGES[i]?.label || stage || "出厂";
+    if (status === "completed") return { label: "全流程完成", tone: "ok", stepIdx: POST_STAGES.length - 1 };
+    if (status === "running") {
+      if (stage === "publish_approval") {
+        return pendingTraceIds.has(p.traceId)
+          ? { label: "发布审批 · 待老板拍板", tone: "boss", stepIdx: 0 }
+          : { label: "发布审批 · 审批单开启中", tone: "doing", stepIdx: 0 };
+      }
+      return { label: `${at(Math.max(0, idx))} · 进行中`, tone: "doing", stepIdx: Math.max(0, idx) };
+    }
+    return {
+      label: `卡在「${at(Math.max(0, idx))}」· ${POST_STATUS_TEXT[status] || status || "状态未知"}`,
+      tone: "stuck",
+      stepIdx: Math.max(0, idx),
+    };
+  };
+
+  // 创作漏斗与工厂生命周期对齐：创意池 → CCO 审批进厂 → 生产中 → 已出厂
+  const funnel = useMemo(() => [
+    { key: "idea", label: "创意池", value: ins?.counts?.total ?? 0, hint: "热点 / 视频 / 蒸馏" },
+    { key: "entered", label: "审批进厂", value: facets?.total ?? 0, hint: "CCO 发流水号" },
+    { key: "doing", label: "生产中", value: metrics.doing, hint: "在制流水线" },
+    { key: "shipped", label: "已出厂", value: metrics.shipped, hint: "质检通过" },
+  ], [ins, facets, metrics.doing, metrics.shipped]);
 
   const people = useMemo(() => {
     // 管理层固定顺序：CEO / CCO / CTO，小秘书单独放最右侧
@@ -424,11 +483,11 @@ export function HomePage() {
 
   const kpis = [
     { key: "total", label: "作品总数", value: metrics.totalWorks, hint: `${facets?.withFinal ?? 0} 件已成片`, tone: "" },
-    { key: "done", label: "当天完成", value: metrics.doneToday, hint: "今天发布/归档", tone: "ok" },
-    { key: "doing", label: "正在制作", value: metrics.doing, hint: "制作中", tone: "" },
-    { key: "review", label: "待评审", value: metrics.review, hint: "待我审", tone: "warn" },
-    { key: "published", label: "已发布", value: metrics.published, hint: "含归档", tone: "ok" },
-    { key: "failing", label: "受阻 / 滞销", value: metrics.failing, hint: "未过审/积压/停滞", tone: "danger" },
+    { key: "done", label: "当天出厂", value: metrics.doneToday, hint: "今天质检通过", tone: "ok" },
+    { key: "doing", label: "生产中", value: metrics.doing, hint: "在制流水线", tone: "" },
+    { key: "shipped", label: "已出厂", value: metrics.shipped, hint: "质检通过", tone: "ok" },
+    { key: "interrupted", label: "已中断", value: metrics.interrupted, hint: "待续跑/处理", tone: "warn" },
+    { key: "failing", label: "受阻 / 滞销", value: metrics.failing, hint: "中断/未过审/停滞", tone: "danger" },
   ];
 
   return (
@@ -462,12 +521,12 @@ export function HomePage() {
           <div className="block-head">
             <div>
               <h2>热门作品 · 上线表现</h2>
-              <p className="muted">已发布/归档作品按评审通过、完整度与更新时间排序</p>
+              <p className="muted">已出厂作品按质检结论与出厂时间排序</p>
             </div>
             <Link to="/works" className="ceo-more">作品档案 →</Link>
           </div>
           {hotWorks.length === 0 ? (
-            <p className="muted">暂无已上线作品，先去作品档案把定稿推上线。</p>
+            <p className="muted">暂无已出厂作品，流水线质检通过后转入这里。</p>
           ) : (
             <div className="ceo-list">
               {hotWorks.map((w, i) => (
@@ -477,11 +536,12 @@ export function HomePage() {
                     <div className="ceo-row-title">{w.title}</div>
                     <div className="ceo-row-sub">
                       <span className="ceo-dot" style={{ background: projColor(w.projectId) }} />
-                      {w.projectName} · {w.status} · 完整度 {w.completeness}%
+                      {w.projectName} · {w.workshopNo ? `${w.workshopNo}号车间 · ${w.craftName}` : w.stageName}
+                      {w.shippedAt ? ` · 出厂 ${shortTime(w.shippedAt)}` : ""}
                     </div>
                   </div>
                   <span className={`ceo-pill${w.reviewPass === true ? " is-ok" : ""}`}>
-                    {w.reviewPass === true ? "评审通过" : w.reviewPass === false ? "未通过" : "未评审"}
+                    {w.reviewPass === true ? "质检通过" : w.reviewPass === false ? "未通过" : "已出厂"}
                   </span>
                 </div>
               ))}
@@ -493,7 +553,7 @@ export function HomePage() {
           <div className="block-head">
             <div>
               <h2>滞销 / 受阻作品</h2>
-              <p className="muted">未通过评审、待评审积压、或制作长期停滞</p>
+              <p className="muted">流水中断、质检未通过、或制作长期停滞</p>
             </div>
             <Link to="/works" className="ceo-more">全部 →</Link>
           </div>
@@ -524,7 +584,7 @@ export function HomePage() {
         <div className="block-head">
           <div>
             <h2>创作流水线</h2>
-            <p className="muted">创意 → 选题 → 定稿 → 分镜 → 评审 → 发布 的当前分布</p>
+            <p className="muted">创意池 → CCO 审批进厂 → 生产中 → 已出厂 的当前分布（与制片工厂一致）</p>
           </div>
           <span className="pill-count">共 {metrics.totalWorks} 件在管</span>
         </div>
@@ -771,6 +831,57 @@ export function HomePage() {
           )}
         </section>
       </div>
+
+      {/* 6. 出厂后流程：发布审批（老板拍板）→ 发布 → 归档 → 汇报 */}
+      <section className="card ceo-block">
+        <div className="block-head">
+          <div>
+            <h2>出厂后流程</h2>
+            <p className="muted">
+              发布审批（需老板拍板）→ 发布 → 知识归档 → 汇报生成；卡住的环节在此可见
+            </p>
+          </div>
+          <span className="pill-count">{shippedProducts.length} 件已出厂</span>
+        </div>
+        {shippedProducts.length === 0 ? (
+          <p className="muted">暂无已出厂作品。流水线质检通过出厂后，后段流程在这里跟踪。</p>
+        ) : (
+          <div className="ceo-list">
+            {shippedProducts.map((p) => {
+              const ps = postStateOf(p);
+              return (
+                <div key={`post-${p.itemId || p.traceId}`} className="ceo-row">
+                  <span className={`ceo-rank${ps.tone === "stuck" || ps.tone === "boss" ? " ceo-rank-warn" : ""}`}>
+                    {ps.tone === "boss" ? "!" : ps.tone === "stuck" ? "×" : "✓"}
+                  </span>
+                  <div className="ceo-row-main">
+                    <div className="ceo-row-title">
+                      {p.serialNo ? `${p.serialNo} · ${p.title}` : p.title}
+                    </div>
+                    <div className="ceo-row-sub">
+                      {POST_STAGES.map((s, i) => (
+                        <span key={s.id}>
+                          {i > 0 && " → "}
+                          {i === ps.stepIdx && ps.tone !== "ok" ? (
+                            <b>{s.label}</b>
+                          ) : (
+                            <span className="muted">{s.label}</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <span
+                    className={`ceo-pill${ps.tone === "ok" ? " is-ok" : ps.tone === "boss" || ps.tone === "stuck" ? " is-danger" : ""}`}
+                  >
+                    {ps.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <p className="ceo-note muted">
         说明：作品档案暂未接入平台播放量，热门/滞销以「上线状态 + 评审结论 + 完整度 + 停滞天数」等真实信号排序，未做播放数据臆造。

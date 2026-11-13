@@ -1290,7 +1290,8 @@ class PipelineContext:
         self.pub_ctx = ""                 # 发布结论（归档/汇报引用）
 
     # 断点续跑用的快照字段：只放阶段间真正需要的状态，set 序列化成 list
-    STATE_FIELDS = ("selected", "final", "eliminated", "pool_size", "meeting_doc",
+    # pms 可被快照覆盖：创意灵感发起的单项目流水线只带本项目 PM（缺省仍为三项目）
+    STATE_FIELDS = ("pms", "selected", "final", "eliminated", "pool_size", "meeting_doc",
                     "participants", "conclusion", "review_ids", "passed_items",
                     "review_history", "pending", "pub_ctx")
 
@@ -2166,6 +2167,98 @@ class Kernel:
         threading.Thread(target=self.run_pipeline, args=(trace, hotspot), daemon=True).start()
         return trace, hotspot
 
+    def inject_idea(self, idea, requirements="", project=""):
+        """创意灵感直接发起制作（老板在 /app/inspiration 选灵感点「开始制作」）。
+
+        不走热点采集与选题会：灵感 + 老板特定要求直接建 1 张内容单并同步指令给 CCO，
+        流水线从 assessment（制作评估/CCO 定工艺）起跑——老板点击即视为开工审批，
+        后续 copy → sample → render(OpenMontage) → review 与热点链路共用同一套阶段
+        与制片工厂监控。
+        """
+        if not isinstance(idea, dict):
+            idea = {}
+        title = str(idea.get("title") or "").strip()
+        if not title:
+            raise ValueError("灵感缺少标题，无法发起制作")
+        self._sweep_stale()
+        with self.lock:
+            running = [t for t, d in self.traces.items() if d.get("status") == "running"]
+        if running:
+            raise BusyError(running[-1])
+        requirements = str(requirements or "").strip()
+        pid = self._idea_project(idea, project)
+        trace = uid("tr")
+        tags = [str(t).strip() for t in (idea.get("tags") or []) if str(t).strip()]
+        try:
+            score = float(idea.get("score"))
+            if not 0 <= score <= 1:
+                score = 0.8
+        except (TypeError, ValueError):
+            score = 0.8
+        hotspot = {"id": uid("hs"), "traceId": trace, "title": title[:60],
+                   "source": "创意灵感", "tags": (tags + ["创意灵感"])[:12],
+                   "score": score, "fit": {}, "at": iso_now(),
+                   "ideaId": str(idea.get("id") or ""), "requirements": requirements}
+        with self.lock:
+            self.hotspots.append(hotspot)
+            self.last_hotspot = hotspot
+            self.stats["traces"] += 1
+            self.traces[trace] = {"traceId": trace, "hotspot": hotspot, "startedAt": iso_now(),
+                                  "status": "running", "engine": MODE, "source": "idea"}
+        self._persist_trace(trace)
+        self.emit("hotspot", trace, hotspot)
+        # 内容单与 _stage_create_items 同构；老板特定要求随单流转（PM 细化 / CCO 审批可见）
+        iid = self._content_id(trace, pid, 0, title[:60])
+        item = {"id": iid, "projectId": pid, "traceId": trace, "stage": "topic",
+                "title": title[:60],
+                "angle": str(idea.get("summary") or idea.get("detail") or title)[:80],
+                "owner": f"pm_{pid}", "toneProfile": TONE[pid], "assets": [],
+                "reviewNote": "", "durationSec": 60,
+                "source": "创意灵感", "ideaId": str(idea.get("id") or ""),
+                "bossBrief": requirements}
+        with self.lock:
+            self.contents.append(item)
+        self.items_emit(trace, item)
+        # 指令同步发给 CCO：老板灵感 + 特定要求，CCO 据此完成基础准备并补齐创意
+        self.send("delegation", "owner", "cco", trace,
+                  {"task": f"老板在创意灵感页选定《{item['title']}》发起制作，已进入流水线（制作评估起跑）。"
+                           + (f"老板特定要求：{requirements}" if requirements else "无额外特定要求。"),
+                   "idea": {"id": item["ideaId"], "title": item["title"],
+                            "summary": str(idea.get("summary") or ""),
+                            "detail": str(idea.get("detail") or ""),
+                            "source": str(idea.get("source") or "")},
+                   "requirements": requirements, "from": "老板"},
+                  project=pid, priority=1)
+        self.emit("idea.produce", trace,
+                  {"itemId": iid, "title": item["title"], "projectId": pid,
+                   "requirements": requirements, "by": "owner"})
+        # 种子状态：单项目单条定稿，assessment 起跑（跳过选题会/开工审批）
+        state = {"pms": [[pid, f"pm_{pid}"]],
+                 "selected": {pid: [item["title"]]},
+                 "final": {pid: [{"title": item["title"], "angle": item["angle"],
+                                  "form": "正式宣传片", "durationSec": 60,
+                                  "reason": "老板创意灵感直接发起",
+                                  "bossBrief": requirements}]},
+                 "pool_size": 1,
+                 "items": {iid: item}}
+        threading.Thread(target=self.run_pipeline, args=(trace, hotspot, "assessment", state),
+                         daemon=True).start()
+        return trace, hotspot
+
+    @staticmethod
+    def _idea_project(idea, project=""):
+        """灵感归属项目：显式指定 > 灵感标签/来源里认得出的项目 > 默认同心圆（正式宣讲调性）。"""
+        pid = str(project or "").strip().lower()
+        if pid in PROJECTS:
+            return pid
+        hay = " ".join([str(idea.get("title") or ""), str(idea.get("summary") or ""),
+                        str(idea.get("origin") or ""), str(idea.get("source") or ""),
+                        " ".join(str(t) for t in (idea.get("tags") or []))])
+        for key, val in (("文人莫克", "wenren"), ("狗大人", "gou"), ("同心圆", "tongxinyuan")):
+            if key in hay:
+                return val
+        return "tongxinyuan"
+
     def run_pipeline(self, trace, hotspot, start=None, state=None):
         self.active_trace = trace
         if self.db:
@@ -2979,7 +3072,8 @@ class Kernel:
                 "cco", f"为 {PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条确定短视频出片架构："
                 "普通科普类用 remotion（Remotion 最终合成，字幕/语音精确可控）；"
                 "休闲娱乐类在 full_video（全视频制作）与 voice_video（语音+视频）里按创意剧本择优。",
-                json.dumps([{"title": i["title"], "angle": i.get("angle", "")} for i in items],
+                json.dumps([{"title": i["title"], "angle": i.get("angle", ""),
+                             "bossBrief": i.get("bossBrief", "")} for i in items],
                            ensure_ascii=False),
                 "额外 JSON 字段：modes(数组，每条 {title,mode,reason}；"
                 "mode ∈ remotion/full_video/voice_video)。",
@@ -3014,9 +3108,11 @@ class Kernel:
                 for w in OPENMONTAGE_CRAFTS)
             data, meta = self.call_agent(
                 "cco", f"为 {PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条审批制作工艺。"
-                f"参考 OpenMontage 的 13 类工艺（每类对应一个车间）：\n{crafts_brief}",
+                f"参考 OpenMontage 的 13 类工艺（每类对应一个车间）：\n{crafts_brief}"
+                "（bossBrief 是老板通过创意灵感页下达的特定要求，工艺决策与理由必须满足它）",
                 json.dumps([{"title": i["title"], "angle": i.get("angle", ""),
-                             "renderMode": i.get("renderMode", "")} for i in items],
+                             "renderMode": i.get("renderMode", ""),
+                             "bossBrief": i.get("bossBrief", "")} for i in items],
                            ensure_ascii=False),
                 "额外 JSON 字段：crafts(数组，每条 {title,craft,reason}；"
                 "craft 取上表车间对应的工艺 id，如 animated-explainer；"
@@ -3073,12 +3169,16 @@ class Kernel:
         #    并按并行原则拆任务——视频制作耗时较长，逐镜子任务先行开工，文案岗同步领取成稿与补素材指令。
         jobs = {}
         for pid, pm in c.pms:
+            boss_reqs = "；".join(
+                f"《{t.get('title')}》{t['bossBrief']}" for t in (c.final.get(pid) or [])
+                if t.get("bossBrief"))
             jobs[pid] = HERMES.pool.submit(
                 self.call_agent, pm,
-                f"为 {PROJECTS[pid]['name']} 的 2 条定稿选题细化制作方案：把分镜脚本补充完善到逐镜可执行"
+                f"为 {PROJECTS[pid]['name']} 的 {len(c.final.get(pid) or [])} 条定稿选题细化制作方案：把分镜脚本补充完善到逐镜可执行"
                 "（画面/台词/时长/所需素材），并按并行原则拆分任务——视频制作拆成逐镜子任务先开工，"
-                "文案岗同步领取成稿与补素材指令。",
-                json.dumps(c.final[pid], ensure_ascii=False),
+                "文案岗同步领取成稿与补素材指令。"
+                + (f"老板特定要求（逐条落实，不得跑偏）：{boss_reqs}" if boss_reqs else ""),
+                json.dumps(c.final.get(pid) or [], ensure_ascii=False),
                 "额外 JSON 字段：assessment({items:[{title,durationSec,tts:{voice,style},"
                 "copyBrief,storyboardNotes,"
                 "storyboardShots:[{no,画面,台词,秒,素材}],videoTasks:[{shot,task}]}], summary})；"
@@ -5193,6 +5293,20 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
             return self._json({"ok": True, "traceId": trace, "hotspot": hotspot})
+        if path == "/api/inspiration/produce":
+            if user.get("role") != "老板":
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅老板可从创意灵感发起制作"}, 403)
+            try:
+                trace, hotspot = KERNEL.inject_idea(body.get("idea") or {},
+                                                    body.get("requirements") or "")
+            except BusyError as e:
+                return self._json({"ok": False, "error": str(e), "busy": True,
+                                   "traceId": e.traceId}, 409)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            return self._json({"ok": True, "traceId": trace, "hotspot": hotspot,
+                               "note": "已进入 hermes 流水线（制作评估起跑），指令已同步 CCO"})
         if path == "/api/meetings":
             try:
                 trace, hs = KERNEL.inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))

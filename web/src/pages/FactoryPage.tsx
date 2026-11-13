@@ -129,9 +129,12 @@ export function FactoryPage() {
     () => (selectedNo ? products.filter((p) => p.workshopNo === selectedNo) : products),
     [products, selectedNo],
   );
-  /* 工厂生命周期：CCO 审批进厂 → 加工 → 质检审核通过出厂（流水结束） */
+  /* 工厂生命周期：CCO 审批进厂 → 加工 → 质检审核通过出厂（流水结束，转入历史） */
   const producingCount = products.filter((p) => !p.shippedAt).length;
   const shippedCount = products.filter((p) => !!p.shippedAt).length;
+  const monitorProducts = shownProducts.filter((p) => !p.shippedAt);
+  const historyProducts = shownProducts.filter((p) => !!p.shippedAt);
+  const [showHistory, setShowHistory] = useState(true);
   const selectedWorkshop = workshops.find((w) => w.no === selectedNo);
 
   const openStep = (traceId: string, stageId: string, name: string) => {
@@ -183,8 +186,9 @@ export function FactoryPage() {
           <p className="muted home-sub">
             全厂 13 个车间对应 OpenMontage 的 13 类工艺；每个工艺有各自的工序序列与名称
             （CCO 审批定工艺时即定格）。流水线生命周期：内容单经 CCO 审批通过发放流水号
-            （WO-YYYYMMDD-NNN）进厂，按所属工艺的工序逐站加工，质检审核通过即出厂、流水结束；
-            进厂前的选题调度与出厂后的发布/归档由 hermes 编排，不属工厂工序。
+            （WO-YYYYMMDD-NNN）进厂，按所属工艺的工序逐站加工，质检审核通过即出厂、流水结束——
+            出厂后转入「出厂历史」，当前监控只显示在制流水线；进厂前的选题调度与出厂后的
+            发布/归档由 hermes 编排，不属工厂工序。
           </p>
         </div>
         <div className="fac-meta">
@@ -217,19 +221,19 @@ export function FactoryPage() {
                 显示全部车间
               </button>
             )}
-            <span className="muted">共 {shownProducts.length} 条流水线</span>
+            <span className="muted">在制 {monitorProducts.length} 条流水线</span>
           </div>
         </div>
 
-        {shownProducts.length === 0 ? (
+        {monitorProducts.length === 0 ? (
           <div className="fac-empty">
             {selectedNo
-              ? "该车间暂无流水线。点击下方其他车间查看，或选择「显示全部车间」。"
-              : "暂无流水线。产品的制作工艺由 CCO 在「制作评估」环节参考 13 类工艺选定，"
-                + "选定后自动进入对应车间开始加工。"}
+              ? "该车间暂无在制流水线。点击下方其他车间查看，或选择「显示全部车间」。"
+              : "当前无在制流水线。内容单经 CCO 审批进厂后在这里实时监控，"
+                + "质检通过出厂后转入下方「出厂历史」。"}
           </div>
         ) : (
-          shownProducts.map((p) => {
+          monitorProducts.map((p) => {
             const w = workshops.find((x) => x.no === p.workshopNo);
             return (
               <div key={p.itemId || p.traceId} className="fac-product">
@@ -309,6 +313,59 @@ export function FactoryPage() {
           })
         )}
       </div>
+
+      {/* 出厂历史：质检通过即出厂，流水结束，只在这里可查 */}
+      {historyProducts.length > 0 && (
+        <div className="fac-monitors">
+          <div className="fac-section-head">
+            <h2>
+              出厂历史
+              <span className="fac-section-tag">{historyProducts.length} 件</span>
+            </h2>
+            <div className="fac-section-ops">
+              <button
+                type="button"
+                className="btn btn-ghost fac-btn"
+                onClick={() => setShowHistory((v) => !v)}
+              >
+                {showHistory ? "收起" : "展开"}
+              </button>
+            </div>
+          </div>
+          {showHistory && (
+            <div className="card">
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>流水号</th>
+                      <th>名称</th>
+                      <th>车间 / 工艺</th>
+                      <th>进厂</th>
+                      <th>出厂</th>
+                      <th>trace</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyProducts.map((p) => (
+                      <tr key={`his-${p.itemId || p.traceId}`}>
+                        <td className="nowrap mono">{p.serialNo}</td>
+                        <td>{p.title}</td>
+                        <td className="nowrap">
+                          {p.workshopNo ? `${p.workshopNo}号车间 · ${p.craftName}` : "-"}
+                        </td>
+                        <td className="nowrap">{shortTime(p.decidedAt)}</td>
+                        <td className="nowrap">{shortTime(p.shippedAt)}</td>
+                        <td className="nowrap mono">{p.traceId}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 底部：车间清单（横排列表） */}
       <div className="fac-list" role="list" aria-label="车间清单">
