@@ -2877,8 +2877,9 @@ class Kernel:
 
     def _fill_materials(self, trace, item, pid):
         """文案岗补素材：逐缺口先查已有资料库，未命中的走 ComfyUI 文生图尽快补齐；
-        台词/对白同步调用 TTS 出音频。结论回传 PM，不阻断主流程。"""
-        if not asset_fill:
+        台词/对白同步调用 TTS 出音频。结论回传 PM，不阻断主流程。
+        OPC_MATERIAL_FILL=0 时只登记缺口不实际生成（验收/省 GPU 场景）。"""
+        if not asset_fill or os.environ.get("OPC_MATERIAL_FILL") == "0":
             return
         plan = item.get("plan") or {}
         out_dir = os.path.join(BASE_DIR, ".cache", "materials", item["id"])
