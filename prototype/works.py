@@ -61,6 +61,93 @@ STATUS_MAP = {
     "archived": ("已归档", "archived"),
 }
 
+# 工厂车间生命周期状态（与制片工厂页一致）：出厂=质检审核通过
+FACTORY_STATUS = {
+    "shipped": ("已出厂", "shipped"),
+    "doing": ("生产中", "doing"),
+    "completed": ("已完工", "completed"),
+    "interrupted": ("已中断", "interrupted"),
+}
+
+
+def _factory_view(f, step_status=None):
+    """工厂车间记录（product_crafts）→ 档案的工厂段字段，状态随工厂生命周期。"""
+    shipped = bool(f.get("shippedAt"))
+    run = str(f.get("runStatus") or "")
+    if shipped:
+        status, key = FACTORY_STATUS["shipped"]
+    elif run == "running":
+        status, key = FACTORY_STATUS["doing"]
+    elif run == "completed":
+        status, key = FACTORY_STATUS["completed"]
+    elif run:
+        status, key = FACTORY_STATUS["interrupted"]
+    else:
+        status, key = FACTORY_STATUS["doing"]
+    steps = []
+    for st in f.get("steps") or []:
+        steps.append({**st, "status": (step_status or {}).get(st.get("opcStage")) or "pending"})
+    done = sum(1 for s in steps if s["status"] in ("done", "stopped", "failed"))
+    return {
+        "serialNo": f.get("serialNo") or "",
+        "workshopNo": f.get("workshopNo") or "",
+        "craftId": f.get("craftId") or "",
+        "craftName": f.get("craftName") or "",
+        "decidedAt": f.get("decidedAt") or "",
+        "shippedAt": f.get("shippedAt") or "",
+        "craftSteps": steps,
+        "craftProgress": f"{done}/{len(steps)}" if steps else "",
+        "factoryStatus": status,
+        "factoryStatusKey": key,
+    }
+
+
+def _folder_for(trace, pid, item_id):
+    """按 (trace, 内容单 id) 找交付目录：命名约定 <pid>-<item_id>，后缀匹配兜底。"""
+    tdir = os.path.join(ROOT, str(trace or ""))
+    if not item_id or not os.path.isdir(tdir):
+        return None, ""
+    want = f"{pid}-{item_id}"
+    if os.path.isdir(os.path.join(tdir, want)):
+        return os.path.join(tdir, want), want
+    try:
+        for sub in sorted(os.listdir(tdir)):
+            if sub.endswith(f"-{item_id}") and os.path.isdir(os.path.join(tdir, sub)):
+                return os.path.join(tdir, sub), sub
+    except OSError:
+        pass
+    return None, ""
+
+
+def _factory_record(trace, f, fv):
+    """有工厂记录但尚未落盘交付目录的作品：以工厂字段为准的占位档案。"""
+    status, status_key = fv["factoryStatus"], fv["factoryStatusKey"]
+    body = {k: v for k, v in fv.items() if k not in ("factoryStatus", "factoryStatusKey")}
+    created = f.get("decidedAt") or ""
+    return {
+        "id": _work_id(trace, f.get("itemId") or ""),
+        "code": f.get("serialNo") or _code(trace, f.get("projectId"), f.get("itemId")),
+        "title": f.get("title") or "",
+        "projectId": f.get("projectId") or "",
+        "projectName": _project(f.get("projectId")),
+        "traceId": trace,
+        "contentId": f.get("itemId") or "",
+        "stage": "factory",
+        "stageName": fv.get("craftName") or "工厂",
+        "status": status,
+        "statusKey": status_key,
+        "owner": "", "toneProfile": "",
+        "createdAt": created,
+        "updatedAt": f.get("shippedAt") or created,
+        "folder": "", "files": [], "assetCount": 0, "completeness": 0,
+        "reviewNote": "", "reviewPass": None, "assessment": "",
+        "render": {"ok": False, "video": "", "reason": ""},
+        "renderCheck": {"pass": False, "reasons": []},
+        "hasFinal": False, "hasPreview": False,
+        "approvals": [], "timeline": [],
+        **body,
+    }
+
 
 def _iso(ts):
     return datetime.fromtimestamp(ts, TZ).isoformat(timespec="seconds") if ts else ""
@@ -142,7 +229,7 @@ def _approvals_for(trace, approvals):
     return out
 
 
-def _build(folder, trace, sub, approvals=None):
+def _build(folder, trace, sub, approvals=None, factory=None, step_status=None):
     data_path = os.path.join(folder, "07-data.json")
     data = {}
     if os.path.isfile(data_path):
@@ -240,6 +327,19 @@ def _build(folder, trace, sub, approvals=None):
         "approvals": _approvals_for(trace, approvals),
         "timeline": timeline,
     }
+    # 工厂车间数据为准：注入流水号/车间/工艺/工序进度，阶段状态随工厂生命周期
+    if factory:
+        fv = _factory_view(factory, step_status)
+        rec.update(fv)
+        rec["stage"] = "factory"
+        rec["stageName"] = fv["craftName"] or rec["stageName"]
+        rec["status"] = fv["factoryStatus"]
+        rec["statusKey"] = fv["factoryStatusKey"]
+        if fv["serialNo"]:
+            rec["code"] = fv["serialNo"]
+        if fv["shippedAt"]:
+            rec["updatedAt"] = fv["shippedAt"]
+    return rec
 
 
 def _iter_folders():
@@ -262,9 +362,29 @@ def _iter_folders():
             yield folder, trace, sub
 
 
-def scan(approvals=None):
-    """扫描全部作品，按更新时间倒序返回。"""
+def scan(approvals=None, factory=None, step_status=None):
+    """扫描作品，按出厂/更新时间倒序返回。
+
+    工厂过程库启用时以工厂为准：只列 product_crafts 有流水号的作品，
+    阶段/状态随工厂生命周期（进厂→工序→质检出厂）；无工厂记录的历史交付
+    不再进档案（历史清掉，以最新为准）。factory=None 表示过程库未启用，
+    回退旧的磁盘扫描行为。
+    """
     items = []
+    if factory is not None:
+        for (trace, item_id), f in factory.items():
+            fv = _factory_view(f, step_status)
+            folder, sub = _folder_for(trace, f.get("projectId"), item_id)
+            try:
+                if folder:
+                    items.append(_build(folder, trace, sub, approvals, f, step_status))
+                else:
+                    items.append(_factory_record(trace, f, fv))
+            except Exception:
+                continue
+        items.sort(key=lambda x: str(x.get("shippedAt") or x.get("updatedAt") or ""),
+                   reverse=True)
+        return items
     for folder, trace, sub in _iter_folders():
         try:
             items.append(_build(folder, trace, sub, approvals))
@@ -288,7 +408,7 @@ def _facets(items):
     }
 
 
-def page(query_params, approvals=None):
+def page(query_params, approvals=None, factory=None, step_status=None):
     """GET /api/works：分页 + 关键词 + 项目 / 阶段 / 状态过滤。"""
     def one(key, default=""):
         vals = query_params.get(key) or [default]
@@ -308,7 +428,7 @@ def page(query_params, approvals=None):
     status = one("status")
     sort = one("sort", "updated")
 
-    items = scan(approvals)
+    items = scan(approvals, factory, step_status)
     facets = _facets(items)
     if q:
         items = [it for it in items if q in " ".join([
@@ -334,8 +454,27 @@ def page(query_params, approvals=None):
             "items": rows, "facets": facets}
 
 
-def detail(work_id, approvals=None):
+def detail(work_id, approvals=None, factory=None, step_status=None):
     """GET /api/works/<id>：档案主记录 + markdown 原文，供作品档案详情页展示。"""
+    if factory is not None:
+        for (trace, item_id), f in factory.items():
+            if _work_id(trace, f.get("itemId") or "") != work_id:
+                continue
+            fv = _factory_view(f, step_status)
+            folder, sub = _folder_for(trace, f.get("projectId"), item_id)
+            if not folder:
+                return _factory_record(trace, f, fv)
+            rec = _build(folder, trace, sub, approvals, f, step_status)
+            docs = {}
+            for key, name, label in STEPS:
+                if not name.endswith(".md"):
+                    continue
+                text = _read(os.path.join(folder, name))
+                if text:
+                    docs[key] = {"label": label, "text": text}
+            rec["docs"] = docs
+            return rec
+        return None
     for folder, trace, sub in _iter_folders():
         if _work_id(trace, sub) != work_id:
             continue

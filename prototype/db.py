@@ -286,6 +286,7 @@ CREATE TABLE IF NOT EXISTS product_crafts (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   trace_id    TEXT,
   item_id     TEXT,
+  serial_no   TEXT,
   project_id  TEXT,
   title       TEXT,
   workshop_no TEXT NOT NULL,
@@ -297,6 +298,8 @@ CREATE TABLE IF NOT EXISTS product_crafts (
   decided_by  TEXT NOT NULL DEFAULT 'cco',
   created_at  TEXT NOT NULL,
   updated_at  TEXT,
+  shipped_at  TEXT,
+  steps       TEXT,
   UNIQUE(trace_id, item_id)
 );
 CREATE INDEX IF NOT EXISTS idx_craft_trace    ON product_crafts(trace_id);
@@ -389,6 +392,19 @@ class Store:
             if "resume_tries" not in cols:
                 self._conn.execute("ALTER TABLE pipeline_runs "
                                    "ADD COLUMN resume_tries INTEGER NOT NULL DEFAULT 0")
+            # 老库补列：流水线工单流水号（CCO 审批通过进流水线时分配）
+            # 无流水号的历史记录按要求清除（没有车间工单的老任务不再保留）
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(product_crafts)")}
+            if cols and "serial_no" not in cols:
+                self._conn.execute("ALTER TABLE product_crafts ADD COLUMN serial_no TEXT")
+                self._conn.execute("DELETE FROM product_crafts "
+                                   "WHERE serial_no IS NULL OR serial_no=''")
+            # 老库补列：出厂时间（质检审核通过 → 出厂，工厂段流水结束）
+            if cols and "shipped_at" not in cols:
+                self._conn.execute("ALTER TABLE product_crafts ADD COLUMN shipped_at TEXT")
+            # 老库补列：工艺步骤序列快照（CCO 定工艺时定格，每个工艺的工序不同）
+            if cols and "steps" not in cols:
+                self._conn.execute("ALTER TABLE product_crafts ADD COLUMN steps TEXT")
             # 老库补列：大模型注册表的 hermes 别名与优先级（通道选择/故障转移用）
             cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(llm_models)")}
             if cols:
@@ -719,24 +735,64 @@ class Store:
         return {r.get("item_id") for r in rows if r.get("item_id")}
 
     # ---------- 制片工厂（CCO 工艺决策 + 车间工位过程） ----------
+    def alloc_serial(self):
+        """分配流水线工单流水号：WO-YYYYMMDD-NNN（当日递增）。
+
+        只在 CCO 审批通过（确定工艺/车间）后领取。写库为批量异步刷盘，
+        读库可能看不到刚发出的号，因此用进程内计数器兜底，两者取大后递增。
+        """
+        day = datetime.now(TZ).strftime("%Y%m%d")
+        seq = getattr(self, "_serial_seq", 0) if getattr(self, "_serial_day", "") == day else 0
+        try:
+            conn = self.read_conn()
+            try:
+                for (s,) in conn.execute(
+                        "SELECT serial_no FROM product_crafts WHERE serial_no LIKE ?",
+                        (f"WO-{day}-%",)):
+                    try:
+                        seq = max(seq, int(str(s).rsplit("-", 1)[-1]))
+                    except ValueError:
+                        pass
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            _log(f"alloc_serial 查询失败：{e}")
+        seq += 1
+        self._serial_day, self._serial_seq = day, seq
+        return f"WO-{day}-{seq:03d}"
+
     def upsert_product_craft(self, d):
         """CCO 工艺决策落库：同一 trace+内容单覆盖更新，只留最新决策。"""
         try:
-            self.put("""INSERT INTO product_crafts(trace_id,item_id,project_id,title,workshop_no,
-                        craft_id,craft_name,product,render_mode,reason,decided_by,created_at,updated_at)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+            self.put("""INSERT INTO product_crafts(trace_id,item_id,serial_no,project_id,title,
+                        workshop_no,craft_id,craft_name,product,render_mode,reason,decided_by,
+                        created_at,updated_at,steps)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(trace_id,item_id) DO UPDATE SET
-                          workshop_no=excluded.workshop_no, craft_id=excluded.craft_id,
-                          craft_name=excluded.craft_name, product=excluded.product,
-                          render_mode=excluded.render_mode, reason=excluded.reason,
-                          decided_by=excluded.decided_by, updated_at=excluded.updated_at""",
-                     (d.get("traceId") or None, d.get("itemId") or None, d.get("projectId") or "",
-                      d.get("title") or "", d.get("workshopNo") or "", d.get("craftId") or "",
-                      d.get("craftName") or "", d.get("product") or "", d.get("renderMode") or "",
-                      d.get("reason") or "", d.get("decidedBy") or "cco",
-                      d.get("createdAt") or now_iso(), now_iso()))
+                          serial_no=excluded.serial_no, workshop_no=excluded.workshop_no,
+                          craft_id=excluded.craft_id, craft_name=excluded.craft_name,
+                          product=excluded.product, render_mode=excluded.render_mode,
+                          reason=excluded.reason, decided_by=excluded.decided_by,
+                          updated_at=excluded.updated_at,
+                          steps=COALESCE(excluded.steps, steps)""",
+                     (d.get("traceId") or None, d.get("itemId") or None, d.get("serialNo") or "",
+                      d.get("projectId") or "", d.get("title") or "", d.get("workshopNo") or "",
+                      d.get("craftId") or "", d.get("craftName") or "", d.get("product") or "",
+                      d.get("renderMode") or "", d.get("reason") or "",
+                      d.get("decidedBy") or "cco",
+                      d.get("createdAt") or now_iso(), now_iso(),
+                      jdump(d["steps"]) if d.get("steps") is not None else None))
         except Exception as e:
             _log(f"upsert_product_craft 失败：{type(e).__name__}: {e}")
+
+    def mark_shipped(self, trace_id, item_id):
+        """质检审核通过 → 出厂：工厂段流水到此结束（记录出厂时间）。"""
+        try:
+            self.put("""UPDATE product_crafts SET shipped_at=?
+                        WHERE trace_id=? AND item_id=? AND (shipped_at IS NULL OR shipped_at='')""",
+                     (now_iso(), trace_id, item_id))
+        except Exception as e:
+            _log(f"mark_shipped 失败：{type(e).__name__}: {e}")
 
     def workshop_step_start(self, trace_id, stage_id, stage_name, om_stage):
         """进入车间工位：阶段开始（重跑同阶段时重置为 running）。"""

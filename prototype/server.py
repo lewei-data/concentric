@@ -393,6 +393,51 @@ OPENMONTAGE_CRAFTS = (
 )
 CRAFT_BY_ID = {w["id"]: w for w in OPENMONTAGE_CRAFTS}
 DEFAULT_CRAFT_ID = "animated-explainer"   # CCO 未明确时的科普类默认车间
+
+# ---- 工艺步骤（每个工艺的工序序列与名称都不同，CCO 定工艺时即定格） ----
+# 定义源：/opt/sefs/OpenMontage/pipeline_defs/<craft_id>.yaml 的 stages 序列。
+OM_DEFS_DIR = os.environ.get("OPC_OM_DEFS", "/opt/sefs/OpenMontage/pipeline_defs")
+# OM 步骤 → 中文工序名（未收录的回退原词）
+CRAFT_STEP_NAMES = {
+    "research": "选题研究", "idea": "创意构思", "proposal": "提案定案",
+    "script": "剧本脚本", "scene_plan": "分镜规划", "character_design": "角色设计",
+    "rig_plan": "角色绑定", "assets": "素材制作", "edit": "剪辑合成",
+    "compose": "终版合成", "publish": "成片发布",
+}
+# OM 步骤 → OPC 流水线阶段（工厂中段）：工位进度按 OPC 阶段的 workshop_steps 映射
+CRAFT_STEP_OPC = {
+    "research": "assessment", "idea": "assessment", "proposal": "assessment",
+    "script": "copy", "scene_plan": "sample", "character_design": "sample",
+    "rig_plan": "sample", "assets": "render", "edit": "sample_review",
+    "compose": "final", "publish": "review",
+}
+
+
+def _load_craft_steps(craft_id):
+    """读工艺定义的 stages 序列 → [{id,name,omStage,opcStage}]；失败回退通用 8 段。"""
+    names = []
+    try:
+        import yaml
+        with open(os.path.join(OM_DEFS_DIR, f"{craft_id}.yaml"), encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        names = [str(s.get("name") or "") for s in (data.get("stages") or [])
+                 if isinstance(s, dict) and s.get("name")]
+    except Exception as e:
+        print(f"[boot] 工艺步骤读取失败 {craft_id}：{type(e).__name__}: {e}", flush=True)
+    if not names:
+        names = ["research", "proposal", "script", "scene_plan",
+                 "assets", "edit", "compose", "publish"]
+    return [{"id": n, "name": CRAFT_STEP_NAMES.get(n, n), "omStage": n,
+             "opcStage": CRAFT_STEP_OPC.get(n, "final")} for n in names]
+
+
+CRAFT_STEPS = {w["id"]: _load_craft_steps(w["id"]) for w in OPENMONTAGE_CRAFTS}
+
+# 制片工厂的进/出厂边界（流水线 16 段中只有中段是工厂工序）：
+# 进厂 = CCO 审批（工艺决策，在 assessment 内发流水号）；
+# 出厂 = 质检审核（review）通过。前段（选题/开工审批）与后段（发布/归档/汇报）在 hermes 调度。
+FACTORY_ENTRY_STAGE = "assessment"
+FACTORY_EXIT_STAGE = "review"
 DEFAULT_HIGH_RISK = ["publish.execute", "deploy.prod", "customer.reply", "ad.spend"]
 
 
@@ -2472,63 +2517,102 @@ class Kernel:
         })
 
     def factory_view(self):
-        """制片工厂聚合：13 类车间 + 各车间产品（工艺决策 + 工位过程 + 运行态）。"""
+        """制片工厂聚合：13 类车间 + 各车间产品（工艺决策 + 工位过程 + 运行态）。
+
+        只展示 CCO 审批通过（product_crafts 有记录、带流水号 serial_no）的内容单；
+        工艺轴只取工厂段（进厂 assessment → 出厂 review），前段选题/开工审批与
+        后段发布/归档/汇报在 hermes 调度，不属于工厂工序。
+        """
         workshops = [dict(w) for w in OPENMONTAGE_CRAFTS]
+        enabled = [s for s in PIPELINE.stages if s.enabled]
+        ids = [s.id for s in enabled]
+        try:
+            lo, hi = ids.index(FACTORY_ENTRY_STAGE), ids.index(FACTORY_EXIT_STAGE)
+        except ValueError:
+            lo, hi = 0, len(ids) - 1
+        axis_stages = enabled[min(lo, hi):max(lo, hi) + 1]
         stage_axis = [{"id": s.id, "name": s.name, "kind": s.kind, "omStage": s.om_stage}
-                      for s in PIPELINE.stages if s.enabled]
+                      for s in axis_stages]
+        axis_ids = {s.id for s in axis_stages}
         products = []
         if self.db:
             runs = {r.get("trace_id"): r for r in self.db.pipeline_runs_recent(80)}
             steps_by_trace = {}
             for s in self.db.workshop_steps():
                 steps_by_trace.setdefault(s.get("trace_id"), []).append(s)
-            crafts_by_trace = {}
-            for row in self.db.product_crafts(120):
-                crafts_by_trace.setdefault(row.get("trace_id") or "", []).append(row)
-            # 以流水线运行记录为底：project 一发起（pipeline_run_start）就进工厂监控，
-            # CCO 在制作评估环节定工艺后（product_crafts）才落到具体车间，之前的条目
-            # workshopNo 为空，前端标"待 CCO 定工艺"，保证库与监控界面一致。
-            def _run_view(tid, run):
-                try:
-                    hotspot = json.loads(run.get("hotspot") or "{}") or {}
-                except ValueError:
-                    hotspot = {}
-                return {
-                    "itemId": "", "traceId": tid,
-                    "projectId": "", "title": hotspot.get("title") or tid,
-                    "workshopNo": "", "craftId": "", "craftName": "",
-                    "product": "", "renderMode": "", "reason": "",
-                    "decidedBy": "pending",
-                    "decidedAt": run.get("started_at") or run.get("updated_at"),
-                    "run": {"status": run.get("status"), "stage": run.get("stage"),
-                            "stageIndex": run.get("stage_index"),
-                            "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
-                    "steps": [_step_view(s) for s in steps_by_trace.get(tid, [])],
-                }
-            seen = set()
             for row in self.db.product_crafts(120):
                 tid = row.get("trace_id") or ""
-                if tid in seen:
-                    continue
-                seen.add(tid)
                 run = runs.get(tid) or {}
+                # 工艺步骤序列：CCO 审批时快照（steps 列），老数据回退到工艺定义现值
+                try:
+                    seq = json.loads(row.get("steps") or "null")
+                except ValueError:
+                    seq = None
+                if not seq:
+                    seq = CRAFT_STEPS.get(row.get("craft_id") or "", [])
+                steps_by_stage = {s.get("stage_id"): _step_view(s)
+                                  for s in steps_by_trace.get(tid, [])}
+                craft_steps = []
+                for st in seq:
+                    rec = steps_by_stage.get(st.get("opcStage"))
+                    craft_steps.append({**st,
+                                        "status": (rec or {}).get("status") or "pending",
+                                        "startedAt": (rec or {}).get("started_at") or "",
+                                        "finishedAt": (rec or {}).get("finished_at") or ""})
                 products.append({
                     "itemId": row.get("item_id"), "traceId": tid,
+                    "serialNo": row.get("serial_no") or "",
                     "projectId": row.get("project_id"), "title": row.get("title"),
                     "workshopNo": row.get("workshop_no"), "craftId": row.get("craft_id"),
                     "craftName": row.get("craft_name"), "product": row.get("product"),
                     "renderMode": row.get("render_mode"), "reason": row.get("reason"),
                     "decidedBy": row.get("decided_by"),
                     "decidedAt": row.get("updated_at") or row.get("created_at"),
+                    "shippedAt": row.get("shipped_at") or "",
+                    "craftSteps": craft_steps,
                     "run": {"status": run.get("status"), "stage": run.get("stage"),
                             "stageIndex": run.get("stage_index"),
                             "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
-                    "steps": [_step_view(s) for s in steps_by_trace.get(tid, [])],
+                    "steps": [v for v in steps_by_stage.values()
+                              if v.get("stage_id") in axis_ids],
                 })
-            for tid, run in runs.items():
-                if tid not in seen:
-                    products.append(_run_view(tid, run))
         return {"ok": True, "workshops": workshops, "stages": stage_axis, "products": products}
+
+    def _factory_works_index(self):
+        """作品档案 × 工厂车间对齐：以 product_crafts（有流水号）为准的 (trace,item) 索引。
+
+        返回 (factory 索引, 工位状态表)；过程库未启用返回 None（档案回退磁盘扫描）。
+        """
+        if not self.db:
+            return None
+        runs = {r.get("trace_id"): r for r in self.db.pipeline_runs_recent(100)}
+        step_status = {}
+        for s in self.db.workshop_steps():
+            step_status.setdefault(s.get("trace_id"), {})[s.get("stage_id")] = \
+                s.get("status") or "pending"
+        idx = {}
+        for row in self.db.product_crafts(200):
+            tid = row.get("trace_id") or ""
+            try:
+                steps = json.loads(row.get("steps") or "null")
+            except ValueError:
+                steps = None
+            if not steps:
+                steps = CRAFT_STEPS.get(row.get("craft_id") or "", [])
+            idx[(tid, row.get("item_id") or "")] = {
+                "itemId": row.get("item_id") or "",
+                "title": row.get("title") or "",
+                "projectId": row.get("project_id") or "",
+                "serialNo": row.get("serial_no") or "",
+                "workshopNo": row.get("workshop_no") or "",
+                "craftId": row.get("craft_id") or "",
+                "craftName": row.get("craft_name") or "",
+                "decidedAt": row.get("updated_at") or row.get("created_at"),
+                "shippedAt": row.get("shipped_at") or "",
+                "runStatus": (runs.get(tid) or {}).get("status") or "",
+                "steps": steps,
+            }
+        return idx, step_status
 
     def _run_checkpoint(self, trace, st, pos, c):
         """阶段边界写档：stage 是即将执行的阶段，状态快照随行。"""
@@ -2917,9 +3001,11 @@ class Kernel:
             self.items_emit(c.trace, item)
 
     def _cco_craft(self, c, pid, items):
-        """CCO 按产品确定制作工艺（参考 OpenMontage 13 类工艺），决策落库 product_crafts。
+        """CCO 审批定工艺（参考 OpenMontage 13 类工艺）——进入流水线的门槛。
 
-        工艺决定产品进哪个车间（01-13 号）；未明确时回落科普类默认动画讲解车间。
+        只有 CCO 给出明确工艺决策（= 审批通过）的内容单才发流水号（WO-YYYYMMDD-NNN）、
+        落库 product_crafts 并进车间；CCO 未明确（模型降级/无决策）的内容单不进流水线，
+        也不下发车间派单。
         """
         data = {}
         try:
@@ -2927,37 +3013,58 @@ class Kernel:
                 f"{w['no']}号车间 {w['id']}（{w['name']}，产品：{w['product']}）：{w['desc']}"
                 for w in OPENMONTAGE_CRAFTS)
             data, meta = self.call_agent(
-                "cco", f"为 {PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条确定制作工艺。"
+                "cco", f"为 {PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条审批制作工艺。"
                 f"参考 OpenMontage 的 13 类工艺（每类对应一个车间）：\n{crafts_brief}",
                 json.dumps([{"title": i["title"], "angle": i.get("angle", ""),
                              "renderMode": i.get("renderMode", "")} for i in items],
                            ensure_ascii=False),
                 "额外 JSON 字段：crafts(数组，每条 {title,craft,reason}；"
-                "craft 取上表车间对应的工艺 id，如 animated-explainer)。",
+                "craft 取上表车间对应的工艺 id，如 animated-explainer；"
+                "审批不通过或无法判断的条目不要出现在 crafts 里)。",
                 "summary, evidence, confidence, tools, crafts")
         except Exception as e:
-            print(f"[pipeline] CCO 工艺决策失败，按默认车间处理：{type(e).__name__}: {e}", flush=True)
+            print(f"[pipeline] CCO 工艺审批失败，相关条目不进流水线：{type(e).__name__}: {e}", flush=True)
         picks = {}
         for m in (data or {}).get("crafts") or []:
             if isinstance(m, dict) and str(m.get("craft") or "") in CRAFT_BY_ID:
                 picks[str(m.get("title") or "")] = m
         for item in items:
-            pick = picks.get(item["title"]) or {}
-            craft = CRAFT_BY_ID.get(str(pick.get("craft") or ""), CRAFT_BY_ID[DEFAULT_CRAFT_ID])
+            pick = picks.get(item["title"])
+            if not pick:
+                # CCO 未审批通过：不分配流水号、不落库、不进流水线
+                item["craft"] = ""
+                item["craftNote"] = "CCO 未审批通过，不进入流水线"
+                self.send("result", "cco", f"pm_{pid}", c.trace,
+                          {"itemId": item["id"], "approved": False,
+                           "reason": item["craftNote"]}, project=pid)
+                self.emit("craft.rejected", c.trace,
+                          {"itemId": item["id"], "title": item["title"],
+                           "projectId": pid, "by": "cco"})
+                continue
+            craft = CRAFT_BY_ID[str(pick["craft"])]
+            # 重审批（同条目重复决策）复用已发流水号，不重复发号
+            serial = item.get("serialNo") or (self.db.alloc_serial() if self.db else "")
             item["craft"] = craft["id"]
-            item["craftNote"] = str(pick.get("reason")
-                                    or "CCO 未明确，按科普类默认进动画讲解车间（01 号）")
+            item["serialNo"] = serial
+            item["craftNote"] = str(pick.get("reason") or "CCO 审批通过")
             if self.db:
                 self.db.upsert_product_craft({
-                "traceId": c.trace, "itemId": item["id"], "projectId": item.get("projectId", pid),
+                "traceId": c.trace, "itemId": item["id"], "serialNo": serial,
+                "projectId": item.get("projectId", pid),
                 "title": item["title"], "workshopNo": craft["no"], "craftId": craft["id"],
                 "craftName": craft["name"], "product": craft["product"],
                 "renderMode": item.get("renderMode", ""), "reason": item["craftNote"],
                 "decidedBy": "cco",
+                "steps": CRAFT_STEPS.get(craft["id"], []),   # CCO 定工艺时定格工序序列
             })
             self.send("result", "cco", f"pm_{pid}", c.trace,
-                      {"itemId": item["id"], "craft": craft["id"],
-                       "workshop": f"{craft['no']}号车间", "reason": item["craftNote"]}, project=pid)
+                      {"itemId": item["id"], "approved": True, "serialNo": serial,
+                       "craft": craft["id"], "workshop": f"{craft['no']}号车间",
+                       "reason": item["craftNote"]}, project=pid)
+            self.emit("craft.approved", c.trace,
+                      {"itemId": item["id"], "title": item["title"], "projectId": pid,
+                       "serialNo": serial, "craft": craft["id"],
+                       "workshopNo": craft["no"], "by": "cco"})
             self.items_emit(c.trace, item)
 
     def _stage_assessment(self, c):
@@ -2991,15 +3098,19 @@ class Kernel:
                 self.items_emit(c.trace, item)
             self._cco_render_mode(c, pid, pid_items)
             self._cco_craft(c, pid, pid_items)
-            vtasks = [{"item": it["title"], "renderMode": it.get("renderMode"),
-                       **t} for it in pid_items
-                      for t in ((it.get("plan") or {}).get("videoTasks") or [])] or \
-                     [{"item": it["title"], "shot": "all",
-                       "task": "按细化分镜逐镜并行制作"} for it in pid_items]
-            # 并行派单：视频耗时长，priority=1 先开工（逐镜细分）；文案同步领取
-            self.send("delegation", pm, f"vd_{pid}", c.trace,
-                      {"task": "分镜已细化，按逐镜子任务并行开工（视频制作耗时较长，立即启动）",
-                       "videoTasks": vtasks[:16]}, project=pid, priority=1)
+            # 只派发 CCO 审批通过（已发流水号）的内容单：审批通过才能进流水线
+            approved = [it for it in pid_items if it.get("craft")]
+            if approved:
+                vtasks = [{"item": it["title"], "renderMode": it.get("renderMode"),
+                           "serialNo": it.get("serialNo", ""),
+                           **t} for it in approved
+                          for t in ((it.get("plan") or {}).get("videoTasks") or [])] or \
+                         [{"item": it["title"], "shot": "all",
+                           "task": "按细化分镜逐镜并行制作"} for it in approved]
+                # 并行派单：视频耗时长，priority=1 先开工（逐镜细分）；文案同步领取
+                self.send("delegation", pm, f"vd_{pid}", c.trace,
+                          {"task": "分镜已细化，按逐镜子任务并行开工（视频制作耗时较长，立即启动）",
+                           "videoTasks": vtasks[:16]}, project=pid, priority=1)
             self.send("delegation", pm, f"cw_{pid}", c.trace,
                       {"task": "按文案要求成稿；收到补素材指令后先查素材库，缺口走 ComfyUI 生成，"
                                "台词/对白走 TTS 出音频"}, project=pid)
@@ -3373,6 +3484,12 @@ class Kernel:
                 self.items_emit(c.trace, item)
                 if verdict:
                     c.passed_items[iid] = item
+                    # 质检审核通过 → 出厂：工厂段流水到此结束
+                    if self.db and item.get("serialNo"):
+                        self.db.mark_shipped(c.trace, iid)
+                        self.emit("factory.shipped", c.trace,
+                                  {"itemId": iid, "title": item["title"], "projectId": pid,
+                                   "serialNo": item.get("serialNo"), "by": "reviewer"})
                 else:
                     failed.append(iid)
             if not failed:
@@ -4554,13 +4671,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "作品档案模块未加载"}, 500)
             with KERNEL.lock:
                 approvals = list(KERNEL.approvals)
-            return self._json(WK.page(parse_qs(urlparse(self.path).query), approvals))
+            idx = KERNEL._factory_works_index()
+            factory, step_status = idx if idx else (None, None)
+            return self._json(WK.page(parse_qs(urlparse(self.path).query), approvals,
+                                      factory=factory, step_status=step_status))
         if path.startswith("/api/works/"):
             if WK is None:
                 return self._json({"ok": False, "error": "作品档案模块未加载"}, 500)
             with KERNEL.lock:
                 approvals = list(KERNEL.approvals)
-            rec = WK.detail(path[len("/api/works/"):], approvals)
+            idx = KERNEL._factory_works_index()
+            factory, step_status = idx if idx else (None, None)
+            rec = WK.detail(path[len("/api/works/"):], approvals,
+                            factory=factory, step_status=step_status)
             return self._json(rec) if rec else self._json({"error": "work not found"}, 404)
         if path == "/api/hotspots":
             return self._json(KERNEL.hotspot_page(urlparse(self.path).query))

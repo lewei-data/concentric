@@ -1268,6 +1268,37 @@ a:hover {
   background: #6b7280;
 }
 
+/* 工厂生命周期状态（作品档案与制片工厂一致） */
+.status-shipped,
+.status-pill.status-shipped {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.status-dot.status-shipped {
+  background: #7c3aed;
+}
+
+.status-completed,
+.status-pill.status-completed {
+  background: #effaf4;
+  color: var(--ok);
+}
+
+.status-dot.status-completed {
+  background: var(--ok);
+}
+
+.status-interrupted,
+.status-pill.status-interrupted {
+  background: #fff7e8;
+  color: #b47207;
+}
+
+.status-dot.status-interrupted {
+  background: #d97706;
+}
+
 .work-cover {
   width: 100%;
   max-height: 220px;
@@ -3900,6 +3931,7 @@ a:hover {
 }
 .fac-run.s-running { background: #eef5ff; color: var(--accent-deep); border-color: #a9c9f7; }
 .fac-run.s-completed { background: #effaf4; color: var(--ok); border-color: #b8e4d1; }
+.fac-run.s-shipped { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .fac-run.s-interrupted, .fac-run.s-stopped { background: #fff7e8; color: #b47207; border-color: #f0d9a6; }
 .fac-run.s-failed { background: #fdf0ef; color: var(--danger); border-color: #f3c9c5; }
 .fac-btn { font-size: 12px; padding: 4px 12px; }

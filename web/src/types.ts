@@ -132,6 +132,21 @@ export type Work = {
   reviewNote: string;
   reviewPass: boolean | null;
   assessment: string;
+  /* 工厂车间对齐字段（product_crafts 为准；无工厂记录的历史档案没有这些字段） */
+  serialNo?: string;
+  workshopNo?: string;
+  craftId?: string;
+  craftName?: string;
+  decidedAt?: string;
+  shippedAt?: string;
+  craftSteps?: Array<{
+    id: string;
+    name: string;
+    omStage: string;
+    opcStage: string;
+    status: string;
+  }>;
+  craftProgress?: string;
   render?: { ok: boolean; video: string; reason: string };
   renderCheck?: { pass: boolean; reasons: string[] };
   hasFinal: boolean;

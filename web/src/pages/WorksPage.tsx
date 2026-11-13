@@ -12,7 +12,8 @@ const PROJECTS = [
   { id: "gou", name: "狗大人" },
   { id: "tongxinyuan", name: "同心圆" },
 ];
-const STATUSES = ["", "制作中", "待评审", "待发布", "已发布", "已归档"];
+/* 状态与制片工厂生命周期一致：出厂=质检审核通过 */
+const STATUSES = ["", "生产中", "已出厂", "已完工", "已中断"];
 const DOC_ORDER = ["topic", "copy", "storyboard", "assessment", "review"];
 
 function shortTime(value?: string) {
@@ -69,7 +70,8 @@ export function WorksPage() {
         <div>
           <h1>作品档案</h1>
           <p className="muted home-sub">
-            按「名称 + 时间」统一管理全部交付物；记录阶段、文件、评审、评估与审批，是公司最重要的资产。
+            以制片工厂过程库为准的作品档案：只收录经 CCO 审批进厂（有流水号）的作品，
+            阶段/状态随工厂生命周期（生产中 → 质检审核通过出厂），每一步进展与车间数据一致。
           </p>
         </div>
         <form
@@ -177,7 +179,10 @@ export function WorksPage() {
                       <td>
                         <div className="title-cell">{item.title}</div>
                         <div className="summary">
-                          {item.stageName}
+                          {item.workshopNo
+                            ? `${item.workshopNo}号车间 · ${item.craftName}`
+                            : item.stageName}
+                          {item.craftProgress ? ` · 工序 ${item.craftProgress}` : ""}
                           {item.hasFinal ? " · 已有最终成片" : item.hasPreview ? " · 已有预览样片" : ""}
                         </div>
                       </td>
@@ -273,6 +278,22 @@ export function WorksPage() {
                   <dd>{work.owner || "-"}</dd>
                   <dt>阶段 / 状态</dt>
                   <dd>{work.stageName} · {work.status}</dd>
+                  {work.serialNo && (
+                    <>
+                      <dt>流水号</dt>
+                      <dd className="mono">{work.serialNo}</dd>
+                      <dt>车间 / 工艺</dt>
+                      <dd>{work.workshopNo}号车间 · {work.craftName}</dd>
+                      <dt>CCO 审批</dt>
+                      <dd>{shortTime(work.decidedAt)}</dd>
+                      {work.shippedAt && (
+                        <>
+                          <dt>出厂时间</dt>
+                          <dd>{shortTime(work.shippedAt)}</dd>
+                        </>
+                      )}
+                    </>
+                  )}
                   <dt>创建时间</dt>
                   <dd>{shortTime(work.createdAt)}</dd>
                   <dt>更新时间</dt>
@@ -283,13 +304,37 @@ export function WorksPage() {
                   <dd className="mono">{work.traceId}</dd>
                   <dt>内容 ID</dt>
                   <dd className="mono">{work.contentId}</dd>
-                  <dt>目录</dt>
-                  <dd>
+                  {work.folder && (
+                    <dt>目录</dt>
+                  )}
+                </dl>
+                {work.folder && (
+                  <p className="muted" style={{ marginTop: "-8px", marginBottom: "12px" }}>
                     <a href={work.folder} target="_blank" rel="noopener noreferrer">
                       打开 Obsidian 目录 ↗
                     </a>
-                  </dd>
-                </dl>
+                  </p>
+                )}
+
+                {work.craftSteps && work.craftSteps.length > 0 && (
+                  <>
+                    <h4 className="section-title">
+                      工艺工序{work.craftProgress ? `（${work.craftProgress} 过站）` : ""}
+                    </h4>
+                    <div className="work-files">
+                      {work.craftSteps.map((cs, idx) => (
+                        <span
+                          key={`${cs.id}-${idx}`}
+                          className={`work-file${cs.status === "pending" ? " is-missing" : ""}`}
+                          title={cs.status}
+                        >
+                          <span>{cs.status === "done" ? "✓" : cs.status === "pending" ? "×" : "…"}</span>
+                          {cs.name}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 <h4 className="section-title">处理流程</h4>
                 <ol className="work-timeline">

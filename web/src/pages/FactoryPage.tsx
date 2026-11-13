@@ -10,11 +10,15 @@ interface Workshop {
   product: string;
   desc: string;
 }
-interface StageAxis {
+/* 工艺步骤：每个工艺的工序序列与名称不同，CCO 定工艺时定格（快照存 product_crafts.steps） */
+interface CraftStep {
   id: string;
   name: string;
-  kind: string;
   omStage: string;
+  opcStage: string;
+  status: string;
+  startedAt: string;
+  finishedAt: string;
 }
 interface StepView {
   trace_id?: string;
@@ -29,6 +33,7 @@ interface StepView {
 interface Product {
   itemId: string;
   traceId: string;
+  serialNo: string;
   projectId: string;
   title: string;
   workshopNo: string;
@@ -39,16 +44,14 @@ interface Product {
   reason: string;
   decidedBy: string;
   decidedAt: string;
+  shippedAt: string;
+  craftSteps: CraftStep[];
   run: { status: string; stage: string; stageIndex: number; updatedAt: string; closedAt: string };
   steps: StepView[];
 }
-
-/* CCO 在「制作评估」环节才定工艺；之前由 pipeline_runs 兜底展示，craftId 为空 */
-const craftDecided = (p: Product) => Boolean(p.craftId);
 interface FactoryData {
   ok: boolean;
   workshops: Workshop[];
-  stages: StageAxis[];
   products: Product[];
 }
 interface StepEvent {
@@ -64,12 +67,6 @@ interface StepDetail {
   error?: string;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  produce: "加工",
-  gate: "质检",
-  approval: "审批",
-  terminal: "收口",
-};
 const STATUS_LABEL: Record<string, string> = {
   running: "生产中",
   completed: "已完工",
@@ -127,13 +124,14 @@ export function FactoryPage() {
   }, [load]);
 
   const workshops = data?.workshops ?? [];
-  const stages = useMemo(() => data?.stages ?? [], [data]);
   const products = data?.products ?? [];
   const shownProducts = useMemo(
     () => (selectedNo ? products.filter((p) => p.workshopNo === selectedNo) : products),
     [products, selectedNo],
   );
-  const runningCount = products.filter((p) => p.run.status === "running").length;
+  /* 工厂生命周期：CCO 审批进厂 → 加工 → 质检审核通过出厂（流水结束） */
+  const producingCount = products.filter((p) => !p.shippedAt).length;
+  const shippedCount = products.filter((p) => !!p.shippedAt).length;
   const selectedWorkshop = workshops.find((w) => w.no === selectedNo);
 
   const openStep = (traceId: string, stageId: string, name: string) => {
@@ -167,20 +165,14 @@ export function FactoryPage() {
     }
   };
 
-  // 横向轴进度：最后一个非 pending 工位占比
+  // 横向工艺轴：按产品自己的工艺步骤序列（CCO 定工艺时定格）计算进度
   const axisProgress = (p: Product) => {
+    const steps = p.craftSteps ?? [];
     let last = -1;
-    p.steps.forEach((s) => {
-      const idx = stages.findIndex((st) => st.id === s.stage_id);
-      if (idx > last) last = idx;
+    steps.forEach((s, idx) => {
+      if (s.status && s.status !== "pending" && idx > last) last = idx;
     });
-    return stages.length ? Math.max(0, ((last + 1) / stages.length) * 100) : 0;
-  };
-
-  const nodeStatus = (p: Product, stageId: string): string => {
-    const step = p.steps.find((s) => s.stage_id === stageId);
-    if (step) return step.status;
-    return "pending";
+    return steps.length ? Math.max(0, ((last + 1) / steps.length) * 100) : 0;
   };
 
   return (
@@ -189,8 +181,10 @@ export function FactoryPage() {
         <div>
           <h1>制片工厂</h1>
           <p className="muted home-sub">
-            全厂 13 个车间对应 OpenMontage 的 13 类工艺；每个车间可并行加工多条流水线（产品），
-            工艺由 CCO 确定并记录到过程库。上方实时监控各流水线的加工过程，点击环节查看详情。
+            全厂 13 个车间对应 OpenMontage 的 13 类工艺；每个工艺有各自的工序序列与名称
+            （CCO 审批定工艺时即定格）。流水线生命周期：内容单经 CCO 审批通过发放流水号
+            （WO-YYYYMMDD-NNN）进厂，按所属工艺的工序逐站加工，质检审核通过即出厂、流水结束；
+            进厂前的选题调度与出厂后的发布/归档由 hermes 编排，不属工厂工序。
           </p>
         </div>
         <div className="fac-meta">
@@ -198,7 +192,7 @@ export function FactoryPage() {
             <i aria-hidden="true" />实时监控
           </span>
           <span className="muted">
-            在制 {runningCount} · 已完工 {products.filter((p) => p.run.status === "completed").length}
+            在制 {producingCount} · 已出厂 {shippedCount}
           </span>
         </div>
       </div>
@@ -237,24 +231,21 @@ export function FactoryPage() {
         ) : (
           shownProducts.map((p) => {
             const w = workshops.find((x) => x.no === p.workshopNo);
-            const decided = craftDecided(p);
             return (
               <div key={p.itemId || p.traceId} className="fac-product">
                 <div className="fac-product-head">
                   <div className="fac-product-title">
-                    <b>{p.title}</b>
-                    <span className={`fac-run s-${p.run.status}`}>{RUN_LABEL[p.run.status] || p.run.status}</span>
+                    <b>{p.serialNo ? `${p.serialNo} · ${p.title}` : p.title}</b>
+                    <span className={`fac-run ${p.shippedAt ? "s-shipped" : `s-${p.run.status}`}`}>
+                      {p.shippedAt ? "已出厂" : (RUN_LABEL[p.run.status] || p.run.status)}
+                    </span>
                   </div>
                   <div className="fac-product-meta muted">
-                    {decided
-                      ? `${w ? `${w.no}号车间` : p.workshopNo} · 工艺：${p.craftName} · 出片模式：${p.renderMode || "-"}`
-                      : "待 CCO 定工艺（制作评估环节参考 13 类工艺选定后进车间）"}
-                    {decided && ` · 决策：${p.decidedBy} · ${shortTime(p.decidedAt)}`}
-                    · trace {p.traceId}
+                    {w ? `${w.no}号车间` : p.workshopNo} · 工艺：{p.craftName} · 出片模式：{p.renderMode || "-"}
+                    · 决策：{p.decidedBy} · {shortTime(p.decidedAt)} · trace {p.traceId}
+                    {p.shippedAt && ` · 出厂：${shortTime(p.shippedAt)}`}
                   </div>
-                  {decided && (
-                    <div className="fac-product-reason" title={p.reason}>CCO 决策依据：{p.reason}</div>
-                  )}
+                  <div className="fac-product-reason" title={p.reason}>CCO 决策依据：{p.reason}</div>
                   <div className="fac-product-ctl">
                     {isBoss && p.run.status !== "completed" && p.run.stage && (
                       <button
@@ -279,16 +270,15 @@ export function FactoryPage() {
                     />
                   </div>
                   <div className="fac-axis">
-                    {stages.map((st, idx) => {
-                      const status = nodeStatus(p, st.id);
-                      const step = p.steps.find((s) => s.stage_id === st.id);
+                    {(p.craftSteps ?? []).map((cs, idx) => {
+                      const status = cs.status || "pending";
                       return (
                         <button
-                          key={st.id}
+                          key={`${cs.id}-${idx}`}
                           type="button"
                           className={`fac-node n-${status}${status === "running" ? " pulse" : ""}`}
-                          title={`${st.name} · ${STATUS_LABEL[status] || status}`}
-                          onClick={() => openStep(p.traceId, st.id, st.name)}
+                          title={`${cs.name} · ${STATUS_LABEL[status] || status}`}
+                          onClick={() => openStep(p.traceId, cs.opcStage, cs.name)}
                         >
                           <span className="fac-node-icon" aria-hidden="true">
                             {status === "done" ? (
@@ -307,9 +297,8 @@ export function FactoryPage() {
                               <span className="fac-node-num">{idx + 1}</span>
                             )}
                           </span>
-                          <span className="fac-node-name">{st.name}</span>
-                          <span className="fac-node-kind">{KIND_LABEL[st.kind] || st.kind}</span>
-                          {step?.om_stage && <span className="fac-node-om">OM·{step.om_stage}</span>}
+                          <span className="fac-node-name">{cs.name}</span>
+                          {cs.omStage && <span className="fac-node-om">OM·{cs.omStage}</span>}
                         </button>
                       );
                     })}
@@ -333,8 +322,8 @@ export function FactoryPage() {
         </div>
         {workshops.map((w) => {
           const items = products.filter((p) => p.workshopNo === w.no);
-          const busy = items.some((p) => p.run.status === "running");
-          const done = items.filter((p) => p.run.status === "completed").length;
+          const busy = items.some((p) => !p.shippedAt && p.run.status === "running");
+          const done = items.filter((p) => !!p.shippedAt).length;
           const isActive = selectedNo === w.no;
           return (
             <button
@@ -351,7 +340,9 @@ export function FactoryPage() {
               <span className="fac-row-desc">{w.desc}</span>
               <span className="fac-row-count">
                 <i className={`fac-dot${busy ? " blink" : ""}`} aria-hidden="true" />
-                {items.length ? `${items.filter((p) => p.run.status === "running").length} 在制 · ${done} 完工` : "空闲"}
+                {items.length
+                  ? `${items.filter((p) => !p.shippedAt).length} 在制 · ${done} 已出厂`
+                  : "空闲"}
               </span>
               <span className="fac-row-state">
                 <span className={`fac-gear${busy ? " spin" : ""}`} aria-hidden="true">
@@ -362,7 +353,7 @@ export function FactoryPage() {
                     />
                   </svg>
                 </span>
-                {busy ? "加工中" : items.length ? "已完工" : "空闲"}
+                {busy ? "加工中" : items.length ? "已出厂" : "空闲"}
               </span>
             </button>
           );
