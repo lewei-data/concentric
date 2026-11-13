@@ -153,6 +153,7 @@ class TTSClient:
         self.proc = None
         self.rid = 0
         self.errlog = None
+        self.lock = threading.Lock()      # 并行出片时多条目共享同一 MCP-TTS 进程
 
     def _start(self):
         os.makedirs(ROOT, exist_ok=True)
@@ -163,29 +164,30 @@ class TTSClient:
         self._call("initialize", {"protocolVersion": "2025-06-18"}, timeout=30)
 
     def _call(self, method, params, timeout=TTS_TIMEOUT):
-        if self.proc is None or self.proc.poll() is not None:
-            self._start()
-        self.rid += 1
-        rid = self.rid
-        self.proc.stdin.write(json.dumps(
-            {"jsonrpc": "2.0", "id": rid, "method": method, "params": params},
-            ensure_ascii=False) + "\n")
-        self.proc.stdin.flush()
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            line = self.proc.stdout.readline()
-            if not line:
-                raise RuntimeError("MCP-TTS 进程已退出")
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if msg.get("id") != rid:
-                continue
-            if "error" in msg:
-                raise RuntimeError(f"MCP-TTS 错误：{msg['error'].get('message')}")
-            return msg.get("result") or {}
-        raise TimeoutError(f"MCP-TTS {method} 超时（{timeout}s）")
+        with self.lock:
+            if self.proc is None or self.proc.poll() is not None:
+                self._start()
+            self.rid += 1
+            rid = self.rid
+            self.proc.stdin.write(json.dumps(
+                {"jsonrpc": "2.0", "id": rid, "method": method, "params": params},
+                ensure_ascii=False) + "\n")
+            self.proc.stdin.flush()
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                line = self.proc.stdout.readline()
+                if not line:
+                    raise RuntimeError("MCP-TTS 进程已退出")
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("id") != rid:
+                    continue
+                if "error" in msg:
+                    raise RuntimeError(f"MCP-TTS 错误：{msg['error'].get('message')}")
+                return msg.get("result") or {}
+            raise TimeoutError(f"MCP-TTS {method} 超时（{timeout}s）")
 
     def synthesize(self, text, out_dir, stem, speed=None):
         res = self._call("tools/call", {"name": "tts_synthesize",

@@ -290,6 +290,13 @@ except Exception as _om_err:
     OMR = None
     print(f"[boot] 真实渲染不可用：{type(_om_err).__name__}: {_om_err}", flush=True)
 
+# 文案岗补素材链路：素材库检索 → ComfyUI 生成 → TTS 音频（失败不影响主流程）
+try:
+    import asset_fill
+except Exception as _af_err:
+    asset_fill = None
+    print(f"[boot] 补素材模块不可用：{type(_af_err).__name__}: {_af_err}", flush=True)
+
 # CCO 创意灵感 / CTO 运维监控：只读聚合，失败不影响主服务其它接口
 try:
     import insights
@@ -2208,12 +2215,25 @@ class Kernel:
         items = raw if isinstance(raw, list) else []
         src = items[idx] if idx < len(items) and isinstance(items[idx], dict) else {}
         tts = src.get("tts") if isinstance(src.get("tts"), dict) else {}
+        shots = []
+        for s in (src.get("storyboardShots") or [])[:8]:
+            if isinstance(s, dict) and (s.get("画面") or s.get("scene")):
+                shots.append({"no": _to_int(s.get("no"), len(shots) + 1),
+                              "画面": str(s.get("画面") or s.get("scene"))[:120],
+                              "台词": str(s.get("台词") or s.get("line") or "")[:120],
+                              "秒": _to_int(s.get("秒") or s.get("sec"), 6),
+                              "素材": str(s.get("素材") or s.get("asset") or "")[:60]})
+        vtasks = [{"shot": str(t.get("shot") or i + 1),
+                   "task": str(t.get("task") or "")[:120]}
+                  for i, t in list(enumerate(src.get("videoTasks") or []))[:12]
+                  if isinstance(t, dict)]
         return {"durationSec": _to_int(src.get("durationSec"), topic.get("durationSec", 45)),
                 "tts": {"voice": str(tts.get("voice") or "zh-CN-XiaoxiaoNeural")[:40],
                         "style": str(tts.get("style") or "纪录片口播")[:40]},
                 "materials": [str(x)[:60] for x in (src.get("materials") or [])][:8],
                 "copyBrief": str(src.get("copyBrief") or "按定稿选题写口播稿")[:200],
-                "storyboardNotes": str(src.get("storyboardNotes") or "4-6 镜，首镜 3 秒抓人")[:300]}
+                "storyboardNotes": str(src.get("storyboardNotes") or "4-6 镜，首镜 3 秒抓人")[:300],
+                "storyboardShots": shots, "videoTasks": vtasks}
 
     def _review_map(self, data, ids):
         """样片评审：三票制；评审结果缺失按未通过处理（基础设施故障不得放行）。"""
@@ -2716,18 +2736,55 @@ class Kernel:
         self.guard_budget(c.trace)   # CTO 成本熔断：审批通过后、进入制作前再核一次
 
 
+    RENDER_MODES = ("remotion", "full_video", "voice_video")
+
+    def _cco_render_mode(self, c, pid, items):
+        """CCO 确定短视频架构（出片模式）：普通科普类 → remotion（Remotion 最终合成，
+        精确控制字幕与语音）；休闲娱乐类 → full_video（全视频制作）或 voice_video
+        （语音+视频），按各自创意剧本的适配度定，未明确时回落科普类默认。"""
+        data = {}
+        try:
+            data, meta = self.call_agent(
+                "cco", f"为 {PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条确定短视频出片架构："
+                "普通科普类用 remotion（Remotion 最终合成，字幕/语音精确可控）；"
+                "休闲娱乐类在 full_video（全视频制作）与 voice_video（语音+视频）里按创意剧本择优。",
+                json.dumps([{"title": i["title"], "angle": i.get("angle", "")} for i in items],
+                           ensure_ascii=False),
+                "额外 JSON 字段：modes(数组，每条 {title,mode,reason}；"
+                "mode ∈ remotion/full_video/voice_video)。",
+                "summary, evidence, confidence, tools, modes")
+        except Exception as e:
+            print(f"[pipeline] CCO 出片模式决策失败，按默认处理：{type(e).__name__}: {e}", flush=True)
+        picks = {}
+        for m in (data or {}).get("modes") or []:
+            if isinstance(m, dict) and m.get("mode") in self.RENDER_MODES:
+                picks[str(m.get("title") or "")] = m
+        for item in items:
+            pick = picks.get(item["title"]) or {}
+            item["renderMode"] = pick.get("mode", "remotion")
+            item["renderModeNote"] = str(pick.get("reason")
+                                         or "CCO 未明确，按科普类默认 Remotion 合成（字幕/语音精确可控）")
+            self.send("result", "cco", f"pm_{pid}", c.trace,
+                      {"itemId": item["id"], "renderMode": item["renderMode"],
+                       "reason": item["renderModeNote"]}, project=pid)
+            self.items_emit(c.trace, item)
+
     def _stage_assessment(self, c):
-        """5. PM 组织本项目组出《制作评估报告》：文案要求、分镜、时长、配音/TTS、素材"""
-        # 5. PM 组织本项目组出《制作评估报告》：文案要求、分镜、时长、配音/TTS、素材
+        """5. PM 细化分镜脚本并按并行原则拆分派单；CCO 定出片模式；scout 补素材缺口"""
+        # 5. PM 组织本项目组出《制作评估报告》：把分镜补充完善（逐镜 画面/台词/时长/素材），
+        #    并按并行原则拆任务——视频制作耗时较长，逐镜子任务先行开工，文案岗同步领取成稿与补素材指令。
         jobs = {}
         for pid, pm in c.pms:
             jobs[pid] = HERMES.pool.submit(
                 self.call_agent, pm,
-                f"为 {PROJECTS[pid]['name']} 的 2 条定稿选题组织本项目组：给出文案要求、分镜剧本要点、"
-                "时长评估、配音/TTS 方案与素材清单，形成《制作评估报告》，并列出素材缺口。",
+                f"为 {PROJECTS[pid]['name']} 的 2 条定稿选题细化制作方案：把分镜脚本补充完善到逐镜可执行"
+                "（画面/台词/时长/所需素材），并按并行原则拆分任务——视频制作拆成逐镜子任务先开工，"
+                "文案岗同步领取成稿与补素材指令。",
                 json.dumps(c.final[pid], ensure_ascii=False),
                 "额外 JSON 字段：assessment({items:[{title,durationSec,tts:{voice,style},"
-                "materials:[],copyBrief,storyboardNotes}], summary})；assetGaps(数组，每条 {item, why})。",
+                "copyBrief,storyboardNotes,"
+                "storyboardShots:[{no,画面,台词,秒,素材}],videoTasks:[{shot,task}]}], summary})；"
+                "assetGaps(数组，每条 {item, why})。",
                 "summary, evidence, confidence, tools, assessment, assetGaps")
         gap_jobs = {}
         for pid, pm in c.pms:
@@ -2741,6 +2798,19 @@ class Kernel:
                                       "risks": data.get("risks", []),
                                       "assetGaps": data.get("assetGaps", [])}
                 self.items_emit(c.trace, item)
+            self._cco_render_mode(c, pid, pid_items)
+            vtasks = [{"item": it["title"], "renderMode": it.get("renderMode"),
+                       **t} for it in pid_items
+                      for t in ((it.get("plan") or {}).get("videoTasks") or [])] or \
+                     [{"item": it["title"], "shot": "all",
+                       "task": "按细化分镜逐镜并行制作"} for it in pid_items]
+            # 并行派单：视频耗时长，priority=1 先开工（逐镜细分）；文案同步领取
+            self.send("delegation", pm, f"vd_{pid}", c.trace,
+                      {"task": "分镜已细化，按逐镜子任务并行开工（视频制作耗时较长，立即启动）",
+                       "videoTasks": vtasks[:16]}, project=pid, priority=1)
+            self.send("delegation", pm, f"cw_{pid}", c.trace,
+                      {"task": "按文案要求成稿；收到补素材指令后先查素材库，缺口走 ComfyUI 生成，"
+                               "台词/对白走 TTS 出音频"}, project=pid)
             self.send("result", pm, "cco", c.trace,
                       {"result": data, "assessment": data.get("assessment"), "engine": meta["engine"]}, project=pid)
             self.send("result", pm, "cto", c.trace,
@@ -2766,7 +2836,7 @@ class Kernel:
 
 
     def _stage_copy(self, c):
-        """6. 文案成稿（6 个真实调用）"""
+        """6. 文案成稿 + 补素材链路（素材库 → ComfyUI 生成 → TTS 音频），两者并行"""
         # 6. 文案成稿（6 个真实调用）
         jobs = {}
         for iid, item in c.items.items():
@@ -2780,7 +2850,12 @@ class Kernel:
                 "额外 JSON 字段：copy(成稿文案≤80字)。",
                 "summary, evidence, confidence, tools, copy")
             self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
-                      {"task": f"按评估报告写《{item['title']}》成稿"}, project=pid)
+                      {"task": f"按评估报告写《{item['title']}》成稿；收到补素材指令：先查素材库，"
+                               f"缺口走 ComfyUI 生成，台词/对白走 TTS"}, project=pid)
+        # 补素材与成稿并行推进：素材库检索/ComfyUI 出图/TTS 都有 IO 等待，不占文案的推理时间
+        fill_jobs = {iid: HERMES.pool.submit(self._fill_materials, c.trace, item,
+                                             item["projectId"])
+                     for iid, item in c.items.items()}
         for iid, item in c.items.items():
             pid = item["projectId"]
             data, meta = jobs[iid].result()
@@ -2794,6 +2869,77 @@ class Kernel:
                       {"result": data, "itemId": iid, "engine": meta["engine"],
                        "latencyMs": meta.get("latencyMs", 0)}, project=pid)
             self.items_emit(c.trace, item)
+        for job in fill_jobs.values():
+            try:
+                job.result()
+            except Exception as e:
+                print(f"[materials] 补素材任务异常：{type(e).__name__}: {e}", flush=True)
+
+    def _fill_materials(self, trace, item, pid):
+        """文案岗补素材：逐缺口先查已有资料库，未命中的走 ComfyUI 文生图尽快补齐；
+        台词/对白同步调用 TTS 出音频。结论回传 PM，不阻断主流程。"""
+        if not asset_fill:
+            return
+        plan = item.get("plan") or {}
+        out_dir = os.path.join(BASE_DIR, ".cache", "materials", item["id"])
+        # 1) 汇总素材缺口：评估报告的 assetGaps + 逐镜细化里的素材需求
+        gaps = [dict(g) for g in (item.get("assessment") or {}).get("assetGaps") or []
+                if isinstance(g, dict)]
+        for s in plan.get("storyboardShots") or []:
+            if s.get("素材"):
+                gaps.append({"item": item["title"], "why": s["素材"]})
+        # 2) 先查已有资料库（逐缺口检索，命中即复用）
+        lib_hits, missing = [], []
+        for g in gaps[:6]:
+            kws = [k for k in re.split(r"[，,、;；\s（）()：:]+", str(g.get("why") or ""))
+                   if len(k) >= 2]
+            hits = []
+            if kws:
+                try:
+                    hits = asset_fill.search_library(MATERIALS_FILE, kws, limit=2)
+                except Exception as e:
+                    print(f"[materials] {item['id']} 素材库检索失败："
+                          f"{type(e).__name__}: {e}", flush=True)
+            lib_hits += hits
+            if not hits:
+                missing.append(g)
+        seen = set()
+        item["materials"] = {"library": [h for h in lib_hits
+                                         if not (h["url"] in seen or seen.add(h["url"]))],
+                             "generated": [], "voice": [], "gaps": gaps[:6]}
+        self.items_emit(trace, item)
+        # 3) 库里没有的 → ComfyUI 文生图，尽快补齐（逐缺口串行提交，失败记录不阻断）
+        for i, g in enumerate(missing[:3]):
+            try:
+                path = asset_fill.gen_image(
+                    f"{g.get('why') or g.get('item') or item['title']}，"
+                    f"{PROJECTS[pid]['name']} 风格竖版配图，{TONE.get(pid, '')}",
+                    os.path.join(out_dir, f"gap{i + 1}.png"))
+                item["materials"]["generated"].append({"why": g.get("why"), "path": path})
+            except Exception as e:
+                item["materials"]["generated"].append(
+                    {"why": g.get("why"), "error": f"{type(e).__name__}: {str(e)[:120]}"})
+                print(f"[materials] {item['id']} ComfyUI 补图失败：{e}", flush=True)
+        # 4) 台词/对白 → TTS 音频（旁白合成仍在 render 阶段，这里补齐对话类语音资产）
+        lines = [s["台词"] for s in plan.get("storyboardShots") or [] if s.get("台词")]
+        if not lines and item.get("copy"):
+            lines = [str(item["copy"])]
+        for i, line in enumerate(lines[:4]):
+            try:
+                audio = asset_fill.gen_tts(line, out_dir, f"line{i + 1}")
+                item["materials"]["voice"].append({"text": line, "audioPath": audio})
+            except Exception as e:
+                item["materials"]["voice"].append(
+                    {"text": line, "error": f"{type(e).__name__}: {str(e)[:120]}"})
+                print(f"[materials] {item['id']} TTS 台词音频失败：{e}", flush=True)
+        self.items_emit(trace, item)
+        n_gen = len([g for g in item["materials"]["generated"] if g.get("path")])
+        n_voice = len([v for v in item["materials"]["voice"] if v.get("audioPath")])
+        self.send("result", f"cw_{pid}", f"pm_{pid}", trace,
+                  {"itemId": item["id"], "补素材结论":
+                   f"素材库命中 {len(item['materials']['library'])}，"
+                   f"ComfyUI 补齐 {n_gen}/{len(missing[:3])}，TTS 音频 {n_voice} 段"},
+                  project=pid)
 
 
     def _stage_sample(self, c):
@@ -2805,9 +2951,12 @@ class Kernel:
             plan = item.get("plan") or {}
             jobs[iid] = HERMES.pool.submit(
                 self.call_agent, f"vd_{pid}",
-                f"按《制作评估报告》为《{item['title']}》制作样片方案：逐镜剧本、封面、配音/TTS。",
+                f"按《制作评估报告》与 PM 细化分镜为《{item['title']}》出样片方案："
+                f"出片模式 {item.get('renderMode', 'remotion')}（{item.get('renderModeNote', '')}），"
+                "逐镜剧本、封面、配音/TTS。",
                 f"项目：{PROJECTS[pid]['name']}；风格：{TONE[pid]}；时长：{plan.get('durationSec', 45)}s；"
                 f"配音：{plan.get('tts', {})}；文案：{item.get('copy', '')}；"
+                f"细化分镜：{json.dumps(plan.get('storyboardShots') or [], ensure_ascii=False)}；"
                 f"分镜要点：{plan.get('storyboardNotes', '')}",
                 "额外 JSON 字段：shots(数字), storyboard(4-6 镜，每镜 画面/台词，可加 插图:1-2 个中文物件名，"
                 "如 相纸/药水盘/放大镜，≤220字), cover(≤20字), sample(样片说明≤80字)。",
@@ -2833,44 +2982,53 @@ class Kernel:
 
 
     def _stage_render(self, c):
-        """7.5 真实出片：MCP-TTS 旁白 + OpenMontage 渲染 + 画面验收门"""
-        # 7.5 真实出片：MCP-TTS 旁白 + OpenMontage 渲染 + 画面验收门
+        """7.5 真实出片：MCP-TTS 旁白 + OpenMontage 渲染 + 画面验收门（多条目并行）"""
+        # 视频制作是流水线耗时大头：多条目并行渲染（逐条内部仍按镜串行，
+        # 共享的 MCP-TTS 进程在 om_render.TTSClient 内部有锁，不会串流）。
         c.render_blocked = set()
-        for idx, (iid, item) in enumerate(c.items.items(), 1):
-            pid = item["projectId"]
-            self.send("biz.event", f"vd_{pid}", "ceo", c.trace,
-                      {"text": f"真实出片 {idx}/{len(c.items)}：《{item['title']}》", "step": "render"},
-                      project=pid, priority=2)
-            if os.environ.get("OPC_SKIP_RENDER") == "1":
-                files = item.get("files") or {}
-                item["renderCheck"] = {"pass": True, "reasons": ["测试模式：跳过真实渲染"]}
-                item["assets"] = [files.get("video", ""), files.get("cover", "")]
-                item["renderSkipped"] = True
-            elif not OMR:
-                item["renderCheck"] = {"pass": False, "reasons": ["渲染模块不可用"]}
+        from concurrent.futures import ThreadPoolExecutor
+        total = len(c.items)
+        args = [(idx, total, iid, item) for idx, (iid, item) in enumerate(c.items.items(), 1)]
+        workers = min(4, total) if total > 1 and os.environ.get("OPC_SKIP_RENDER") != "1" else 1
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for _ in pool.map(lambda a: self._render_one(c, *a), args):
+                pass
+
+    def _render_one(self, c, idx, total, iid, item):
+        pid = item["projectId"]
+        self.send("biz.event", f"vd_{pid}", "ceo", c.trace,
+                  {"text": f"真实出片 {idx}/{total}：《{item['title']}》", "step": "render"},
+                  project=pid, priority=2)
+        if os.environ.get("OPC_SKIP_RENDER") == "1":
+            files = item.get("files") or {}
+            item["renderCheck"] = {"pass": True, "reasons": ["测试模式：跳过真实渲染"]}
+            item["assets"] = [files.get("video", ""), files.get("cover", "")]
+            item["renderSkipped"] = True
+        elif not OMR:
+            item["renderCheck"] = {"pass": False, "reasons": ["渲染模块不可用"]}
+        else:
+            res = OMR.produce(item, PROJECTS[pid], TONE.get(pid, ""),
+                              DELIVERY.get(pid) or DELIVERY["_default"])
+            item["render"] = {k: v for k, v in res.items() if k != "check"}
+            item["renderCheck"] = res.get("check") or {
+                "pass": False, "reasons": [res.get("reason") or "未知渲染错误"]}
+            if res.get("ok"):
+                item["assets"] = [res["videoUrl"], res["coverUrl"]]
             else:
-                res = OMR.produce(item, PROJECTS[pid], TONE.get(pid, ""),
-                                  DELIVERY.get(pid) or DELIVERY["_default"])
-                item["render"] = {k: v for k, v in res.items() if k != "check"}
-                item["renderCheck"] = res.get("check") or {
-                    "pass": False, "reasons": [res.get("reason") or "未知渲染错误"]}
-                if res.get("ok"):
-                    item["assets"] = [res["videoUrl"], res["coverUrl"]]
-                else:
-                    item["assets"] = []
-                    item["renderError"] = res.get("reason", "")
-            if not item["renderCheck"].get("pass"):
-                c.render_blocked.add(iid)
-                item["blockedBy"] = "render-gate"
-                reason = item.get("renderError") or "；".join(
-                    (item["renderCheck"].get("reasons") or [])[:2])
-                self.send("escalation", f"vd_{pid}", "owner", c.trace,
-                          {"text": f"《{item['title']}》样片未过画面验收：{reason}"},
-                          project=pid, priority=2)
-            self.emit("render-gate", c.trace, {"itemId": iid,
-                                            "pass": item["renderCheck"].get("pass"),
-                                            "check": item["renderCheck"]})
-            self.items_emit(c.trace, item)
+                item["assets"] = []
+                item["renderError"] = res.get("reason", "")
+        if not item["renderCheck"].get("pass"):
+            c.render_blocked.add(iid)
+            item["blockedBy"] = "render-gate"
+            reason = item.get("renderError") or "；".join(
+                (item["renderCheck"].get("reasons") or [])[:2])
+            self.send("escalation", f"vd_{pid}", "owner", c.trace,
+                      {"text": f"《{item['title']}》样片未过画面验收：{reason}"},
+                      project=pid, priority=2)
+        self.emit("render-gate", c.trace, {"itemId": iid,
+                                        "pass": item["renderCheck"].get("pass"),
+                                        "check": item["renderCheck"]})
+        self.items_emit(c.trace, item)
 
 
     def _stage_sample_review(self, c):

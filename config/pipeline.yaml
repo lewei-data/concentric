@@ -56,27 +56,28 @@ stages:
     kind: produce
     item_stage: topic
     om_stage: proposal
-    description: PM 出《制作评估报告》，scout 补素材缺口
+    description: PM 细化分镜（逐镜 画面/台词/时长/素材）并按并行原则拆分派单；CCO 确定出片模式（科普类 remotion 合成 / 娱乐类 全视频 或 语音+视频）；scout 补素材缺口
 
   - id: copy
     name: 文案成稿
     kind: produce
     item_stage: copy
     om_stage: script
+    description: 文案成稿，与补素材并行：先查素材库，缺口走 ComfyUI 生成，台词/对白走 TTS 出音频
 
   - id: sample
     name: 样片方案
     kind: produce
     item_stage: sample
     om_stage: scene_plan
-    description: 逐镜剧本、封面、配音/TTS 方案
+    description: 按 CCO 出片模式与细化分镜逐镜并行制作：逐镜剧本、封面、配音/TTS 方案
 
   - id: render
     name: 真实出片
     kind: gate
     item_stage: sample
     om_stage: assets
-    description: MCP-TTS 旁白 + OpenMontage/Remotion 渲染 + 画面验收门
+    description: MCP-TTS 旁白 + OpenMontage/Remotion 渲染 + 画面验收门（多条目并行渲染）
 
   - id: sample_review
     name: 样片三方评审
