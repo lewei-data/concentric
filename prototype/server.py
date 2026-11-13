@@ -81,17 +81,17 @@ LLM_DEFAULTS = [
         "note": "OpenCode Go · GLM-5.3-Flash（多模态/1M 上下文）",
     },
     {
-        # 本地推理通道（llama.cpp，OpenAI 兼容）：无时间要求任务的优先通道，纯 CPU 约 4.4 tok/s
+        # 本地推理通道（LiteLLM 网关，OpenAI 兼容）：无时间要求任务的优先通道
         "id": "qwen38-local",
-        "name": "qwen3.8-flash-next",
-        "url": os.environ.get("OPC_LLM_LOCAL_BASE_URL", "http://192.168.21.208:8080/v1"),
+        "name": "local-qwen3.8-flash",
+        "url": os.environ.get("OPC_LLM_LOCAL_BASE_URL", "http://192.168.31.208/llm/v1"),
         "protocol": "openai-chat",
         "totalTokens": int(os.environ.get("OPC_LLM_LOCAL_TOTAL_TOKENS", "0")),   # 本地推理，0=不限额
         "alias": "qwen38",
         "priority": 50,
         "provider": "custom",
-        "apiKey": "sk-local",
-        "note": "本地推理通道（llama.cpp @ 192.168.21.208:8080，慢速，适合无实时性要求任务）",
+        "apiKey": "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a",
+        "note": "本地推理通道（LiteLLM @ 192.168.31.208/llm，2026-11-13 自 llama.cpp 直连迁移）",
     },
 ]
 # CTO 成本护栏：单轮 trace 累计 / 单次调用 token 上限；金额阈值默认关闭（0=不启用）

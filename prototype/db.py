@@ -407,8 +407,10 @@ class Store:
                                    "WHERE id='qwen38-local' AND priority=100")
                 self._conn.execute("UPDATE llm_models SET provider='opencode-go' "
                                    "WHERE id='hermes-default' AND (provider IS NULL OR provider='')")
-                self._conn.execute("UPDATE llm_models SET provider='custom', api_key='sk-local' "
-                                   "WHERE id='qwen38-local' AND (provider IS NULL OR provider='')")
+                self._conn.execute(
+                    "UPDATE llm_models SET provider='custom', "
+                    "api_key='sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a' "
+                    "WHERE id='qwen38-local' AND (provider IS NULL OR provider='')")
             row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (1)")
