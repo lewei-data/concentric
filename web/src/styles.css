@@ -3782,3 +3782,171 @@ a:hover {
   .node-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ops-nodes-meta { gap: 10px; }
 }
+
+/* ============ 制片工厂（车间监控/控制） ============ */
+.fac-page .fac-meta { display: flex; align-items: center; gap: 14px; }
+.fac-error {
+  margin: 10px 0; padding: 10px 14px; border-radius: var(--radius-sm);
+  background: #fdf0ef; color: var(--danger); border: 1px solid #f3c9c5; font-size: 13px;
+}
+.fac-note {
+  margin: 10px 0; padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--accent-deep); border: 1px solid #cfddff; font-size: 13px;
+}
+
+.fac-board {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px; margin: 6px 0 18px;
+}
+.fac-card {
+  position: relative; display: flex; flex-direction: column; gap: 4px; text-align: left;
+  padding: 14px 16px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--surface); cursor: pointer; font: inherit; color: inherit;
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease), border-color 0.16s;
+}
+.fac-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-1); }
+.fac-card.is-active { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(58, 111, 242, 0.14); }
+.fac-card.is-busy { border-color: #b7d6f9; background: linear-gradient(160deg, #f5faff, var(--surface) 55%); }
+.fac-card.is-done { opacity: 0.82; }
+.fac-card-top { display: flex; align-items: center; justify-content: space-between; }
+.fac-no {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-deep);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.4px;
+}
+.fac-no.big { font-size: 14px; padding: 3px 12px; margin-right: 8px; }
+.fac-gear { color: var(--muted); display: inline-flex; }
+.fac-gear.spin { color: var(--accent); animation: fac-rotate 2.6s linear infinite; }
+@keyframes fac-rotate { to { transform: rotate(360deg); } }
+.fac-card-name { font-weight: 700; font-size: 15px; margin-top: 2px; }
+.fac-card-product { color: var(--accent-deep); font-size: 13px; font-weight: 600; }
+.fac-card-desc {
+  color: var(--muted); font-size: 12px; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.fac-card-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 12px; }
+.fac-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px;
+  border-radius: 999px; background: var(--surface-soft); border: 1px solid var(--border);
+  color: var(--text-soft); max-width: 100%;
+}
+.fac-chip.s-running { border-color: #a9c9f7; background: #eef5ff; }
+.fac-chip.s-completed { border-color: #b8e4d1; background: #effaf4; }
+.fac-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none;
+}
+.fac-chip.s-running .fac-dot { background: var(--accent); animation: fac-blink 1.1s ease infinite; }
+.fac-chip.s-completed .fac-dot { background: var(--ok); }
+@keyframes fac-blink { 50% { opacity: 0.25; } }
+
+.fac-detail {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px 22px; box-shadow: var(--shadow-1);
+}
+.fac-detail-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.fac-detail-head h2 { margin: 0; font-size: 17px; }
+.fac-empty {
+  padding: 22px; text-align: center; color: var(--muted); font-size: 13px;
+  background: var(--surface-soft); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+}
+.fac-product { padding: 16px 0 6px; border-top: 1px dashed var(--border-strong); }
+.fac-product:first-of-type { border-top: 0; }
+.fac-product-head { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; margin-bottom: 12px; }
+.fac-product-title { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.fac-product-meta { grid-column: 1; font-size: 12px; }
+.fac-product-reason {
+  grid-column: 1; font-size: 12px; color: var(--text-soft);
+  max-width: 640px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fac-product-ctl { grid-column: 2; grid-row: 1 / span 3; display: flex; align-items: center; }
+.fac-run {
+  display: inline-flex; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--surface-soft); color: var(--muted); border: 1px solid var(--border);
+}
+.fac-run.s-running { background: #eef5ff; color: var(--accent-deep); border-color: #a9c9f7; }
+.fac-run.s-completed { background: #effaf4; color: var(--ok); border-color: #b8e4d1; }
+.fac-run.s-interrupted, .fac-run.s-stopped { background: #fff7e8; color: #b47207; border-color: #f0d9a6; }
+.fac-run.s-failed { background: #fdf0ef; color: var(--danger); border-color: #f3c9c5; }
+.fac-btn { font-size: 12px; padding: 4px 12px; }
+
+/* 横向工艺轴 */
+.fac-axis-wrap { position: relative; padding: 6px 0 4px; }
+.fac-axis-track {
+  position: absolute; left: 0; right: 0; top: 25px; height: 6px; border-radius: 999px;
+  background: var(--bg-deep); overflow: hidden;
+}
+.fac-axis-fill {
+  height: 100%; border-radius: 999px; width: 0;
+  background: linear-gradient(90deg, #7fb2f5, var(--accent), var(--violet));
+  background-size: 200% 100%;
+  transition: width 0.7s var(--ease);
+  animation: fac-flow 2.4s linear infinite;
+}
+@keyframes fac-flow { to { background-position: -200% 0; } }
+.fac-axis {
+  position: relative; display: flex; justify-content: space-between;
+  overflow-x: auto; padding-bottom: 4px;
+}
+.fac-node {
+  position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center;
+  gap: 3px; min-width: 62px; padding: 0 2px; background: none; border: 0; cursor: pointer;
+  font: inherit; color: inherit; border-radius: var(--radius-sm);
+}
+.fac-node:hover .fac-node-name { color: var(--accent-deep); }
+.fac-node-icon {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); border: 2px solid var(--border-strong); color: var(--muted);
+  transition: border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.fac-node-num { font-size: 12px; font-weight: 700; }
+.fac-node.n-done .fac-node-icon { border-color: var(--ok); color: var(--ok); background: #effaf4; }
+.fac-node.n-stopped .fac-node-icon { border-color: #f0d9a6; color: #b47207; background: #fff7e8; }
+.fac-node.n-failed .fac-node-icon { border-color: var(--danger); color: var(--danger); background: #fdf0ef; }
+.fac-node.n-running .fac-node-icon {
+  border-color: var(--accent); color: var(--accent); background: #eef5ff;
+}
+.fac-node.pulse .fac-node-icon { animation: fac-pulse 1.4s ease infinite; }
+@keyframes fac-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(58, 111, 242, 0.35); }
+  70% { box-shadow: 0 0 0 9px rgba(58, 111, 242, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(58, 111, 242, 0); }
+}
+.fac-spin { animation: fac-rotate 1.6s linear infinite; }
+.fac-node-name { font-size: 12px; font-weight: 600; color: var(--text-soft); white-space: nowrap; }
+.fac-node-kind { font-size: 11px; color: var(--muted); }
+.fac-node-om { font-size: 10px; color: #9aa7c2; }
+
+/* 工位详情弹窗 */
+.fac-modal {
+  position: fixed; inset: 0; z-index: 60; background: rgba(15, 23, 42, 0.42);
+  display: grid; place-items: center; padding: 24px;
+}
+.fac-modal-body {
+  width: min(860px, 100%); max-height: 80vh; overflow: auto;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-2);
+  padding: 18px 22px 22px;
+}
+.fac-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fac-modal-head h3 { margin: 0; font-size: 16px; }
+.fac-modal-head small { font-weight: 400; }
+.fac-step-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; font-size: 13px; }
+.fac-events { display: flex; flex-direction: column; gap: 8px; }
+.fac-event {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: baseline;
+  padding: 8px 12px; background: var(--surface-soft); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 12px;
+}
+.fac-event-kind {
+  padding: 1px 8px; border-radius: 999px; background: var(--accent-soft);
+  color: var(--accent-deep); font-weight: 700; flex: none;
+}
+.fac-event-at { color: var(--muted); flex: none; }
+.fac-event-data {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-soft);
+  word-break: break-all; white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .fac-product-head { grid-template-columns: 1fr; }
+  .fac-product-ctl { grid-column: 1; grid-row: auto; justify-content: flex-end; }
+}

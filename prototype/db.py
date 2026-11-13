@@ -279,6 +279,44 @@ CREATE TABLE IF NOT EXISTS ingest_cursor (
 -- alias: Hermes 调用该通道时附加的 --model 别名（空=走内置默认模型）
 -- priority: 通道选择优先级，数字越小越优先（默认通道优先于慢速本地通道）
 -- provider/api_key: 把通道写入 profile config.yaml 时使用（api_key 不对前端展示）
+-- ---------- 制片工厂：CCO 工艺决策 + 车间工位过程（以 OpenMontage 13 类工艺为基准） ----------
+-- 每条内容单（产品）由 CCO 参考.OpenMontage 13 类工艺确定制作工艺，工艺决定产品进哪个车间；
+-- 同一 trace+内容单只保留最新决策（重跑制作评估时覆盖）。
+CREATE TABLE IF NOT EXISTS product_crafts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  trace_id    TEXT,
+  item_id     TEXT,
+  project_id  TEXT,
+  title       TEXT,
+  workshop_no TEXT NOT NULL,
+  craft_id    TEXT NOT NULL,
+  craft_name  TEXT,
+  product     TEXT,
+  render_mode TEXT,
+  reason      TEXT,
+  decided_by  TEXT NOT NULL DEFAULT 'cco',
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT,
+  UNIQUE(trace_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_craft_trace    ON product_crafts(trace_id);
+CREATE INDEX IF NOT EXISTS idx_craft_workshop ON product_crafts(workshop_no);
+
+-- 车间工位过程：每条产品（trace）在每个流水线环节上的实时加工记录（阶段边界写档）
+CREATE TABLE IF NOT EXISTS workshop_steps (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  trace_id    TEXT NOT NULL,
+  stage_id    TEXT NOT NULL,
+  stage_name  TEXT,
+  om_stage    TEXT,
+  status      TEXT NOT NULL,
+  detail      TEXT,
+  started_at  TEXT,
+  finished_at TEXT,
+  UNIQUE(trace_id, stage_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ws_trace ON workshop_steps(trace_id, id);
+
 CREATE TABLE IF NOT EXISTS llm_models (
   id           TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
@@ -677,6 +715,83 @@ class Store:
         """某 trace 已登记发布的内容单 id 集合（幂等判重）。"""
         rows = self._rows("SELECT item_id FROM release_ledger WHERE trace_id=?", (trace_id,))
         return {r.get("item_id") for r in rows if r.get("item_id")}
+
+    # ---------- 制片工厂（CCO 工艺决策 + 车间工位过程） ----------
+    def upsert_product_craft(self, d):
+        """CCO 工艺决策落库：同一 trace+内容单覆盖更新，只留最新决策。"""
+        try:
+            self.put("""INSERT INTO product_crafts(trace_id,item_id,project_id,title,workshop_no,
+                        craft_id,craft_name,product,render_mode,reason,decided_by,created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(trace_id,item_id) DO UPDATE SET
+                          workshop_no=excluded.workshop_no, craft_id=excluded.craft_id,
+                          craft_name=excluded.craft_name, product=excluded.product,
+                          render_mode=excluded.render_mode, reason=excluded.reason,
+                          decided_by=excluded.decided_by, updated_at=excluded.updated_at""",
+                     (d.get("traceId") or None, d.get("itemId") or None, d.get("projectId") or "",
+                      d.get("title") or "", d.get("workshopNo") or "", d.get("craftId") or "",
+                      d.get("craftName") or "", d.get("product") or "", d.get("renderMode") or "",
+                      d.get("reason") or "", d.get("decidedBy") or "cco",
+                      d.get("createdAt") or now_iso(), now_iso()))
+        except Exception as e:
+            _log(f"upsert_product_craft 失败：{type(e).__name__}: {e}")
+
+    def workshop_step_start(self, trace_id, stage_id, stage_name, om_stage):
+        """进入车间工位：阶段开始（重跑同阶段时重置为 running）。"""
+        try:
+            self.put("""INSERT INTO workshop_steps(trace_id,stage_id,stage_name,om_stage,status,
+                        detail,started_at,finished_at) VALUES(?,?,?,?,?,NULL,?,NULL)
+                        ON CONFLICT(trace_id,stage_id) DO UPDATE SET status='running',
+                          stage_name=excluded.stage_name, om_stage=excluded.om_stage,
+                          detail=NULL, started_at=excluded.started_at, finished_at=NULL""",
+                     (trace_id, stage_id, stage_name, om_stage, "running", now_iso()))
+        except Exception as e:
+            _log(f"workshop_step_start 失败：{type(e).__name__}: {e}")
+
+    def workshop_step_end(self, trace_id, stage_id, status, detail):
+        """离开车间工位：阶段结束（done/stopped/failed），记录处理摘要。"""
+        try:
+            self.put("""UPDATE workshop_steps SET status=?, detail=?, finished_at=?
+                        WHERE trace_id=? AND stage_id=?""",
+                     (status, jdump(detail), now_iso(), trace_id, stage_id))
+        except Exception as e:
+            _log(f"workshop_step_end 失败：{type(e).__name__}: {e}")
+
+    def product_crafts(self, limit=120):
+        """工艺决策记录（最新在前），供制片工厂聚合。"""
+        return self._rows("SELECT * FROM product_crafts ORDER BY updated_at DESC LIMIT ?",
+                          (max(1, min(int(limit), 500)),))
+
+    def workshop_steps(self, trace_id=""):
+        """工位过程记录（可选按 trace 过滤），按写入顺序返回。"""
+        sql, params = "SELECT * FROM workshop_steps", ()
+        if trace_id:
+            sql += " WHERE trace_id=?"
+            params = (trace_id,)
+        sql += " ORDER BY id"
+        return self._rows(sql, params)
+
+    def workshop_step(self, trace_id, stage_id):
+        rows = self._rows("SELECT * FROM workshop_steps WHERE trace_id=? AND stage_id=?",
+                          (trace_id, stage_id))
+        return rows[0] if rows else None
+
+    def trace_events_between(self, trace_id, start, end, limit=300):
+        """某时间段内的事件（车间工位详情回放用），按事件序返回。"""
+        conn = self.read_conn()
+        try:
+            rows = [dict(r) for r in conn.execute(
+                """SELECT id,kind,at,data FROM trace_events
+                   WHERE trace_id=? AND at>=? AND at<=? ORDER BY id LIMIT ?""",
+                (trace_id, start, end, max(1, min(int(limit), 500))))]
+            for r in rows:
+                try:
+                    r["data"] = json.loads(r.get("data") or "null")
+                except ValueError:
+                    pass
+            return rows
+        finally:
+            conn.close()
 
     # ---------- 大模型注册表（CTO 运维开关） ----------
     def llm_seed(self, defaults):

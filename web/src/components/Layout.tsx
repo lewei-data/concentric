@@ -25,6 +25,7 @@ const PRIMARY_NAV = [
   { to: "/", label: "总览", end: true },
   { to: "/inspiration", label: "创意灵感" },
   { to: "/works", label: "作品档案" },
+  { to: "/factory", label: "制片工厂" },
   { to: "/hotspots", label: "热点" },
   { to: "/knowledge", label: "知识库" },
   { to: "/org", label: "组织配置" },

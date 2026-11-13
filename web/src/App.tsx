@@ -17,6 +17,7 @@ const OpsPage = lazy(() => import("./pages/OpsPage").then((m) => ({ default: m.O
 const OrgPage = lazy(() => import("./pages/OrgPage").then((m) => ({ default: m.OrgPage })));
 const ScenePage = lazy(() => import("./pages/ScenePage").then((m) => ({ default: m.ScenePage })));
 const WorksPage = lazy(() => import("./pages/WorksPage").then((m) => ({ default: m.WorksPage })));
+const FactoryPage = lazy(() => import("./pages/FactoryPage").then((m) => ({ default: m.FactoryPage })));
 
 // 懒加载路由的过渡画面：只占 outlet 区域，顶部导航保持不动
 function PageFallback() {
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="/inspiration" element={<Suspense fallback={<PageFallback />}><InspirationPage /></Suspense>} />
             <Route path="/ops" element={<Suspense fallback={<PageFallback />}><OpsPage /></Suspense>} />
             <Route path="/works" element={<Suspense fallback={<PageFallback />}><WorksPage /></Suspense>} />
+            <Route path="/factory" element={<Suspense fallback={<PageFallback />}><FactoryPage /></Suspense>} />
             <Route path="/hotspots" element={<Suspense fallback={<PageFallback />}><HotspotsPage /></Suspense>} />
             <Route path="/knowledge" element={<Suspense fallback={<PageFallback />}><KnowledgePage /></Suspense>} />
             <Route path="/messages" element={<Suspense fallback={<PageFallback />}><MessagesPage /></Suspense>} />

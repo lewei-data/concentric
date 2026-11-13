@@ -107,6 +107,24 @@ def _hotkey(title) -> str:
     return re.sub(r"\s+", "", str(title or "")).lower()
 
 
+def _step_view(row):
+    """车间工位记录 → 前端视图（detail JSON 解包）。"""
+    step = dict(row)
+    try:
+        step["detail"] = json.loads(step.get("detail") or "null")
+    except ValueError:
+        step["detail"] = None
+    return step
+
+
+def _iso_shift(value, seconds):
+    """ISO 时间字符串平移 n 秒（工位时间窗放宽用）；非法输入原样返回。"""
+    try:
+        return (datetime.fromisoformat(value) + timedelta(seconds=seconds)).isoformat(timespec="seconds")
+    except (TypeError, ValueError):
+        return value
+
+
 def _to_int(value, default):
     try:
         return int(float(str(value).replace(",", "")))
@@ -328,6 +346,39 @@ DEFAULT_PROJECTS = {
                     "kpi": {"uptime": 99.95, "tickets": 0, "delivery_hours": 48.0}},
 }
 DEFAULT_TONE = {"wenren": "克制·书卷气", "gou": "幽默·松弛", "tongxinyuan": "专业·可信"}
+
+# 制片工厂的 13 类工艺基准：与 OpenMontage pipeline_defs/*.yaml 一一对应。
+# 每个工艺一个"车间"（编号 01-13），CCO 按产品选题参考此表做选择并落库 product_crafts。
+OPENMONTAGE_CRAFTS = (
+    {"no": "01", "id": "animated-explainer", "name": "动画讲解工艺", "product": "动画讲解视频",
+     "desc": "选题研究先行，旁白+图形动画完整成片，适合知识科普类选题"},
+    {"no": "02", "id": "animation", "name": "动效图形工艺", "product": "动效图形视频",
+     "desc": "Motion Graphics/图表动画/动态字幕为主的图形化表达"},
+    {"no": "03", "id": "avatar-spokesperson", "name": "数字人口播工艺", "product": "数字人口播视频",
+     "desc": "数字分身出镜口播，适合品牌播报、栏目化更新与讲解"},
+    {"no": "04", "id": "character-animation", "name": "角色动画工艺", "product": "角色动画短片",
+     "desc": "可复用卡通角色驱动的剧情动画，适合 IP 化系列内容"},
+    {"no": "05", "id": "cinematic", "name": "电影感大片工艺", "product": "电影感宣传片",
+     "desc": "情绪先导的电影级镜头语言，适合预告片/品牌片/氛围混剪"},
+    {"no": "06", "id": "clip-factory", "name": "切片流水线工艺", "product": "长内容切片集",
+     "desc": "从长视频/直播/课程中批量切出高光短片段"},
+    {"no": "07", "id": "documentary-montage", "name": "纪实蒙太奇工艺", "product": "纪实混剪视频",
+     "desc": "检索真实素材构建语义语料，主题化纪实混剪"},
+    {"no": "08", "id": "framework-smoke", "name": "框架冒烟工艺", "product": "框架验证样片",
+     "desc": "最小流水线清单，用于验证框架契约与链路连通"},
+    {"no": "09", "id": "hybrid", "name": "混合实拍工艺", "product": "实拍混合视频",
+     "desc": "实拍素材叠加设计/生成画面，虚实结合的表达"},
+    {"no": "10", "id": "localization-dub", "name": "本地化译制工艺", "product": "多语译制版本",
+     "desc": "字幕翻译+配音改制，一条成片衍生多语种版本"},
+    {"no": "11", "id": "podcast-repurpose", "name": "播客改制工艺", "product": "播客改制视频",
+     "desc": "把播客音频/视频改制为可发布的短视频内容"},
+    {"no": "12", "id": "screen-demo", "name": "屏幕演示工艺", "product": "屏幕录制教程",
+     "desc": "屏幕录制+讲解的软件演示/操作教程类成片"},
+    {"no": "13", "id": "talking-head", "name": "真人口播工艺", "product": "真人口播视频",
+     "desc": "真人出镜口播素材的端到端精修成片"},
+)
+CRAFT_BY_ID = {w["id"]: w for w in OPENMONTAGE_CRAFTS}
+DEFAULT_CRAFT_ID = "animated-explainer"   # CCO 未明确时的科普类默认车间
 DEFAULT_HIGH_RISK = ["publish.execute", "deploy.prod", "customer.reply", "ad.spend"]
 
 
@@ -2380,8 +2431,60 @@ class Kernel:
                 raise RuntimeError(f"流程定义里的阶段 {st.id} 没有实现 _stage_{st.id}")
             c.stage = st
             self._run_checkpoint(trace, st, pos, c)
-            if fn(c) is _PIPELINE_STOP:
+            self._workshop_start(trace, st)
+            try:
+                stop = fn(c)
+            except Exception:
+                self._workshop_end(trace, st, "failed", c)
+                raise
+            self._workshop_end(trace, st, "stopped" if stop else "done", c)
+            if stop is _PIPELINE_STOP:
                 return
+
+    # ---------- 制片工厂（车间监控/控制） ----------
+    def _workshop_start(self, trace, st):
+        """阶段开始：车间工位标记 running（过程库关闭时静默跳过）。"""
+        if not self.db:
+            return
+        self.db.workshop_step_start(trace, st.id, st.name, st.om_stage)
+
+    def _workshop_end(self, trace, st, status, ctx=None):
+        """阶段结束：车间工位落定 done/stopped/failed，摘要随行供前端回放。"""
+        if not self.db:
+            return
+        self.db.workshop_step_end(trace, st.id, status, {
+            "stage": st.id, "name": st.name, "kind": st.kind, "omStage": st.om_stage,
+            "items": len(getattr(ctx, "items", ()) or ()),
+        })
+
+    def factory_view(self):
+        """制片工厂聚合：13 类车间 + 各车间产品（工艺决策 + 工位过程 + 运行态）。"""
+        workshops = [dict(w) for w in OPENMONTAGE_CRAFTS]
+        stage_axis = [{"id": s.id, "name": s.name, "kind": s.kind, "omStage": s.om_stage}
+                      for s in PIPELINE.stages if s.enabled]
+        products = []
+        if self.db:
+            runs = {r.get("trace_id"): r for r in self.db.pipeline_runs_recent(80)}
+            steps_by_trace = {}
+            for s in self.db.workshop_steps():
+                steps_by_trace.setdefault(s.get("trace_id"), []).append(s)
+            for row in self.db.product_crafts(120):
+                tid = row.get("trace_id") or ""
+                run = runs.get(tid) or {}
+                products.append({
+                    "itemId": row.get("item_id"), "traceId": tid,
+                    "projectId": row.get("project_id"), "title": row.get("title"),
+                    "workshopNo": row.get("workshop_no"), "craftId": row.get("craft_id"),
+                    "craftName": row.get("craft_name"), "product": row.get("product"),
+                    "renderMode": row.get("render_mode"), "reason": row.get("reason"),
+                    "decidedBy": row.get("decided_by"),
+                    "decidedAt": row.get("updated_at") or row.get("created_at"),
+                    "run": {"status": run.get("status"), "stage": run.get("stage"),
+                            "stageIndex": run.get("stage_index"),
+                            "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
+                    "steps": [_step_view(s) for s in steps_by_trace.get(tid, [])],
+                })
+        return {"ok": True, "workshops": workshops, "stages": stage_axis, "products": products}
 
     def _run_checkpoint(self, trace, st, pos, c):
         """阶段边界写档：stage 是即将执行的阶段，状态快照随行。"""
@@ -2769,6 +2872,49 @@ class Kernel:
                        "reason": item["renderModeNote"]}, project=pid)
             self.items_emit(c.trace, item)
 
+    def _cco_craft(self, c, pid, items):
+        """CCO 按产品确定制作工艺（参考 OpenMontage 13 类工艺），决策落库 product_crafts。
+
+        工艺决定产品进哪个车间（01-13 号）；未明确时回落科普类默认动画讲解车间。
+        """
+        data = {}
+        try:
+            crafts_brief = "\n".join(
+                f"{w['no']}号车间 {w['id']}（{w['name']}，产品：{w['product']}）：{w['desc']}"
+                for w in OPENMONTAGE_CRAFTS)
+            data, meta = self.call_agent(
+                "cco", f"为 {PROJECTS[pid]['name']} 的 {len(items)} 条选题逐条确定制作工艺。"
+                f"参考 OpenMontage 的 13 类工艺（每类对应一个车间）：\n{crafts_brief}",
+                json.dumps([{"title": i["title"], "angle": i.get("angle", ""),
+                             "renderMode": i.get("renderMode", "")} for i in items],
+                           ensure_ascii=False),
+                "额外 JSON 字段：crafts(数组，每条 {title,craft,reason}；"
+                "craft 取上表车间对应的工艺 id，如 animated-explainer)。",
+                "summary, evidence, confidence, tools, crafts")
+        except Exception as e:
+            print(f"[pipeline] CCO 工艺决策失败，按默认车间处理：{type(e).__name__}: {e}", flush=True)
+        picks = {}
+        for m in (data or {}).get("crafts") or []:
+            if isinstance(m, dict) and str(m.get("craft") or "") in CRAFT_BY_ID:
+                picks[str(m.get("title") or "")] = m
+        for item in items:
+            pick = picks.get(item["title"]) or {}
+            craft = CRAFT_BY_ID.get(str(pick.get("craft") or ""), CRAFT_BY_ID[DEFAULT_CRAFT_ID])
+            item["craft"] = craft["id"]
+            item["craftNote"] = str(pick.get("reason")
+                                    or "CCO 未明确，按科普类默认进动画讲解车间（01 号）")
+            self.db.upsert_product_craft({
+                "traceId": c.trace, "itemId": item["id"], "projectId": item.get("projectId", pid),
+                "title": item["title"], "workshopNo": craft["no"], "craftId": craft["id"],
+                "craftName": craft["name"], "product": craft["product"],
+                "renderMode": item.get("renderMode", ""), "reason": item["craftNote"],
+                "decidedBy": "cco",
+            })
+            self.send("result", "cco", f"pm_{pid}", c.trace,
+                      {"itemId": item["id"], "craft": craft["id"],
+                       "workshop": f"{craft['no']}号车间", "reason": item["craftNote"]}, project=pid)
+            self.items_emit(c.trace, item)
+
     def _stage_assessment(self, c):
         """5. PM 细化分镜脚本并按并行原则拆分派单；CCO 定出片模式；scout 补素材缺口"""
         # 5. PM 组织本项目组出《制作评估报告》：把分镜补充完善（逐镜 画面/台词/时长/素材），
@@ -2799,6 +2945,7 @@ class Kernel:
                                       "assetGaps": data.get("assetGaps", [])}
                 self.items_emit(c.trace, item)
             self._cco_render_mode(c, pid, pid_items)
+            self._cco_craft(c, pid, pid_items)
             vtasks = [{"item": it["title"], "renderMode": it.get("renderMode"),
                        **t} for it in pid_items
                       for t in ((it.get("plan") or {}).get("videoTasks") or [])] or \
@@ -4399,6 +4546,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/events":
             return self._sse()
+        # ---------- 制片工厂（车间监控：工艺决策 + 工位过程） ----------
+        if path == "/api/factory":
+            return self._json(KERNEL.factory_view())
+        if path.startswith("/api/factory/step/"):
+            return self._json(self._factory_step(path[len("/api/factory/step/"):]))
         if path.startswith("/api/trace/"):
             data = self._trace(path.rsplit("/", 1)[-1])
             if data is None:
@@ -4633,6 +4785,25 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _factory_step(self, spec):
+        """车间工位详情：/api/factory/step/<trace_id>/<stage_id> → 工位记录 + 时间段内事件。"""
+        parts = spec.split("/", 1)
+        if len(parts) != 2:
+            return {"ok": False, "error": "路径格式：/api/factory/step/<trace_id>/<stage_id>"}
+        trace_id, stage_id = parts[0], parts[1]
+        if not KERNEL.db:
+            return {"ok": False, "error": "过程库未启用（OPC_DB=0）"}
+        step = KERNEL.db.workshop_step(trace_id, stage_id)
+        if not step:
+            return {"ok": False, "error": "step not found"}
+        started, finished = step.get("started_at") or "", step.get("finished_at") or ""
+        # 工位边界各放宽 2 秒：缓冲写库/同一秒内的事件不至于被时间窗切掉
+        lo = _iso_shift(started, -2) if started else ""
+        hi = _iso_shift(finished, +2) if finished else iso_now()   # 进行中：取到当前时刻
+        events = KERNEL.db.trace_events_between(trace_id, lo, hi)
+        return {"ok": True, "step": _step_view(step),
+                "events": events, "traceId": trace_id, "stageId": stage_id}
 
     def _trace(self, trace):
         with KERNEL.lock:
