@@ -437,7 +437,7 @@ def intro_script(aid, prof=None, force=False):
     prof = prof or load_profiles().get(aid) or {"id": aid}
     _ensure_dir(INTRO_DIR)
     cached = _read_intro_text(aid)
-    if cached and not force:
+    if cached and not force and re.search(r"[\u4e00-\u9fff]", cached):
         return cached
     text = ""
     try:
@@ -453,6 +453,10 @@ def intro_script(aid, prof=None, force=False):
         raw = run_hermes(prompt, timeout=INTRO_LLM_TIMEOUT)
         text = _clean_for_speech(raw).replace("\n", " ").strip()
         text = re.sub(r"^[\s\"'“”‘’「」]+|[\s\"'“”‘’「」]+$", "", text)
+        # Hermes 故障时会把报错当正文输出（全是英文），不能念给用户听
+        if text and not re.search(r"[\u4e00-\u9fff]", text):
+            log("自我介绍文案无中文（疑似 Hermes 报错，%s）：%s" % (aid, text[:60]))
+            text = ""
     except Exception as e:                            # noqa: BLE001 - 文案失败不阻断视频生成
         log("自我介绍文案生成失败（%s），改用档案模板：%s" % (aid, e))
     if not text:
