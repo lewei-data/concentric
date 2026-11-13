@@ -2482,8 +2482,35 @@ class Kernel:
             steps_by_trace = {}
             for s in self.db.workshop_steps():
                 steps_by_trace.setdefault(s.get("trace_id"), []).append(s)
+            crafts_by_trace = {}
+            for row in self.db.product_crafts(120):
+                crafts_by_trace.setdefault(row.get("trace_id") or "", []).append(row)
+            # 以流水线运行记录为底：project 一发起（pipeline_run_start）就进工厂监控，
+            # CCO 在制作评估环节定工艺后（product_crafts）才落到具体车间，之前的条目
+            # workshopNo 为空，前端标"待 CCO 定工艺"，保证库与监控界面一致。
+            def _run_view(tid, run):
+                try:
+                    hotspot = json.loads(run.get("hotspot") or "{}") or {}
+                except ValueError:
+                    hotspot = {}
+                return {
+                    "itemId": "", "traceId": tid,
+                    "projectId": "", "title": hotspot.get("title") or tid,
+                    "workshopNo": "", "craftId": "", "craftName": "",
+                    "product": "", "renderMode": "", "reason": "",
+                    "decidedBy": "pending",
+                    "decidedAt": run.get("started_at") or run.get("updated_at"),
+                    "run": {"status": run.get("status"), "stage": run.get("stage"),
+                            "stageIndex": run.get("stage_index"),
+                            "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
+                    "steps": [_step_view(s) for s in steps_by_trace.get(tid, [])],
+                }
+            seen = set()
             for row in self.db.product_crafts(120):
                 tid = row.get("trace_id") or ""
+                if tid in seen:
+                    continue
+                seen.add(tid)
                 run = runs.get(tid) or {}
                 products.append({
                     "itemId": row.get("item_id"), "traceId": tid,
@@ -2498,6 +2525,9 @@ class Kernel:
                             "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
                     "steps": [_step_view(s) for s in steps_by_trace.get(tid, [])],
                 })
+            for tid, run in runs.items():
+                if tid not in seen:
+                    products.append(_run_view(tid, run))
         return {"ok": True, "workshops": workshops, "stages": stage_axis, "products": products}
 
     def _run_checkpoint(self, trace, st, pos, c):

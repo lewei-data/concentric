@@ -42,6 +42,9 @@ interface Product {
   run: { status: string; stage: string; stageIndex: number; updatedAt: string; closedAt: string };
   steps: StepView[];
 }
+
+/* CCO 在「制作评估」环节才定工艺；之前由 pipeline_runs 兜底展示，craftId 为空 */
+const craftDecided = (p: Product) => Boolean(p.craftId);
 interface FactoryData {
   ok: boolean;
   workshops: Workshop[];
@@ -234,18 +237,24 @@ export function FactoryPage() {
         ) : (
           shownProducts.map((p) => {
             const w = workshops.find((x) => x.no === p.workshopNo);
+            const decided = craftDecided(p);
             return (
-              <div key={p.itemId} className="fac-product">
+              <div key={p.itemId || p.traceId} className="fac-product">
                 <div className="fac-product-head">
                   <div className="fac-product-title">
                     <b>{p.title}</b>
                     <span className={`fac-run s-${p.run.status}`}>{RUN_LABEL[p.run.status] || p.run.status}</span>
                   </div>
                   <div className="fac-product-meta muted">
-                    {w ? `${w.no}号车间` : p.workshopNo} · 工艺：{p.craftName} · 出片模式：{p.renderMode || "-"}
-                    · 决策：{p.decidedBy} · {shortTime(p.decidedAt)} · trace {p.traceId}
+                    {decided
+                      ? `${w ? `${w.no}号车间` : p.workshopNo} · 工艺：${p.craftName} · 出片模式：${p.renderMode || "-"}`
+                      : "待 CCO 定工艺（制作评估环节参考 13 类工艺选定后进车间）"}
+                    {decided && ` · 决策：${p.decidedBy} · ${shortTime(p.decidedAt)}`}
+                    · trace {p.traceId}
                   </div>
-                  <div className="fac-product-reason" title={p.reason}>CCO 决策依据：{p.reason}</div>
+                  {decided && (
+                    <div className="fac-product-reason" title={p.reason}>CCO 决策依据：{p.reason}</div>
+                  )}
                   <div className="fac-product-ctl">
                     {isBoss && p.run.status !== "completed" && p.run.stage && (
                       <button
