@@ -62,8 +62,115 @@ COMFY_NODES = [
     {"id": "8189", "name": "ComfyUI 视频", "url": "http://192.168.21.157:8189"},
 ]
 COMFY_TTL = 15
-_COMFY = {"at": 0.0, "data": None}
+_COMFY = {"at": 0.0, "data": None, "runSince": {}}
 _COMFY_LOCK = threading.Lock()
+
+# ---------- ComfyUI /ws 实时监听：阶段性产物（预览帧）+ 节点进度 ----------
+# ComfyUI 执行期间经 WebSocket 推送 progress/executing 事件与 binary 预览帧
+# （KSampler 等节点的中间画面），这里是唯一能“看见执行中阶段性产物”的通道。
+try:
+    import asyncio as _asyncio
+
+    import websockets as _websockets
+except ImportError:
+    _websockets = None
+
+_COMFY_WS = {}  # port -> {connected, live: {pid: {value,max,pct,node,done,previewAt}}, curPid, preview, previewAt}
+_COMFY_WS_STARTED = False
+_COMFY_WS_LOCK = threading.Lock()
+
+
+def _comfy_ws_loop(port):
+    """常驻 WS 客户端：断线 5s 重连，缓存进度事件与最新预览帧。"""
+
+    async def run():
+        while True:
+            st = _COMFY_WS[port]
+            try:
+                async with _websockets.connect(
+                        f"ws://192.168.21.157:{port}/ws?clientId=opc-ops-{port}",
+                        max_size=8 * 1024 * 1024) as ws:
+                    st["connected"] = True
+                    async for msg in ws:
+                        now = time.time()
+                        if isinstance(msg, (bytes, bytearray)):
+                            # binary 头 8 字节：event_type(1=预览帧)+payload type(1=PNG,2=JPEG)，其后为图像
+                            if len(msg) > 8 and msg[0] == 1:
+                                st["preview"] = bytes(msg[8:])
+                                st["previewAt"] = now
+                                pid = st.get("curPid")
+                                if pid:
+                                    lv = st["live"].setdefault(pid, {})
+                                    lv["previewAt"] = now
+                            continue
+                        try:
+                            data = json.loads(msg)
+                        except ValueError:
+                            continue
+                        kind, d = data.get("type"), data.get("data") or {}
+                        if kind == "executing" and d.get("prompt_id"):
+                            pid = str(d["prompt_id"])
+                            st["curPid"] = pid
+                            lv = st["live"].setdefault(pid, {"value": 0, "max": 0, "pct": 0})
+                            if d.get("node") is None:      # 该 prompt 执行完毕
+                                lv["done"] = True
+                                lv["doneAt"] = now
+                        elif kind == "progress":
+                            pid = st.get("curPid")
+                            if pid:
+                                lv = st["live"].setdefault(pid, {"value": 0, "max": 0, "pct": 0})
+                                lv["value"], lv["max"] = d.get("value"), d.get("max")
+                                lv["pct"] = round(100 * d["value"] / d["max"]) if d.get("max") else 0
+                                lv["node"] = str(d.get("node") or "")
+                                lv["updatedAt"] = now
+            except Exception:
+                st["connected"] = False
+            await _asyncio.sleep(5)
+
+    _asyncio.run(run())
+
+
+def _comfy_ws_start():
+    """惰性启动每节点一个 WS 监听线程（daemon，随进程退出）。"""
+    global _COMFY_WS_STARTED
+    if _websockets is None or _COMFY_WS_STARTED:
+        return
+    with _COMFY_WS_LOCK:
+        if _COMFY_WS_STARTED:
+            return
+        _COMFY_WS_STARTED = True
+        for n in COMFY_NODES:
+            port = n["id"]
+            _COMFY_WS[port] = {"connected": False, "live": {}, "curPid": None,
+                               "preview": None, "previewAt": 0.0}
+            threading.Thread(target=_comfy_ws_loop, args=(port,),
+                             daemon=True, name=f"comfy-ws-{port}").start()
+
+
+def _comfy_task(pid, graph):
+    """压缩 ComfyUI 任务 graph → 展示摘要（模型/步数/尺寸/提示词/节点类型）。"""
+    nodes, model, steps, size, text = [], "", None, "", ""
+    for _nid, nd in (graph or {}).items():
+        if not isinstance(nd, dict):
+            continue
+        ct = str(nd.get("class_type") or "")
+        nodes.append(ct)
+        inputs = nd.get("inputs") or {}
+        if not model:
+            model = str(inputs.get("ckpt_name") or inputs.get("unet_name")
+                        or inputs.get("lora_name") or inputs.get("model_name") or "")
+        if steps is None and isinstance(inputs.get("steps"), (int, float)):
+            steps = int(inputs["steps"])
+        if not size and isinstance(inputs.get("width"), (int, float)) \
+                and isinstance(inputs.get("height"), (int, float)):
+            size = f"{int(inputs['width'])}x{int(inputs['height'])}"
+        if not text and isinstance(inputs.get("text"), str):
+            text = inputs["text"]
+    return {
+        "id": str(pid), "nodes": len(nodes), "types": nodes[:10],
+        "model": model, "steps": steps, "size": size,
+        "prompt": (text or "").replace("\n", " ").strip()[:160],
+    }
 OM_TTL = 30
 _OM = {"at": 0.0, "data": None}
 _OM_LOCK = threading.Lock()
@@ -427,10 +534,11 @@ def _openmontage(force=False):
 
 
 def _comfy(force=False):
-    """ComfyUI 节点监控：/system_stats（GPU/显存/内存）+ /queue（队列）+ /history（最近任务）。
+    """ComfyUI 节点监控：/system_stats + /queue + /history + /ws 实时进度与预览帧。
 
     素材补齐链路（asset_fill）依赖 8188 文生图，视频环节依赖 8189；任一离线都应告警。
     """
+    _comfy_ws_start()
     with _COMFY_LOCK:
         cached = _COMFY["data"]
         fresh = cached is not None and (time.time() - _COMFY["at"]) < COMFY_TTL
@@ -462,6 +570,37 @@ def _comfy(force=False):
                 "running": len(q.get("queue_running") or []),
                 "pending": len(q.get("queue_pending") or []),
             }
+            # 正在执行的任务：摘要 + 首次见到该 prompt_id 的时间 → 执行耗时
+            run_ids = set()
+            running = []
+            for entry in (q.get("queue_running") or [])[:4]:
+                try:
+                    pid, graph = entry[1], entry[2] or {}
+                except (IndexError, TypeError):
+                    continue
+                run_ids.add(str(pid))
+                task = _comfy_task(str(pid), graph)
+                task["elapsed"] = int(time.time() - _COMFY["runSince"].setdefault(
+                    f"{n['id']}:{pid}", time.time()))
+                # /ws 实时通道：节点级进度 + 最新预览帧可用标记（阶段性产物）
+                st = _COMFY_WS.get(n["id"]) or {}
+                lv = (st.get("live") or {}).get(str(pid)) or {}
+                task["progress"] = {
+                    "pct": lv.get("pct") or 0,
+                    "value": lv.get("value") or 0,
+                    "max": lv.get("max") or 0,
+                    "node": lv.get("node") or "",
+                    "preview": bool(st.get("preview")) and st.get("curPid") == str(pid),
+                }
+                running.append(task)
+            for key in list(_COMFY["runSince"]):
+                if not key.startswith(f"{n['id']}:") or key[len(n['id']) + 1:] not in run_ids:
+                    _COMFY["runSince"].pop(key, None)
+            node["running"] = running
+            node["pending"] = [
+                _comfy_task(str(e[1]), e[2] or {})
+                for e in (q.get("queue_pending") or [])[:3] if len(e) > 2
+            ]
             ok3, h = _probe_json(n["url"] + "/history?max_items=6", timeout=2.0)
             recent = []
             if ok3 and isinstance(h, dict):
@@ -497,6 +636,9 @@ def _comfy(force=False):
                         "files": files[:10],
                     })
             node["recent"] = recent
+            ws_st = _COMFY_WS.get(n["id"]) or {}
+            node["ws"] = {"connected": bool(ws_st.get("connected")),
+                          "liveCount": len(ws_st.get("live") or {})}
         else:
             node["error"] = str((stats or {}).get("error") or "连接失败")
         nodes.append(node)

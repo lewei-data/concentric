@@ -62,7 +62,10 @@ def gen_image(prompt, out_path, width=768, height=768, timeout=GEN_TIMEOUT):
     """
     url = _comfy_image_url()
     ckpt = _pick_checkpoint(url)
-    client_id = uuid.uuid4().hex
+    # 统一使用运维监控 WS 监听的 clientId：ComfyUI 的 progress/executing 事件与
+    # 执行中预览帧（阶段性产物）定向推送给提交任务的 clientId，这样才能被监控看到
+    port = urllib.parse.urlsplit(url).port or 8188
+    client_id = f"opc-ops-{port}"
     graph = {
         "1": {"class_type": "CheckpointLoaderSimple",
               "inputs": {"ckpt_name": ckpt}},

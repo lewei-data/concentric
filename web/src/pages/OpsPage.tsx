@@ -191,6 +191,29 @@ type ComfyNode = {
     torchVersion: string;
   };
   queue?: { running: number; pending: number };
+  running?: {
+    id: string;
+    nodes: number;
+    types: string[];
+    model: string;
+    steps?: number;
+    size: string;
+    prompt: string;
+    elapsed: number;
+    progress?: {
+      pct: number;
+      value: number;
+      max: number;
+      node: string;
+      preview: boolean;
+    };
+  }[];
+  pending?: {
+    id: string;
+    nodes: number;
+    model: string;
+    prompt: string;
+  }[];
   recent?: {
     id: string;
     status: string;
@@ -200,6 +223,7 @@ type ComfyNode = {
   error?: string;
 };
 type ComfyView = { available: boolean; nodes: ComfyNode[]; checkedAt: string };
+
 type OpsData = {
   ok: boolean;
   generatedAt?: string;
@@ -281,6 +305,13 @@ const LLM_STATUS_CN: Record<string, string> = {
   enabled: "启用", disabled: "已停用", exhausted: "额度耗尽",
 };
 
+function fmtElapsed(sec?: number) {
+  if (sec == null || sec < 0 || !Number.isFinite(sec)) return "—";
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return m > 0 ? `${m}m${String(s).padStart(2, "0")}s` : `${s}s`;
+}
+
 function fmtBytes(n?: number | null) {
   if (n == null || !Number.isFinite(n) || n <= 0) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -312,6 +343,7 @@ export function OpsPage() {
   const [omDetail, setOmDetail] = useState<OmBoardState | null>(null);
   const [omDetailErr, setOmDetailErr] = useState("");
   const [omDetailLoading, setOmDetailLoading] = useState(false);
+  const [previewTick, setPreviewTick] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleOmProject = useCallback((id: string) => {
@@ -345,6 +377,12 @@ export function OpsPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // 实时预览帧高频刷新（ComfyUI WS 缓存的阶段性中间画面，每 1.2s 拉一次）
+  useEffect(() => {
+    const t = window.setInterval(() => setPreviewTick((v) => v + 1), 1200);
+    return () => window.clearInterval(t);
   }, []);
 
   useEffect(() => {
@@ -1041,7 +1079,7 @@ export function OpsPage() {
       </section>
 
       {/* OpenMontage 项目看板（API 代理取数 + 媒体直连内网 Backlot） */}
-      <section className="ops-card" aria-label="OpenMontage 项目看板">
+      <section className="ops-card wide" aria-label="OpenMontage 项目看板">
         <h2>
           OpenMontage 项目看板
           <small className="muted">
@@ -1055,34 +1093,31 @@ export function OpsPage() {
             {omProjects.map((p) => (
               <article key={p.id} className={`om-proj${omOpenId === p.id ? " is-open" : ""}`}>
                 <header
-                  className="om-proj-head"
+                  className="om-row"
                   role="button"
                   tabIndex={0}
                   onClick={() => toggleOmProject(p.id)}
                   onKeyDown={(e) => e.key === "Enter" && toggleOmProject(p.id)}
                   title="点击展开/收起看板详情"
                 >
-                  {p.poster && (
-                    <img
-                      className="om-poster"
-                      src={omPosterSrc(p)}
-                      alt=""
-                      loading="lazy"
-                    />
+                  {p.poster ? (
+                    <img className="om-poster" src={omPosterSrc(p)} alt="" loading="lazy" />
+                  ) : (
+                    <span className="om-poster" aria-hidden="true" />
                   )}
-                  <div className="om-proj-meta">
-                    <b>{p.name}</b>
-                    <small className="muted">
-                      {p.pipelineType || "未标工艺"} ·{" "}
-                      {p.activeStage ? `当前阶段 ${p.activeStage}` : p.live ? "进行中" : "空闲"} · 渲染{" "}
-                      {p.renderCount ?? 0} · 场景 {p.sceneCount ?? 0}
-                    </small>
-                    <div className="om-stage-mini" aria-hidden="true">
+                  <span className="om-cell"><b>{p.name}</b></span>
+                  <span className="om-cell"><small>{p.pipelineType || "未标工艺"}</small></span>
+                  <span className="om-cell">
+                    <small>{p.activeStage ? `当前阶段 ${p.activeStage}` : p.live ? "进行中" : "空闲"}</small>
+                  </span>
+                  <span className="om-cell"><small>渲染 {p.renderCount ?? 0} · 场景 {p.sceneCount ?? 0}</small></span>
+                  <span className="om-cell">
+                    <span className="om-stage-mini" aria-hidden="true">
                       {p.stageStates.map((s) => (
                         <i key={s.name} className={`om-dot st-${s.status}`} title={`${s.name}: ${s.status}`} />
                       ))}
-                    </div>
-                  </div>
+                    </span>
+                  </span>
                   <span className={`ops-pill ${p.live ? "ok" : p.awaitingHuman ? "warn" : ""}`}>
                     {p.awaitingHuman ? "待人工" : p.live ? "进行中" : "空闲"}
                   </span>
@@ -1136,7 +1171,7 @@ export function OpsPage() {
       </section>
 
       {/* ComfyUI 节点监控（system_stats / queue / history） */}
-      <section className="ops-card" aria-label="ComfyUI 节点监控">
+      <section className="ops-card wide" aria-label="ComfyUI 节点监控">
         <h2>
           ComfyUI 节点
           <small className="muted">（192.168.21.157 · 出图 :8188 · 视频 :8189 · 素材补齐链路依赖）</small>
@@ -1144,24 +1179,83 @@ export function OpsPage() {
         <div className="om-board">
           {comfyNodes.map((n) => (
             <article key={n.id} className="om-proj">
-              <header className="om-proj-head">
+              <header className="om-row comfy-cols">
                 <span className={`ops-pill ${n.online ? "ok" : "bad"}`}>{n.online ? "在线" : "离线"}</span>
-                <div className="om-proj-meta">
+                <span className="om-cell">
                   <b>
                     {n.name} <small className="mono">:{n.id}</small>
                   </b>
-                  <small className="muted">
+                  <small className="mono">ComfyUI {n.version || "—"}</small>
+                </span>
+                <span className="om-cell">
+                  <small>
                     {n.online
                       ? `${n.device?.name || "GPU"} · 显存 ${fmtBytes(n.device?.vramFree)}/` +
-                        `${fmtBytes(n.device?.vramTotal)} · 内存 ${fmtBytes(n.ramFree)}/${fmtBytes(n.ramTotal)}` +
-                        ` · ComfyUI ${n.version || "—"}`
+                        `${fmtBytes(n.device?.vramTotal)} · 内存 ${fmtBytes(n.ramFree)}/${fmtBytes(n.ramTotal)}`
                       : n.error || "连接失败"}
                   </small>
-                </div>
+                </span>
                 <span className="ops-pill warn">
                   {n.online ? `${n.queue?.running ?? 0} 运行 / ${n.queue?.pending ?? 0} 排队` : "—"}
                 </span>
               </header>
+              {n.online && (n.running || []).length > 0 && (
+                <div className="om-detail comfy-running">
+                  {(n.running || []).map((t) => {
+                    const pct = t.progress?.pct ?? 0;
+                    return (
+                      <details key={t.id} className="comfy-run" open={(n.running || []).length === 1}>
+                        <summary>
+                          <span className="mono">#{t.id.slice(0, 8)}</span>
+                          <span className="ops-pill ok">执行中</span>
+                          <span className="comfy-progress" aria-hidden="true">
+                            <i style={{ width: `${pct}%` }} />
+                          </span>
+                          <span className="muted">
+                            {pct}% · 已执行 {fmtElapsed(t.elapsed)}
+                            {t.progress?.node ? ` · 节点 ${t.progress.node}` : ""}
+                            {t.model ? ` · ${t.model}` : ""}
+                            {t.steps != null ? ` · ${t.steps} 步` : ""}
+                          </span>
+                        </summary>
+                        <div className="comfy-run-body">
+                          {t.progress?.preview && (
+                            <img
+                              className="comfy-preview"
+                              src={`/api/comfy/preview/${n.id}?t=${previewTick}`}
+                              alt="执行中阶段性画面"
+                              loading="lazy"
+                            />
+                          )}
+                          {t.progress?.max ? (
+                            <small className="muted">
+                              当前节点 {t.progress.node || "—"}：{t.progress.value}/{t.progress.max}（{pct}%）
+                            </small>
+                          ) : null}
+                          {t.prompt && <p className="comfy-prompt">{t.prompt}</p>}
+                          <small className="muted">
+                            graph 节点 {t.nodes} 个：{(t.types || []).join(" → ")}
+                          </small>
+                        </div>
+                      </details>
+                    );
+                  })}
+                  {(n.pending || []).length > 0 && (
+                    <div className="comfy-pend">
+                      {(n.pending || []).map((t) => (
+                        <small key={t.id} className="muted mono" title={t.prompt || ""}>
+                          待执行 #{t.id.slice(0, 8)}{t.model ? ` · ${t.model}` : ""}
+                        </small>
+                      ))}
+                      {(n.queue?.pending ?? 0) > (n.pending || []).length && (
+                        <small className="muted">
+                          …另有 {(n.queue?.pending ?? 0) - (n.pending || []).length} 条排队
+                        </small>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {n.online && (n.recent || []).length > 0 && (
                 <div className="om-detail">
                   <ul className="om-renders">

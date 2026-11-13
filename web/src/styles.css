@@ -1512,11 +1512,14 @@ a:hover {
 .nav-main {
   flex: 1;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;            /* 导航保持一行，不折行 */
   gap: 9px;
   perspective: 1000px;
   perspective-origin: 50% 60%;
+  overflow-x: auto;             /* 放不下时在导航区内横向滚动兜底 */
+  scrollbar-width: none;
 }
+.nav-main::-webkit-scrollbar { display: none; }
 
 .nav a,
 .nav .nav-3d,
@@ -1749,6 +1752,8 @@ a:hover {
   .brand-text small { display: none; }
   .nav-main { gap: 6px; }
   .nav-main a { padding: 8px 13px; font-size: 14px; }
+  .nav-main .nav-3d, .nav-main .nav-legacy { padding: 8px 12px; font-size: 14px; }
+  .userbox { padding-left: 16px; }
   .userbox { padding-left: 16px; }
   .live-badge { display: none; }
   .content,
@@ -3987,24 +3992,32 @@ a:hover {
 .ops-service.om-link.is-standby { opacity: 0.72; }
 
 /* ============ 运维监控：OpenMontage 项目看板 + ComfyUI 节点 ============ */
-.om-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+/* 横向列表模式：每行一个项目/节点，多列信息横排 */
+.om-board { display: flex; flex-direction: column; gap: 8px; }
 .om-proj {
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface-soft); overflow: hidden;
   transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
 .om-proj.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(58, 111, 242, 0.10); }
-.om-proj-head {
-  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
-  min-height: 64px;
+.om-row {
+  display: grid; grid-template-columns: 84px minmax(160px, 1.1fr) minmax(120px, 0.7fr)
+    minmax(150px, 1fr) minmax(130px, 0.8fr) minmax(120px, 1fr) auto;
+  gap: 6px 16px; align-items: center; padding: 10px 16px; min-height: 0;
 }
-.om-proj-head[role="button"] { cursor: pointer; }
-.om-proj-head[role="button"]:hover { background: rgba(58, 111, 242, 0.06); }
+.om-row.comfy-cols { grid-template-columns: auto minmax(150px, 0.9fr) minmax(0, 1.6fr) auto; }
+.om-row[role="button"] { cursor: pointer; }
+.om-row[role="button"]:hover { background: rgba(58, 111, 242, 0.06); }
+.om-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.om-cell b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.om-cell small, .om-cell > small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.om-cell > b { color: inherit; }
+.om-cell .mono { font-size: 12px; }
 .om-poster {
-  width: 76px; height: 44px; object-fit: cover; border-radius: 6px; flex: none;
+  width: 84px; height: 48px; object-fit: cover; border-radius: 6px; flex: none;
   background: var(--bg-deep); border: 1px solid var(--border);
 }
-.om-proj-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.om-proj-meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .om-proj-meta b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .om-proj-meta small { font-size: 12px; }
 .om-stage-mini { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -4045,3 +4058,56 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   word-break: break-all;
 }
 .comfy-file:hover { background: var(--accent-soft); }
+
+/* 运维页两个监控看板：横向占满视口（突破 content 的 --shell 限宽） */
+.ops-card.wide {
+  width: calc(100vw - 88px);
+  margin-left: calc((100% - 100vw) / 2 + 44px);
+}
+@media (max-width: 1400px) {
+  .ops-card.wide { width: calc(100vw - 52px); margin-left: calc((100% - 100vw) / 2 + 26px); }
+}
+@media (max-width: 980px) {
+  .ops-card.wide { width: calc(100vw - 32px); margin-left: calc((100% - 100vw) / 2 + 16px); }
+}
+@media (max-width: 640px) {
+  .ops-card.wide { width: calc(100vw - 24px); margin-left: calc((100% - 100vw) / 2 + 12px); }
+}
+
+/* ComfyUI 正在执行任务（可展开） */
+.comfy-running { display: flex; flex-direction: column; gap: 8px; }
+.comfy-run {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-soft); padding: 8px 12px;
+}
+.comfy-run summary {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  font-size: 12px; list-style: none; flex-wrap: wrap;
+}
+.comfy-run summary::-webkit-details-marker { display: none; }
+.comfy-run summary::before { content: "▸"; color: var(--muted); transition: transform 0.15s; }
+.comfy-run[open] summary::before { transform: rotate(90deg); }
+.comfy-run-body { padding: 8px 2px 2px; display: flex; flex-direction: column; gap: 6px; }
+.comfy-run-body small { font-size: 11px; word-break: break-all; }
+.comfy-prompt {
+  margin: 0; font-size: 12px; color: var(--text-soft);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; word-break: break-all;
+}
+.comfy-pend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+
+/* ComfyUI 执行中任务：进度条 + 实时阶段性预览帧 */
+.comfy-progress {
+  flex: 1; min-width: 90px; max-width: 240px; height: 6px; border-radius: 999px;
+  background: var(--bg-deep); overflow: hidden;
+}
+.comfy-progress i {
+  display: block; height: 100%; border-radius: inherit; width: 0;
+  background: linear-gradient(90deg, #7fb2f5, var(--accent));
+  transition: width 0.4s var(--ease);
+}
+.comfy-preview {
+  max-width: 320px; max-height: 200px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg-deep);
+  display: block;
+}

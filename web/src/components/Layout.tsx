@@ -75,17 +75,10 @@ export function Layout() {
             ))}
           </nav>
 
-          <nav className="nav nav-extra" aria-label="场景与旧版入口">
+          <nav className="nav nav-extra" aria-label="场景入口">
             <span className="nav-divider" aria-hidden="true" />
-            <NavLink to="/office" className="nav-3d">Office 3D</NavLink>
-            <NavLink to="/meeting" className="nav-3d">Meeting 3D</NavLink>
-            <a
-              href={`${appRoot()}legacy`}
-              className="nav-legacy"
-              title="回到旧版控制台（仍可随时切回新版）"
-            >
-              旧版控制台
-            </a>
+            <NavLink to="/office" className="nav-3d">办公室</NavLink>
+            <NavLink to="/meeting" className="nav-3d">会议室</NavLink>
           </nav>
 
           <div className="userbox">

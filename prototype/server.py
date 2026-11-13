@@ -4583,6 +4583,9 @@ class Handler(BaseHTTPRequestHandler):
             w = (parse_qs(urlparse(self.path).query).get("w") or ["320"])[0]
             return self._proxy_media(f"http://127.0.0.1:4750/thumb/{quote(parts[0])}"
                                      f"/{quote(parts[1], safe='/')}?w={quote(w)}")
+        # ComfyUI 实时预览帧（阶段性产物）：ops_monitor 的 WS 监听线程缓存最新 JPEG
+        if path.startswith("/api/comfy/preview/"):
+            return self._comfy_preview(path[len("/api/comfy/preview/"):].strip("/"))
         # ComfyUI 产出物代理：21.157 在服务网段，浏览器不可直达，经 workbench 转发 /view
         if path.startswith("/api/comfy/view/"):
             port = path[len("/api/comfy/view/"):].strip("/")
@@ -4835,6 +4838,26 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _comfy_preview(self, spec):
+        """返回节点当前执行任务的最新预览帧（JPEG）；无帧时 204。"""
+        port = spec.split("/", 1)[0].strip("/")
+        body = b""
+        if port in ("8188", "8189"):
+            try:
+                import ops_monitor as _OM
+                st = _OM._COMFY_WS.get(port) or {}
+                if st.get("preview") and st.get("curPid"):
+                    body = st["preview"]
+            except Exception:
+                body = b""
+        self.send_response(200 if body else 204)
+        self.send_header("Content-Type", "image/jpeg" if body else "text/plain")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
 
     def _proxy_media(self, url):
         """只读媒体流代理：透传 Range（视频拖动播放）与长度/类型头，流式写回。"""
