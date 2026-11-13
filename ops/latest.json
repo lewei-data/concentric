@@ -1,10 +1,10 @@
 {
- "ts": "2026-11-13T19:52:57+0800",
+ "ts": "2026-11-13T20:54:48+0800",
  "total": 16,
  "ok": 16,
  "failed": 0,
  "critical_failed": 0,
- "summary": "2026-11-13 19:53 巡检正常：16/16 项服务在线",
+ "summary": "2026-11-13 20:55 巡检正常：16/16 项服务在线",
  "report_path": "",
  "results": [
   {
@@ -16,8 +16,8 @@
    "proto": "ssh",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 10132,
-   "detail": "localhost.localdomain /  19:53:07 up 131 days"
+   "latency_ms": 9694,
+   "detail": "localhost.localdomain /  20:54:58 up 131 days"
   },
   {
    "node": "comfy-21-157",
@@ -28,7 +28,7 @@
    "proto": "files",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 10354,
+   "latency_ms": 9193,
    "detail": "权重 7/7 正常"
   },
   {
@@ -52,7 +52,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 7,
+   "latency_ms": 5,
    "detail": "HTTP 200"
   },
   {
@@ -64,7 +64,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 903,
+   "latency_ms": 1267,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -76,7 +76,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 405,
+   "latency_ms": 232,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -124,7 +124,7 @@
    "proto": "mcp",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 5,
+   "latency_ms": 6,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -136,7 +136,7 @@
    "proto": "mcp",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 5,
+   "latency_ms": 6,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -148,7 +148,7 @@
    "proto": "mcp",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 7,
+   "latency_ms": 6,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -160,7 +160,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 15,
+   "latency_ms": 10,
    "detail": "HTTP 200"
   },
   {
