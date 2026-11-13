@@ -132,9 +132,37 @@ type OmCli = {
   checks: Record<string, boolean>;
   reason: string;
 };
-type OmProject = { id: string; name: string; status: string };
+type OmStageState = { name: string; status: string };
+type OmProject = {
+  id: string;
+  name: string;
+  pipelineType: string;
+  live: boolean;
+  awaitingHuman: boolean;
+  activeStage: string;
+  poster: string;
+  lastActivity: string;
+  completedCount?: number;
+  renderCount?: number;
+  sceneCount?: number;
+  stageStates: OmStageState[];
+};
+type OmBoardStage = {
+  name: string;
+  status: string;
+  error?: string | null;
+  timestamp?: string | null;
+};
+type OmRender = { path: string; size?: number; mtime?: number };
+type OmBoardState = {
+  title?: string;
+  stages?: OmBoardStage[];
+  media?: { renders?: OmRender[]; snapshots?: OmRender[] };
+  storyboard?: { scenes?: unknown[] };
+};
 type OmBacklot = {
   url: string;
+  boardUrl: string;
   online: boolean;
   app: string;
   projectsNote: string;
@@ -147,6 +175,31 @@ type OmView = {
   backlot: OmBacklot;
   checkedAt: string;
 };
+type ComfyNode = {
+  id: string;
+  name: string;
+  url: string;
+  online: boolean;
+  version?: string;
+  ramTotal?: number;
+  ramFree?: number;
+  device?: {
+    name: string;
+    type: string;
+    vramTotal?: number;
+    vramFree?: number;
+    torchVersion: string;
+  };
+  queue?: { running: number; pending: number };
+  recent?: {
+    id: string;
+    status: string;
+    outputs: number;
+    files?: { filename: string; subfolder: string; type: string; kind: string }[];
+  }[];
+  error?: string;
+};
+type ComfyView = { available: boolean; nodes: ComfyNode[]; checkedAt: string };
 type OpsData = {
   ok: boolean;
   generatedAt?: string;
@@ -172,6 +225,7 @@ type OpsData = {
     pendingRender: { id: string; title: string; stage: string; blockedBy: string }[];
   };
   openmontage?: OmView;
+  comfy?: ComfyView;
   alerts?: OpsAlert[];
   runs?: OpsRun[];
   actions?: {
@@ -227,6 +281,18 @@ const LLM_STATUS_CN: Record<string, string> = {
   enabled: "启用", disabled: "已停用", exhausted: "额度耗尽",
 };
 
+function fmtBytes(n?: number | null) {
+  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
 function fmtTokens(n?: number | null) {
   const v = Math.max(0, Math.floor(n || 0));
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(v % 1_000_000 ? 1 : 0)}M`;
@@ -242,7 +308,31 @@ export function OpsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const [omOpenId, setOmOpenId] = useState("");
+  const [omDetail, setOmDetail] = useState<OmBoardState | null>(null);
+  const [omDetailErr, setOmDetailErr] = useState("");
+  const [omDetailLoading, setOmDetailLoading] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleOmProject = useCallback((id: string) => {
+    if (omOpenId === id) {
+      setOmOpenId("");
+      setOmDetail(null);
+      return;
+    }
+    setOmOpenId(id);
+    setOmDetail(null);
+    setOmDetailErr("");
+    setOmDetailLoading(true);
+    fetch(`/api/om/project/${encodeURIComponent(id)}/state`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.ok === false) throw new Error(String(d.error || "加载失败"));
+        setOmDetail(d as OmBoardState);
+      })
+      .catch((e) => setOmDetailErr(String((e as Error).message)))
+      .finally(() => setOmDetailLoading(false));
+  }, [omOpenId]);
 
   const load = useCallback(async () => {
     try {
@@ -374,6 +464,31 @@ export function OpsPage() {
   const services = data?.video?.services || [];
   const om = data?.openmontage;
   const omChecks = om?.cli?.checks || {};
+  const omProjects = om?.backlot?.projects || [];
+  const omBoardUrl = om?.backlot?.boardUrl || "";
+  const comfy = data?.comfy;
+  const comfyNodes = comfy?.nodes || [];
+
+  // 内外网判断：内网访问直连 Backlot（更快）；域名（外网）访问 31.206 不可达，
+  // 媒体与海报改走 workbench 同源代理路径（域名即 workbench），后端转发
+  const lanAccess =
+    /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost$)/.test(window.location.hostname);
+  const omMediaHref = (pid: string, fpath: string) => {
+    const encoded = fpath.split("/").map(encodeURIComponent).join("/");
+    return lanAccess
+      ? `${omBoardUrl}/media/${encodeURIComponent(pid)}/${encoded}`
+      : `/api/om/media/${encodeURIComponent(pid)}/${encoded}`;
+  };
+  const omPosterSrc = (p: OmProject) => {
+    if (!p.poster) return "";
+    const fp = p.poster.split("/").map(encodeURIComponent).join("/");
+    return lanAccess
+      ? `${omBoardUrl}/thumb/${encodeURIComponent(p.id)}/${fp}?w=320`
+      : `/api/om/thumb/${encodeURIComponent(p.id)}/${fp}?w=320`;
+  };
+  const comfyViewUrl = (port: string, f: { filename: string; subfolder: string; type: string }) =>
+    `/api/comfy/view/${port}?filename=${encodeURIComponent(f.filename)}` +
+    `&subfolder=${encodeURIComponent(f.subfolder)}&type=${encodeURIComponent(f.type)}`;
   const jobs = data?.video?.localJobs || [];
   const renders = data?.video?.pipelineRender || [];
   const pendingRender = data?.video?.pendingRender || [];
@@ -838,17 +953,35 @@ export function OpsPage() {
                   {!om.cli.available && om.cli.reason ? ` · ${om.cli.reason}` : ""}
                 </small>
               </div>
-              <div className="ops-service om-channel">
+              <a
+                className={`ops-service om-channel om-link${om.backlot.online ? "" : " is-standby"}`}
+                href="http://192.168.31.206:4750"
+                target="_blank"
+                rel="noreferrer"
+                title={`点击在新窗口打开 Backlot 看板（内网 http://192.168.31.206:4750）`}
+                onClick={(e) => {
+                  // 跳转时判断访问方式：经域名（外网）访问时无法直达内网看板，给出提示不跳死链
+                  const host = window.location.hostname;
+                  const lan = /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost$)/.test(host);
+                  if (!lan) {
+                    e.preventDefault();
+                    setFeedback({
+                      ok: false,
+                      text: "当前经域名（外网）访问，无法直达内网看板 192.168.31.206:4750；请在内网环境打开运维监控后点击跳转。",
+                    });
+                  }
+                }}
+              >
                 <span className={`ops-pill ${om.backlot.online ? "ok" : ""}`}>
                   {om.backlot.online ? "看板在线" : "看板待机"}
                 </span>
-                <b>OpenMontage Backlot 看板</b>
-                <small title={om.backlot.projects?.map((p) => p.name).join("、") || om.backlot.url}>
-                  {om.backlot.url} · {om.backlot.projectsNote}
+                <b>OpenMontage Backlot 看板 ↗</b>
+                <small title={om.backlot.projects?.map((p) => p.name).join("、") || om.backlot.boardUrl}>
+                  {om.backlot.boardUrl} · {om.backlot.projectsNote}
                   {om.backlot.online && om.backlot.projects.length > 0 &&
                     `：${om.backlot.projects.slice(0, 3).map((p) => p.name).join("、")}${om.backlot.projects.length > 3 ? " 等" : ""}`}
                 </small>
-              </div>
+              </a>
             </>
           )}
         </div>
@@ -905,6 +1038,169 @@ export function OpsPage() {
             </li>
           ))}
         </ul>
+      </section>
+
+      {/* OpenMontage 项目看板（API 代理取数 + 媒体直连内网 Backlot） */}
+      <section className="ops-card" aria-label="OpenMontage 项目看板">
+        <h2>
+          OpenMontage 项目看板
+          <small className="muted">
+            （Backlot 数据经 /api/om/* 代理 · 海报与成片媒体直连 {omBoardUrl}）
+          </small>
+        </h2>
+        {!om?.backlot?.online ? (
+          <p className="muted">Backlot 看板服务未运行（systemctl status backlot-board）。</p>
+        ) : (
+          <div className="om-board">
+            {omProjects.map((p) => (
+              <article key={p.id} className={`om-proj${omOpenId === p.id ? " is-open" : ""}`}>
+                <header
+                  className="om-proj-head"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => toggleOmProject(p.id)}
+                  onKeyDown={(e) => e.key === "Enter" && toggleOmProject(p.id)}
+                  title="点击展开/收起看板详情"
+                >
+                  {p.poster && (
+                    <img
+                      className="om-poster"
+                      src={omPosterSrc(p)}
+                      alt=""
+                      loading="lazy"
+                    />
+                  )}
+                  <div className="om-proj-meta">
+                    <b>{p.name}</b>
+                    <small className="muted">
+                      {p.pipelineType || "未标工艺"} ·{" "}
+                      {p.activeStage ? `当前阶段 ${p.activeStage}` : p.live ? "进行中" : "空闲"} · 渲染{" "}
+                      {p.renderCount ?? 0} · 场景 {p.sceneCount ?? 0}
+                    </small>
+                    <div className="om-stage-mini" aria-hidden="true">
+                      {p.stageStates.map((s) => (
+                        <i key={s.name} className={`om-dot st-${s.status}`} title={`${s.name}: ${s.status}`} />
+                      ))}
+                    </div>
+                  </div>
+                  <span className={`ops-pill ${p.live ? "ok" : p.awaitingHuman ? "warn" : ""}`}>
+                    {p.awaitingHuman ? "待人工" : p.live ? "进行中" : "空闲"}
+                  </span>
+                </header>
+                {omOpenId === p.id && (
+                  <div className="om-detail">
+                    {omDetailLoading && <p className="muted">看板状态加载中…</p>}
+                    {!omDetailLoading && omDetailErr && <p className="ops-error">{omDetailErr}</p>}
+                    {!omDetailLoading && !omDetailErr && omDetail?.stages?.length ? (
+                      <>
+                        <div className="om-stage-rail">
+                          {omDetail.stages.map((s) => (
+                            <div key={s.name} className={`om-stage st-${s.status}`} title={s.error || s.status}>
+                              <i aria-hidden="true" />
+                              <span>{s.name}</span>
+                              {s.status === "awaiting_human" && <small>待人工</small>}
+                              {s.error && <small className="ops-error">{String(s.error).slice(0, 40)}</small>}
+                            </div>
+                          ))}
+                        </div>
+                        <ul className="om-renders">
+                          {(omDetail.media?.renders || []).slice(0, 8).map((r) => (
+                            <li key={r.path}>
+                              <a
+                                href={omMediaHref(p.id, r.path)}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={lanAccess ? "内网直连 Backlot 播放" : "经 workbench 代理播放（域名访问）"}
+                              >
+                                {r.path.split("/").pop()}
+                              </a>
+                              <small className="muted">{r.size ? fmtBytes(r.size) : ""}</small>
+                            </li>
+                          ))}
+                          {!(omDetail.media?.renders || []).length && (
+                            <li className="muted">暂无成片渲染。</li>
+                          )}
+                        </ul>
+                      </>
+                    ) : null}
+                    {!omDetailLoading && !omDetailErr && omDetail && !omDetail.stages?.length && (
+                      <p className="muted">该项目暂无流水线看板状态。</p>
+                    )}
+                  </div>
+                )}
+              </article>
+            ))}
+            {!omProjects.length && <p className="muted">看板暂无项目。</p>}
+          </div>
+        )}
+      </section>
+
+      {/* ComfyUI 节点监控（system_stats / queue / history） */}
+      <section className="ops-card" aria-label="ComfyUI 节点监控">
+        <h2>
+          ComfyUI 节点
+          <small className="muted">（192.168.21.157 · 出图 :8188 · 视频 :8189 · 素材补齐链路依赖）</small>
+        </h2>
+        <div className="om-board">
+          {comfyNodes.map((n) => (
+            <article key={n.id} className="om-proj">
+              <header className="om-proj-head">
+                <span className={`ops-pill ${n.online ? "ok" : "bad"}`}>{n.online ? "在线" : "离线"}</span>
+                <div className="om-proj-meta">
+                  <b>
+                    {n.name} <small className="mono">:{n.id}</small>
+                  </b>
+                  <small className="muted">
+                    {n.online
+                      ? `${n.device?.name || "GPU"} · 显存 ${fmtBytes(n.device?.vramFree)}/` +
+                        `${fmtBytes(n.device?.vramTotal)} · 内存 ${fmtBytes(n.ramFree)}/${fmtBytes(n.ramTotal)}` +
+                        ` · ComfyUI ${n.version || "—"}`
+                      : n.error || "连接失败"}
+                  </small>
+                </div>
+                <span className="ops-pill warn">
+                  {n.online ? `${n.queue?.running ?? 0} 运行 / ${n.queue?.pending ?? 0} 排队` : "—"}
+                </span>
+              </header>
+              {n.online && (n.recent || []).length > 0 && (
+                <div className="om-detail">
+                  <ul className="om-renders">
+                    {n.recent!.map((r) => (
+                      <li key={r.id} className="comfy-task">
+                        <span className="mono">#{r.id}</span>
+                        <span className={`ops-pill ${r.status === "success" ? "ok" : r.status === "error" ? "bad" : "warn"}`}>
+                          {r.status || "unknown"}
+                        </span>
+                        <small className="muted">输出 {r.outputs} 项</small>
+                        <div className="comfy-files">
+                          {(r.files || []).map((f, i) => {
+                            const url = comfyViewUrl(n.id, f);
+                            return f.kind === "image" ? (
+                              <a key={i} href={url} target="_blank" rel="noreferrer" title={`查看 ${f.filename}`}>
+                                <img
+                                  className="comfy-thumb"
+                                  src={url}
+                                  alt={f.filename}
+                                  loading="lazy"
+                                />
+                              </a>
+                            ) : (
+                              <a key={i} className="comfy-file" href={url} target="_blank" rel="noreferrer">
+                                {f.kind === "video" ? "▶ " : f.kind === "audio" ? "♪ " : ""}{f.filename}
+                              </a>
+                            );
+                          })}
+                          {!(r.files || []).length && <small className="muted">无可展示产出物</small>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </article>
+          ))}
+          {!comfyNodes.length && <p className="muted">未配置 ComfyUI 节点。</p>}
+        </div>
       </section>
 
       <section className="ins-sources">

@@ -52,6 +52,18 @@ OM_ROOT = os.environ.get("OPC_OPENMONTAGE_DIR", "/opt/sefs/OpenMontage")
 OM_COMPOSER = os.path.join(OM_ROOT, "remotion-composer")
 OM_ENTRY = os.path.join(OM_COMPOSER, "src", "index.tsx")
 OM_BACKLOT_URL = os.environ.get("OPC_BACKLOT_URL", "http://127.0.0.1:4750")
+# 浏览器打开看板 UI 用的外部可达地址（内网办公段），与探活地址分离；
+# 前端跳转时按当前访问方式判断：域名（外网）访问时 21.206/31.206 均不可直达，给提示不跳转
+OM_BOARD_URL = os.environ.get("OPC_BACKLOT_BOARD_URL", "http://192.168.31.206:4750")
+
+# ---------- ComfyUI 节点（素材补齐链路依赖 8188 文生图 / 8189 视频） ----------
+COMFY_NODES = [
+    {"id": "8188", "name": "ComfyUI 出图", "url": "http://192.168.21.157:8188"},
+    {"id": "8189", "name": "ComfyUI 视频", "url": "http://192.168.21.157:8189"},
+]
+COMFY_TTL = 15
+_COMFY = {"at": 0.0, "data": None}
+_COMFY_LOCK = threading.Lock()
 OM_TTL = 30
 _OM = {"at": 0.0, "data": None}
 _OM_LOCK = threading.Lock()
@@ -386,12 +398,24 @@ def _openmontage(force=False):
         projects_note = "服务未运行（待机）——渲染走 CLI 通道，不受影响"
     backlot = {
         "url": OM_BACKLOT_URL, "online": ok,
+        "boardUrl": OM_BOARD_URL,
         "app": (health or {}).get("app") or "",
         "projectsNote": projects_note,
-        "projects": [{"id": p.get("id") or p.get("project_id") or "",
-                      "name": p.get("name") or p.get("title") or p.get("id") or "",
-                      "status": p.get("status") or ""}
-                     for p in projects[:8]],
+        "projects": [{
+            "id": p.get("project_id") or p.get("id") or "",
+            "name": p.get("title") or p.get("name") or p.get("project_id") or "",
+            "pipelineType": p.get("pipeline_type") or "",
+            "live": bool(p.get("live")),
+            "awaitingHuman": bool(p.get("awaiting_human")),
+            "activeStage": p.get("active_stage") or "",
+            "poster": p.get("poster") or "",
+            "lastActivity": _ts(p.get("last_activity")),
+            "completedCount": p.get("completed_count"),
+            "renderCount": p.get("render_count"),
+            "sceneCount": p.get("scene_count"),
+            "stageStates": [{"name": s.get("name") or "", "status": s.get("status") or ""}
+                            for s in p.get("stage_states") or []],
+        } for p in projects[:8]],
     }
     view = {
         "root": OM_ROOT, "channel": "cli", "cli": cli, "backlot": backlot,
@@ -399,6 +423,87 @@ def _openmontage(force=False):
     }
     with _OM_LOCK:
         _OM["at"], _OM["data"] = time.time(), view
+    return view
+
+
+def _comfy(force=False):
+    """ComfyUI 节点监控：/system_stats（GPU/显存/内存）+ /queue（队列）+ /history（最近任务）。
+
+    素材补齐链路（asset_fill）依赖 8188 文生图，视频环节依赖 8189；任一离线都应告警。
+    """
+    with _COMFY_LOCK:
+        cached = _COMFY["data"]
+        fresh = cached is not None and (time.time() - _COMFY["at"]) < COMFY_TTL
+    if fresh and not force:
+        return cached
+
+    nodes = []
+    for n in COMFY_NODES:
+        ok, stats = _probe_json(n["url"] + "/system_stats", timeout=2.0)
+        node = {"id": n["id"], "name": n["name"], "url": n["url"], "online": ok}
+        if ok and isinstance(stats, dict):
+            sysinfo = stats.get("system") or {}
+            dev = (stats.get("devices") or [{}])[0] if isinstance(stats.get("devices"), list) else {}
+            node.update({
+                "version": str(sysinfo.get("comfyui_version") or ""),
+                "ramTotal": sysinfo.get("ram_total"),
+                "ramFree": sysinfo.get("ram_free"),
+                "device": {
+                    "name": str(dev.get("name") or ""),
+                    "type": str(dev.get("type") or ""),
+                    "vramTotal": dev.get("vram_total"),
+                    "vramFree": dev.get("vram_free"),
+                    "torchVersion": str(dev.get("torch_version") or ""),
+                },
+            })
+            ok2, q = _probe_json(n["url"] + "/queue", timeout=2.0)
+            q = q if ok2 and isinstance(q, dict) else {}
+            node["queue"] = {
+                "running": len(q.get("queue_running") or []),
+                "pending": len(q.get("queue_pending") or []),
+            }
+            ok3, h = _probe_json(n["url"] + "/history?max_items=6", timeout=2.0)
+            recent = []
+            if ok3 and isinstance(h, dict):
+                for hid, item in list(h.items())[-6:]:
+                    st = (item or {}).get("status") or {}
+                    files = []
+                    for _nid, out in ((item or {}).get("outputs") or {}).items():
+                        if not isinstance(out, dict):
+                            continue
+                        for key in ("images", "videos", "audio", "gifs", "3d"):
+                            for f in out.get(key) or []:
+                                if isinstance(f, dict) and f.get("filename"):
+                                    # ComfyUI 常把 mp4/webm 也塞进 images 键，按扩展名定真实类型
+                                    fn = str(f.get("filename")).lower()
+                                    if fn.endswith((".mp4", ".webm", ".mkv", ".mov")):
+                                        kind = "video"
+                                    elif fn.endswith((".mp3", ".wav", ".flac", ".m4a")):
+                                        kind = "audio"
+                                    elif fn.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                                        kind = "image"
+                                    else:
+                                        kind = key.rstrip("s")
+                                    files.append({
+                                        "filename": str(f.get("filename")),
+                                        "subfolder": str(f.get("subfolder") or ""),
+                                        "type": str(f.get("type") or "output"),
+                                        "kind": kind,
+                                    })
+                    recent.append({
+                        "id": str(hid),
+                        "status": str(st.get("status_str") or ""),
+                        "outputs": len(files),
+                        "files": files[:10],
+                    })
+            node["recent"] = recent
+        else:
+            node["error"] = str((stats or {}).get("error") or "连接失败")
+        nodes.append(node)
+    view = {"available": any(n.get("online") for n in nodes),
+            "nodes": nodes, "checkedAt": _now()}
+    with _COMFY_LOCK:
+        _COMFY["at"], _COMFY["data"] = time.time(), view
     return view
 
 
@@ -445,6 +550,7 @@ def build(state, health, force_probe=False, runs=None, llm=None):
     local_jobs, jobs_file_ok = _local_jobs()
     render_items = _render_view(pipeline)
     om_view = _openmontage(force_probe)
+    comfy_view = _comfy(force_probe)
     stage_counts = Counter(str(it.get("stage") or "unknown") for it in pipeline)
     blocked = [it for it in pipeline if it.get("blockedBy")]
     blocked_by = Counter(str(it.get("blockedBy") or "unknown") for it in blocked)
@@ -529,6 +635,17 @@ def build(state, health, force_probe=False, runs=None, llm=None):
             "source": "OpenMontage CLI 探测", "at": om_view.get("checkedAt") or "",
             "action": "安装 npx 与 remotion-composer 依赖（npm install），确认渲染入口存在",
         })
+    # ComfyUI 节点：素材补齐（8188 文生图）与视频生成（8189）的执行引擎
+    for n in comfy_view.get("nodes") or []:
+        if not n.get("online"):
+            alerts.append({
+                "id": f"comfy-{n.get('id')}", "level": "warning",
+                "title": f"{n.get('name')} 节点离线",
+                "detail": f"{n.get('url')} 探测失败：{n.get('error') or '连接被拒绝'}。"
+                          "依赖该节点的素材补齐/视频生成任务将无法执行。",
+                "source": "ComfyUI 探测", "at": comfy_view.get("checkedAt") or "",
+                "action": "SSH 到 192.168.21.157 确认 ComfyUI 服务进程与显存状态",
+            })
     for gate, count in blocked_by.most_common(4):
         alerts.append({
             "id": f"blocked-{gate}", "level": "warning",
@@ -636,6 +753,7 @@ def build(state, health, force_probe=False, runs=None, llm=None):
             "omChannelOk": 1 if om_view["cli"].get("available") else 0,
             "omBacklotOnline": 1 if om_view["backlot"].get("online") else 0,
             "omBacklotProjects": len(om_view["backlot"].get("projects") or []),
+            "comfyOnline": sum(1 for n in comfy_view.get("nodes") or [] if n.get("online")),
             "nodesTotal": (node_view.get("summary") or {}).get("nodes", 0),
             "nodesFailed": (node_view.get("summary") or {}).get("failed", 0),
             "runsTotal": len(runs),
@@ -670,6 +788,7 @@ def build(state, health, force_probe=False, runs=None, llm=None):
             ][-12:],
         },
         "openmontage": om_view,
+        "comfy": comfy_view,
         "nodes": node_view,
         "llm": llm if llm else {"available": False, "models": []},
         "alerts": alerts[:24],

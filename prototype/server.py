@@ -36,6 +36,7 @@ from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.request import urlopen as _urlopen, Request as _UrlRequest
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIST = os.path.normpath(os.path.join(BASE_DIR, "..", "web", "dist"))
@@ -65,6 +66,19 @@ LLM_DEFAULTS = [
         "provider": os.environ.get("OPC_LLM_PROVIDER", "opencode-go"),
         "apiKey": "",
         "note": "默认模型（Hermes CLI 调用）",
+    },
+    {
+        # OpenCode Go · GLM-5.3-Flash：多模态、1M 上下文；api_key 由管理员在运维页登记（不入代码）
+        "id": "opencode-glm53",
+        "name": "glm-5.3-flash",
+        "url": os.environ.get("OPC_LLM_GLM_BASE_URL", "https://opencode.ai/zen/go/v1"),
+        "protocol": "hermes-cli",
+        "totalTokens": int(os.environ.get("OPC_LLM_GLM_TOTAL_TOKENS", "20000000")),
+        "alias": "glm53",
+        "priority": 20,
+        "provider": "opencode-go",
+        "apiKey": "",
+        "note": "OpenCode Go · GLM-5.3-Flash（多模态/1M 上下文）",
     },
     {
         # 本地推理通道（llama.cpp，OpenAI 兼容）：无时间要求任务的优先通道，纯 CPU 约 4.4 tok/s
@@ -4552,6 +4566,41 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(KERNEL.factory_view())
         if path.startswith("/api/factory/step/"):
             return self._json(self._factory_step(path[len("/api/factory/step/"):]))
+        # OpenMontage Backlot 看板 JSON 代理（Backlot 无 CORS 头，浏览器不能直连；
+        # 海报/媒体走绝对 URL 由 <img>/<video> 直接加载，不受 CORS 限制）
+        # OpenMontage 媒体代理：外网（域名）访问 31.206 不可达，经 workbench 同源转发；
+        # 内网访问时前端仍直连 Backlot（更快），代理仅供域名场景与兜底
+        if path.startswith("/api/om/media/"):
+            parts = path[len("/api/om/media/"):].split("/", 1)
+            if len(parts) != 2 or not all(parts):
+                return self._json({"ok": False, "error": "路径格式：/api/om/media/<project_id>/<file_path>"}, 400)
+            target = f"http://127.0.0.1:4750/media/{quote(parts[0])}/{quote(parts[1], safe='/')}"
+            return self._proxy_media(target)
+        if path.startswith("/api/om/thumb/"):
+            parts = path[len("/api/om/thumb/"):].strip("/").split("/", 1)
+            if len(parts) != 2 or not all(parts):
+                return self._json({"ok": False, "error": "路径格式：/api/om/thumb/<project_id>/<file_path>"}, 400)
+            w = (parse_qs(urlparse(self.path).query).get("w") or ["320"])[0]
+            return self._proxy_media(f"http://127.0.0.1:4750/thumb/{quote(parts[0])}"
+                                     f"/{quote(parts[1], safe='/')}?w={quote(w)}")
+        # ComfyUI 产出物代理：21.157 在服务网段，浏览器不可直达，经 workbench 转发 /view
+        if path.startswith("/api/comfy/view/"):
+            port = path[len("/api/comfy/view/"):].strip("/")
+            if port not in ("8188", "8189"):
+                return self._json({"ok": False, "error": "非法节点端口"}, 400)
+            qs = parse_qs(urlparse(self.path).query)
+            fn = (qs.get("filename") or [""])[0]
+            if not fn:
+                return self._json({"ok": False, "error": "缺少 filename"}, 400)
+            sub = quote((qs.get("subfolder") or [""])[0])
+            ftype = quote((qs.get("type") or ["output"])[0])
+            return self._proxy_media(
+                f"http://192.168.21.157:{port}/view?filename={quote(fn)}&subfolder={sub}&type={ftype}")
+        if path.startswith("/api/om/project/"):
+            parts = path[len("/api/om/project/"):].strip("/").split("/")
+            if len(parts) != 2 or parts[1] != "state":
+                return self._json({"ok": False, "error": "路径格式：/api/om/project/<project_id>/state"}, 400)
+            return self._proxy_json(f"http://127.0.0.1:4750/api/project/{quote(parts[0])}/state")
         if path.startswith("/api/trace/"):
             data = self._trace(path.rsplit("/", 1)[-1])
             if data is None:
@@ -4786,6 +4835,37 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _proxy_media(self, url):
+        """只读媒体流代理：透传 Range（视频拖动播放）与长度/类型头，流式写回。"""
+        headers = {}
+        rng = self.headers.get("Range")
+        if rng:
+            headers["Range"] = rng
+        try:
+            req = _UrlRequest(url, headers=headers)
+            with _urlopen(req, timeout=15) as resp:
+                self.send_response(resp.status)
+                for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+                    v = resp.headers.get(h)
+                    if v:
+                        self.send_header(h, v)
+                self.send_header("Cache-Control", "private, max-age=600")
+                self.end_headers()
+                shutil.copyfileobj(resp, self.wfile, 64 * 1024)
+        except Exception as e:
+            try:
+                self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 502)
+            except Exception:
+                pass
+
+    def _proxy_json(self, url):
+        """只读 JSON 代理（Backlot 看板等无 CORS 头的内网服务）；失败返回 502 结构。"""
+        try:
+            with _urlopen(url, timeout=4) as resp:
+                return self._json(json.loads(resp.read(240000).decode("utf-8", "replace")))
+        except Exception as e:
+            return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 502)
 
     def _factory_step(self, spec):
         """车间工位详情：/api/factory/step/<trace_id>/<stage_id> → 工位记录 + 时间段内事件。"""

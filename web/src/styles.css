@@ -3979,3 +3979,69 @@ a:hover {
   .fac-product-head { grid-template-columns: 1fr; }
   .fac-product-ctl { grid-column: 1; grid-row: auto; justify-content: flex-end; }
 }
+
+/* 运维监控：Backlot 看板可点击行 */
+.ops-service.om-link { color: inherit; text-decoration: none; cursor: pointer; transition: background 0.15s var(--ease); }
+.ops-service.om-link:hover { background: var(--accent-soft); }
+.ops-service.om-link:hover b { color: var(--accent-deep); text-decoration: underline; }
+.ops-service.om-link.is-standby { opacity: 0.72; }
+
+/* ============ 运维监控：OpenMontage 项目看板 + ComfyUI 节点 ============ */
+.om-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.om-proj {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-soft); overflow: hidden;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.om-proj.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(58, 111, 242, 0.10); }
+.om-proj-head {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  min-height: 64px;
+}
+.om-proj-head[role="button"] { cursor: pointer; }
+.om-proj-head[role="button"]:hover { background: rgba(58, 111, 242, 0.06); }
+.om-poster {
+  width: 76px; height: 44px; object-fit: cover; border-radius: 6px; flex: none;
+  background: var(--bg-deep); border: 1px solid var(--border);
+}
+.om-proj-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.om-proj-meta b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.om-proj-meta small { font-size: 12px; }
+.om-stage-mini { display: flex; flex-wrap: wrap; gap: 4px; }
+.om-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-strong); }
+.om-dot.st-completed { background: var(--ok); }
+.om-dot.st-in_progress { background: var(--accent); animation: fac-blink 1.1s ease infinite; }
+.om-dot.st-awaiting_human { background: #d99a1f; }
+.om-detail { border-top: 1px dashed var(--border-strong); padding: 10px 14px 12px; background: var(--surface); }
+.om-stage-rail { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
+.om-stage {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+  border-radius: 999px; font-size: 12px; border: 1px solid var(--border);
+  background: var(--surface-soft); color: var(--muted);
+}
+.om-stage i { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); }
+.om-stage.st-completed { border-color: #b8e4d1; background: #effaf4; color: var(--ok); }
+.om-stage.st-completed i { background: var(--ok); }
+.om-stage.st-in_progress { border-color: #a9c9f7; background: #eef5ff; color: var(--accent-deep); }
+.om-stage.st-in_progress i { background: var(--accent); animation: fac-blink 1.1s ease infinite; }
+.om-stage.st-awaiting_human { border-color: #f0d9a6; background: #fff7e8; color: #b47207; }
+.om-stage.st-awaiting_human i { background: #d99a1f; }
+.om-renders { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.om-renders li { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
+.om-renders a { color: var(--accent-deep); text-decoration: none; word-break: break-all; }
+.om-renders a:hover { text-decoration: underline; }
+
+/* ComfyUI 任务产出物 */
+.comfy-task { flex-direction: column; align-items: flex-start; gap: 4px; }
+.comfy-files { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.comfy-thumb {
+  width: 72px; height: 48px; object-fit: cover; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-deep); display: block;
+}
+a:hover > .comfy-thumb { border-color: var(--accent); }
+.comfy-file {
+  font-size: 12px; color: var(--accent-deep); text-decoration: none;
+  padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
+  word-break: break-all;
+}
+.comfy-file:hover { background: var(--accent-soft); }
