@@ -16,9 +16,11 @@ import xml.etree.ElementTree as ET
 # --- ComfyUI 作图（qwen-image-2.1-turbo）配置 ---
 # 开启 OPC_USE_COMFYUI_IMAGES=1 后，制图优先用 ComfyUI 文生图出 PNG，失败自动回退本地 SVG。
 # 直连 ComfyUI 作图服务（不走 127.0.0.1 代理隧道）。
-COMFY_IMAGE_URL = os.environ.get("OPC_COMFY_IMAGE_URL", "http://192.168.21.157:8188")
+# 157 有两个 ComfyUI 实例（8188 和 8189），都能作图，批量任务时交替使用进行负载均衡。
+_COMFY_URLS_RAW = os.environ.get("OPC_COMFY_IMAGE_URL", "http://192.168.21.157:8188,http://192.168.21.157:8189")
+COMFY_IMAGE_URLS = [u.strip() for u in _COMFY_URLS_RAW.split(",") if u.strip()]
 USE_COMFYUI_IMAGES = os.environ.get("OPC_USE_COMFYUI_IMAGES", "").lower() in ("1", "true", "yes")
-COMFY_IMAGE_TIMEOUT = int(os.environ.get("OPC_COMFY_IMAGE_TIMEOUT", "300"))
+COMFY_IMAGE_TIMEOUT = int(os.environ.get("OPC_COMFY_IMAGE_TIMEOUT", "1800"))  # 30 分钟
 
 # qwen-image-2.1-t2i 工作流（与 OpenMontage tools/_comfyui/workflows/qwen-image-2.1-t2i.json 一致）
 _COMFY_QWEN_WF = {
@@ -264,12 +266,17 @@ def _default_prompt(shot, item, project_id):
     return f"{base}，电影感，精致构图，柔光，暖色调，高质量插画风格，无文字"
 
 
-def _comfyui_generate(prompt, out_path, width=1024, height=1024, timeout=COMFY_IMAGE_TIMEOUT):
-    """调用 ComfyUI（qwen-image-2.1-turbo）文生图，落盘 PNG。成功返回 True。"""
+def _comfyui_generate(prompt, out_path, url=None, width=1024, height=1024, timeout=COMFY_IMAGE_TIMEOUT):
+    """调用 ComfyUI（qwen-image-2.1-turbo）文生图，落盘 PNG。成功返回 True。
+    
+    url: ComfyUI 实例地址，默认使用 COMFY_IMAGE_URLS[0]。
+    """
+    if url is None:
+        url = COMFY_IMAGE_URLS[0] if COMFY_IMAGE_URLS else "http://192.168.21.157:8188"
     try:
-        _comfy_post(COMFY_IMAGE_URL + "/system_stats", timeout=8)
+        _comfy_post(url + "/system_stats", timeout=8)
     except Exception as e:
-        _log(f"ComfyUI 不可达({COMFY_IMAGE_URL})，跳过作图：{e}")
+        _log(f"ComfyUI 不可达({url})，跳过作图：{e}")
         return False
     wf = json.loads(json.dumps(_COMFY_QWEN_WF))
     wf["4"]["inputs"]["prompt"] = prompt
@@ -284,7 +291,7 @@ def _comfyui_generate(prompt, out_path, width=1024, height=1024, timeout=COMFY_I
     body = json.dumps({"prompt": wf, "client_id": "opc-illustration"},
                       ensure_ascii=False).encode("utf-8")
     try:
-        resp = json.loads(_comfy_post(COMFY_IMAGE_URL + "/prompt", data=body, timeout=20).decode("utf-8"))
+        resp = json.loads(_comfy_post(url + "/prompt", data=body, timeout=20).decode("utf-8"))
     except Exception as e:
         _log(f"ComfyUI 提交失败：{e}")
         return False
@@ -295,7 +302,7 @@ def _comfyui_generate(prompt, out_path, width=1024, height=1024, timeout=COMFY_I
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            hist = json.loads(_comfy_post(f"{COMFY_IMAGE_URL}/history/{pid}", timeout=20).decode("utf-8"))
+            hist = json.loads(_comfy_post(f"{url}/history/{pid}", timeout=20).decode("utf-8"))
         except Exception:
             time.sleep(2)
             continue
@@ -355,7 +362,10 @@ def ensure_assets(item, project_id, shots, files, remotion_dir=None):
                       or spec.get("prompt")
                       or _default_prompt(shot, item, project_id))
             png = os.path.join(assets_dir, f"illustration-s{i + 1:02d}.png")
-            if _comfyui_generate(prompt, png):
+            # 负载均衡：按镜号交替选择 ComfyUI 实例（8188/8189）
+            comfy_url = COMFY_IMAGE_URLS[i % len(COMFY_IMAGE_URLS)] if COMFY_IMAGE_URLS else None
+            _log(f"镜{i + 1} 作图 -> {comfy_url}")
+            if _comfyui_generate(prompt, png, url=comfy_url):
                 engine = "comfyui-qwen"
                 out_file = png
                 public_name = f"s{i + 1:02d}.png"
