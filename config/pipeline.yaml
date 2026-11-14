@@ -26,11 +26,11 @@ stages:
     description: PM 各提 3 条候选，CCO 9 选 6
 
   - id: topic_review
-    name: 选题评审会
+    name: 选题定稿（CCO+PM）
     kind: gate
     item_stage: topic
     om_stage: proposal
-    description: CCO + 项目 PM 定稿 6 条并归档纪要（取消 CEO/CTO 参会）
+    description: CCO + 项目 PM 定稿 6 条并归档纪要（无需 CEO/CTO 参会）
 
   - id: boss_report
     name: 选题结果汇报
@@ -49,28 +49,28 @@ stages:
     approval_action: production.start
     timeout_sec: null
     on_reject: stop
-    description: 老板批准后才进入制作（成本/素材/合规摘要）
+    description: 老板批准后才进入制作（成本/素材/合规摘要）；标注「老板直接发起」的任务等同已审批，免走本步
 
   - id: assessment
     name: 制作评估
     kind: produce
     item_stage: topic
     om_stage: proposal
-    description: PM 细化分镜（逐镜 画面/台词/时长/素材）并按并行原则拆分派单；CCO 确定出片模式（科普类 remotion 合成 / 娱乐类 全视频 或 语音+视频）；scout 补素材缺口
+    description: PM 在 CCO 初稿基础上细化分镜（逐镜 画面/台词/时长/素材）并按并行原则拆分派单；CCO 确定出片模式（科普类 remotion 合成 / 娱乐类 全视频 或 语音+视频）；scout 补素材缺口
 
   - id: copy
     name: 文案成稿
     kind: produce
     item_stage: copy
     om_stage: script
-    description: 文案成稿，与补素材并行：先查素材库，缺口走 ComfyUI 生成，台词/对白走 TTS 出音频
+    description: PM 在 CCO 初稿基础上细化成稿（script.json）；落 checkpoint_script，经 CCO 审批（human_approved）后进入制片；与补素材并行：先查素材库，缺口走 ComfyUI 生成，台词/对白走 TTS 出音频
 
   - id: sample
     name: 样片方案
     kind: produce
     item_stage: sample
     om_stage: scene_plan
-    description: 按 CCO 出片模式与细化分镜逐镜并行制作：逐镜剧本、封面、配音/TTS 方案
+    description: PM 在 CCO 初稿分镜方向上细化逐镜剧本/封面/配音/TTS 方案（scene_plan.json）；与补素材并行；CCO 审批后进入制片
 
   - id: render
     name: 真实出片
@@ -80,12 +80,12 @@ stages:
     description: MCP-TTS 旁白 + OpenMontage/Remotion 渲染 + 画面验收门（多条目并行渲染）
 
   - id: sample_review
-    name: 样片三方评审
+    name: 样片评审（CCO+PM）
     kind: gate
     item_stage: sample
     om_stage: edit
     rounds: 2
-    description: CCO + 本项目 PM 评审，不过则返工重出片（取消 CTO 三方评审）
+    description: CCO + 本项目 PM 评审，不过则返工重出片
 
   - id: final
     name: 定版
