@@ -21,6 +21,7 @@ from agent_defaults import DEFAULT_AGENT_SPEC, AGENTS_REQUIRED
 from deps import *  # noqa: F401,F403 —— 基础设施单例
 import company_config as CC
 import mail as MAILM
+import message_feeds as FEED
 import pipeline_defs as PIPE
 from hermes_adapter import HERMES
 
@@ -520,6 +521,36 @@ class Kernel:
         except Exception as e:
             print(f"[chat] Web 消息入库失败：{type(e).__name__}: {e}", flush=True)
 
+    # ---------- 消息中心三源（Hermes / 制片工厂 / 大模型） ----------
+    def _trace_title(self, trace):
+        with self.lock:
+            tr = self.traces.get(trace) or {}
+        return str((tr.get("hotspot") or {}).get("title") or trace or "实时任务")
+
+    def _factory_products(self, trace, stage_id):
+        """本工位推进的产品工序：按 CCO 定格的工艺步骤序列对齐 opcStage。"""
+        if not self.db:
+            return []
+        out = []
+        try:
+            rows = [r for r in self.db.product_crafts(500)
+                    if (r.get("trace_id") or "") == trace]
+        except Exception as e:
+            print(f"[msgfeed] 读取工艺决策失败：{type(e).__name__}: {e}", flush=True)
+            return []
+        for row in rows:
+            try:
+                seq = json.loads(row.get("steps") or "null")
+            except ValueError:
+                seq = None
+            if not seq:
+                seq = CC.CRAFT_STEPS.get(row.get("craft_id") or "", [])
+            steps = [s.get("name") for s in seq if s.get("opcStage") == stage_id]
+            out.append({"itemId": row.get("item_id"), "title": row.get("title"),
+                        "workshopNo": row.get("workshop_no"),
+                        "craftName": row.get("craft_name"), "steps": steps})
+        return out
+
     # ---------- 总线 ----------
     def emit(self, kind, trace, data):
         env = {"kind": kind, "traceId": trace, "at": iso_now(), "data": data}
@@ -726,6 +757,12 @@ class Kernel:
                 alerts.add("missing")
         if self.db:
             self.db.insert_usage(trace, agent_id, (meta or {}).get("model") or MODEL, usage)
+        # 大模型调用账本：真实调用（成功/降级/被拦截）都留一条，规则引擎降级不记
+        meta = meta or {}
+        if meta.get("engine") in ("hermes", "degraded") or meta.get("llmBlocked"):
+            a = self.agents.get(agent_id) or {}
+            FEED.llm_call(self.db, self.emit, trace, agent_id, a.get("name") or agent_id,
+                          meta, task=str(a.get("task") or "")[:60])
         if trace_hit or cost_hit:
             self._cto_alert(
                 f"成本熔断：trace {trace or '—'} 累计 {snapshot['totalTokens']} tokens / "
@@ -1094,6 +1131,14 @@ class Kernel:
 
     def run_pipeline(self, trace, hotspot, start=None, state=None):
         self.active_trace = trace
+        t0 = time.time()
+        with self.lock:
+            origin = str((self.traces.get(trace) or {}).get("source") or "")
+        try:
+            FEED.hermes_start(self.db, self.emit, trace, self._trace_title(trace), origin,
+                              start or "", len((state or {}).get("items") or {}))
+        except Exception as e:
+            print(f"[msgfeed] hermes 启动记录失败：{type(e).__name__}: {e}", flush=True)
         if self.db:
             try:
                 if start:
@@ -1149,6 +1194,17 @@ class Kernel:
                     self.db.pipeline_run_end(trace, final)
                 except Exception as e:
                     print(f"[pipeline] 运行态收口失败：{type(e).__name__}: {e}", flush=True)
+            # 结束后的成果：最终状态 / 产出条数 / 成片文件 / 总耗时（消息中心 hermes 源）
+            try:
+                with self.lock:
+                    items = [dict(c) for c in self.contents if c.get("traceId") == trace]
+                    final = str((self.traces.get(trace) or {}).get("status") or "incomplete")
+                done = [c for c in items if c.get("stage") in ("published", "archived")]
+                files = sum(len(c.get("assets") or []) for c in done)
+                FEED.hermes_finish(self.db, self.emit, trace, self._trace_title(trace),
+                                   final, len(items), len(done), files, time.time() - t0)
+            except Exception as e:
+                print(f"[msgfeed] hermes 成果记录失败：{type(e).__name__}: {e}", flush=True)
 
     # ---------- 选题流程护栏 ----------
     PIDS = ("wenren", "gou", "tongxinyuan")
@@ -1421,8 +1477,19 @@ class Kernel:
                 stop = fn(c)
             except Exception:
                 self._workshop_end(trace, st, "failed", c)
+                try:
+                    FEED.hermes_node(self.db, self.emit, trace, self._trace_title(trace),
+                                     st.name, "failed", len(c.items))
+                except Exception as e:
+                    print(f"[msgfeed] hermes 节点记录失败：{type(e).__name__}: {e}", flush=True)
                 raise
             self._workshop_end(trace, st, "stopped" if stop else "done", c)
+            # 关键节点（消息中心 hermes 源）：阶段收口 + 在制数量
+            try:
+                FEED.hermes_node(self.db, self.emit, trace, self._trace_title(trace),
+                                 st.name, "stopped" if stop else "done", len(c.items))
+            except Exception as e:
+                print(f"[msgfeed] hermes 节点记录失败：{type(e).__name__}: {e}", flush=True)
             if stop is _PIPELINE_STOP:
                 return
 
@@ -1432,6 +1499,11 @@ class Kernel:
         if not self.db:
             return
         self.db.workshop_step_start(trace, st.id, st.name, st.om_stage)
+        try:
+            FEED.factory_step(self.db, self.emit, trace, self._trace_title(trace),
+                              st.name, "running", self._factory_products(trace, st.id))
+        except Exception as e:
+            print(f"[msgfeed] 车间开工记录失败：{type(e).__name__}: {e}", flush=True)
 
     def _workshop_end(self, trace, st, status, ctx=None):
         """阶段结束：车间工位落定 done/stopped/failed，摘要随行供前端回放。"""
@@ -1441,6 +1513,12 @@ class Kernel:
             "stage": st.id, "name": st.name, "kind": st.kind, "omStage": st.om_stage,
             "items": len(getattr(ctx, "items", ()) or ()),
         })
+        # 车间流水线动态（消息中心 factory 源）：本工位收工 + 每件产品推进的工序
+        try:
+            FEED.factory_step(self.db, self.emit, trace, self._trace_title(trace),
+                              st.name, status, self._factory_products(trace, st.id))
+        except Exception as e:
+            print(f"[msgfeed] 车间收工记录失败：{type(e).__name__}: {e}", flush=True)
 
     def factory_view(self):
         """制片工厂聚合：13 类车间 + 各车间产品（工艺决策 + 工位过程 + 运行态）。

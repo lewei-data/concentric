@@ -1,10 +1,10 @@
 {
- "ts": "2026-11-14T09:49:49+0800",
+ "ts": "2026-11-14T10:51:49+0800",
  "total": 16,
  "ok": 16,
  "failed": 0,
  "critical_failed": 0,
- "summary": "2026-11-14 09:50 巡检正常：16/16 项服务在线",
+ "summary": "2026-11-14 10:52 巡检正常：16/16 项服务在线",
  "report_path": "",
  "results": [
   {
@@ -16,8 +16,8 @@
    "proto": "ssh",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 10204,
-   "detail": "localhost.localdomain /  09:49:59 up 132 days"
+   "latency_ms": 4900,
+   "detail": "localhost.localdomain /  10:51:54 up 132 days"
   },
   {
    "node": "comfy-21-157",
@@ -28,7 +28,7 @@
    "proto": "files",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 9009,
+   "latency_ms": 10210,
    "detail": "权重 7/7 正常"
   },
   {
@@ -40,7 +40,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 11,
+   "latency_ms": 12,
    "detail": "HTTP 200"
   },
   {
@@ -64,7 +64,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 237,
+   "latency_ms": 236,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -76,7 +76,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 230,
+   "latency_ms": 252,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -112,7 +112,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 68,
+   "latency_ms": 60,
    "detail": "HTTP 200"
   },
   {
@@ -136,7 +136,7 @@
    "proto": "mcp",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 6,
+   "latency_ms": 8,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -148,7 +148,7 @@
    "proto": "mcp",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 10,
+   "latency_ms": 12,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -160,7 +160,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 16,
+   "latency_ms": 10,
    "detail": "HTTP 200"
   },
   {
@@ -172,7 +172,7 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 3,
+   "latency_ms": 2,
    "detail": "HTTP 200"
   },
   {
@@ -184,7 +184,7 @@
    "proto": "http",
    "criticality": "low",
    "status": "ok",
-   "latency_ms": 3,
+   "latency_ms": 2,
    "detail": "HTTP 426"
   },
   {
@@ -196,7 +196,7 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 7,
+   "latency_ms": 5,
    "detail": "HTTP 200"
   }
  ]

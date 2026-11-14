@@ -2269,6 +2269,24 @@ a:hover {
   background: #f5f0ff;
 }
 
+.badge.src-hermes {
+  color: #075985;
+  border-color: #cfe8f7;
+  background: #f0f9ff;
+}
+
+.badge.src-factory {
+  color: #92400e;
+  border-color: #fde3c7;
+  background: #fff7ed;
+}
+
+.badge.src-llm {
+  color: #334155;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
 .badge.badge-warn {
   color: #9a3412;
   border-color: #f6d5bf;

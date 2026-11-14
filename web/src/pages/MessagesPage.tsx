@@ -40,6 +40,9 @@ const SOURCES = [
   { value: "feishu", label: "飞书" },
   { value: "app", label: "APP" },
   { value: "web", label: "Web" },
+  { value: "hermes", label: "Hermes 任务" },
+  { value: "factory", label: "制片工厂" },
+  { value: "llm", label: "大模型" },
 ];
 
 const DIRECTIONS = [
@@ -55,14 +58,26 @@ const MODALITIES = [
   { value: "video", label: "视频" },
 ];
 
-const SOURCE_LABEL: Record<string, string> = { feishu: "飞书", app: "APP", web: "Web" };
+const SOURCE_LABEL: Record<string, string> = {
+  feishu: "飞书",
+  app: "APP",
+  web: "Web",
+  hermes: "Hermes",
+  factory: "制片工厂",
+  llm: "大模型",
+};
 const MODALITY_LABEL: Record<string, string> = { text: "文字", voice: "语音", video: "视频" };
 const KIND_LABEL: Record<string, string> = {
   text: "消息",
   transcript: "转写",
   task: "任务",
   command: "指令",
+  stage: "关键节点",
+  result: "成果",
+  workshop: "工位",
+  llm: "调用",
 };
+const COUNT_KEYS = ["feishu", "app", "web", "hermes", "factory", "llm"];
 
 class ChatApiError extends Error {
   status: number;
@@ -312,7 +327,7 @@ export function MessagesPage() {
         <div>
           <h1>消息中心</h1>
           <p className="muted home-sub">
-            飞书 / APP / Web 三源统一只读视图 · 后端每 30 秒摄取，新消息实时推送
+            飞书 / APP / Web + Hermes 任务 / 制片工厂 / 大模型调用统一只读视图 · 新消息实时推送
           </p>
         </div>
         <div className="chat-actions">
@@ -366,8 +381,8 @@ export function MessagesPage() {
         </label>
         {sourceCounts.size > 0 && (
           <span className="pill-count">
-            累计：飞书 {sourceCounts.get("feishu") ?? 0} · APP {sourceCounts.get("app") ?? 0} · Web{" "}
-            {sourceCounts.get("web") ?? 0}
+            累计：
+            {COUNT_KEYS.map((key) => `${SOURCE_LABEL[key]} ${sourceCounts.get(key) ?? 0}`).join(" · ")}
           </span>
         )}
         {q && (
