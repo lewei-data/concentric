@@ -9,13 +9,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
  */
 
 type ChatMsg = {
+  id?: number;
   direction: "inbound" | "outbound";
   senderId?: string;
   senderName?: string;
   modality?: string;
   content: string;
   source?: string;
-  meta?: { audio?: string; file?: string; name?: string; size?: number };
+  meta?: { audio?: string; file?: string; name?: string; size?: number; navigate?: string; ack?: number };
   createdAt: string;
 };
 
@@ -70,14 +71,72 @@ export default function AssistantWidget() {
   const [notice, setNotice] = useState("");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
-  const [pos, setPos] = useState<{ dx: number; dy: number } | null>(null);
+  // 精灵绝对坐标（自由拖动到屏幕任意位置），null = 默认右下角
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("sec-pos") || "null");
+      if (v && typeof v.x === "number" && typeof v.y === "number") return v;
+    } catch { /* 忽略 */ }
+    return null;
+  });
 
   const listRef = useRef<HTMLDivElement>(null);
+  const spriteRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const lastTsRef = useRef<string>("");
+  const dragRef = useRef<{ px: number; py: number; sx: number; sy: number } | null>(null);
+  const dragMovedRef = useRef(false);
+  const posRef = useRef<{ x: number; y: number } | null>(pos);
+  posRef.current = pos;
+  // 已播报/已跳转水位线：首次载入不重播历史消息
+  const playUpToRef = useRef<string | null>(null);
+  const navUpToRef = useRef<string | null>(null);
+  // 对话框：位置/大小（跟随精灵摆放，可拖动表头移动、右下角拉伸改变大小）
+  const [panel, setPanel] = useState<{ x: number; y: number; w: number; h: number } | null>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("sec-panel") || "null");
+      if (v && typeof v.x === "number" && typeof v.w === "number") return v;
+    } catch { /* 忽略 */ }
+    return null;
+  });
+  const panelDragRef = useRef<{ px: number; py: number; sx: number; sy: number;
+                                sw: number; sh: number; mode: "move" | "resize" } | null>(null);
+  const panelRef = useRef(panel);
+  panelRef.current = panel;
+  // 出场特效（每次浏览器会话一次）
+  const [entrance, setEntrance] = useState<{ greeting: string; items: { kind: string; text: string }[] } | null>(null);
+
+  // —— 出场特效：全屏展示小秘书，播报最新消息 ——
+  useEffect(() => {
+    if (sessionStorage.getItem("sec-hello")) return;
+    sessionStorage.setItem("sec-hello", "1");
+    (async () => {
+      const b = await getJson<{ greeting?: string; items?: { kind: string; text: string }[] }>(
+        "/api/secretary/brief");
+      if (!b) return;
+      setEntrance({ greeting: b.greeting || "老板好！", items: b.items || [] });
+      const text = [b.greeting, ...(b.items || []).map((i) => i.text)].join("。");
+      try {
+        const u = new SpeechSynthesisUtterance(text.slice(0, 200));
+        u.lang = "zh-CN";
+        u.rate = 1.05;
+        window.speechSynthesis.speak(u);
+      } catch { /* 浏览器不支持时仅文字展示 */ }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!entrance) return;
+    const t = setTimeout(() => closeEntrance(), 18000);
+    return () => clearTimeout(t);
+  }, [entrance]);
+
+  function closeEntrance() {
+    setEntrance(null);
+    try { window.speechSynthesis.cancel(); } catch { /* 忽略 */ }
+  }
 
   // —— 打招呼（每次进入页面，1.5s 后冒泡） ——
   useEffect(() => {
@@ -98,6 +157,7 @@ export default function AssistantWidget() {
         try { meta = (typeof m.meta === "string" ? JSON.parse(m.meta) : m.meta) as ChatMsg["meta"]; }
         catch { meta = undefined; }
         all.push({
+          id: Number(m.id ?? 0),
           direction: (m.direction === "inbound" ? "inbound" : "outbound") as ChatMsg["direction"],
           senderId: String(m.sender_id ?? ""),
           senderName: String(m.sender_name ?? ""),
@@ -109,7 +169,9 @@ export default function AssistantWidget() {
         });
       }
     }
-    all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    // 同秒消息按入库 id 稳定排序（回执紧随原消息）
+    all.sort((a, b) => (a.createdAt === b.createdAt
+      ? (a.id ?? 0) - (b.id ?? 0) : a.createdAt.localeCompare(b.createdAt)));
     const recent = all.slice(-60);
     setMsgs(recent);
     if (recent.length) lastTsRef.current = recent[recent.length - 1].createdAt;
@@ -131,7 +193,7 @@ export default function AssistantWidget() {
     return () => { clearInterval(poll); es.close(); };
   }, [open, load]);
 
-  // —— 自动滚动 / 自动播报最后一条新回复 ——
+  // —— 自动滚动 / 自动播报最后一条新回复 / 小秘书指挥整页跳转（MPA） ——
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [msgs]);
@@ -139,6 +201,24 @@ export default function AssistantWidget() {
   useEffect(() => {
     const last = msgs[msgs.length - 1];
     if (!last || last.direction !== "outbound") return;
+    if (navUpToRef.current === null) { navUpToRef.current = last.createdAt; return; }
+    if (last.createdAt <= navUpToRef.current) return;
+    navUpToRef.current = last.createdAt;
+    const nav = last.meta?.navigate;
+    if (nav && nav !== window.location.pathname) {
+      setNotice(`小秘书正在打开 ${nav} …`);
+      // MPA 整页跳转：按老板指令把页面整个切过去（小秘书操作界面参考此模式）
+      const t = setTimeout(() => window.location.assign(nav), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [msgs.length]);
+
+  useEffect(() => {
+    const last = msgs[msgs.length - 1];
+    if (!last || last.direction !== "outbound") return;
+    if (playUpToRef.current === null) { playUpToRef.current = last.createdAt; return; }
+    if (last.createdAt <= playUpToRef.current) return;
+    playUpToRef.current = last.createdAt;
     if (last.meta?.audio) {
       setSpeaking(true);
       const a = new Audio(last.meta.audio);
@@ -244,43 +324,127 @@ export default function AssistantWidget() {
     }
   }
 
-  // —— 精灵拖拽 ——
+  // —— 精灵拖拽（自由拖到屏幕任意位置，边界内 clamp） ——
   function onSpritePointerDown(e: React.PointerEvent) {
     if (open) return;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setDrag({ x: e.clientX, y: e.clientY });
+    const rect = spriteRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { px: e.clientX, py: e.clientY, sx: rect.left, sy: rect.top };
+    dragMovedRef.current = false;
+    e.preventDefault();
   }
   function onSpritePointerMove(e: React.PointerEvent) {
-    if (!drag) return;
-    setPos((p) => ({
-      dx: Math.max(0, (p?.dx ?? 0) + (e.clientX - drag.x)),
-      dy: Math.max(0, (p?.dy ?? 0) + (e.clientY - drag.y)),
-    }));
-    setDrag({ x: e.clientX, y: e.clientY });
+    const d = dragRef.current;
+    if (!d) return;
+    if (Math.abs(e.clientX - d.px) + Math.abs(e.clientY - d.py) > 4) dragMovedRef.current = true;
+    const w = spriteRef.current?.offsetWidth || 58;
+    const h = spriteRef.current?.offsetHeight || 58;
+    const x = Math.min(Math.max(6, d.sx + e.clientX - d.px), window.innerWidth - w - 6);
+    const y = Math.min(Math.max(6, d.sy + e.clientY - d.py), window.innerHeight - h - 6);
+    const next = { x, y };
+    posRef.current = next;
+    setPos(next);
   }
   function onSpritePointerUp() {
-    if (drag) {
-      setDrag(null);
-      if (pos) localStorage.setItem("sec-pos", JSON.stringify(pos));
+    if (dragRef.current) {
+      dragRef.current = null;
+      if (posRef.current) localStorage.setItem("sec-pos", JSON.stringify(posRef.current));
     }
   }
+  function onSpriteClick() {
+    if (dragMovedRef.current) { dragMovedRef.current = false; return; }  // 拖拽结束不当作点击
+    setGreet("");
+    setOpen(true);
+    // 对话框锚定在精灵旁边（精灵在右半屏→往左弹，否则往右弹；记住用户手动调整过的大小）
+    setPanel((p) => {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const w = Math.min(p?.w ?? 390, vw - 24);
+      const h = Math.min(p?.h ?? 540, vh - 90);
+      const rect = spriteRef.current?.getBoundingClientRect();
+      let x: number, y: number;
+      if (p) { x = p.x; y = p.y; }
+      else if (rect) {
+        x = rect.left > vw / 2 ? rect.left - w - 14 : rect.right + 14;
+        y = Math.min(Math.max(64, rect.top - h / 2), vh - h - 14);
+      } else { x = vw - w - 22; y = vh - h - 100; }
+      x = Math.max(8, Math.min(x, Math.max(8, vw - w - 8)));
+      y = Math.max(8, Math.min(y, Math.max(8, vh - h - 8)));
+      return { x, y, w, h };
+    });
+  }
 
-  const offset = pos ?? (() => {
-    try { return JSON.parse(localStorage.getItem("sec-pos") || "null") as { dx: number; dy: number } | null; }
-    catch { return null; }
-  })();
+  // —— 对话框拖动（表头）与改变大小（右下角手柄） ——
+  function onPanelPointerDown(e: React.PointerEvent, mode: "move" | "resize") {
+    if ((e.target as HTMLElement).closest("button")) return;
+    const el = (e.currentTarget as HTMLElement).closest(".sec-panel");
+    const rect = el?.getBoundingClientRect();
+    if (!rect) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    panelDragRef.current = { px: e.clientX, py: e.clientY, sx: rect.left, sy: rect.top,
+                             sw: rect.width, sh: rect.height, mode };
+    e.preventDefault();
+  }
+  function onPanelPointerMove(e: React.PointerEvent) {
+    const d = panelDragRef.current;
+    const cur = panelRef.current;
+    if (!d || !cur) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (d.mode === "move") {
+      const x = Math.max(8, Math.min(d.sx + e.clientX - d.px, Math.max(8, vw - cur.w - 8)));
+      const y = Math.max(8, Math.min(d.sy + e.clientY - d.py, Math.max(8, vh - cur.h - 8)));
+      setPanel({ ...cur, x, y });
+    } else {
+      const w = Math.max(320, Math.min(d.sw + e.clientX - d.px, vw - cur.x - 8));
+      const h = Math.max(400, Math.min(d.sh + e.clientY - d.py, vh - cur.y - 8));
+      setPanel({ ...cur, w, h });
+    }
+  }
+  function onPanelPointerUp() {
+    panelDragRef.current = null;
+    if (panelRef.current) localStorage.setItem("sec-panel", JSON.stringify(panelRef.current));
+    if (posRef.current) localStorage.setItem("sec-pos", JSON.stringify(posRef.current));
+  }
 
+  const spriteStyle = pos
+    ? { left: pos.x, top: pos.y, right: "auto" as const, bottom: "auto" as const }
+    : undefined;
+  const greetStyle = pos
+    ? { left: Math.max(8, pos.x - 268), top: Math.max(8, pos.y - 8),
+        right: "auto" as const, bottom: "auto" as const }
+    : undefined;
+
+  const showGreet = greet && !open && !entrance;
   return (
     <>
+      {/* 出场特效：全屏展示小秘书并播报最新消息 */}
+      {entrance && (
+        <div className="sec-entrance" onClick={closeEntrance}>
+          <div className="sec-entrance-card" onClick={(e) => e.stopPropagation()}>
+            <div className="sec-entrance-avatar">
+              <img src="/avatars/secretary.png" alt="小秘书"
+                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <span className="sec-wave" aria-hidden />
+            </div>
+            <h2>{entrance.greeting}</h2>
+            <ul className="sec-entrance-list">
+              {entrance.items.map((it, i) => <li key={i}>{it.text}</li>)}
+            </ul>
+            <button className="sec-btn primary" onClick={closeEntrance}>知道了，开始工作</button>
+          </div>
+        </div>
+      )}
+
       {/* 桌面精灵 */}
       <div
+        ref={spriteRef}
         className="sec-sprite"
-        style={{ transform: `translate(${offset?.dx ?? 0}px, ${offset?.dy ?? 0}px)` }}
-        onClick={() => { setGreet(""); setOpen((v) => !v); }}
+        style={spriteStyle}
+        onClick={onSpriteClick}
         onPointerDown={onSpritePointerDown}
         onPointerMove={onSpritePointerMove}
         onPointerUp={onSpritePointerUp}
-        title="小秘书 · 点击对话，可拖动"
+        title="小秘书 · 点击对话，可拖到任意位置"
         role="button"
         aria-label="小秘书"
       >
@@ -289,16 +453,26 @@ export default function AssistantWidget() {
         <span className="sec-dot" />
         {speaking && <span className="sec-wave" aria-hidden />}
       </div>
-      {greet && !open && (
-        <div className="sec-greet" style={{ transform: `translate(${offset?.dx ?? 0}px, ${offset?.dy ?? 0}px)` }}>
+      {showGreet && (
+        <div className="sec-greet" style={greetStyle}>
           {greet}
         </div>
       )}
 
-      {/* 对话框 */}
+      {/* 对话框（位置跟随精灵，可拖动表头移动、右下角改变大小） */}
       {open && (
-        <div className="sec-panel" role="dialog" aria-label="与小秘书对话">
-          <div className="sec-head">
+        <div
+          className="sec-panel"
+          role="dialog"
+          aria-label="与小秘书对话"
+          style={panel ? { left: panel.x, top: panel.y, width: panel.w, height: panel.h,
+                           right: "auto" as const, bottom: "auto" as const,
+                           maxWidth: "none" as const, maxHeight: "none" as const } : undefined}
+          onPointerMove={onPanelPointerMove}
+          onPointerUp={onPanelPointerUp}
+        >
+          <div className="sec-head" onPointerDown={(e) => onPanelPointerDown(e, "move")}
+               style={{ cursor: "grab" }}>
             <b>小秘书</b>
             <span className={`sec-status ${busy ? "busy" : ""}`}>{busy ? "处理中…" : "在线"}</span>
             <button className="sec-close" onClick={() => setOpen(false)} aria-label="收起">×</button>
@@ -352,6 +526,8 @@ export default function AssistantWidget() {
               发送
             </button>
           </div>
+          <div className="sec-resize" onPointerDown={(e) => onPanelPointerDown(e, "resize")}
+               title="拖动改变大小" aria-label="改变对话框大小" />
         </div>
       )}
     </>

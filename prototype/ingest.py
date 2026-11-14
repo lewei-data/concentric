@@ -17,7 +17,7 @@ import db as DB
 
 PROFILES_DIR = os.environ.get("OPC_HERMES_PROFILES", "/opt/sefs/hermes/profiles")
 DISPATCH_DB = os.environ.get("OPC_DISPATCH_DB", "/opt/sefs/hermes/dispatch/dispatch.db")
-INTERVAL = int(os.environ.get("OPC_INGEST_INTERVAL", "30"))
+INTERVAL = int(os.environ.get("OPC_INGEST_INTERVAL", "8"))
 BATCH = 500
 VOICE_MARK = "voice message could not be transcribed"
 

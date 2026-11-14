@@ -855,6 +855,11 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(blob)
             return
+        # ---------- 桌面精灵 · 出场播报（仅老板） ----------
+        if path == "/api/secretary/brief":
+            if not self._owner_only():
+                return
+            return self._json(self._secretary_brief())
         # ---------- 组织配置（制度 / 岗位 / 人员 / 性格 / 技能 / 记忆） ----------
         if path == "/api/org":
             try:
@@ -1245,6 +1250,10 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- 消息中心 · 桌面精灵（小秘书对话：文字 / 语音 / 文件） ----------
     _CHAT_AUDIO_EXT = {"wav", "mp3", "ogg", "m4a", "amr", "webm", "aac", "flac"}
     _CHAT_FILE_MAX = 25 * 1024 * 1024
+    # 小秘书可以指挥 Web 端跳转的页面白名单（整页跳转 window.location.assign）
+    _CHAT_NAV = {"/", "/inspiration", "/ops", "/works", "/factory", "/hotspots",
+                 "/knowledge", "/messages", "/org", "/account", "/account/assets",
+                 "/account/settings", "/account/help", "/office", "/meeting"}
     _CHAT_FILES_RE = re.compile(
         r"[\w\u4e00-\u9fa5\-]+\.(wav|webm|mp3|m4a|ogg|flac|aac|png|jpg|jpeg|gif|pdf|txt|md|docx|xlsx|pptx|zip)", re.I)
     _CHAT_MIME = {"wav": "audio/wav", "webm": "audio/webm", "mp3": "audio/mpeg",
@@ -1264,8 +1273,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _chat_put_inbound(self, db, *, modality, content, content_kind="text",
                           meta=None, asr=None):
-        """老板从 Web 发来的一条消息 → web:secretary 线程；返回线程 ID。"""
-        tid = f"web:secretary"
+        """老板从 Web 发来的一条消息 → web:secretary 线程；返回线程 ID。
+
+        参考 APP 语音链路的处理：入库后小秘书立即给一条「收到」回执（随时回复能力），
+        正式回复由后台任务完成后再异步到达。
+        """
+        tid = "web:secretary"
         now = iso_now()
         db.chat_upsert_thread(tid, "web", "Web · 小秘书",
                               [{"id": "boss", "name": "老板"},
@@ -1275,6 +1288,22 @@ class Handler(BaseHTTPRequestHandler):
                         "content": str(content)[:4000], "content_kind": content_kind,
                         "origin_table": "chat_web", "origin_id": uid("cw"),
                         "asr": asr, "meta": meta, "created_at": now})
+        # 即时回执
+        if modality == "voice":
+            ack = f"收到，老板。已听到「{str(content)[:24]}」，马上处理。"
+        elif modality == "file":
+            ack = f"收到，老板。《{(meta or {}).get('name', '文件')}》已收到，马上查看。"
+        else:
+            ack = "收到，老板。马上处理，稍后向你汇报。"
+        k = self._kernel()
+        db.chat_insert({"thread_id": tid, "source": "web", "modality": "text",
+                        "direction": "outbound", "sender_id": "secretary",
+                        "sender_name": k.agents.get("secretary", {}).get("name", "小秘书"),
+                        "content": ack, "content_kind": "text",
+                        "origin_table": "chat_web", "origin_id": uid("cw"),
+                        "meta": {"ack": 1}, "created_at": iso_now()})
+        k.emit("chat.message", "", {"threadId": tid, "source": "web",
+                                    "direction": "outbound", "content": ack, "ack": 1})
         return tid
 
     def _chat_reply_async(self, k, tid, user_text, note=""):
@@ -1283,19 +1312,26 @@ class Handler(BaseHTTPRequestHandler):
         secret_name = k.agents.get("secretary", {}).get("name", "小秘书")
 
         def work():
-            reply, audio, err = "", "", ""
+            reply, audio, err, nav = "", "", "", ""
             try:
                 task = user_text if not note else f"{user_text}\n（附带：{note}）"
                 data, meta = k.call_agent(
                     "secretary",
                     f"老板通过 Web 消息中心给你发来一条消息，请直接回应或执行：\n{task}",
                     context="这是老板的私人指令通道（Web 桌面精灵）。回复简短口语化、先给结论；"
-                            "老板在 Web 端能看到你引用的资料链接。需要查资料/操作网页可用 browser_exec。",
+                            "老板在 Web 端能看到你引用的资料链接。需要查资料/操作网页可用 browser_exec。"
+                            "如果老板想看某个页面（报表/工厂/作品等），用 navigate 给出页面路径，"
+                            "老板的浏览器会自动整页跳转过去展示。",
                     schema={"summary": "给老板的回复文本（≤200字，先结论）", "done": "是否已完成，布尔",
-                            "detail": "可选：执行结果细节或资料出处"})
+                            "detail": "可选：执行结果细节或资料出处",
+                            "navigate": "可选：老板要看页面路径，仅限 / /inspiration /works /factory "
+                                        "/hotspots /knowledge /ops /messages 之一"})
                 if isinstance(data, dict):
                     reply = str(data.get("summary") or data.get("reply")
                                 or data.get("detail") or "").strip()
+                    nav_cand = str(data.get("navigate") or "").strip()
+                    if nav_cand in self._CHAT_NAV and nav_cand != "/":
+                        nav = nav_cand
                 if not reply:
                     reply = "（我没有得出有效结论，请换种说法再试一次）"
             except Exception as e:
@@ -1316,10 +1352,10 @@ class Handler(BaseHTTPRequestHandler):
                     "direction": "outbound", "sender_id": "secretary", "sender_name": secret_name,
                     "content": reply, "content_kind": "text",
                     "origin_table": "chat_web", "origin_id": uid("cw"), "reply_to": None,
-                    "meta": {"audio": audio, "error": err}, "created_at": now})
+                    "meta": {"audio": audio, "error": err, "navigate": nav}, "created_at": now})
                 k.emit("chat.message", "", {"threadId": tid, "source": "web",
                                             "direction": "outbound", "content": reply[:160],
-                                            "audio": audio})
+                                            "audio": audio, "navigate": nav})
             except Exception as e:
                 print(f"[chat] 回复落库失败：{type(e).__name__}: {e}", flush=True)
 
@@ -1340,6 +1376,39 @@ class Handler(BaseHTTPRequestHandler):
                 return mime, f.read()
         except OSError:
             return None
+
+    def _secretary_brief(self):
+        """出场播报：小秘书登录问候 + 最新消息摘要（热点/留言/报告，逐项降级）。"""
+        k = self._kernel()
+        items = []
+        try:
+            feed = hotspot_feed.feed_view(limit=6)
+            for it in (feed.get("items") or [])[:2]:
+                title = str(it.get("title") or "").strip()
+                if title:
+                    items.append({"kind": "hotspot",
+                                  "text": f"{it.get('sourceName') or it.get('source') or '热点'}：{title[:56]}"})
+        except Exception:
+            pass
+        try:
+            if k.db:
+                rows = k.db.chat_messages(thread="web:secretary", limit=5)
+                last = [r for r in rows if r.get("direction") == "outbound"]
+                if last:
+                    items.append({"kind": "chat",
+                                  "text": f"我上次留言：{str(last[-1].get('content'))[:56]}"})
+        except Exception:
+            pass
+        try:
+            rep = next((r for r in reversed(k.reports or [])
+                        if isinstance(r, dict) and r.get("title")), None)
+            if rep:
+                items.append({"kind": "report", "text": f"最新报告：{str(rep.get('title'))[:56]}"})
+        except Exception:
+            pass
+        if not items:
+            items = [{"kind": "idle", "text": "各系统运行正常，随时吩咐。"}]
+        return {"ok": True, "greeting": "老板好，小秘书上线了，今日要点：", "items": items[:4]}
 
     def _chat_binary_post(self, path):
         """桌面精灵的二进制直传路由：/api/chat/voice（音频）、/api/chat/upload（文件）。"""
