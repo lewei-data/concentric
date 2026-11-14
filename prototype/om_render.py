@@ -18,6 +18,10 @@ import subprocess
 import threading
 import time
 import traceback
+import copy
+import sys
+import wave
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from PIL import Image, ImageChops, ImageStat
@@ -36,6 +40,11 @@ TTS_RUN = os.environ.get("OPC_TTS_RUN", "/opt/sefs/mcp-tts/run.sh")
 TTS_VOICE = os.environ.get("OPC_TTS_VOICE", "female-zh-short")
 TTS_SPEED = float(os.environ.get("OPC_TTS_SPEED", "0.7"))  # CosyVoice2 语速偏快，压到 0.7
 NODE_BIN = os.environ.get("OPC_NODE_BIN", "/opt/sefs/tools/node22/bin")
+
+# 旁白后端：默认 mcp（MCP-TTS/CosyVoice2）；设为 comfyui 则走 157 的 GPT-SoVITS(roxy_clean_a)
+TTS_BACKEND = os.environ.get("OPC_TTS_BACKEND", "mcp").lower()
+COMFYUI_TTS_URL = os.environ.get("OPC_COMFYUI_TTS_URL", "http://192.168.21.157:8189")
+COMFYUI_TTS_VOICE = os.environ.get("OPC_COMFYUI_TTS_VOICE", "roxy_clean_a")
 
 # 交付规格：正常由 server 传入《项目配置》的交付合同（DELIVERY[pid]）；
 # 这里只作为单独调用 om_render 时的兜底，渲染参数不再写死在业务代码里。
@@ -202,6 +211,67 @@ class TTSClient:
         return payload
 
 
+# ---------------------------------------------------------------- ComfyUI(GPT-SoVITS) 旁白后端
+def _wav_duration(path):
+    """返回 wav 时长（秒），失败返回 0.0。"""
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() / float(w.getframerate())
+    except Exception:
+        return 0.0
+
+
+class ComfyUITTSClient:
+    """旁白后端二：ComfyUI(157:8189) GPT-SoVITS v2 音色 roxy_clean_a。
+
+    复用 OpenMontage 的 _comfyui.client.ComfyUIClient 与工作流模板/音色目录
+    （绝对路径引用，不把 OpenMontage 工具栈耦合进 opc-workbench）。
+    与 MCP-TTS 接口对齐：synthesize(text, out_dir, stem, speed=None) -> {audio_path, duration}。
+    """
+
+    def __init__(self):
+        self.server = COMFYUI_TTS_URL
+        self.voice_id = COMFYUI_TTS_VOICE
+        try:
+            sys.path.insert(0, "/opt/sefs/OpenMontage")
+            from tools._comfyui.client import ComfyUIClient
+            self._Client = ComfyUIClient
+            self._client = ComfyUIClient(server_url=self.server, capability="tts")
+        except Exception as e:  # noqa
+            raise RuntimeError(f"无法加载 OpenMontage ComfyUI 客户端：{e}")
+        with open("/opt/sefs/OpenMontage/tools/provider_contracts/gpt_sovits_voices.json", encoding="utf-8") as f:
+            self._catalog = json.load(f)
+        with open("/opt/sefs/OpenMontage/tools/_comfyui/workflows/gpt-sovits-tts.json", encoding="utf-8") as f:
+            self._template = json.load(f)
+        if self.voice_id not in self._catalog.get("voices", {}):
+            raise RuntimeError(f"音色目录缺 {self.voice_id}；可选：{list(self._catalog.get('voices', {}))}")
+
+    def synthesize(self, text, out_dir, stem, speed=None):
+        v = self._catalog["voices"][self.voice_id]
+        wf = copy.deepcopy(self._template)
+        patch = {
+            "1": {"audio": v["ref_audio_name"]},
+            "2": {"srt": v["ref_srt_name"]},
+            "3": {
+                "text": text,
+                "text_language": v["text_language"],
+                "refer_language": v["refer_language"],
+                "gpt_weight": v["gpt_weight"],
+                "sovits_weight": v["sovits_weight"],
+                "how_to_cut": v["how_to_cut"],
+                "top_k": v["params"]["top_k"],
+                "top_p": v["params"]["top_p"],
+                "temperature": v["params"]["temperature"],
+            },
+        }
+        wf = self._Client.patch_workflow(wf, patch)
+        dest = Path(out_dir) / (stem + ".wav")
+        paths = self._client.generate(wf, output_node="4", dest=dest, timeout=600, interval=5)
+        p = paths[0]
+        return {"audio_path": str(p), "duration": _wav_duration(p),
+                "text": text, "backend": "comfyui", "segments": []}
+
+
 _TTS = None
 _TTS_LOCK = threading.Lock()
 
@@ -210,7 +280,7 @@ def _tts():
     global _TTS
     with _TTS_LOCK:
         if _TTS is None:
-            _TTS = TTSClient()
+            _TTS = ComfyUITTSClient() if TTS_BACKEND == "comfyui" else TTSClient()
         return _TTS
 
 
@@ -365,7 +435,7 @@ def _hash(item, project, spec=None):
     payload = json.dumps({
         "storyboard": item.get("storyboard"), "copy": item.get("copy"),
         "cover": item.get("cover"), "color": project.get("color"),
-        "tone": item.get("toneProfile"), "voice": TTS_VOICE,
+        "tone": item.get("toneProfile"), "voice": (COMFYUI_TTS_VOICE if TTS_BACKEND == "comfyui" else TTS_VOICE),
         "w": sp["width"], "h": sp["height"], "fps": sp["fps"], "version": RENDER_VERSION,
     }, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
@@ -373,7 +443,8 @@ def _hash(item, project, spec=None):
 
 def _shot_tts(line, seg_dir, idx, attempt=0, tag=""):
     """同一句台词只合成一次（返工只改封面/排版时不必重跑模型）。"""
-    key = hashlib.sha1((TTS_VOICE + "\x00" + str(TTS_SPEED) + "\x00" + line).encode("utf-8")).hexdigest()[:10]
+    voice_tag = COMFYUI_TTS_VOICE if TTS_BACKEND == "comfyui" else (TTS_VOICE + "\x00" + str(TTS_SPEED))
+    key = hashlib.sha1((voice_tag + "\x00" + line).encode("utf-8")).hexdigest()[:10]
     stem = f"shot{idx+1:02d}-{key}-a{attempt}{tag}"
     meta_path = os.path.join(seg_dir, stem + ".meta.json")
     if os.path.isfile(meta_path):
@@ -596,7 +667,8 @@ def produce(item, project, tone="", spec=None):
         return {"ok": ok, "reason": reason, "check": check or {},
                 "video": video, "videoUrl": files["video"], "coverUrl": files["cover"],
                 "duration": round(duration, 2), "scenes": scenes or [],
-                "engine": "MCP-TTS(CosyVoice2) + OpenMontage/Remotion",
+                "engine": ("ComfyUI/157 GPT-SoVITS(roxy_clean_a)" if TTS_BACKEND == "comfyui"
+                           else "MCP-TTS(CosyVoice2)") + " + OpenMontage/Remotion",
                 "renderedAt": _now(),
                 # 与 OPC 流水线对齐的溯源字段：OM 产物里同样能查到 trace_id / 阶段
                 "traceId": item.get("traceId"), "itemId": item.get("id"), "omStage": "compose"}
@@ -631,7 +703,7 @@ def produce(item, project, tone="", spec=None):
     fcntl.flock(lock_fd, fcntl.LOCK_EX)
     t_start = time.time()
     try:
-        _log(f"{item['id']} 开始出片：{len(shots)} 镜，TTS 音色 {TTS_VOICE}")
+        _log(f"{item['id']} 开始出片：{len(shots)} 镜，TTS 后端 {('comfyui/'+COMFYUI_TTS_VOICE) if TTS_BACKEND=='comfyui' else ('mcp/'+TTS_VOICE)}")
         # 1) 逐镜旁白
         scenes, words, segments, duration = [], [], [], 0.0
         for i, s in enumerate(shots):
