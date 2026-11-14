@@ -162,7 +162,9 @@ class TTSClient:
         self.proc = None
         self.rid = 0
         self.errlog = None
-        self.lock = threading.Lock()      # 并行出片时多条目共享同一 MCP-TTS 进程
+        # 用可重入锁：_call 持锁后会经 _start 再次进入 _call（首次初始化），
+        # 普通 Lock 会在同线程二次 acquire 时自锁死，导致出片永久挂起。
+        self.lock = threading.RLock()     # 并行出片时多条目共享同一 MCP-TTS 进程
 
     def _start(self):
         os.makedirs(ROOT, exist_ok=True)

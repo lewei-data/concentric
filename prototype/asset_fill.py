@@ -45,8 +45,16 @@ def _pick_checkpoint(url):
     """从 /object_info 找一个可用底模；找不到就明确报错，不猜文件名。"""
     info = json.loads(_http(url + "/object_info", timeout=15).decode("utf-8"))
     ck = info.get("CheckpointLoaderSimple", {}).get("input", {}).get("required", {})
-    names = next((v for k, v in ck.items() if isinstance(v, list) and v
-                  and isinstance(v[0], list)), [])
+    # 新版 ComfyUI 返回 {"ckpt_name": [["a.safetensors", ...], {...meta}]}：
+    # 选项在 v[0] 里；旧版是 [[...]] 直接当列表，两种都要能吃下。
+    names = []
+    for v in ck.values():
+        if not (isinstance(v, list) and v):
+            continue
+        cand = v[0] if isinstance(v[0], list) else v
+        names = [str(x) for x in cand if isinstance(x, str)]
+        if names:
+            break
     if not names:
         raise RuntimeError("ComfyUI 未发现可用 checkpoint")
     for n in names:

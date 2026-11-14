@@ -801,10 +801,17 @@ class Store:
         self.flush()      # 断点必须落盘：进程被 kill 时不能丢
 
     def pipeline_run_stage(self, trace_id, stage, index, state):
-        """阶段边界写档：stage 是"即将执行"的阶段，重启后从这里重跑（至少一次语义）。"""
-        self.put("""UPDATE pipeline_runs SET status='running', stage=?, stage_index=?, state=?,
-                    updated_at=? WHERE trace_id=?""",
-                 (stage, _int(index), jdump(state), now_iso(), trace_id))
+        """阶段边界写档：stage 是"即将执行"的阶段，重启后从这里重跑（至少一次语义）。
+
+        创意灵感通道（inject_idea）从 assessment 起跑，只调本方法、不调 pipeline_run_start，
+        因此这里必须能自建行，否则断点续跑查不到记录（重启即丢任务）。
+        """
+        self.put("""INSERT INTO pipeline_runs(trace_id,status,stage,stage_index,hotspot,state,
+                    started_at,updated_at,closed_at) VALUES(?,'running',?,?,NULL,?,?,?,NULL)
+                    ON CONFLICT(trace_id) DO UPDATE SET status='running', stage=excluded.stage,
+                      stage_index=excluded.stage_index, state=excluded.state,
+                      updated_at=excluded.updated_at""",
+                 (trace_id, stage, _int(index), jdump(state), now_iso(), now_iso()))
         self.flush()      # 每轮至多 16 次，代价可忽略
 
     def pipeline_run_end(self, trace_id, status="completed"):
