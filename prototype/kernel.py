@@ -99,7 +99,11 @@ class Kernel:
         # 空 = 全局兜底内核（存量老板空间，共用 Obsidian vault 与全局编制）。
         self.data_dir = os.path.abspath(data_dir) if data_dir else ""
         self.is_owner = self.data_dir == os.path.abspath(OWNER_DATA_DIR) or not self.data_dir
-        self.vault_dir = os.path.join(self.data_dir, "vault") if self.data_dir else VAULT
+        # owner 用全局 Obsidian vault（与 DL/公司配置一致），注册用户用自己工作区下的 vault/。
+        # 注意不能写成 data_dir/vault：OWNER_DATA_DIR 是 owner 的工作区（过程库/素材），
+        # 下面并没有 vault 目录，员工拿到的知识库范围会指向不存在的路径。
+        self.vault_dir = (os.path.join(self.data_dir, "vault")
+                          if self.data_dir and not self.is_owner else VAULT)
         # 用户 vault 目录树补齐（老版本注册的用户自动补建，幂等）
         if self.data_dir and not self.is_owner:
             for sub in ("热点采集", "知识库", "交付物", "会议纪要", "邮件", "_归档"):

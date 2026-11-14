@@ -14,6 +14,45 @@ import org as ORG
 
 LLM_DEFAULTS = [
     {
+        # 百炼 Qwen3.7-Plus：日间默认推理通道（08:00–22:00，quality-first）
+        "id": "qwen37plus-bailian",
+        "name": "qwen3.7-plus",
+        "url": os.environ.get("OPC_LLM_QWEN37PLUS_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
+        "protocol": "openai-chat",
+        "totalTokens": int(os.environ.get("OPC_LLM_QWEN37PLUS_TOTAL_TOKENS", "0")),   # 0=不限额
+        "alias": "qwen37plus",
+        "priority": 3,
+        "provider": "custom",
+        "apiKey": os.environ.get("OPC_LLM_QWEN37PLUS_API_KEY", "sk-sp-H.HIRMIY.MTtu.MEUCIBMFZgP1a-BuN2dHQoxIkHQulwA35bCgydldMJoNvlcjAiEAuDjzjPx0OlvGEcoD_JaoOn7t33KcYXq0pzce_1PB7Qo"),
+        "note": "百炼 Qwen3.7-Plus（日间默认 08–22，131k 输入 / 16k 输出）",
+    },
+    {
+        # 百炼 Qwen3.8-Flash：夜间默认推理通道（22:00–08:00，cost-first，4 折 + 缓存叠加）
+        "id": "qwen38flash-bailian",
+        "name": "qwen3.8-flash",
+        "url": os.environ.get("OPC_LLM_QWEN38FLASH_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
+        "protocol": "openai-chat",
+        "totalTokens": int(os.environ.get("OPC_LLM_QWEN38FLASH_TOTAL_TOKENS", "0")),   # 0=不限额
+        "alias": "qwen38flash",
+        "priority": 4,
+        "provider": "custom",
+        "apiKey": os.environ.get("OPC_LLM_QWEN38FLASH_API_KEY", "sk-sp-H.HIRMIY.MTtu.MEUCIBMFZgP1a-BuN2dHQoxIkHQulwA35bCgydldMJoNvlcjAiEAuDjzjPx0OlvGEcoD_JaoOn7t33KcYXq0pzce_1PB7Qo"),
+        "note": "百炼 Qwen3.8-Flash（夜间默认 22–08，多模态/4 折性价比第一）",
+    },
+    {
+        # LiteLLM 网关（192.168.21.208:8000）· auto-free：免费通道，2026-11-14 起默认（priority 最小）
+        "id": "litellm-autofree",
+        "name": "auto-free",
+        "url": os.environ.get("OPC_LLM_AUTOFREE_BASE_URL", "http://192.168.21.208:8000/v1"),
+        "protocol": "openai-chat",
+        "totalTokens": int(os.environ.get("OPC_LLM_AUTOFREE_TOTAL_TOKENS", "0")),   # 免费通道，0=不限额
+        "alias": "autofree",
+        "priority": 5,
+        "provider": "custom",
+        "apiKey": os.environ.get("OPC_LLM_AUTOFREE_KEY", "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a"),
+        "note": "LiteLLM 网关免费通道（auto-free，默认）",
+    },
+    {
         "id": "hermes-default",
         "name": MODEL,
         "url": os.environ.get("OPC_LLM_BASE_URL", ""),

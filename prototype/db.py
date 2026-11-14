@@ -336,6 +336,20 @@ CREATE TABLE IF NOT EXISTS llm_models (
   updated_at   TEXT,
   updated_by   TEXT
 );
+
+-- 大模型时段调度：按时段自动切换默认通道（如夜间切 qwen3.8-flash 降成本）
+CREATE TABLE IF NOT EXISTS llm_schedule (
+  id          TEXT PRIMARY KEY,
+  model_id    TEXT NOT NULL,
+  start_hour  INTEGER NOT NULL DEFAULT 0,
+  end_hour    INTEGER NOT NULL DEFAULT 0,
+  label       TEXT NOT NULL DEFAULT '',
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  priority    INTEGER NOT NULL DEFAULT 10,
+  note        TEXT,
+  updated_at  TEXT,
+  updated_by  TEXT
+);
 """
 
 
@@ -427,6 +441,38 @@ class Store:
                     "UPDATE llm_models SET provider='custom', "
                     "api_key='sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a' "
                     "WHERE id='qwen38-local' AND (provider IS NULL OR provider='')")
+                # 新默认通道：LiteLLM 网关 auto-free（免费、priority 最小=默认；已登记则不覆盖）
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO llm_models(id,name,url,protocol,total_tokens,"
+                    "used_tokens,status,note,updated_at,alias,priority,provider,api_key) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    ("litellm-autofree", "auto-free", "http://192.168.21.208:8000/v1",
+                     "openai-chat", 0, 0, "enabled",
+                     "LiteLLM 网关免费通道（auto-free，2026-11-14 起默认）",
+                     now_iso(), "autofree", 5, "custom",
+                     "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a"))
+                # 百炼 Qwen3.8-Flash：夜间默认通道（22:00–08:00，4 折性价比第一）
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO llm_models(id,name,url,protocol,total_tokens,"
+                    "used_tokens,status,note,updated_at,alias,priority,provider,api_key) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    ("qwen38flash-bailian", "qwen3.8-flash",
+                     "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+                     "openai-chat", 0, 0, "enabled",
+                     "百炼 Qwen3.8-Flash（夜间默认 22–08，多模态/4 折性价比第一）",
+                     now_iso(), "qwen38flash", 4, "custom",
+                     "sk-sp-H.HIRMIY.MTtu.MEUCIBMFZgP1a-BuN2dHQoxIkHQulwA35bCgydldMJoNvlcjAiEAuDjzjPx0OlvGEcoD_JaoOn7t33KcYXq0pzce_1PB7Qo"))
+                # 时段调度默认规则：日间 08–22 → qwen3.7-plus；夜间 22–08 → qwen3.8-flash
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO llm_schedule(id,model_id,start_hour,end_hour,label,enabled,priority,note,updated_at,updated_by) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("daytime", "qwen37plus-bailian", 8, 22, "日间",
+                     1, 10, "08:00–22:00 默认 Qwen3.7-Plus（quality-first）", now_iso(), "system"))
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO llm_schedule(id,model_id,start_hour,end_hour,label,enabled,priority,note,updated_at,updated_by) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    ("nighttime", "qwen38flash-bailian", 22, 8, "夜间",
+                     1, 10, "22:00–08:00 默认 Qwen3.8-Flash（cost-first，4 折 + 缓存叠加）", now_iso(), "system"))
             row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (1)")
@@ -890,10 +936,32 @@ class Store:
         total, used = _int(m.get("total_tokens")), _int(m.get("used_tokens"))
         return status in ("disabled", "exhausted") or (total > 0 and used >= total)
 
-    def llm_pick(self, preferred=""):
-        """挑选可用大模型通道：优先 preferred（名称/id 匹配且可用），否则按 priority
-        升序取第一个可用通道。返回 (通道行|None, 拦截原因)。
+    def _llm_schedule_model_id(self):
+        """根据当前时段查 llm_schedule，返回匹配的 model_id（无匹配/表空/异常返回空串）。
+        时段规则：start_hour < end_hour → [start, end)；跨零点如 [22, 8) → hour>=22 或 hour<8。
+        """
+        try:
+            rules = self._rows("SELECT * FROM llm_schedule WHERE enabled=1 ORDER BY priority ASC")
+        except Exception:
+            return ""
+        if not rules:
+            return ""
+        hour = datetime.now(TZ).hour
+        for r in rules:
+            s, e = _int(r.get("start_hour")), _int(r.get("end_hour"))
+            if s < e:
+                match = s <= hour < e
+            else:   # 跨零点：如 22–08 → hour>=22 或 hour<8
+                match = hour >= s or hour < e
+            if match:
+                return str(r.get("model_id") or "")
+        return ""
 
+    def llm_pick(self, preferred=""):
+        """挑选可用大模型通道：时段调度优先 → preferred → priority 升序故障转移。
+        返回 (通道行|None, 拦截原因)。
+
+        - 时段调度：查 llm_schedule 表，当前时段有匹配规则且对应通道可用时优先选用；
         - 注册表为空 / 查询故障 → 返回默认兜底通道（沿用内置 MODEL 直调，不拦截业务）；
         - 全部通道停用或额度耗尽 → 返回 (None, 原因)，调用方拦截本次请求。
         """
@@ -905,6 +973,12 @@ class Store:
             return fallback, ""
         if not rows:
             return fallback, ""     # 未登记任何模型：向后兼容，直调默认模型
+        # 时段调度优先：当前时段有匹配规则且对应通道可用时，直接选用
+        sched_id = self._llm_schedule_model_id()
+        if sched_id:
+            for m in rows:
+                if m.get("id") == sched_id and not self._llm_unavailable(m):
+                    return m, ""
         for m in rows:
             if preferred and preferred in (m.get("name"), m.get("id")) \
                     and not self._llm_unavailable(m):
@@ -1001,6 +1075,82 @@ class Store:
                 _log(f"llm_update 失败：{e}")
                 return False
 
+    # ---------- 大模型时段调度 ----------
+    def llm_schedule_list(self):
+        """返回全部时段调度规则（含当前是否匹配）。"""
+        try:
+            rows = self._rows("SELECT * FROM llm_schedule ORDER BY priority ASC, start_hour ASC")
+        except Exception as e:
+            _log(f"llm_schedule_list 查询失败：{e}")
+            return []
+        hour = datetime.now(TZ).hour
+        out = []
+        for r in rows:
+            s, e = _int(r.get("start_hour")), _int(r.get("end_hour"))
+            if s < e:
+                active = s <= hour < e
+            else:
+                active = hour >= s or hour < e
+            out.append({
+                "id": r.get("id") or "",
+                "modelId": r.get("model_id") or "",
+                "startHour": s, "endHour": e,
+                "label": r.get("label") or "",
+                "enabled": bool(_int(r.get("enabled"))),
+                "priority": _int(r.get("priority")),
+                "active": active,
+                "note": r.get("note") or "",
+                "updatedAt": r.get("updated_at") or "",
+                "updatedBy": r.get("updated_by") or "",
+            })
+        return out
+
+    def llm_schedule_set(self, rule_id, fields, by=""):
+        """新增或更新一条时段调度规则。返回 (ok, error)。"""
+        with self._lock:
+            try:
+                existing = self._conn.execute(
+                    "SELECT id FROM llm_schedule WHERE id=?", (rule_id,)).fetchone()
+                sets, params = [], []
+                for key, col in (("modelId", "model_id"), ("label", "label"), ("note", "note")):
+                    if key in fields:
+                        sets.append(f"{col}=?")
+                        params.append(str(fields.get(key) or ""))
+                for key, col in (("startHour", "start_hour"), ("endHour", "end_hour"),
+                                 ("priority", "priority")):
+                    if key in fields:
+                        sets.append(f"{col}=?")
+                        params.append(_int(fields.get(key)))
+                if "enabled" in fields:
+                    sets.append("enabled=?")
+                    params.append(1 if fields.get("enabled") else 0)
+                if not sets:
+                    return False, "无可更新字段"
+                sets += ["updated_at=?", "updated_by=?"]
+                params += [now_iso(), by or "system"]
+                if existing:
+                    self._conn.execute(
+                        f"UPDATE llm_schedule SET {', '.join(sets)} WHERE id=?",
+                        params + [rule_id])
+                else:
+                    self._conn.execute(
+                        f"INSERT INTO llm_schedule(id, {', '.join(s.split('=')[0] for s in sets)}) "
+                        f"VALUES(?{', ?' * len(sets)})",
+                        [rule_id] + params)
+                return True, ""
+            except sqlite3.Error as e:
+                _log(f"llm_schedule_set 失败：{e}")
+                return False, str(e)
+
+    def llm_schedule_delete(self, rule_id):
+        """删除一条时段调度规则。"""
+        with self._lock:
+            try:
+                self._conn.execute("DELETE FROM llm_schedule WHERE id=?", (rule_id,))
+                return True
+            except sqlite3.Error as e:
+                _log(f"llm_schedule_delete 失败：{e}")
+                return False
 
     def approval_for(self, trace_id, action):
         """取某 trace 指定动作的最新审批单（含已决状态），用于重启后幂等复用。"""

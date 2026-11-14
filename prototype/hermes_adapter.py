@@ -74,12 +74,12 @@ class HermesAdapter:
     def ask(self, agent, task, context="", extra="", schema=None):
         if not self.available():
             return None, {"engine": "rule", "latencyMs": 0, "profile": agent["id"], "usage": {}}
-        # 大模型通道选择：按注册表优先级挑可用通道（停用/额度耗尽自动故障转移到下一个）；
-        # 全部不可用时拦截本次调用（CTO 在运维页控制）
+        # 大模型通道选择：按注册表优先级挑可用通道（priority 最小者为默认，停用/额度耗尽
+        # 自动故障转移到下一个）；全部不可用时拦截本次调用（CTO 在运维页控制）
         st = LREG._llm_store()
         channel = None
         if st:
-            channel, gate_reason = st.llm_pick(MODEL)
+            channel, gate_reason = st.llm_pick()
             if channel is None:
                 with self.lock:
                     self.failures += 1
