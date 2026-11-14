@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authProvider } from "../authProvider";
+import { WuxingLogo } from "../components/WuxingLogo";
+import { WUXING, useWuxing } from "../wuxing";
 
 // 「记住我」凭据存放键（明文保存，仅适合本机个人使用）
 const REMEMBER_KEY = "opc.remember";
@@ -24,6 +26,7 @@ function loadRemembered(): Remembered | null {
 }
 
 export function LoginPage() {
+  const wx = useWuxing();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [remembered] = useState(loadRemembered);
   const [account, setAccount] = useState(remembered?.account ?? "");
@@ -142,11 +145,7 @@ export function LoginPage() {
         <form className="card login-card" onSubmit={handleSubmit}>
           <div className="login-brand">
             <span className="login-logo" aria-hidden="true">
-              <svg viewBox="0 0 48 48" width="44" height="44">
-                <circle cx="24" cy="24" r="22" fill="none" stroke="#2f6fed" strokeWidth="2.5" opacity="0.25" />
-                <circle cx="24" cy="24" r="14" fill="none" stroke="#2f6fed" strokeWidth="2.5" opacity="0.55" />
-                <circle cx="24" cy="24" r="6" fill="#2f6fed" />
-              </svg>
+              <WuxingLogo element={wx.element} size={44} />
             </span>
             <div>
               <div className="login-brand-name">同心圆</div>
@@ -154,6 +153,10 @@ export function LoginPage() {
             </div>
           </div>
           <p className="login-sub">登录以进入工作台</p>
+          <div className="login-wx-note" title={wx.reading.reason}>
+            <i aria-hidden="true" />
+            {wx.manual ? "手选预览" : `今日${wx.reading.ganzhi}日`} · {WUXING[wx.element].fullName}{wx.manual ? "" : "宜用"} · {WUXING[wx.element].motto}
+          </div>
           <label className="field">
             <span>账号</span>
             <input
@@ -199,11 +202,7 @@ export function LoginPage() {
         <form className="card login-card" onSubmit={handleRegister}>
           <div className="login-brand">
             <span className="login-logo" aria-hidden="true">
-              <svg viewBox="0 0 48 48" width="44" height="44">
-                <circle cx="24" cy="24" r="22" fill="none" stroke="#2f6fed" strokeWidth="2.5" opacity="0.25" />
-                <circle cx="24" cy="24" r="14" fill="none" stroke="#2f6fed" strokeWidth="2.5" opacity="0.55" />
-                <circle cx="24" cy="24" r="6" fill="#2f6fed" />
-              </svg>
+              <WuxingLogo element={wx.element} size={44} />
             </span>
             <div>
               <div className="login-brand-name">注册新用户</div>

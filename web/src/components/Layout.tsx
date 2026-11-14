@@ -2,25 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useGetIdentity } from "@refinedev/core";
 import { authProvider } from "../authProvider";
+import { useWuxing } from "../wuxing";
 import type { OpcUser } from "../types";
 import AssistantWidget from "./AssistantWidget";
-
-function ConcentricLogo() {
-  return (
-    <svg className="brand-logo" viewBox="0 0 40 40" role="img" aria-label="同心圆 LOGO">
-      <defs>
-        <linearGradient id="brand-gradient" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#63a4ff" />
-          <stop offset="100%" stopColor="#a78bfa" />
-        </linearGradient>
-      </defs>
-      <circle cx="20" cy="20" r="19" fill="url(#brand-gradient)" />
-      <circle cx="20" cy="20" r="13.5" fill="none" stroke="rgba(255,255,255,.75)" strokeWidth="1.6" />
-      <circle cx="20" cy="20" r="8.5" fill="none" stroke="#ffffff" strokeWidth="2" />
-      <circle cx="20" cy="20" r="3.2" fill="#ffffff" />
-    </svg>
-  );
-}
+import { WuxingBadge, WuxingLogo, WuxingWordmark } from "./WuxingLogo";
 
 const PRIMARY_NAV = [
   { to: "/", label: "总览", end: true },
@@ -34,6 +19,7 @@ const PRIMARY_NAV = [
 
 export function Layout() {
   const { data: identity } = useGetIdentity<OpcUser>();
+  const wx = useWuxing();
   const location = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -69,10 +55,10 @@ export function Layout() {
       <header className="topbar">
         <div className="topbar-inner">
           <NavLink to="/" className="brand-block" aria-label="同心圆 · OPC AI 员工工作台首页">
-            <ConcentricLogo />
+            <WuxingLogo element={wx.element} size={42} className="brand-logo" />
             <span className="brand-text">
-              <b>同心圆</b>
-              <small>OPC · AI 员工工作台</small>
+              <WuxingWordmark element={wx.element} tag={wx.manual ? "手选" : "宜用"} />
+              <small>同心圆 · OPC AI 员工工作台</small>
             </span>
           </NavLink>
 
@@ -89,6 +75,8 @@ export function Layout() {
             <NavLink to="/office" className="nav-3d">办公室</NavLink>
             <NavLink to="/meeting" className="nav-3d">会议室</NavLink>
           </nav>
+
+          <WuxingBadge />
 
           <div className="userbox" ref={menuRef}>
             <button

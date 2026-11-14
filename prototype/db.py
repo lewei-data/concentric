@@ -617,6 +617,31 @@ class Store:
             _log(f"查询失败 {sql[:60]}：{e}")
             return 0
 
+    def fetch(self, sql, params=()):
+        """查询多行，返回 dict 列表。"""
+        try:
+            conn = self.read_conn()
+            try:
+                return [dict(r) for r in conn.execute(sql, params).fetchall()]
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            _log(f"查询失败 {sql[:60]}：{e}")
+            return []
+
+    def fetch_one(self, sql, params=()):
+        """查询单行，返回 dict 或 None。"""
+        try:
+            conn = self.read_conn()
+            try:
+                row = conn.execute(sql, params).fetchone()
+                return dict(row) if row else None
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            _log(f"查询失败 {sql[:60]}：{e}")
+            return None
+
     # ---------- 过程主轴 ----------
     def upsert_trace(self, t):
         if not t:

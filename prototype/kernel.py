@@ -102,6 +102,53 @@ def _infer_category(item):
         return "reflection"
     return "graph"
 
+
+def _kb_from_row(row):
+    """SQLite knowledge 行归一化。
+
+    历史写库只落了 raw（拆分列全空），且混入过无 id/title 的阶段事件行：
+    以 raw 为准补齐摘要 / 正文 / 标签 / 时间，非知识条目直接丢弃。
+    """
+    r = dict(row)
+    try:
+        raw = json.loads(r.get("raw") or "{}")
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    kid = str(r.get("id") or raw.get("id") or "").strip()
+    title = str(r.get("title") or raw.get("title") or "").strip()
+    if not kid or not title:
+        return None
+    try:
+        tags = json.loads(r.get("tags")) if r.get("tags") else []
+    except Exception:
+        tags = []
+    if not tags:
+        tags = raw.get("tags") or []
+    if not isinstance(tags, list):
+        tags = [tags]
+    tags = [str(t).strip() for t in tags if str(t).strip()][:12]
+    body = str(r.get("body") or raw.get("body") or "")
+    summary = str(r.get("summary") or raw.get("summary") or "").strip()
+    if not summary:
+        summary = body[:120] or title[:80]
+    return {
+        "id": kid,
+        "title": title,
+        "summary": summary,
+        "category": str(r.get("category") or raw.get("category") or "").strip()
+                    or _infer_category({"title": title, "tags": tags}),
+        "projectId": r.get("project_id") or raw.get("projectId") or "",
+        "traceId": r.get("trace_id") or raw.get("traceId") or raw.get("sourceTrace") or "",
+        "tags": tags,
+        # 早期归档把「落笔说明」写进了 at，用它排序会把条目挤到最前，改回 ISO 时间戳
+        "at": str(raw.get("at") or "") if re.match(r"^\d{4}-\d{2}-\d{2}", str(raw.get("at") or ""))
+               else str(r.get("updated_at") or raw.get("at") or ""),
+        "body": body or summary,
+    }
+
+
 class PipelineContext:
     """流水线阶段之间的共享状态（字段即阶段契约，不承载业务逻辑）。
 
@@ -3284,18 +3331,45 @@ class Kernel:
         q = (qs.get("q", [""])[0] or "").strip().lower()
         return page, size, q
 
-    def knowledge_categories(self):
-        """返回 4 大分类定义 + 各分类下的条目数，前端渲染 Tab 与标签筛选。"""
+    def _knowledge_all(self):
+        """合并内存 + SQLite 的全量知识条目（去重、剔除无标题的阶段事件行）。"""
         with self.lock:
-            items = list(self.knowledge)
-        counts = {}
+            mem = [k for k in self.knowledge if k.get("id") and k.get("title")]
+        mem_ids = {str(k.get("id")) for k in mem}
+        db_items = []
+        if self.db:
+            try:
+                rows = self.db.fetch("SELECT id,title,summary,category,project_id,trace_id,tags,updated_at,body,raw FROM knowledge ORDER BY updated_at DESC")
+                for r in rows:
+                    k = _kb_from_row(r)
+                    if k and k["id"] not in mem_ids:
+                        mem_ids.add(k["id"])
+                        db_items.append(k)
+            except Exception as e:
+                print(f"[kb] SQLite 补充失败：{type(e).__name__}: {e}", flush=True)
+        return mem + db_items
+
+    def knowledge_categories(self):
+        """返回 5 大分类定义 + 条目数 + 实际标签统计（标签筛选以真实标签为准）。"""
+        items = self._knowledge_all()
+        counts, tag_buckets = {}, {}
         for k in items:
             cat = k.get("category") or _infer_category(k)
             counts[cat] = counts.get(cat, 0) + 1
+            bucket = tag_buckets.setdefault(cat, {})
+            for t in (k.get("tags") or []):
+                s = str(t).strip()
+                if s:
+                    bucket[s] = bucket.get(s, 0) + 1
         result = []
         for c in KB_CATEGORIES:
             entry = dict(c)
             entry["count"] = counts.get(c["key"], 0)
+            entry["tagStats"] = [
+                {"key": t, "label": t, "count": n}
+                for t, n in sorted(tag_buckets.get(c["key"], {}).items(),
+                                   key=lambda kv: (-kv[1], kv[0]))[:18]
+            ]
             result.append(entry)
         return {"ok": True, "items": result, "total": len(result), "page": 1, "size": len(result)}
 
@@ -3305,8 +3379,7 @@ class Kernel:
         qs = parse_qs(query)
         cat_filter = (qs.get("category", [""])[0] or "").strip()
         tag_filter = (qs.get("tag", [""])[0] or "").strip()
-        with self.lock:
-            items = list(self.knowledge)
+        items = self._knowledge_all()
         # 确保每条都有 category 字段（旧数据懒推断）
         for k in items:
             if not k.get("category"):
@@ -3328,7 +3401,7 @@ class Kernel:
                  "category": k.get("category"),
                  "projectId": k.get("projectId"), "traceId": k.get("traceId"),
                  "tags": k.get("tags") or [], "at": k.get("at"),
-                 "body": k.get("body") or ""} for k in items[start:start + size]]
+                 "hasBody": bool(k.get("body"))} for k in items[start:start + size]]
         return {"ok": True, "total": total, "page": page, "size": size, "items": rows}
 
     def hotspot_page(self, query=""):
@@ -3346,7 +3419,20 @@ class Kernel:
 
     def knowledge_detail(self, kid):
         with self.lock:
-            return next((k for k in self.knowledge if k.get("id") == kid), None)
+            hit = next((k for k in self.knowledge if k.get("id") == kid), None)
+        if hit and hit.get("title"):
+            return self._kb_norm(hit)
+        # 从 SQLite 查找：同样走 raw 归一化，否则老数据返回的正文/摘要为空
+        if self.db:
+            try:
+                row = self.db.fetch_one(
+                    "SELECT id,title,summary,category,project_id,trace_id,tags,updated_at,body,raw "
+                    "FROM knowledge WHERE id=?", (kid,))
+                if row:
+                    return _kb_from_row(row)
+            except Exception:
+                pass
+        return None
 
     def hotspot_detail(self, hid):
         with self.lock:
