@@ -111,6 +111,7 @@ chmod +x opc.sh
 | `/api/login`、`/api/logout`、`/api/session` | 会话管理 |
 | `/api/config/reload` | 热加载 Obsidian 配置 |
 | `/api/inspiration` | CCO 创意灵感只读聚合（`prototype/insights.py`）：`{ok,counts,sources,items}`；`?refresh=1` 强制重建 60s 缓存 |
+| `/api/render/resend` | POST，仅老板：按 trace 重发制作需求。`{"traceId","action":"assets\|render","shots":[镜号],"stage":"render","prompts":["..."]}`；assets 从逐镜表重新提交 ComfyUI 文生图并落 `OPC/交付物/<trace>/<项目-单号>/assets/images/`，render 把断点改到指定阶段后续跑重出片 |
 | `/api/ops` | CTO 运维监控只读聚合（`prototype/ops_monitor.py`）：`{ok,service,stats,pipeline,video,alerts,actions}` |
 | `/api/ops/recover` | POST，仅老板：`{"action":"patrol\|reload\|approve\|reject","id":"<审批号>"}`；巡检派单 / 热加载 / 处理审批 |
 

@@ -319,7 +319,7 @@ def _comfyui_generate(prompt, out_path, url=None, width=1024, height=1024, timeo
                 "type": imgs[0].get("type", "output"),
             })
             try:
-                blob = _comfy_post(f"{COMFY_IMAGE_URL}/view?{q}", timeout=60)
+                blob = _comfy_post(f"{url}/view?{q}", timeout=60)
             except Exception as e:
                 _log(f"ComfyUI 取图失败：{e}")
                 return False

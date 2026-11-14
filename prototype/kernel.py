@@ -2489,6 +2489,112 @@ class Kernel:
                                         "check": item["renderCheck"]})
         self.items_emit(c.trace, item)
 
+    # ---------- 重发（分镜素材 / 出片阶段） ----------
+    _RESEND_SKIP = ("不新增任务", "锁定不动", "已含在", "无新增", "原登记")
+    _RESEND_AUDIO = ("BGM", "bgm", "音频", "wav", "配音", "音效", "语音")
+
+    def resend_render(self, trace_id, action="assets", shots=None, stage="render",
+                      prompts=None, project=""):
+        """按 trace 重发制作需求（老板手工补发，不动流水线其它环节）。
+
+        action=assets：从内容单逐镜表（item.plan.storyboardShots）取「画面」，
+          逐镜重新提交 ComfyUI 文生图；跳过锁定镜与纯音频镜；后台串行生成，接口立即返回。
+        action=render：把过程库断点改到 stage（默认 render），复用 resume_pipeline 重跑该阶段。
+        """
+        trace_id = str(trace_id or "").strip()
+        if not trace_id:
+            raise ValueError("缺少 traceId")
+        act = str(action or "assets").strip().lower()
+        if act in ("render", "video", "reproduce", "stage"):
+            return self._resend_stage(trace_id, str(stage or "render").strip())
+        if act not in ("assets", "asset", "image"):
+            raise ValueError(f"不支持的重发类型：{action}（可选 assets / render）")
+
+        with self.lock:
+            items = [dict(c) for c in self.contents if c.get("traceId") == trace_id]
+        if not items:
+            raise ValueError("该 trace 下没有内容单，无法重发素材")
+        only = {int(s) for s in (shots or []) if str(s).strip().isdigit()}
+        reqs = []
+        if prompts:
+            reqs = [{"no": i + 1, "prompt": str(p).strip(), "itemId": items[0]["id"],
+                     "projectId": items[0].get("projectId", "")}
+                    for i, p in enumerate(prompts) if str(p).strip()]
+        else:
+            for it in items:
+                for idx, shot in enumerate(((it.get("plan") or {}).get("storyboardShots") or []), 1):
+                    try:
+                        no = int(shot.get("no") or idx)
+                    except (TypeError, ValueError):
+                        no = idx
+                    if only and no not in only:
+                        continue
+                    mat = str(shot.get("素材") or "")
+                    pic = str(shot.get("画面") or "").strip()
+                    if not pic:
+                        continue
+                    if any(k in mat for k in self._RESEND_SKIP):
+                        continue
+                    if any(k in mat for k in self._RESEND_AUDIO):
+                        continue
+                    reqs.append({"no": no, "prompt": pic, "itemId": it["id"],
+                                 "projectId": it.get("projectId", "")})
+        if not reqs:
+            raise ValueError("该 trace 的分镜里没有可重发的画面素材需求（可能全是锁定镜或只有音频）")
+
+        threading.Thread(target=self._resend_assets_worker, args=(trace_id, reqs),
+                         daemon=True).start()
+        self.send("biz.event", "vd_wenren", "owner", trace_id,
+                  {"text": f"分镜素材重发：{len(reqs)} 条已提交 ComfyUI", "step": "assets-resend"},
+                  priority=2)
+        return {"ok": True, "traceId": trace_id, "action": "assets",
+                "queued": len(reqs), "requests": reqs,
+                "note": "已在后台逐镜生成，产物落 OPC/交付物/<trace>/<项目-单号>/assets/images/"}
+
+    def _resend_assets_worker(self, trace_id, reqs):
+        """后台串行补图：ComfyUI 单 worker，串行反而稳；失败逐条升级给老板。"""
+        try:
+            import asset_fill
+        except Exception as exc:
+            self.send("escalation", "cto", "owner", trace_id,
+                      {"text": f"素材重发失败：素材模块不可用（{type(exc).__name__}: {exc}）"},
+                      priority=2)
+            return
+        done = 0
+        for r in reqs:
+            pid = r.get("projectId") or ""
+            out_dir = os.path.join(VAULT, "OPC", "交付物", trace_id,
+                                   f"{pid}-{r['itemId']}", "assets", "images")
+            out_path = os.path.join(out_dir, f"shot{r['no']:02d}.png")
+            try:
+                asset_fill.gen_image(r["prompt"], out_path, width=768, height=1344)
+                done += 1
+                self.send("biz.event", f"vd_{pid}", "owner", trace_id,
+                          {"text": f"素材重发完成：镜{r['no']}", "file": out_path,
+                           "step": "assets"}, project=pid, priority=2)
+            except Exception as exc:
+                self.send("escalation", f"vd_{pid}", "owner", trace_id,
+                          {"text": f"素材重发失败：镜{r['no']}（{type(exc).__name__}: {exc}）"},
+                          project=pid, priority=2)
+        print(f"[resend] {trace_id} 素材重发收口：成功 {done}/{len(reqs)}", flush=True)
+
+    def _resend_stage(self, trace_id, stage):
+        """把断点改到指定阶段并续跑（重出片走这里，不改分镜与文案）。"""
+        if not self.db:
+            raise ValueError("过程库未启用（OPC_DB=0），无法重发出片")
+        if self.active_trace and self.active_trace != trace_id:
+            raise ValueError(f"已有任务在跑（{self.active_trace}），等它结束再重发")
+        row = self.db.pipeline_run(trace_id)
+        if not row:
+            raise ValueError("过程库里没有这条 trace 的运行记录（无法定位断点）")
+        stages = [s.get("id") for s in (CC.PIPELINE.stages or [])]
+        if stage not in stages:
+            raise ValueError(f"未知阶段：{stage}（可选 {', '.join(x for x in stages if x)}）")
+        state = json.loads(row.get("state") or "{}")
+        self.db.pipeline_run_stage(trace_id, stage, stages.index(stage), state)
+        info = self.resume_pipeline(trace_id)
+        return {"ok": True, "traceId": trace_id, "action": "render",
+                "from": info.get("from"), "note": f"已从 {stage} 阶段重跑"}
 
     def _stage_sample_review(self, c):
         """8. 样片三方评审（CCO + CTO + 本项目 PM），最多两轮"""

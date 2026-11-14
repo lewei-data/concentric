@@ -1902,6 +1902,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
             return self._json({"ok": True, "traceId": trace, "hotspot": hotspot,
                                "note": "已进入 hermes 流水线（制作评估起跑），指令已同步 CCO"})
+        # 重发：按 trace 重提分镜素材（assets）或从指定阶段重出片（render）
+        if path == "/api/render/resend":
+            if user.get("role") != "老板":
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅老板可重发制作需求"}, 403)
+            try:
+                res = self._kernel().resend_render(
+                    body.get("traceId"), body.get("action") or "assets",
+                    body.get("shots"), body.get("stage") or "render",
+                    body.get("prompts"), body.get("project") or "")
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            return self._json(res)
         if path == "/api/meetings":
             try:
                 trace, hs = self._kernel().inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))
