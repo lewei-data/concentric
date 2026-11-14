@@ -103,11 +103,11 @@ def _llm_consume(model, tokens):
         st.llm_consume(model, tokens)
 
 def _llm_view():
-    """大模型注册表视图（运维页 /api/ops）：camelCase + 汇总 + 员工通道设置。"""
+    """大模型注册表视图（运维页 /api/ops）：camelCase + 汇总 + 员工通道设置 + 时段调度。"""
     st = _llm_store()
     if not st:
         return {"available": False, "error": "过程库未启用（OPC_DB=0），大模型注册表不可用",
-                "models": [], "profiles": []}
+                "models": [], "profiles": [], "schedule": []}
     models = []
     for r in st.llm_models():
         total, used = _to_int(r.get("total_tokens"), 0), _to_int(r.get("used_tokens"), 0)
@@ -129,8 +129,144 @@ def _llm_view():
         "exhausted": sum(1 for m in models if m["status"] == "exhausted"),
         "disabled": sum(1 for m in models if m["status"] == "disabled"),
         "profiles": _llm_profiles_view(models),
+        "schedule": st.llm_schedule_list() if st else [],
     }
     return view
+
+def _llm_manage_view():
+    """模型管理页专用视图：含完整可编辑字段（含 API Key）、时段规则与当前生效通道。
+    仅对「老板 + 存量公司空间」开放，故此处返回明文凭据。"""
+    st = _llm_store()
+    if not st:
+        return {"available": False, "error": "过程库未启用", "models": [],
+                "schedule": [], "effective": None}
+    rows = st.llm_models()
+    models = []
+    for r in rows:
+        total, used = _to_int(r.get("total_tokens"), 0), _to_int(r.get("used_tokens"), 0)
+        models.append({
+            "id": r.get("id") or "",
+            "name": r.get("name") or "",
+            "url": r.get("url") or "",
+            "apiKey": r.get("api_key") or "",
+            "protocol": r.get("protocol") or "",
+            "provider": r.get("provider") or "",
+            "alias": r.get("alias") or "",
+            "priority": _to_int(r.get("priority"), 100),
+            "status": r.get("status") or "enabled",
+            "isDefault": bool(_to_int(r.get("is_default"), 0)),
+            "contextLength": _to_int(r.get("context_length"), 0),
+            "maxOutputTokens": _to_int(r.get("max_output_tokens"), 0),
+            "totalTokens": total, "usedTokens": used,
+            "note": r.get("note") or "",
+            "updatedAt": r.get("updated_at") or "",
+            "updatedBy": r.get("updated_by") or "",
+        })
+    rules = st.llm_schedule_list()
+    picked, _ = st.llm_pick()
+    effective = None
+    if picked and picked.get("id"):
+        active = next((x for x in rules if x["enabled"] and x["active"]
+                       and x["modelId"] == picked.get("id")), None)
+        source = "schedule" if active else ("default" if _to_int(picked.get("is_default"), 0) else "priority")
+        effective = {"id": picked.get("id"), "name": picked.get("name"),
+                     "source": source, "rule": active["label"] if active else ""}
+    return {"available": True, "models": models, "schedule": rules,
+            "effective": effective, "profiles": _llm_profiles_view(models)}
+
+# ---------- Hermes 配置同步：模型管理页的增删改要能真正被 `--model <alias>` 使用 ----------
+def _hermes_config_files():
+    """主配置 + 全部员工 profile 的 config.yaml。"""
+    root = os.path.dirname(ORG_PROFILES.rstrip("/"))
+    files = [os.path.join(root, "config.yaml")]
+    try:
+        for pid in sorted(os.listdir(ORG_PROFILES)):
+            p = os.path.join(ORG_PROFILES, pid, "config.yaml")
+            if os.path.isfile(p):
+                files.append(p)
+    except OSError:
+        pass
+    return [p for p in files if os.path.isfile(p)]
+
+def _yaml_section(text, key):
+    """取出顶层 `key:` 段落并解析为 dict；返回 (start, end, dict, 行列表)。
+    段落边界 = 下一个顶层的非注释、非空行；段落外的注释与内容原样保留。"""
+    lines = text.splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if ln.startswith(key + ":") and (not ln[0].isspace()):
+            start = i
+            break
+    if start is None:
+        return None, None, {}, lines
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        ln = lines[j]
+        if ln.strip() and not ln[0].isspace() and not ln.startswith("#"):
+            end = j
+            break
+    try:
+        import yaml
+        data = yaml.safe_load("\n".join(lines[start + 1:end])) or {}
+    except Exception:
+        data = {}
+    return start, end, data if isinstance(data, dict) else {}, lines
+
+def _yaml_section_write(text, key, data):
+    """把 dict 写回顶层 `key:` 段落，其余内容（含注释）逐行保留。"""
+    import yaml
+    start, end, _, lines = _yaml_section(text, key)
+    body = yaml.safe_dump(data, default_flow_style=False, allow_unicode=True,
+                          sort_keys=False, width=1000)
+    block = [key + ":"] + [("  " + l if l.strip() else "") for l in body.splitlines()]
+    if start is None:
+        merged = lines + ([""] if lines and lines[-1].strip() else []) + block
+    else:
+        merged = lines[:start] + block + lines[end:]
+    return "\n".join(merged) + "\n"
+
+def _llm_alias_sync(row, remove=False, old_alias=""):
+    """把通道别名 / 端点 / 凭据 / 上下文长度同步到主配置与全部员工 profile。
+    采用「只重写 providers 与 model_aliases 两段」的文本级合并，保留其它注释与配置。
+    """
+    alias = str(old_alias or row.get("alias") or "").strip()
+    if not alias:
+        return
+    provider_key = str(row.get("id") or "").strip() or alias
+    for path in _hermes_config_files():
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            _, _, providers, _ = _yaml_section(text, "providers")
+            _, _, aliases, _ = _yaml_section(text, "model_aliases")
+            if remove:
+                aliases.pop(alias, None)
+                providers.pop(provider_key, None)
+                providers.pop(alias, None)
+            else:
+                aliases[alias] = {
+                    "model": str(row.get("name") or ""),
+                    "provider": str(row.get("provider") or "custom"),
+                    "base_url": str(row.get("url") or ""),
+                    "api_key": str(row.get("apiKey") or row.get("api_key") or ""),
+                }
+                model_cfg = {}
+                if _to_int(row.get("contextLength"), 0) > 0:
+                    model_cfg["context_length"] = _to_int(row.get("contextLength"), 0)
+                if _to_int(row.get("maxOutputTokens"), 0) > 0:
+                    model_cfg["max_output_tokens"] = _to_int(row.get("maxOutputTokens"), 0)
+                providers[provider_key] = {
+                    "api": str(row.get("url") or ""),
+                    "api_key": str(row.get("apiKey") or row.get("api_key") or ""),
+                    "transport": "openai_chat",
+                    "models": {str(row.get("name") or ""): model_cfg},
+                }
+            out = _yaml_section_write(text, "providers", providers)
+            out = _yaml_section_write(out, "model_aliases", aliases)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(out)
+        except OSError as e:
+            print(f"[llm] 同步 hermes 配置失败 {path}: {e}", flush=True)
 
 def _parse_profile_model(path):
     """读取 profile config.yaml 顶层 model 段的 default/provider/base_url（只读文本解析）。"""

@@ -10,6 +10,7 @@
 """
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -321,20 +322,23 @@ CREATE TABLE IF NOT EXISTS workshop_steps (
 CREATE INDEX IF NOT EXISTS idx_ws_trace ON workshop_steps(trace_id, id);
 
 CREATE TABLE IF NOT EXISTS llm_models (
-  id           TEXT PRIMARY KEY,
-  name         TEXT NOT NULL,
-  url          TEXT,
-  protocol     TEXT,
-  total_tokens INTEGER NOT NULL DEFAULT 0,
-  used_tokens  INTEGER NOT NULL DEFAULT 0,
-  status       TEXT NOT NULL DEFAULT 'enabled',
-  alias        TEXT NOT NULL DEFAULT '',
-  priority     INTEGER NOT NULL DEFAULT 100,
-  provider     TEXT NOT NULL DEFAULT '',
-  api_key      TEXT NOT NULL DEFAULT '',
-  note         TEXT,
-  updated_at   TEXT,
-  updated_by   TEXT
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  url           TEXT,
+  protocol      TEXT,
+  total_tokens  INTEGER NOT NULL DEFAULT 0,
+  used_tokens   INTEGER NOT NULL DEFAULT 0,
+  status        TEXT NOT NULL DEFAULT 'enabled',
+  alias         TEXT NOT NULL DEFAULT '',
+  priority      INTEGER NOT NULL DEFAULT 100,
+  provider      TEXT NOT NULL DEFAULT '',
+  api_key       TEXT NOT NULL DEFAULT '',
+  is_default    INTEGER NOT NULL DEFAULT 0,
+  context_length     INTEGER NOT NULL DEFAULT 0,
+  max_output_tokens   INTEGER NOT NULL DEFAULT 0,
+  note          TEXT,
+  updated_at    TEXT,
+  updated_by    TEXT
 );
 
 -- 大模型时段调度：按时段自动切换默认通道（如夜间切 qwen3.8-flash 降成本）
@@ -425,7 +429,10 @@ class Store:
                 for col, ddl in (("alias", "TEXT NOT NULL DEFAULT ''"),
                                  ("priority", "INTEGER NOT NULL DEFAULT 100"),
                                  ("provider", "TEXT NOT NULL DEFAULT ''"),
-                                 ("api_key", "TEXT NOT NULL DEFAULT ''")):
+                                 ("api_key", "TEXT NOT NULL DEFAULT ''"),
+                                 ("is_default", "INTEGER NOT NULL DEFAULT 0"),
+                                 ("context_length", "INTEGER NOT NULL DEFAULT 0"),
+                                 ("max_output_tokens", "INTEGER NOT NULL DEFAULT 0")):
                     if col not in cols:
                         self._conn.execute(f"ALTER TABLE llm_models ADD COLUMN {col} {ddl}")
                 # 既有登记行补默认值（只补未设置过的，不覆盖 CTO 手工调整）
@@ -441,38 +448,69 @@ class Store:
                     "UPDATE llm_models SET provider='custom', "
                     "api_key='sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a' "
                     "WHERE id='qwen38-local' AND (provider IS NULL OR provider='')")
-                # 新默认通道：LiteLLM 网关 auto-free（免费、priority 最小=默认；已登记则不覆盖）
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO llm_models(id,name,url,protocol,total_tokens,"
-                    "used_tokens,status,note,updated_at,alias,priority,provider,api_key) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    ("litellm-autofree", "auto-free", "http://192.168.21.208:8000/v1",
-                     "openai-chat", 0, 0, "enabled",
-                     "LiteLLM 网关免费通道（auto-free，2026-11-14 起默认）",
-                     now_iso(), "autofree", 5, "custom",
-                     "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a"))
-                # 百炼 Qwen3.8-Flash：夜间默认通道（22:00–08:00，4 折性价比第一）
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO llm_models(id,name,url,protocol,total_tokens,"
-                    "used_tokens,status,note,updated_at,alias,priority,provider,api_key) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    ("qwen38flash-bailian", "qwen3.8-flash",
-                     "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                     "openai-chat", 0, 0, "enabled",
-                     "百炼 Qwen3.8-Flash（夜间默认 22–08，多模态/4 折性价比第一）",
-                     now_iso(), "qwen38flash", 4, "custom",
-                     "sk-sp-H.HIRMIY.MTtu.MEUCIBMFZgP1a-BuN2dHQoxIkHQulwA35bCgydldMJoNvlcjAiEAuDjzjPx0OlvGEcoD_JaoOn7t33KcYXq0pzce_1PB7Qo"))
-                # 时段调度默认规则：日间 08–22 → qwen3.7-plus；夜间 22–08 → qwen3.8-flash
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO llm_schedule(id,model_id,start_hour,end_hour,label,enabled,priority,note,updated_at,updated_by) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    ("daytime", "qwen37plus-bailian", 8, 22, "日间",
-                     1, 10, "08:00–22:00 默认 Qwen3.7-Plus（quality-first）", now_iso(), "system"))
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO llm_schedule(id,model_id,start_hour,end_hour,label,enabled,priority,note,updated_at,updated_by) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    ("nighttime", "qwen38flash-bailian", 22, 8, "夜间",
-                     1, 10, "22:00–08:00 默认 Qwen3.8-Flash（cost-first，4 折 + 缓存叠加）", now_iso(), "system"))
+                # 一次性种子数据（version<2）：只在升级到「模型管理」时写入一次，
+                # 之后老板在页面里删除通道/时段规则，重启不会被重新灌回来。
+                ver_row = self._conn.execute(
+                    "SELECT version FROM schema_version LIMIT 1").fetchone()
+                if ver_row is None or _int(ver_row["version"]) < 2:
+                    seed_sql = (
+                        "INSERT OR IGNORE INTO llm_models(id,name,url,protocol,total_tokens,"
+                        "used_tokens,status,note,updated_at,alias,priority,provider,api_key,"
+                        "is_default,context_length,max_output_tokens) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                    bailian = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+                    bailian_key = ("sk-sp-H.HIRMIY.MTtu.MEUCIBMFZgP1a-BuN2dHQoxIkHQulwA35bCgydldMJo"
+                                   "NvlcjAiEAuDjzjPx0OlvGEcoD_JaoOn7t33KcYXq0pzce_1PB7Qo")
+                    for row_vals in (
+                            ("qwen37plus-bailian", "qwen3.7-plus", bailian,
+                             "openai-chat", 0, "enabled",
+                             "百炼 Qwen3.7-Plus（日间默认 08–22，131k 输入 / 16k 输出）",
+                             "qwen37plus", 3, "custom", bailian_key, 1, 131072, 16384),
+                            ("qwen38flash-bailian", "qwen3.8-flash", bailian,
+                             "openai-chat", 0, "enabled",
+                             "百炼 Qwen3.8-Flash（夜间默认 22–08，多模态/4 折性价比第一）",
+                             "qwen38flash", 4, "custom", bailian_key, 0, 262144, 65536),
+                            ("litellm-autofree", "auto-free", "http://192.168.21.208:8000/v1",
+                             "openai-chat", 0, "enabled",
+                             "LiteLLM 网关免费通道（auto-free）",
+                             "autofree", 5, "custom",
+                             "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a", 0, 128000, 16384)):
+                        mid, name, url, proto, total, status, note, alias, pri, prov, key, dflt, ctx, maxout = row_vals
+                        self._conn.execute(seed_sql,
+                                           (mid, name, url, proto, total, 0, status, note,
+                                            now_iso(), alias, pri, prov, key, dflt, ctx, maxout))
+                    # 时段调度默认规则：日间 08–22 → qwen3.7-plus；夜间 22–08 → qwen3.8-flash
+                    sched_sql = (
+                        "INSERT OR IGNORE INTO llm_schedule(id,model_id,start_hour,end_hour,"
+                        "label,enabled,priority,note,updated_at,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?)")
+                    self._conn.execute(sched_sql,
+                                       ("daytime", "qwen37plus-bailian", 8, 22, "日间", 1, 10,
+                                        "08:00–22:00 默认 Qwen3.7-Plus（quality-first）", now_iso(), "system"))
+                    self._conn.execute(sched_sql,
+                                       ("nighttime", "qwen38flash-bailian", 22, 8, "夜间", 1, 10,
+                                        "22:00–08:00 默认 Qwen3.8-Flash（cost-first）", now_iso(), "system"))
+                    # 老库已存在的登记行补上下文参数（只补未设置过的）
+                    for sid, ctx, maxout in (("qwen37plus-bailian", 131072, 16384),
+                                             ("qwen38flash-bailian", 262144, 65536),
+                                             ("litellm-autofree", 128000, 16384),
+                                             ("qwen38-local", 65536, 8192),
+                                             ("opencode-glm53", 1000000, 131072)):
+                        self._conn.execute(
+                            "UPDATE llm_models SET context_length=?, max_output_tokens=? "
+                            "WHERE id=? AND context_length=0", (ctx, maxout, sid))
+                    if ver_row is None:
+                        self._conn.execute("INSERT INTO schema_version(version) VALUES (2)")
+                    else:
+                        self._conn.execute("UPDATE schema_version SET version=2")
+                # 保证始终有且只有一个全局默认（老板删掉默认通道后自动补一个）
+                if not self._conn.execute(
+                        "SELECT 1 FROM llm_models WHERE is_default=1 LIMIT 1").fetchone():
+                    pick = self._conn.execute(
+                        "SELECT id FROM llm_models WHERE status='enabled' "
+                        "ORDER BY priority ASC, id ASC LIMIT 1").fetchone()
+                    if pick:
+                        self._conn.execute("UPDATE llm_models SET is_default=1 WHERE id=?",
+                                           (pick["id"],))
             row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (1)")
@@ -949,19 +987,22 @@ class Store:
         hour = datetime.now(TZ).hour
         for r in rules:
             s, e = _int(r.get("start_hour")), _int(r.get("end_hour"))
-            if s < e:
+            if s == e:          # 起止相同 = 全天
+                match = True
+            elif s < e:
                 match = s <= hour < e
-            else:   # 跨零点：如 22–08 → hour>=22 或 hour<8
+            else:               # 跨零点：如 22–08 → hour>=22 或 hour<8
                 match = hour >= s or hour < e
             if match:
                 return str(r.get("model_id") or "")
         return ""
 
     def llm_pick(self, preferred=""):
-        """挑选可用大模型通道：时段调度优先 → preferred → priority 升序故障转移。
+        """挑选可用大模型通道：preferred → 时段调度 → 默认模型 → priority 升序故障转移。
         返回 (通道行|None, 拦截原因)。
 
         - 时段调度：查 llm_schedule 表，当前时段有匹配规则且对应通道可用时优先选用；
+        - 默认模型：llm_models.is_default=1 的通道（模型管理页可设置，全局唯一）；
         - 注册表为空 / 查询故障 → 返回默认兜底通道（沿用内置 MODEL 直调，不拦截业务）；
         - 全部通道停用或额度耗尽 → 返回 (None, 原因)，调用方拦截本次请求。
         """
@@ -979,6 +1020,10 @@ class Store:
             for m in rows:
                 if m.get("id") == sched_id and not self._llm_unavailable(m):
                     return m, ""
+        # 全局默认模型（模型管理页「设为默认」），无时段规则命中时生效
+        for m in rows:
+            if _int(m.get("is_default")) and not self._llm_unavailable(m):
+                return m, ""
         for m in rows:
             if preferred and preferred in (m.get("name"), m.get("id")) \
                     and not self._llm_unavailable(m):
@@ -1035,20 +1080,32 @@ class Store:
                 _log(f"llm_set_status 失败：{e}")
                 return False
 
+    # 模型管理页可编辑字段 → 数据库列（驼峰入参、下划线存储）
+    LLM_EDIT_FIELDS = (
+        ("name", "name"), ("url", "url"), ("protocol", "protocol"),
+        ("alias", "alias"), ("provider", "provider"), ("apiKey", "api_key"),
+        ("note", "note"),
+    )
+    LLM_EDIT_INT_FIELDS = (
+        ("totalTokens", "total_tokens"), ("priority", "priority"),
+        ("contextLength", "context_length"),
+        ("maxOutputTokens", "max_output_tokens"),
+    )
+
     def llm_update(self, model_id, fields, by=""):
-        """CTO 编辑模型配置（name/url/protocol/note/totalTokens）；额度变化联动状态：
+        """模型管理页编辑模型配置（含 url/apiKey/上下文大小/别名等）；额度变化联动状态：
         改后已用 ≥ 总额 → exhausted；原 exhausted 且额度恢复足够 → enabled。"""
         with self._lock:
             try:
                 sets, params = [], []
-                for key, col in (("name", "name"), ("url", "url"),
-                                 ("protocol", "protocol"), ("note", "note")):
+                for key, col in self.LLM_EDIT_FIELDS:
                     if key in fields:
                         sets.append(f"{col}=?")
                         params.append(str(fields.get(key) or ""))
-                if fields.get("totalTokens") is not None:
-                    sets.append("total_tokens=?")
-                    params.append(_int(fields.get("totalTokens")))
+                for key, col in self.LLM_EDIT_INT_FIELDS:
+                    if fields.get(key) is not None:
+                        sets.append(f"{col}=?")
+                        params.append(_int(fields.get(key)))
                 if not sets:
                     return False
                 sets += ["updated_at=?", "updated_by=?"]
@@ -1075,6 +1132,86 @@ class Store:
                 _log(f"llm_update 失败：{e}")
                 return False
 
+    def llm_add(self, row, by=""):
+        """新增一个大模型通道。row 为驼峰字段字典。返回 (ok, error)。"""
+        mid = str(row.get("id") or "").strip()
+        name = str(row.get("name") or "").strip()
+        if not mid or not name:
+            return False, "通道 ID 与模型名不能为空"
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", mid):
+            return False, "通道 ID 只能用字母/数字/._-（≤64 字符）"
+        with self._lock:
+            try:
+                if self._conn.execute("SELECT 1 FROM llm_models WHERE id=?", (mid,)).fetchone():
+                    return False, f"通道 ID {mid} 已存在"
+                if self._conn.execute("SELECT 1 FROM llm_models WHERE name=?", (name,)).fetchone():
+                    return False, f"模型名 {name} 已存在"
+                alias = str(row.get("alias") or "").strip()
+                if alias and self._conn.execute(
+                        "SELECT 1 FROM llm_models WHERE alias=?", (alias,)).fetchone():
+                    return False, f"hermes 别名 {alias} 已被其它通道占用"
+                with self._conn:
+                    self._conn.execute(
+                        """INSERT INTO llm_models(id,name,url,protocol,total_tokens,used_tokens,
+                           status,alias,priority,provider,api_key,is_default,context_length,
+                           max_output_tokens,note,updated_at,updated_by)
+                           VALUES(?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (mid, name, str(row.get("url") or ""),
+                         str(row.get("protocol") or "openai-chat"),
+                         _int(row.get("totalTokens")),
+                         str(row.get("status") or "enabled"), alias,
+                         _int(row.get("priority")) or 100,
+                         str(row.get("provider") or "custom"),
+                         str(row.get("apiKey") or ""),
+                         1 if row.get("isDefault") else 0,
+                         _int(row.get("contextLength")),
+                         _int(row.get("maxOutputTokens")),
+                         str(row.get("note") or ""), now_iso(), by or "system"))
+                    if row.get("isDefault"):
+                        self._conn.execute("UPDATE llm_models SET is_default=0 WHERE id<>?", (mid,))
+                return True, ""
+            except sqlite3.Error as e:
+                _log(f"llm_add 失败：{e}")
+                return False, str(e)
+
+    def llm_delete(self, model_id):
+        """删除通道（连带删除其时段规则）；禁止删除最后一个启用通道。返回 (ok, error)。"""
+        with self._lock:
+            try:
+                row = self._conn.execute(
+                    "SELECT status FROM llm_models WHERE id=?", (model_id,)).fetchone()
+                if row is None:
+                    return False, "通道不存在"
+                left = self._conn.execute(
+                    "SELECT COUNT(*) FROM llm_models WHERE status='enabled' AND id<>?",
+                    (model_id,)).fetchone()[0]
+                if str(row["status"]) == "enabled" and left == 0:
+                    return False, "不能删除最后一个启用通道（否则所有调用会被拦截）"
+                with self._conn:
+                    self._conn.execute("DELETE FROM llm_schedule WHERE model_id=?", (model_id,))
+                    self._conn.execute("DELETE FROM llm_models WHERE id=?", (model_id,))
+                return True, ""
+            except sqlite3.Error as e:
+                _log(f"llm_delete 失败：{e}")
+                return False, str(e)
+
+    def llm_set_default(self, model_id):
+        """设为全局默认模型（唯一）；同时清空其它模型已标记的默认位。返回 (ok, error)。"""
+        with self._lock:
+            try:
+                row = self._conn.execute(
+                    "SELECT id FROM llm_models WHERE id=?", (model_id,)).fetchone()
+                if row is None:
+                    return False, "通道不存在"
+                with self._conn:
+                    self._conn.execute("UPDATE llm_models SET is_default=0 WHERE is_default<>0")
+                    self._conn.execute("UPDATE llm_models SET is_default=1, updated_at=?, updated_by=? "
+                                       "WHERE id=?", (now_iso(), "boss", model_id))
+                return True, ""
+            except sqlite3.Error as e:
+                _log(f"llm_set_default 失败：{e}")
+                return False, str(e)
+
     # ---------- 大模型时段调度 ----------
     def llm_schedule_list(self):
         """返回全部时段调度规则（含当前是否匹配）。"""
@@ -1087,7 +1224,9 @@ class Store:
         out = []
         for r in rows:
             s, e = _int(r.get("start_hour")), _int(r.get("end_hour"))
-            if s < e:
+            if s == e:
+                active = True            # 全天
+            elif s < e:
                 active = s <= hour < e
             else:
                 active = hour >= s or hour < e
@@ -1128,15 +1267,16 @@ class Store:
                     return False, "无可更新字段"
                 sets += ["updated_at=?", "updated_by=?"]
                 params += [now_iso(), by or "system"]
-                if existing:
-                    self._conn.execute(
-                        f"UPDATE llm_schedule SET {', '.join(sets)} WHERE id=?",
-                        params + [rule_id])
-                else:
-                    self._conn.execute(
-                        f"INSERT INTO llm_schedule(id, {', '.join(s.split('=')[0] for s in sets)}) "
-                        f"VALUES(?{', ?' * len(sets)})",
-                        [rule_id] + params)
+                with self._conn:
+                    if existing:
+                        self._conn.execute(
+                            f"UPDATE llm_schedule SET {', '.join(sets)} WHERE id=?",
+                            params + [rule_id])
+                    else:
+                        self._conn.execute(
+                            f"INSERT INTO llm_schedule(id, {', '.join(s.split('=')[0] for s in sets)}) "
+                            f"VALUES(?{', ?' * len(sets)})",
+                            [rule_id] + params)
                 return True, ""
             except sqlite3.Error as e:
                 _log(f"llm_schedule_set 失败：{e}")
@@ -1146,7 +1286,8 @@ class Store:
         """删除一条时段调度规则。"""
         with self._lock:
             try:
-                self._conn.execute("DELETE FROM llm_schedule WHERE id=?", (rule_id,))
+                with self._conn:
+                    self._conn.execute("DELETE FROM llm_schedule WHERE id=?", (rule_id,))
                 return True
             except sqlite3.Error as e:
                 _log(f"llm_schedule_delete 失败：{e}")

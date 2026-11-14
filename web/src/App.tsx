@@ -14,6 +14,7 @@ const InspirationPage = lazy(() => import("./pages/InspirationPage").then((m) =>
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage").then((m) => ({ default: m.KnowledgePage })));
 const MessagesPage = lazy(() => import("./pages/MessagesPage").then((m) => ({ default: m.MessagesPage })));
 const OpsPage = lazy(() => import("./pages/OpsPage").then((m) => ({ default: m.OpsPage })));
+const ModelsPage = lazy(() => import("./pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
 const OrgPage = lazy(() => import("./pages/OrgPage").then((m) => ({ default: m.OrgPage })));
 const AccountPage = lazy(() => import("./pages/AccountPage").then((m) => ({ default: m.AccountPage })));
 const ScenePage = lazy(() => import("./pages/ScenePage").then((m) => ({ default: m.ScenePage })));
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/inspiration" element={<Suspense fallback={<PageFallback />}><InspirationPage /></Suspense>} />
             <Route path="/ops" element={<Suspense fallback={<PageFallback />}><OpsPage /></Suspense>} />
+            <Route path="/models" element={<Suspense fallback={<PageFallback />}><ModelsPage /></Suspense>} />
             <Route path="/works" element={<Suspense fallback={<PageFallback />}><WorksPage /></Suspense>} />
             <Route path="/factory" element={<Suspense fallback={<PageFallback />}><FactoryPage /></Suspense>} />
             <Route path="/hotspots" element={<Suspense fallback={<PageFallback />}><HotspotsPage /></Suspense>} />

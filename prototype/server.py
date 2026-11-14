@@ -1960,6 +1960,156 @@ class Handler(BaseHTTPRequestHandler):
                                    "expected": "set_status|update"}, 400)
             return self._json({"ok": True, "action": action, "llm": LREG._llm_view(),
                                "by": who, "at": iso_now()})
+        # ---------- 模型管理（老板）：增删改 / 启停 / 设默认 / 时段 / url / key / 上下文 ----------
+        if path == "/api/ops/llm-manage":
+            if user.get("role") != "老板" or not self._owner_tenant():
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅存量公司空间的老板可管理大模型"}, 403)
+            st = LREG._llm_store()
+            if not st:
+                return self._json({"ok": False, "error": "过程库未启用"}, 503)
+            action = str(body.get("action") or "list")
+            who = user.get("name") or user.get("user") or ""
+            view = lambda: LREG._llm_manage_view()
+            if action == "list":
+                return self._json({"ok": True, **view()})
+            model = body.get("model") if isinstance(body.get("model"), dict) else {}
+            mid = str(body.get("id") or model.get("id") or "").strip()
+            if action == "create":
+                ok, err = st.llm_add(model, who)
+                if not ok:
+                    return self._json({"ok": False, "error": err}, 400)
+                LREG._llm_alias_sync(model)
+                ORG._org_audit(user, "llm-model-create", mid, "新增大模型通道")
+                return self._json({"ok": True, **view(), "by": who, "at": iso_now()})
+            if action == "update":
+                if not mid:
+                    return self._json({"ok": False, "error": "缺少通道 id"}, 400)
+                before = next((r for r in st.llm_models() if r.get("id") == mid), None)
+                if before is None:
+                    return self._json({"ok": False, "error": "通道不存在"}, 404)
+                fields = {k: model[k] for k in (
+                    "name", "url", "protocol", "alias", "provider", "apiKey", "note",
+                    "totalTokens", "priority", "contextLength", "maxOutputTokens")
+                    if k in model}
+                status = str(model.get("status") or "")
+                if status not in ("", "enabled", "disabled", "exhausted"):
+                    return self._json({"ok": False, "error": "invalid status"}, 400)
+                if fields:
+                    if not st.llm_update(mid, fields, who):
+                        return self._json({"ok": False, "error": "更新失败"}, 400)
+                if status in ("enabled", "disabled"):
+                    st.llm_set_status(mid, status, who)
+                if model.get("isDefault"):
+                    st.llm_set_default(mid)
+                after = next((r for r in st.llm_models() if r.get("id") == mid), None) or {}
+                old_alias = str(before.get("alias") or "")
+                new_alias = str(after.get("alias") or "")
+                if old_alias and old_alias != new_alias:
+                    LREG._llm_alias_sync(after, remove=True, old_alias=old_alias)
+                if new_alias:
+                    LREG._llm_alias_sync({**after, "apiKey": after.get("api_key") or "",
+                                         "contextLength": after.get("context_length") or 0,
+                                         "maxOutputTokens": after.get("max_output_tokens") or 0})
+                ORG._org_audit(user, "llm-model-update", mid, "修改大模型参数")
+                return self._json({"ok": True, **view(), "by": who, "at": iso_now()})
+            if action == "delete":
+                if not mid:
+                    return self._json({"ok": False, "error": "缺少通道 id"}, 400)
+                row = next((r for r in st.llm_models() if r.get("id") == mid), None)
+                ok, err = st.llm_delete(mid)
+                if not ok:
+                    return self._json({"ok": False, "error": err}, 400)
+                if row:
+                    LREG._llm_alias_sync(row, remove=True)
+                ORG._org_audit(user, "llm-model-delete", mid, "删除大模型通道")
+                return self._json({"ok": True, **view(), "by": who, "at": iso_now()})
+            if action == "set_status":
+                status = str(body.get("status") or "")
+                if status not in ("enabled", "disabled"):
+                    return self._json({"ok": False, "error": "invalid status"}, 400)
+                if not st.llm_set_status(mid, status, who):
+                    return self._json({"ok": False, "error": "通道不存在"}, 404)
+                return self._json({"ok": True, **view(), "by": who, "at": iso_now()})
+            if action == "set_default":
+                ok, err = st.llm_set_default(mid)
+                if not ok:
+                    return self._json({"ok": False, "error": err}, 404)
+                ORG._org_audit(user, "llm-model-default", mid, "设为全局默认模型")
+                return self._json({"ok": True, **view(), "by": who, "at": iso_now()})
+            if action in ("schedule_set", "schedule_delete", "schedule_toggle_all"):
+                if action == "schedule_toggle_all":
+                    enable = bool(body.get("enabled"))
+                    for r in st.llm_schedule_list():
+                        st.llm_schedule_set(r["id"], {"enabled": enable}, who)
+                elif action == "schedule_set":
+                    rid = str(body.get("ruleId") or "").strip()
+                    fields = {k: body[k] for k in ("modelId", "startHour", "endHour",
+                                                   "label", "enabled", "priority", "note")
+                              if k in body}
+                    existing = next((r for r in st.llm_schedule_list()
+                                     if r["id"] == rid), None) if rid else None
+                    smid = str(fields.get("modelId") or mid
+                               or (existing or {}).get("modelId") or "")
+                    if not smid or not any(r.get("id") == smid for r in st.llm_models()):
+                        return self._json({"ok": False, "error": "时段规则指向的通道不存在"}, 400)
+                    sh, eh = fields.get("startHour"), fields.get("endHour")
+                    if sh is not None and not 0 <= _to_int(sh, -1) <= 23:
+                        return self._json({"ok": False, "error": "起始小时需为 0–23"}, 400)
+                    if eh is not None and not 0 <= _to_int(eh, -1) <= 23:
+                        return self._json({"ok": False, "error": "结束小时需为 0–23"}, 400)
+                    if not existing and (sh is None or eh is None):
+                        return self._json({"ok": False, "error": "新增规则需提供起止小时"}, 400)
+                    if not rid:
+                        rid = f"{smid}-{_to_int(sh, 0)}-{_to_int(eh, 0)}"
+                    fields["modelId"] = smid
+                    ok, err = st.llm_schedule_set(rid, fields, who)
+                    if not ok:
+                        return self._json({"ok": False, "error": err}, 400)
+                else:
+                    rid = str(body.get("ruleId") or "").strip()
+                    if not rid:
+                        return self._json({"ok": False, "error": "缺少规则 id"}, 400)
+                    if not st.llm_schedule_delete(rid):
+                        return self._json({"ok": False, "error": "删除失败"}, 500)
+                return self._json({"ok": True, **view(), "by": who, "at": iso_now()})
+            return self._json({"ok": False, "error": "invalid action",
+                               "expected": "list|create|update|delete|set_status|set_default|schedule_set|schedule_delete|schedule_toggle_all"}, 400)
+        # ---------- 大模型时段调度（按小时自动切换默认通道，如夜间切 qwen3.8-flash 降成本） ----------
+        if path == "/api/ops/llm-schedule":
+            if user.get("role") != "老板" or not self._owner_tenant():
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅存量公司空间可修改大模型时段调度"}, 403)
+            st = LREG._llm_store()
+            if not st:
+                return self._json({"ok": False, "error": "过程库未启用"}, 503)
+            action = str(body.get("action") or "list")
+            who = user.get("name") or user.get("user") or ""
+            if action == "list":
+                return self._json({"ok": True, "schedule": st.llm_schedule_list()})
+            elif action in ("set", "upsert"):
+                rule_id = str(body.get("id") or "").strip()
+                if not rule_id:
+                    return self._json({"ok": False, "error": "缺少规则 id"}, 400)
+                fields = {k: body[k] for k in ("modelId", "startHour", "endHour",
+                                               "label", "enabled", "priority", "note")
+                          if k in body}
+                ok, err = st.llm_schedule_set(rule_id, fields, who)
+                if not ok:
+                    return self._json({"ok": False, "error": err or "更新失败"}, 500)
+                return self._json({"ok": True, "schedule": st.llm_schedule_list(),
+                                   "by": who, "at": iso_now()})
+            elif action == "delete":
+                rule_id = str(body.get("id") or "").strip()
+                if not rule_id:
+                    return self._json({"ok": False, "error": "缺少规则 id"}, 400)
+                if not st.llm_schedule_delete(rule_id):
+                    return self._json({"ok": False, "error": "删除失败"}, 500)
+                return self._json({"ok": True, "schedule": st.llm_schedule_list(),
+                                   "by": who, "at": iso_now()})
+            else:
+                return self._json({"ok": False, "error": "invalid action",
+                                   "expected": "list|set|delete"}, 400)
         # ---------- CTO 运维处置：把巡检派单 / 热加载 / 审批收敛到一处（仅老板） ----------
         if path == "/api/ops/recover":
             if user.get("role") != "老板":

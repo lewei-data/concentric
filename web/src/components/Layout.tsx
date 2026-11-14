@@ -135,13 +135,22 @@ export function Layout() {
                 </button>
                 <div className="user-menu-sep" aria-hidden="true" />
                 {isOwner && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); navigate("/org"); }}
-                  >
-                    组织配置
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setMenuOpen(false); navigate("/models"); }}
+                    >
+                      模型管理
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setMenuOpen(false); navigate("/org"); }}
+                    >
+                      组织配置
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"
