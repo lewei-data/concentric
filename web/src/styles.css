@@ -1716,6 +1716,37 @@ a:hover {
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
+/* 图标按钮：办公室 / 会议室 */
+.nav .nav-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: #eaf1ff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07));
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  transition: background 0.22s ease, color 0.22s ease, border-color 0.22s ease,
+    box-shadow 0.3s var(--ease), transform 0.22s var(--ease);
+}
+.nav .nav-icon-btn svg { width: 20px; height: 20px; }
+.nav .nav-icon-btn:hover {
+  text-decoration: none;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.12));
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px -12px rgba(var(--glow-1-rgb), 0.9);
+}
+.nav .nav-icon-btn.active {
+  color: #17265c;
+  background: linear-gradient(135deg, #d5e4ff, #ecdcff);
+  border-color: transparent;
+  box-shadow: 0 8px 18px -8px rgba(var(--glow-1-rgb), 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
 .nav .nav-legacy {
   font-size: 12px;
   color: rgba(226, 235, 255, 0.64);
@@ -1738,6 +1769,7 @@ a:hover {
   gap: 10px;
   padding-left: 20px;
   border-left: 1px solid rgba(255, 255, 255, 0.14);
+  margin-left: auto;
 }
 
 .user-avatar {
@@ -4319,6 +4351,8 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   .nav-main a { padding: 5px 8px; font-size: 11.5px; border-radius: 10px; }
   .nav-main .nav-3d { padding: 5px 7px; font-size: 11.5px; }
   .nav-main { gap: 3px; }
+  .nav .nav-icon-btn { width: 30px; height: 30px; }
+  .nav .nav-icon-btn svg { width: 17px; height: 17px; }
   .topbar-inner { gap: 12px; padding: 10px 20px; }
   .brand-text b { font-size: 14px; }
   .brand-text small { font-size: 10px; }

@@ -41,19 +41,71 @@ export function WuxingLogo({
   );
 }
 
-/** 五行字标：取代顶栏「同心圆」三个字，一行一图 */
-export function WuxingWordmark({ element, tag }: { element: WuXing; tag: string }) {
+/** 五行字标：顶栏品牌区文字，仅显示行名 + 格言 */
+export function WuxingWordmark({ element }: { element: WuXing }) {
   const t = WUXING[element];
   return (
-    <svg className="wx-wordmark" viewBox="0 0 146 34" role="img" aria-label={`${t.fullName} · ${t.motto}`}>
-      <g transform="translate(1 2)" dangerouslySetInnerHTML={{ __html: t.sigil }} />
-      <text x="32" y="24" fontSize="21" fontWeight="700" fill="currentColor">{t.name}</text>
-      <text x="58" y="22" fontSize="11.5" fontWeight="600" letterSpacing="1.1" fill="currentColor" opacity=".78">
+    <svg className="wx-wordmark" viewBox="0 0 86 34" role="img" aria-label={`${t.fullName} · ${t.motto}`}>
+      <text x="2" y="24" fontSize="21" fontWeight="700" fill="currentColor">{t.name}</text>
+      <text x="28" y="22" fontSize="11.5" fontWeight="600" letterSpacing="1.1" fill="currentColor" opacity=".78">
         {t.motto}
       </text>
-      <rect x="116" y="9" width="27" height="16" rx="8" fill="currentColor" opacity=".16" />
-      <text x="129.5" y="20.6" fontSize="9.5" textAnchor="middle" fill="currentColor" opacity=".92">{tag}</text>
-      <path d="M32 29.5h82" stroke="currentColor" strokeWidth="1" opacity=".22" />
+      <path d="M2 29.5h52" stroke="currentColor" strokeWidth="1" opacity=".22" />
+    </svg>
+  );
+}
+
+/** 八卦图：八 trigram 绕圆心排列，外环缓转；顶栏空间不够时替代文字徽记 */
+export function BaguaOrb({ element, size = 32 }: { element: WuXing; size?: number }) {
+  const t = WUXING[element];
+  const gid = `bagua-g-${element}`;
+  // 先天八卦序（乾兑离震巽坎艮坤），每卦三线由下而上
+  const trigrams: boolean[][] = [
+    [true,true,true],   // 乾 ☰
+    [true,true,false],  // 兑 ☱
+    [true,false,true],  // 离 ☲
+    [false,false,true], // 震 ☳
+    [false,true,true],  // 巽 ☴
+    [false,true,false], // 坎 ☵
+    [true,false,false], // 艮 ☶
+    [false,false,false],// 坤 ☷
+  ];
+  const R = 21, lr = 2.2, ll = 4.8, lg = 1.4;
+  return (
+    <svg className="wx-bagua" viewBox="0 0 48 48" width={size} height={size}
+      role="img" aria-label={`${t.fullName}八卦`}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={t.color} />
+          <stop offset="100%" stopColor={t.color2} />
+        </linearGradient>
+      </defs>
+      <circle cx="24" cy="24" r="23" fill="none" stroke="currentColor" strokeOpacity=".25" strokeWidth=".6" />
+      <g className="wx-bagua-spin">
+        {trigrams.map((lines, i) => {
+          const a = i * 45 * Math.PI / 180;
+          const cx = 24 + R * Math.sin(a), cy = 24 - R * Math.cos(a);
+          return (
+            <g key={i} transform={`rotate(${i * 45} 24 24)`}>
+              {lines.map((solid, j) => {
+                const y = 19.2 + j * (ll + lg);
+                return solid
+                  ? <rect x="20.8" y={y} width="6.4" height={ll} rx=".7" fill={`url(#${gid})`} />
+                  : <g>
+                      <rect x="20.8" y={y} width="2.6" height={ll} rx=".6" fill={`url(#${gid})`} />
+                      <rect x="24.6" y={y} width="2.6" height={ll} rx=".6" fill={`url(#${gid})`} />
+                    </g>;
+              })}
+            </g>
+          );
+        })}
+      </g>
+      <circle cx="24" cy="24" r="8.5" fill={`url(#${gid})`} />
+      <path d="M24 15.5A8.5 8.5 0 0 1 24 32.5A4.25 4.25 0 0 1 24 24A4.25 4.25 0 0 0 24 15.5Z"
+        fill="rgba(255,255,255,.88)" />
+      <circle cx="24" cy="19.75" r="1.3" fill={`url(#${gid})`} />
+      <circle cx="24" cy="28.25" r="1.3" fill="rgba(255,255,255,.88)" />
+      <circle cx="24" cy="24" r="8.5" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth=".5" />
     </svg>
   );
 }
@@ -90,9 +142,11 @@ export function WuxingBadge() {
         title="查看今日五行气运 / 切换主题"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="wx-badge-orb"><WuxingLogo element={element} size={24} /></span>
-        <b>{manual ? "手选" : "今日"} · {t.name}</b>
-        <small>{reading.ganzhi}日 · {reading.hourLabel}</small>
+        <span className="wx-badge-bagua"><BaguaOrb element={element} size={28} /></span>
+        <span className="wx-badge-text">
+          <b>{manual ? "手选" : "今日"} · {t.name}</b>
+          <small>{reading.ganzhi}日 · {reading.hourLabel}</small>
+        </span>
       </button>
 
       {open && (

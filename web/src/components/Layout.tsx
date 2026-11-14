@@ -14,7 +14,6 @@ const PRIMARY_NAV = [
   { to: "/factory", label: "制片工厂" },
   { to: "/knowledge", label: "知识库" },
   { to: "/ops", label: "运维监控" },
-  { to: "/hotspots", label: "热点" },
 ];
 
 export function Layout() {
@@ -49,6 +48,7 @@ export function Layout() {
 
   const navItems = [...PRIMARY_NAV];
   if (isOwner) navItems.push({ to: "/messages", label: "消息中心", end: false });
+  navItems.push({ to: "/hotspots", label: "热点" });
 
   return (
     <div className="app">
@@ -57,7 +57,7 @@ export function Layout() {
           <NavLink to="/" className="brand-block" aria-label="同心圆 · OPC AI 员工工作台首页">
             <WuxingLogo element={wx.element} size={42} className="brand-logo" />
             <span className="brand-text">
-              <WuxingWordmark element={wx.element} tag={wx.manual ? "手选" : "宜用"} />
+              <WuxingWordmark element={wx.element} />
               <small>同心圆 · OPC AI 员工工作台</small>
             </span>
           </NavLink>
@@ -72,8 +72,20 @@ export function Layout() {
 
           <nav className="nav nav-extra" aria-label="场景入口">
             <span className="nav-divider" aria-hidden="true" />
-            <NavLink to="/office" className="nav-3d">办公室</NavLink>
-            <NavLink to="/meeting" className="nav-3d">会议室</NavLink>
+            <NavLink to="/office" className="nav-icon-btn" title="办公室">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="2" y="7" width="20" height="14" rx="2" />
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+              </svg>
+            </NavLink>
+            <NavLink to="/meeting" className="nav-icon-btn" title="会议室">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </NavLink>
           </nav>
 
           <WuxingBadge />
@@ -153,9 +165,6 @@ export function Layout() {
                 </button>
               </div>
             )}
-            <span className="live-badge" title="已连接实时事件流">
-              <i aria-hidden="true" />实时
-            </span>
           </div>
         </div>
       </header>
