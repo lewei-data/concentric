@@ -1,10 +1,10 @@
 {
- "ts": "2026-11-14T23:46:48+0800",
+ "ts": "2026-11-15T00:48:48+0800",
  "total": 16,
  "ok": 16,
  "failed": 0,
  "critical_failed": 0,
- "summary": "2026-11-14 23:47 巡检正常：16/16 项服务在线",
+ "summary": "2026-11-15 00:49 巡检正常：16/16 项服务在线",
  "report_path": "",
  "results": [
   {
@@ -16,8 +16,8 @@
    "proto": "ssh",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 7252,
-   "detail": "localhost.localdomain /  23:46:55 up 133 days"
+   "latency_ms": 8800,
+   "detail": "localhost.localdomain /  00:48:57 up 133 days"
   },
   {
    "node": "comfy-21-157",
@@ -28,7 +28,7 @@
    "proto": "files",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 5735,
+   "latency_ms": 10209,
    "detail": "权重 7/7 正常"
   },
   {
@@ -64,7 +64,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 258,
+   "latency_ms": 261,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -76,7 +76,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 836,
+   "latency_ms": 259,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -112,7 +112,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 65,
+   "latency_ms": 60,
    "detail": "HTTP 200"
   },
   {
@@ -148,7 +148,7 @@
    "proto": "mcp",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 9,
+   "latency_ms": 5,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -160,7 +160,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 11,
+   "latency_ms": 10,
    "detail": "HTTP 200"
   },
   {
@@ -172,7 +172,7 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 3,
+   "latency_ms": 1,
    "detail": "HTTP 200"
   },
   {
@@ -184,7 +184,7 @@
    "proto": "http",
    "criticality": "low",
    "status": "ok",
-   "latency_ms": 2,
+   "latency_ms": 1,
    "detail": "HTTP 426"
   },
   {
@@ -196,7 +196,7 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 5,
+   "latency_ms": 4,
    "detail": "HTTP 200"
   }
  ]

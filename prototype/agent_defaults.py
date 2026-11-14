@@ -83,9 +83,13 @@ DEFAULT_AGENT_SPEC = [
     ("scout", "苏寒", "热点采集", "all",
      ["hotspot.fetch", "asset.fetch", "asset.tag", "kb.read", "mail.read", "mail.send"], "全公司"),
     ("kb_manager", "祁南", "知识库管理", "all",
-     ["kb.write", "kb.index", "kb.qa", "kb.read", "file.write", "terminal",
-      "mail.read", "mail.send"],
-     "全公司；职责：知识库条目创建/更新、索引维护、归档登记"),
+     ["kb.read", "kb.search", "kb.write", "kb.index", "kb.qa", "kb.audit", "kb.retire",
+      "asset.read", "asset.audit", "report.render", "file.write", "terminal",
+      "cron.write", "mail.read", "mail.send"],
+     "全公司；职责：知识库条目创建/更新、分类打标、索引与检索问答、归档登记与退役标记、"
+     "重复合并与孤儿索引修复；资产盘点：每日凌晨自动盘点全部数据库/表结构/数据量、"
+     "产品与工厂产出、素材库与知识库规模，发现数据与流程问题，输出《资产盘点日报》并邮件报老板；"
+     "知识质量治理：一致性核查、缺口预警、异常升级"),
     ("manual_scout", "灰太狼", "人工采集", "all",
      ["browser.login", "browser.collect", "web.fetch", "file.write", "kb.read", "mail.read", "mail.send"],
      "全公司"),

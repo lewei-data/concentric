@@ -3028,6 +3028,17 @@ a:hover {
 .ceo-block { margin-bottom: 0; }
 .ceo-more { font-size: 12px; white-space: nowrap; }
 
+/* 待审批置顶：琥珀色描边提示"要老板拍板"，没有待审批时整块不渲染 */
+.approval-top {
+  margin: 0 0 16px;
+  border-color: rgba(217, 119, 6, 0.35);
+  box-shadow: 0 10px 24px -20px rgba(180, 83, 9, 0.6);
+}
+.approval-top::before {
+  background: linear-gradient(90deg, transparent, rgba(217, 119, 6, 0.55), transparent);
+  opacity: 1;
+}
+
 .ceo-list { display: flex; flex-direction: column; }
 .ceo-row {
   display: flex;
@@ -4225,8 +4236,21 @@ a:hover {
   word-break: break-all; white-space: pre-wrap;
 }
 
-/* 工位阶段成果：图片/视频/md 正文内嵌展示 */
-.fac-artifacts { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; }
+/* 工位详情：左文字 / 右手机屏（图片或视频） */
+.fac-step-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 264px;
+  gap: 18px;
+  align-items: start;
+}
+.fac-step-left { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+/* 该环节没有图片/视频时只占一列，不留空档 */
+.fac-step-body.no-media { grid-template-columns: minmax(0, 1fr); }
+.fac-step-right {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding-top: 2px;
+}
+
 .fac-artifacts-title { margin: 0; font-size: 12px; font-weight: 700; color: var(--text-soft); }
 .fac-artifact {
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
@@ -4236,19 +4260,103 @@ a:hover {
 .fac-artifact-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12px; }
 .fac-artifact-head b { font-size: 13px; }
 .fac-artifact-head a { color: var(--accent-deep); font-size: 12px; margin-left: auto; }
-.fac-artifact-img {
-  max-width: 100%; max-height: 360px; border-radius: 8px;
-  border: 1px solid var(--border); object-fit: contain; background: #0f172a;
-}
-.fac-artifact-video {
-  width: 100%; max-height: 420px; border-radius: 8px;
-  border: 1px solid var(--border); background: #0f172a;
-}
 .fac-artifact-md {
   max-height: 300px; overflow: auto; padding: 10px 14px; font-size: 13px;
   background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px;
 }
 .fac-artifact-md > *:first-child { margin-top: 0; }
+/* 事件流限高，工位详情整体不至于拉太长 */
+.fac-events-scroll { max-height: 240px; overflow: auto; padding-right: 2px; }
+
+/* ---------- 手机外壳 ---------- */
+.fac-phone {
+  position: relative;
+  width: 248px;
+  max-width: 100%;
+  padding: 9px;
+  border-radius: 30px;
+  background: linear-gradient(155deg, #3b4a63 0%, #16213a 40%, #060b16 100%);
+  box-shadow:
+    0 20px 38px -20px rgba(6, 12, 26, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.fac-phone-screen {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 23px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.fac-phone-media {
+  width: 100%; height: 100%;
+  object-fit: cover; display: block; background: #000;
+}
+/* 顶部灵动岛 */
+.fac-phone-notch {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 56px; height: 15px; border-radius: 999px;
+  background: #04070e; z-index: 3;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+/* 侧边按键 */
+.fac-phone-side {
+  position: absolute; width: 3px; border-radius: 3px;
+  background: linear-gradient(180deg, #475569, #1e293b);
+}
+.fac-phone-side.is-power { right: -3px; top: 116px; height: 44px; }
+.fac-phone-side.is-vol { left: -3px; top: 76px; height: 28px; }
+/* 播放按钮（不挡作者信息） */
+.fac-phone-play {
+  position: absolute; inset: 0; margin: auto;
+  width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: rgba(9, 14, 26, 0.45);
+  color: #fff; cursor: pointer; z-index: 4;
+  backdrop-filter: blur(2px);
+  transition: transform 0.18s var(--ease), background 0.18s ease;
+}
+.fac-phone-play:hover { transform: scale(1.07); background: rgba(9, 14, 26, 0.62); }
+.fac-phone-play svg { margin-left: 2px; }
+/* 屏上作者信息（模拟短视频应用） */
+.fac-phone-overlay {
+  position: absolute; inset: auto 0 0 0; z-index: 2;
+  padding: 44px 11px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+  background: linear-gradient(180deg, rgba(4, 8, 18, 0) 0%, rgba(4, 8, 18, 0.5) 45%, rgba(4, 8, 18, 0.9) 100%);
+  pointer-events: none;
+}
+.fac-phone-actions {
+  position: absolute; right: 10px; bottom: 86px;
+  display: flex; flex-direction: column; gap: 11px;
+  color: #fff; opacity: 0.9;
+}
+.fac-phone-author { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.fac-phone-avatar {
+  width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: linear-gradient(140deg, #6366f1, #8b5cf6);
+}
+.fac-phone-author-meta { display: flex; flex-direction: column; min-width: 0; }
+.fac-phone-author-meta b { font-size: 11.5px; color: #fff; letter-spacing: 0.02em; }
+.fac-phone-author-meta em {
+  font-style: normal; font-size: 9.5px; color: rgba(255, 255, 255, 0.68);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fac-phone-caption {
+  margin: 0; font-size: 11px; line-height: 1.45; color: #fff;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.fac-phone-tags { margin: 0; font-size: 9.5px; color: rgba(255, 255, 255, 0.6); }
+.fac-phone-meta { font-size: 11px; text-align: center; margin: 2px 0 0; }
+.fac-phone-open { font-size: 11.5px; color: var(--accent-deep); }
+
+@media (max-width: 900px) {
+  .fac-step-body { grid-template-columns: minmax(0, 1fr); }
+  .fac-step-right { align-items: flex-start; }
+}
 
 @media (max-width: 900px) {
   .fac-product-head { grid-template-columns: 1fr; }
@@ -4498,7 +4606,27 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
 }
 .sec-sprite:active { cursor: grabbing; }
 .sec-sprite:hover { box-shadow: 0 8px 26px rgba(99, 102, 241, .6); transform-origin: center; }
-.sec-sprite img { width: 80%; height: 80%; border-radius: 50%; object-fit: cover; pointer-events: none; }
+.sec-sprite img {
+  position: relative;
+  z-index: 1;
+  width: 80%;
+  height: 80%;
+  border-radius: 50%;
+  object-fit: cover;
+  pointer-events: none;
+}
+/* 头像加载失败时的兜底字，避免只剩一个空圈 */
+.sec-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0;
+}
 .sec-dot {
   position: absolute; top: 1px; right: 1px;
   width: 12px; height: 12px; border-radius: 50%;

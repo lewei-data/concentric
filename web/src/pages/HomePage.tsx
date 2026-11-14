@@ -504,6 +504,38 @@ export function HomePage() {
 
       {error && <div className="banner error-banner">状态加载失败：{error}</div>}
 
+      {/* 0. 待我拍板：列表置顶，没有待审批就不占位置 */}
+      {pending.length > 0 && (
+        <section className="card ceo-block approval-top">
+          <div className="block-head">
+            <div>
+              <h2>待我拍板</h2>
+              <p className="muted">开工 / 发布 / 对外动作必须人工拍板</p>
+            </div>
+            <span className="pill-count">{pending.length} 待审批</span>
+          </div>
+          {approvalMsg && <p className="muted">{approvalMsg}</p>}
+          <div className="approval-list">
+            {pending.slice(-3).reverse().map((approval) => (
+              <div key={approval.id} className="approval-card">
+                <h3>{approval.title || approval.action || approval.id}</h3>
+                <div className="approval-line">
+                  风险：{approval.risk || "-"} · 动作：{approval.action || "-"} · 内容 {(approval.items || []).length} 条
+                </div>
+                <div className="approval-actions">
+                  <button type="button" className="btn btn-ok" onClick={() => decide(approval, "approve")}>
+                    {approval.action === "publish.execute" ? "通过并发布" : "通过并开工"}
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => decide(approval, "reject")}>
+                    驳回
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* 1. 运营指标 */}
       <div className="ceo-kpis">
         {kpis.map((k) => (
@@ -752,85 +784,50 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 5. IT 系统运行 + 审批 */}
-      <div className="ceo-grid-2">
-        <section className="card ceo-block">
-          <div className="block-head">
-            <div>
-              <h2>IT 系统运行</h2>
-              <p className="muted">服务健康、视频产线与告警</p>
-            </div>
-            <Link to="/ops" className="ceo-more">运维监控 →</Link>
+      {/* 5. IT 系统运行 */}
+      <section className="card ceo-block">
+        <div className="block-head">
+          <div>
+            <h2>IT 系统运行</h2>
+            <p className="muted">服务健康、视频产线与告警</p>
           </div>
-          <div className="ceo-sys">
-            <div className="ceo-sys-row">
-              <span>主服务</span>
-              <span className={`ceo-pill${opsService?.ok ? " is-ok" : " is-danger"}`}>
-                {opsService?.ok ? "运行中" : ops ? "异常" : "加载中"}
-              </span>
-            </div>
-            <div className="ceo-sys-row">
-              <span>已运行</span>
-              <b>{fmtUptime(opsService?.uptimeSec)}</b>
-            </div>
-            <div className="ceo-sys-row">
-              <span>视频服务</span>
-              <b>{totalServices ? `${onlineServices}/${totalServices} 在线` : "-"}</b>
-            </div>
-            <div className="ceo-sys-row">
-              <span>渲染队列</span>
-              <b>
-                执行 {runningJobs} · 阻塞 {pendingRender}
-              </b>
-            </div>
+          <Link to="/ops" className="ceo-more">运维监控 →</Link>
+        </div>
+        <div className="ceo-sys">
+          <div className="ceo-sys-row">
+            <span>主服务</span>
+            <span className={`ceo-pill${opsService?.ok ? " is-ok" : " is-danger"}`}>
+              {opsService?.ok ? "运行中" : ops ? "异常" : "加载中"}
+            </span>
           </div>
-          {alerts.length > 0 ? (
-            <div className="ceo-alerts">
-              {alerts.map((a) => (
-                <div key={a.id} className={`ceo-alert is-${a.level}`}>
-                  <b>{a.title}</b>
-                  <span>{a.detail}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted ceo-ok">暂无告警，系统平稳。</p>
-          )}
-        </section>
-
-        <section className="card ceo-block">
-          <div className="block-head">
-            <div>
-              <h2>待我拍板</h2>
-              <p className="muted">开工 / 发布 / 对外动作必须人工拍板</p>
-            </div>
-            <span className="pill-count">{pending.length} 待审批</span>
+          <div className="ceo-sys-row">
+            <span>已运行</span>
+            <b>{fmtUptime(opsService?.uptimeSec)}</b>
           </div>
-          {approvalMsg && <p className="muted">{approvalMsg}</p>}
-          {pending.length === 0 ? (
-            <p className="muted">暂无待审批。AI 不得自行开工、发布或对外承诺。</p>
-          ) : (
-            <div className="approval-list">
-              {pending.slice(-3).reverse().map((approval) => (
-                <div key={approval.id} className="approval-card">
-                  <h3>{approval.title || approval.action || approval.id}</h3>
-                  <div className="approval-line">
-                    风险：{approval.risk || "-"} · 动作：{approval.action || "-"} · 内容 {(approval.items || []).length} 条
-                  </div>
-                  <div className="approval-actions">
-                    <button type="button" className="btn btn-ok" onClick={() => decide(approval, "approve")}>
-                      {approval.action === "publish.execute" ? "通过并发布" : "通过并开工"}
-                    </button>
-                    <button type="button" className="btn btn-ghost" onClick={() => decide(approval, "reject")}>
-                      驳回
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+          <div className="ceo-sys-row">
+            <span>视频服务</span>
+            <b>{totalServices ? `${onlineServices}/${totalServices} 在线` : "-"}</b>
+          </div>
+          <div className="ceo-sys-row">
+            <span>渲染队列</span>
+            <b>
+              执行 {runningJobs} · 阻塞 {pendingRender}
+            </b>
+          </div>
+        </div>
+        {alerts.length > 0 ? (
+          <div className="ceo-alerts">
+            {alerts.map((a) => (
+              <div key={a.id} className={`ceo-alert is-${a.level}`}>
+                <b>{a.title}</b>
+                <span>{a.detail}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted ceo-ok">暂无告警，系统平稳。</p>
+        )}
+      </section>
 
       {/* 6. 出厂后流程：发布审批（老板拍板）→ 发布 → 归档 → 汇报 */}
       <section className="card ceo-block">

@@ -1,8 +1,12 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGetIdentity } from "@refinedev/core";
 import type { OpcUser } from "../types";
+import { appRoot } from "../appRoot";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
+
+// 手机屏上的作者头像（服务根下，公网需要 /workbench 前缀）
+const CCO_AVATAR = `${appRoot()}avatars/cco.png`;
 
 // ---------- 类型 ----------
 interface Workshop {
@@ -136,6 +140,26 @@ export function FactoryPage() {
   };
   const [resuming, setResuming] = useState<string>("");
   const [resumeMsg, setResumeMsg] = useState("");
+
+  // 工位成果：图片/视频进右侧"手机屏"，md 正文进左侧文字区
+  const stepArtifacts = stepDetail?.artifacts ?? [];
+  const stepMedia =
+    stepArtifacts.find((a) => a.kind === "video") ?? stepArtifacts.find((a) => a.kind === "image");
+  const stepTexts = stepArtifacts.filter((a) => a.kind === "md");
+
+  // 手机屏内的播放控制（不用原生控件，避免和作者信息叠在一起）
+  const phoneVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [phonePlaying, setPhonePlaying] = useState(false);
+  const togglePhonePlay = () => {
+    const v = phoneVideoRef.current;
+    if (!v) return;
+    if (v.paused) void v.play();
+    else v.pause();
+  };
+  // 切换工位时回到"待播放"状态
+  useEffect(() => {
+    setPhonePlaying(false);
+  }, [stepOpen?.traceId, stepOpen?.stageId]);
 
   const load = useCallback(() => {
     factoryGet<FactoryData>("/api/factory")
@@ -352,84 +376,161 @@ export function FactoryPage() {
                       <div className="fac-error">{stepDetail.error || "详情加载失败"}</div>
                     )}
                     {!stepLoading && stepDetail?.ok && (
-                      <>
-                        <div className="fac-step-info">
-                          <span className={`fac-run s-${stepDetail.step?.status}`}>
-                            {STATUS_LABEL[stepDetail.step?.status || ""] || stepDetail.step?.status}
-                          </span>
-                          <span className="muted">
-                            开工 {shortTime(stepDetail.step?.started_at)} · 完工{" "}
-                            {shortTime(stepDetail.step?.finished_at) || "进行中"}
-                            {stepDetail.step?.detail?.items != null && ` · 涉及内容单 ${stepDetail.step.detail.items} 条`}
-                            {stepDetail.step?.om_stage && ` · OpenMontage 阶段 ${stepDetail.step.om_stage}`}
-                          </span>
-                        </div>
-                        <div className="fac-artifacts">
-                          <h5 className="fac-artifacts-title">阶段成果</h5>
-                          {(stepDetail.artifacts ?? []).length === 0 ? (
+                      <div className={`fac-step-body${stepMedia ? "" : " no-media"}`}>
+                        {/* 左：文字（工位信息 + 文案/分镜等文本成果 + 事件流） */}
+                        <div className="fac-step-left">
+                          <div className="fac-step-info">
+                            <span className={`fac-run s-${stepDetail.step?.status}`}>
+                              {STATUS_LABEL[stepDetail.step?.status || ""] || stepDetail.step?.status}
+                            </span>
+                            <span className="muted">
+                              开工 {shortTime(stepDetail.step?.started_at)} · 完工{" "}
+                              {shortTime(stepDetail.step?.finished_at) || "进行中"}
+                              {stepDetail.step?.detail?.items != null && ` · 涉及内容单 ${stepDetail.step.detail.items} 条`}
+                              {stepDetail.step?.om_stage && ` · OpenMontage 阶段 ${stepDetail.step.om_stage}`}
+                            </span>
+                          </div>
+
+                          {stepTexts.length > 0 && <h5 className="fac-artifacts-title">阶段成果</h5>}
+                          {stepTexts.length === 0 && !stepMedia && (
                             <div className="fac-empty">
                               该工位暂无落盘成果（交付目录未生成，或此环节不产出文件）。
                             </div>
-                          ) : (
-                            stepDetail.artifacts!.map((a) => (
-                              <div key={`${a.url}`} className="fac-artifact">
-                                <div className="fac-artifact-head">
-                                  <b>{a.label}</b>
-                                  <span className="muted">
-                                    {a.name} · {fmtSize(a.size)} · {shortTime(a.at)}
-                                  </span>
-                                  <a href={a.url} target="_blank" rel="noopener noreferrer">
-                                    新窗口打开 ↗
-                                  </a>
-                                </div>
-                                {a.kind === "image" && (
-                                  <img className="fac-artifact-img" src={a.url} alt={a.label} />
-                                )}
-                                {a.kind === "video" && (
-                                  <video
-                                    className="fac-artifact-video"
-                                    controls
-                                    preload="metadata"
-                                    src={a.url}
-                                  />
-                                )}
-                                {a.kind === "md" && a.text && (
-                                  <div className="fac-artifact-md">
-                                    <Suspense fallback={<span className="muted">正文渲染中…</span>}>
-                                      <MarkdownBody text={a.text} />
-                                    </Suspense>
-                                  </div>
-                                )}
-                              </div>
-                            ))
                           )}
+                          {stepTexts.map((a) => (
+                            <div key={a.url} className="fac-artifact">
+                              <div className="fac-artifact-head">
+                                <b>{a.label}</b>
+                                <span className="muted">
+                                  {a.name} · {fmtSize(a.size)} · {shortTime(a.at)}
+                                </span>
+                                <a href={a.url} target="_blank" rel="noopener noreferrer">
+                                  新窗口打开 ↗
+                                </a>
+                              </div>
+                              {a.text && (
+                                <div className="fac-artifact-md">
+                                  <Suspense fallback={<span className="muted">正文渲染中…</span>}>
+                                    <MarkdownBody text={a.text} />
+                                  </Suspense>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          <h5 className="fac-artifacts-title">处理事件</h5>
+                          <div className="fac-events fac-events-scroll">
+                            {(() => {
+                              const all = stepDetail.events ?? [];
+                              if (all.length === 0) return <div className="fac-empty">该工位暂无事件记录</div>;
+                              const tail = all.slice(-80);
+                              return (
+                                <>
+                                  {all.length > tail.length && (
+                                    <div className="muted fac-event-more">
+                                      共 {all.length} 条事件，展示最近 {tail.length} 条
+                                    </div>
+                                  )}
+                                  {tail.map((ev) => (
+                                    <div key={ev.id} className="fac-event">
+                                      <span className="fac-event-kind">{ev.kind}</span>
+                                      <span className="fac-event-at">{shortTime(ev.at)}</span>
+                                      <code className="fac-event-data">
+                                        {JSON.stringify(ev.data).slice(0, 260)}
+                                      </code>
+                                    </div>
+                                  ))}
+                                </>
+                              );
+                            })()}
+                          </div>
                         </div>
-                        <div className="fac-events">
-                          {(() => {
-                            const all = stepDetail.events ?? [];
-                            if (all.length === 0) return <div className="fac-empty">该工位暂无事件记录</div>;
-                            const tail = all.slice(-80);
-                            return (
-                              <>
-                                {all.length > tail.length && (
-                                  <div className="muted fac-event-more">
-                                    共 {all.length} 条事件，展示最近 {tail.length} 条
-                                  </div>
+
+                        {/* 右：手机外壳包裹的图片/视频 + 模拟作者信息 */}
+                        {stepMedia && (
+                          <aside className="fac-step-right">
+                            <div className="fac-phone">
+                              <div className="fac-phone-screen">
+                                {stepMedia.kind === "video" ? (
+                                  <>
+                                    <video
+                                      ref={phoneVideoRef}
+                                      className="fac-phone-media"
+                                      preload="metadata"
+                                      playsInline
+                                      src={stepMedia.url}
+                                      onPlay={() => setPhonePlaying(true)}
+                                      onPause={() => setPhonePlaying(false)}
+                                    />
+                                    {!phonePlaying && (
+                                      <button
+                                        type="button"
+                                        className="fac-phone-play"
+                                        onClick={togglePhonePlay}
+                                        aria-label="播放"
+                                      >
+                                        <svg viewBox="0 0 24 24" width="22" height="22">
+                                          <path d="M8 5.5 19 12 8 18.5Z" fill="currentColor" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <img className="fac-phone-media" src={stepMedia.url} alt={stepMedia.label} />
                                 )}
-                                {tail.map((ev) => (
-                                  <div key={ev.id} className="fac-event">
-                                    <span className="fac-event-kind">{ev.kind}</span>
-                                    <span className="fac-event-at">{shortTime(ev.at)}</span>
-                                    <code className="fac-event-data">
-                                      {JSON.stringify(ev.data).slice(0, 260)}
-                                    </code>
+                                <span className="fac-phone-notch" aria-hidden="true" />
+                                <div className="fac-phone-overlay" aria-hidden="true">
+                                  <div className="fac-phone-actions">
+                                    <svg viewBox="0 0 24 24" width="17" height="17">
+                                      <path
+                                        d="M12 20s-7-4.2-7-9A4.2 4.2 0 0 1 12 8.4 4.2 4.2 0 0 1 19 11c0 4.8-7 9-7 9Z"
+                                        fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
+                                      />
+                                    </svg>
+                                    <svg viewBox="0 0 24 24" width="17" height="17">
+                                      <path
+                                        d="M20 12a7 7 0 0 1-7 7H8l-4 3v-4.6A7 7 0 1 1 20 12Z"
+                                        fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
+                                      />
+                                    </svg>
+                                    <svg viewBox="0 0 24 24" width="17" height="17">
+                                      <path
+                                        d="M12 19V6M6 11l6-6 6 6"
+                                        fill="none" stroke="currentColor" strokeWidth="1.7"
+                                        strokeLinecap="round" strokeLinejoin="round"
+                                      />
+                                    </svg>
                                   </div>
-                                ))}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </>
+                                  <div className="fac-phone-author">
+                                    <img className="fac-phone-avatar" src={CCO_AVATAR} alt="" />
+                                    <span className="fac-phone-author-meta">
+                                      <b>{(p.decidedBy || "cco").toUpperCase()} 出品</b>
+                                      <em>{p.serialNo || p.traceId} · {p.craftName}</em>
+                                    </span>
+                                  </div>
+                                  <p className="fac-phone-caption">{p.title}</p>
+                                  <p className="fac-phone-tags">
+                                    #{p.workshopNo}号车间 · #{stepMedia.label}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="fac-phone-side is-power" aria-hidden="true" />
+                              <span className="fac-phone-side is-vol" aria-hidden="true" />
+                            </div>
+                            <p className="muted fac-phone-meta">
+                              {stepMedia.label} · {fmtSize(stepMedia.size)} · {shortTime(stepMedia.at)}
+                            </p>
+                            <a
+                              className="fac-phone-open"
+                              href={stepMedia.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              新窗口打开 ↗
+                            </a>
+                          </aside>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}

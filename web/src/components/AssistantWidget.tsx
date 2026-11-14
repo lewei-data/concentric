@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { appRoot } from "../appRoot";
+
+// 头像在「服务根」下：公网挂在 /workbench/app，必须补前缀，否则 401/404 后图片被隐藏
+const SEC_AVATAR = `${appRoot()}avatars/secretary.png`;
 
 /**
  * 桌面精灵（小秘书）：老板登录后浮动在工作区右下角。
@@ -422,7 +426,7 @@ export default function AssistantWidget() {
         <div className="sec-entrance" onClick={closeEntrance}>
           <div className="sec-entrance-card" onClick={(e) => e.stopPropagation()}>
             <div className="sec-entrance-avatar">
-              <img src="/avatars/secretary.png" alt="小秘书"
+              <img src={SEC_AVATAR} alt="小秘书"
                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
               <span className="sec-wave" aria-hidden />
             </div>
@@ -448,7 +452,8 @@ export default function AssistantWidget() {
         role="button"
         aria-label="小秘书"
       >
-        <img src="/avatars/secretary.png" alt="" draggable={false}
+        <span className="sec-fallback" aria-hidden="true">秘</span>
+        <img src={SEC_AVATAR} alt="" draggable={false}
              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         <span className="sec-dot" />
         {speaking && <span className="sec-wave" aria-hidden />}

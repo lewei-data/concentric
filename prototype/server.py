@@ -121,6 +121,7 @@ from hermes_adapter import HERMES
 from deps import *  # noqa: F401,F403 —— 基础设施单例（DBX/ING/DL/WK/OMR/asset_fill/insights/ops_monitor）
 from kernel import BusyError, _kernel_for, _kernel_reset
 import voice_bridge
+import asset_audit
 from users import (SESSIONS, SESS_LOCK, SESSION_COOKIE, SESSION_TTL,
                    LOGIN_FAILS, LOGIN_LOCK)
 
@@ -269,6 +270,14 @@ try:
     print("[feed] 共享热点采集线程已启动（30 分钟一轮）", flush=True)
 except Exception as e:
     print(f"[feed] 采集线程启动失败：{type(e).__name__}: {e}", flush=True)
+
+# 知识库管理：每日凌晨资产盘点（库/表/数据量、产品与工厂产出、素材库与知识库 → 报告落盘 + 邮件老板）
+INVENTORY_STOP = threading.Event()
+try:
+    asset_audit.start(lambda: KERNEL, stop_event=INVENTORY_STOP)
+    print(f"[inventory] 每日资产盘点线程已启动（{asset_audit.INVENTORY_AT}）", flush=True)
+except Exception as e:
+    print(f"[inventory] 盘点线程启动失败：{type(e).__name__}: {e}", flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -655,6 +664,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._material(path[len("/materials/"):])
         if path == "/api/materials":
             return self._json(self._materials_index())
+        # 资产盘点日报：读最近一次自动/手动盘点的落盘报告（老板可见）
+        if path == "/api/asset/inventory/latest":
+            if not self._owner_only():
+                return
+            fp = os.path.join(asset_audit.REPORT_DIR, "最新.md")
+            if not os.path.exists(fp):
+                return self._json({"ok": False, "error": "尚无盘点报告"}, 404)
+            try:
+                with open(fp, encoding="utf-8") as f:
+                    text = f.read()
+            except OSError as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+            return self._json({"ok": True, "path": fp, "at": iso_now(),
+                               "markdown": text})
         # 其余页面与接口一律要求登录
         if not self._need_login(path):
             return
@@ -1812,6 +1835,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._account_avatar_upload()
         if path == "/api/hotspot/subscribe":
             return self._hotspot_subscribe(body)
+        # ---------- 资产盘点（知识库管理）：手动补跑一次（默认每日凌晨自动执行） ----------
+        if path == "/api/asset/inventory/run":
+            if not self._owner_only():
+                return
+            return self._json(asset_audit.trigger(self._kernel()))
         # ---------- 消息中心 · 桌面精灵（小秘书对话） ----------
         if path in ("/api/chat/send", "/api/chat/voice", "/api/chat/upload"):
             if not self._owner_only():

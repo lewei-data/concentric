@@ -1259,8 +1259,7 @@ class Kernel:
                          daemon=True).start()
         return trace, hotspot
 
-    @staticmethod
-    def _idea_project(idea, project=""):
+    def _idea_project(self, idea, project=""):
         """灵感归属项目：显式指定 > 灵感标签/来源里认得出的项目 > 默认同心圆（正式宣讲调性）。"""
         pid = str(project or "").strip().lower()
         if pid in self.projects:

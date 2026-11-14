@@ -46,18 +46,30 @@ class HermesAdapter:
         # 角色附加权限（在基础只读之上）
         role_rules = {
             "kb_manager": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                           "允许使用 file.write 写文件到项目目录（整理知识条目、更新索引与笔记、写入 OPC/知识库 文档）；"
+                           "允许使用 file.write 写文件到项目目录（整理知识条目、更新索引与笔记、写入 OPC/知识库 与 OPC/汇报 文档）；"
+                           "允许使用 terminal 执行**只读**盘点命令：sqlite3 -readonly 查询过程库/系统库的表结构与行数、"
+                           "ls/du/find/wc 统计 vault 与工程目录的文件数、体积与最近更新时间；"
                            "允许使用 kb.write 创建/更新知识库条目；"
                            "允许使用 kb.index 维护知识库索引；"
                            "允许使用 kb.qa 执行知识库问答；"
+                           "允许使用 cronjob_manage 维护每日凌晨资产盘点与知识库自检任务；"
                            "禁止删除、移动、重命名文件，禁止访问该目录以外的路径；"
                            "修改 公司/ 配置类文件（员工名册/项目配置）时保持原有表格与字段格式，并在 evidence 写明改动理由；\n"
                            "知识库管理权限（概念工具→实际操作映射）：\n"
                            "  · kb.write → write_file 创建/更新 OPC/知识库/*.md 条目；\n"
-                           "  · kb.index → write_file 更新 OPC/知识库/00-索引.md；\n"
+                           "  · kb.index → write_file 更新 OPC/知识库/00-索引.md（分类+标题+日期）；\n"
                            "  · kb.qa → search_files + read_file 检索知识库条目并回答；\n"
+                           "  · kb.audit → search_files 扫描 OPC/知识库/ 全部条目 + read_file 逐条评估质量与时效，输出盘点报告；\n"
+                           "  · kb.retire → patch/write_file 给过时条目标记 archived: true，并在索引里移到「归档」分区；\n"
+                           "  · asset.audit → 系统每日凌晨自动跑全量盘点（asset_audit.py，只读过程库），"
+                           "代理读 OPC/汇报/资产盘点/最新.md 做解读、补漏与归因；需要复算时用 terminal 只读 sqlite3 自助查询；\n"
+                           "  · report.render → write_file 输出《资产盘点日报》到 OPC/汇报/资产盘点/（含库/表/行数、"
+                           "产品与工厂产出、素材库与知识库规模、问题清单与建议）；\n"
+                           "  · asset.read → 读取素材清单 materials.json 与 OPC/素材库，核对条目与文件可达性；\n"
+                           "盘点红线：数字必须来自实际查询/落盘（写清表名、文件路径、统计口径）；"
+                           "禁止写业务库、禁止删表改表、禁止改流水线状态；发现阻塞/断点只出结论与建议，不越权处置；\n"
                            "禁止：不改叙事与选镜头；不替配音合成音轨；不替视频制作剪辑或渲染；\n"
-                           "除 file、kb.write/kb.index/kb.qa 与邮件工具外禁止调用其它工具。"),
+                           "除 file、terminal（只读盘点）、kb.write/kb.index/kb.qa/kb.audit/kb.retire、cronjob 与邮件工具外禁止调用其它工具。"),
             "scout": ("允许使用 web 检索工具做只读查证（只查公开信息，不登录、不提交、不发布），把来源 URL 写进 evidence；"
                       f"允许使用 file 工具把采集结果写入 {vault}/OPC/热点采集/ 下的 .md（只能写该目录，"
                       "禁止改写 公司/、动态/ 等配置与状态文件）；除 web、file 与邮件工具外禁止调用其它工具。"),
