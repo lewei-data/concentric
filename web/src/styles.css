@@ -5375,6 +5375,7 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   background: var(--surface-soft); border: 1px solid var(--border); color: var(--muted);
 }
 .fac-ws-run em { font-style: normal; opacity: .75; }
+.fac-ws-run.s-queued { color: var(--text-soft); border-color: var(--border); background: var(--surface-soft); }
 .fac-ws-run.s-running { color: var(--accent-deep); border-color: #a9c9f7; background: #eef5ff; }
 .fac-ws-run.s-failed { color: var(--danger); border-color: #f3c9c5; background: #fdf0ef; }
 .fac-ws-run.s-done { color: var(--ok); border-color: #b8e4d1; background: #effaf4; }
@@ -5451,6 +5452,7 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
 .fac-ws-job-chan.k-video { color: #7c3aed; }
 .fac-ws-job-chan.k-audio { color: #b45309; }
 .fac-ws-job-st { padding: 0 7px; border-radius: 999px; font-size: 10.5px; border: 1px solid var(--border); color: var(--muted); }
+.fac-ws-job-st.s-queued { color: var(--text-soft); background: var(--surface-soft); border-color: var(--border); }
 .fac-ws-job-st.s-running { color: var(--accent-deep); background: #eef5ff; border-color: #a9c9f7; }
 .fac-ws-job-st.s-done { color: var(--ok); background: #effaf4; border-color: #b8e4d1; }
 .fac-ws-job-st.s-failed { color: var(--danger); background: #fdf0ef; border-color: #f3c9c5; }

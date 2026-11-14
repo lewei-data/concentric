@@ -156,7 +156,15 @@ _PROBE_LOCK = threading.Lock()
 _CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 _SHOT_HEAD = re.compile(
     r"镜(?:头)?\s*([一二三四五六七八九十\d]{1,3})\s*[（(]?\s*"
-    r"(?:(\d+(?:\.\d+)?)\s*[-–—~至]\s*(\d+(?:\.\d+)?)\s*s|(\d+(?:\.\d+)?)\s*s)?\s*[）)]?\s*[：:，,]?")
+    r"(?:(\d+(?:\.\d+)?)\s*[-–—~至]\s*(\d+(?:\.\d+)?)\s*s|(\d+(?:\.\d+)?)\s*s)?\s*[）)]?\s*"
+    r"(?:[（(]\s*(?:\d+(?:\.\d+)?\s*s)?\s*[）)])?\s*[：:，,]?")
+# 无「镜」字、直接用序号起行：「1｜0-6s …」「2) 手机怼脸…」「3·8s｜…」
+_NUM_HEAD = re.compile(
+    r"(?:^|(?<=[\n。；;]))\s*(\d{1,2})\s*[)）.、·:：|｜]\s*"
+    r"(?:(\d+(?:\.\d+)?)\s*[-–—~至]\s*(\d+(?:\.\d+)?)\s*s|(\d+(?:\.\d+)?)\s*s)?")
+# 连序号都没有，只有时间码：「0–4s …；4–14s …」
+_TIME_HEAD = re.compile(
+    r"(?:^|(?<=[\n。；;]))\s*(\d+(?:\.\d+)?)\s*[-–—~]\s*(\d+(?:\.\d+)?)\s*s")
 _LINE_LABEL = re.compile(r"(?:台词|口播|旁白|配音)\s*[:：]")
 _VIS_LABEL = re.compile(r"(?:画面|视觉|镜内)\s*[:：]")
 _ASSET_LABEL = re.compile(r"插图\s*[:：]?\s*")
@@ -180,24 +188,34 @@ def split_storyboard(text, total_sec=0):
 
     真实分镜文本一行到底、镜号写法五花八门（中文数字、时间码、括号），
     DL.normalize_storyboard 只按行切，所以这里单独做一个宽松切分器：
+    依次尝试「镜N …」「N｜…」「N-Ms …」三种写法，取切出镜数最多的一种，
     切出每镜 画面（提示词）/ 台词（音频用）/ 时长 / 插图标注。
     """
     raw = str(text or "").strip()
     if not raw:
         return []
-    heads = list(_SHOT_HEAD.finditer(raw))
+    heads = []
+    is_time = False
+    for pat in (_SHOT_HEAD, _NUM_HEAD, _TIME_HEAD):
+        found = list(pat.finditer(raw))
+        if len(found) >= 2:
+            heads, is_time = found, pat is _TIME_HEAD
+            break
     if len(heads) < 2:
         return []
     out = []
     for idx, m in enumerate(heads):
         end = heads[idx + 1].start() if idx + 1 < len(heads) else len(raw)
         seg = raw[m.end():end]
-        if m.group(2) and m.group(3):
+        if is_time:
+            no = idx + 1
+            sec = round(float(m.group(2)) - float(m.group(1)), 2)
+        elif m.group(2) and m.group(3):
+            no = _cn_num(m.group(1)) or (idx + 1)
             sec = round(float(m.group(3)) - float(m.group(2)), 2)
-        elif m.group(4):
-            sec = round(float(m.group(4)), 2)
         else:
-            sec = 0.0
+            no = _cn_num(m.group(1)) or (idx + 1)
+            sec = round(float(m.group(4)), 2) if m.group(4) else 0.0
         line = ""
         lm = _LINE_LABEL.search(seg)
         if lm:
@@ -214,9 +232,21 @@ def split_storyboard(text, total_sec=0):
         vm = _VIS_LABEL.search(seg)
         if vm:
             seg = seg[vm.end():]
+        if not line:
+            # 没写「台词：」的，把引号里那句完整的话当口播（标签式短词如「只读」不算）
+            qm = re.search(r"[「“]([^」”]{6,})[」”]", seg)
+            if qm and (len(qm.group(1)) >= 8 or qm.group(1)[-1:] in "。！？…"):
+                line = qm.group(1)
+                seg = (seg[:qm.start()] + seg[qm.end():])
+        if not line:
+            # 「画面｜台词」用竖线分段的，后半段当口播
+            parts = [p.strip(_TRIM) for p in re.split(r"[｜|]", seg)]
+            if len(parts) >= 2 and len(parts[-1]) >= 6 and "插图" not in parts[-1]:
+                line = parts[-1]
+                seg = "｜".join(parts[:-1])
         for cut in ("）", ")", "，淡入", "。"):
             asset = asset.split(cut)[0]
-        out.append({"no": _cn_num(m.group(1)) or (idx + 1),
+        out.append({"no": no,
                     "prompt": seg.strip(_TRIM + "（("), "line": line.strip(_TRIM),
                     "sec": sec, "asset": asset.strip(_TRIM + "（(")})
     # 没有逐镜时间码的，按总时长均分

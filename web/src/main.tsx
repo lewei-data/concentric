@@ -5,6 +5,9 @@ import "./styles.css";
 import "./floor.css";
 import "./wuxing.css";
 import "./knowledge.css";
+import "./decision.css";
+import "./reflection.css";
+import "./graph.css";
 import { initWuxing } from "./wuxing";
 
 // 首屏渲染前就算出今日宜用之行，避免主题闪烁

@@ -12,6 +12,9 @@ import { LoginPage } from "./pages/LoginPage";
 const HotspotsPage = lazy(() => import("./pages/HotspotsPage").then((m) => ({ default: m.HotspotsPage })));
 const InspirationPage = lazy(() => import("./pages/InspirationPage").then((m) => ({ default: m.InspirationPage })));
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage").then((m) => ({ default: m.KnowledgePage })));
+const DecisionPage = lazy(() => import("./pages/DecisionPage").then((m) => ({ default: m.DecisionPage })));
+const ReflectionPage = lazy(() => import("./pages/ReflectionPage").then((m) => ({ default: m.ReflectionPage })));
+const GraphPage = lazy(() => import("./pages/GraphPage").then((m) => ({ default: m.GraphPage })));
 const MessagesPage = lazy(() => import("./pages/MessagesPage").then((m) => ({ default: m.MessagesPage })));
 const OpsPage = lazy(() => import("./pages/OpsPage").then((m) => ({ default: m.OpsPage })));
 const ModelsPage = lazy(() => import("./pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
@@ -62,6 +65,9 @@ export default function App() {
             <Route path="/factory" element={<Suspense fallback={<PageFallback />}><FactoryPage /></Suspense>} />
             <Route path="/hotspots" element={<Suspense fallback={<PageFallback />}><HotspotsPage /></Suspense>} />
             <Route path="/knowledge" element={<Suspense fallback={<PageFallback />}><KnowledgePage /></Suspense>} />
+            <Route path="/decision" element={<Suspense fallback={<PageFallback />}><DecisionPage /></Suspense>} />
+            <Route path="/reflection" element={<Suspense fallback={<PageFallback />}><ReflectionPage /></Suspense>} />
+            <Route path="/graph" element={<Suspense fallback={<PageFallback />}><GraphPage /></Suspense>} />
             <Route path="/messages" element={<Suspense fallback={<PageFallback />}><MessagesPage /></Suspense>} />
             <Route path="/org" element={<Suspense fallback={<PageFallback />}><OrgPage /></Suspense>} />
             <Route path="/account" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />

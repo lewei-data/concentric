@@ -2,7 +2,11 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useList, useOne } from "@refinedev/core";
 import type { Knowledge, KnowledgeCategory } from "../types";
 import { WUXING, useWuxing, type WuXing } from "../wuxing";
+import { KB_CATEGORIES } from "../knowledgeCategories";
 import { WuxingLogo } from "../components/WuxingLogo";
+import { DecisionPage } from "./DecisionPage";
+import { ReflectionPage } from "./ReflectionPage";
+import { GraphPage } from "./GraphPage";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
@@ -59,52 +63,10 @@ type CategoryWithStats = {
 };
 
 /** 前端兜底分类定义（五行体系），后端 /api/knowledge/categories 优先 */
-const FALLBACK_CATEGORIES: CategoryWithStats[] = [
-  { key: "analysis", label: "分析调研", element: "土", icon: "⛰️",
-    slogan: "厚基、存真、稳态",
-    description: "做厚事实底座，保障素材可信度与完整性；作为全体系的「土壤」，保持相对稳定",
-    color: "#b45309",
-    tags: [
-      { key: "copywriting", label: "文案分析" }, { key: "short-video", label: "短视频分析" },
-      { key: "market", label: "市场调研" }, { key: "competitor", label: "竞品分析" },
-      { key: "trend", label: "趋势洞察" },
-    ]},
-  { key: "graph", label: "知识图谱", element: "水", icon: "🌊",
-    slogan: "通联、溯源、无滞",
-    description: "核心价值在「连通」而非「堆节点」，建设实体间的关联链路与因果传导路径",
-    color: "#1e40af",
-    tags: [
-      { key: "data-source", label: "数据源关联" }, { key: "concept", label: "概念图谱" },
-      { key: "workflow", label: "流程图谱" }, { key: "domain", label: "领域模型" },
-    ]},
-  { key: "skill", label: "技能", element: "金", icon: "⚔️",
-    slogan: "精专、规整、耐用",
-    description: "像铸造器物一样打磨每个 Skill，边界清晰、输入输出明确、异常处理完备",
-    color: "#a16207",
-    tags: [
-      { key: "content", label: "内容创作" }, { key: "data", label: "数据分析" },
-      { key: "design", label: "设计" }, { key: "ops", label: "运维" },
-      { key: "management", label: "管理" }, { key: "research", label: "调研" },
-    ]},
-  { key: "decision", label: "决策模型", element: "火", icon: "🔥",
-    slogan: "明断、守序、不妄",
-    description: "清晰的判断逻辑与优先级秩序，规则明确、边界清晰；顶层范式不轻易变动",
-    color: "#dc2626",
-    tags: [
-      { key: "domain-model", label: "领域模型" }, { key: "strategy", label: "战略决策" },
-      { key: "risk", label: "风险评估" }, { key: "principle", label: "原则框架" },
-      { key: "heuristic", label: "经验法则" },
-    ]},
-  { key: "reflection", label: "反馈迭代", element: "木", icon: "🌿",
-    slogan: "循序、日新、有度",
-    description: "遵循生长规律，小步持续优化；控制迭代节奏与灰度范围，避免拔苗助长",
-    color: "#059669",
-    tags: [
-      { key: "retrospective", label: "复盘总结" }, { key: "optimization", label: "优化方案" },
-      { key: "lesson", label: "经验教训" }, { key: "feedback", label: "用户反馈" },
-      { key: "iteration", label: "迭代记录" },
-    ]},
-];
+const FALLBACK_CATEGORIES: CategoryWithStats[] = KB_CATEGORIES.map((c) => ({
+  ...c,
+  tags: c.tags.map((t) => ({ ...t })),
+}));
 
 function isPdfContent(item?: Knowledge): boolean {
   if (!item) return false;
@@ -452,6 +414,12 @@ export function KnowledgePage() {
             )}
           </div>
         </div>
+      ) : activeCat === "graph" ? (
+        <GraphPage embedded />
+      ) : activeCat === "decision" ? (
+        <DecisionPage embedded />
+      ) : activeCat === "reflection" ? (
+        <ReflectionPage embedded />
       ) : (
         /* ── 卡片网格 ── */
         <div className="kb-grid-wrap">

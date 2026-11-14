@@ -3826,6 +3826,8 @@ class Kernel:
         qs = parse_qs(query)
         cat_filter = (qs.get("category", [""])[0] or "").strip()
         tag_filter = (qs.get("tag", [""])[0] or "").strip()
+        # 知识图谱需要正文才能推导「正文引用」边；默认不返回 body，避免列表变重
+        with_body = (qs.get("with_body", [""])[0] or "").strip().lower() in ("1", "true", "yes")
         items = self._knowledge_all()
         # 确保每条都有 category 字段（旧数据懒推断）
         for k in items:
@@ -3842,13 +3844,18 @@ class Kernel:
         items.sort(key=lambda k: str(k.get("at") or ""), reverse=True)
         total = len(items)
         start = (page - 1) * size
-        rows = [{"id": k.get("id"),
-                 "title": k.get("title") or k.get("summary") or "",
-                 "summary": k.get("summary") or (k.get("title") or "")[:80],
-                 "category": k.get("category"),
-                 "projectId": k.get("projectId"), "traceId": k.get("traceId"),
-                 "tags": k.get("tags") or [], "at": k.get("at"),
-                 "hasBody": bool(k.get("body"))} for k in items[start:start + size]]
+        rows = []
+        for k in items[start:start + size]:
+            row = {"id": k.get("id"),
+                   "title": k.get("title") or k.get("summary") or "",
+                   "summary": k.get("summary") or (k.get("title") or "")[:80],
+                   "category": k.get("category"),
+                   "projectId": k.get("projectId"), "traceId": k.get("traceId"),
+                   "tags": k.get("tags") or [], "at": k.get("at"),
+                   "hasBody": bool(k.get("body"))}
+            if with_body:
+                row["body"] = k.get("body") or ""
+            rows.append(row)
         return {"ok": True, "total": total, "page": page, "size": size, "items": rows}
 
     def hotspot_page(self, query=""):
