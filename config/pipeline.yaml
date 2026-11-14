@@ -23,14 +23,14 @@ stages:
     kind: produce
     item_stage: topic
     om_stage: research
-    description: PM 各提 4 条候选，CCO 12 选 9
+    description: PM 各提 3 条候选，CCO 9 选 6
 
   - id: topic_review
     name: 选题评审会
     kind: gate
     item_stage: topic
     om_stage: proposal
-    description: CEO/CTO/CCO + 项目 PM 定稿 6 条并归档纪要
+    description: CCO + 项目 PM 定稿 6 条并归档纪要（取消 CEO/CTO 参会）
 
   - id: boss_report
     name: 选题结果汇报
@@ -85,7 +85,7 @@ stages:
     item_stage: sample
     om_stage: edit
     rounds: 2
-    description: CCO + CTO + 本项目 PM 评审，不过则返工重出片
+    description: CCO + 本项目 PM 评审，不过则返工重出片（取消 CTO 三方评审）
 
   - id: final
     name: 定版
