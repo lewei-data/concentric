@@ -24,6 +24,11 @@ import mail as MAILM
 import message_feeds as FEED
 import pipeline_defs as PIPE
 from hermes_adapter import HERMES
+try:
+    import media_jobs as MEDIA
+except Exception as _e:  # 素材作业模块缺失不应拖垮整个内核
+    MEDIA = None
+    print(f"[boot] media_jobs 导入失败：{type(_e).__name__}: {_e}", flush=True)
 
 
 class BudgetAbort(Exception):
@@ -2655,22 +2660,31 @@ class Kernel:
                           "line": str(s.get("台词") or s.get("line") or "").strip(),
                           "sec": _num(s.get("秒") or s.get("sec") or 0),
                           "asset": str(s.get("素材") or s.get("asset") or "").strip()})
-        if not shots and self.DL and item.get("storyboard"):
-            total = _num(item.get("seconds") or 0) or 45
-            try:
-                for idx, s in enumerate(self.DL.normalize_storyboard(item.get("storyboard"), total), 1):
-                    try:
-                        no = int(s.get("no") or idx)
-                    except (TypeError, ValueError):
-                        no = idx
-                    shots.append({"no": no,
-                                  "prompt": str(s.get("visual") or "").strip(),
-                                  "line": str(s.get("line") or "").strip(),
-                                  "sec": _num(s.get("dur") or 0), "asset": ""})
-            except Exception as e:
-                print(f"[factory] 分镜归一化失败：{type(e).__name__}: {e}", flush=True)
-        # 没有任何时长的，按总时长均分，保证视频渠道有时长可用
         total = _num(item.get("seconds") or 0)
+        if not total:
+            total = _num(item.get("durationSec") or 0) or _num((plan or {}).get("durationSec") or 0)
+        if not shots and item.get("storyboard"):
+            sb = item.get("storyboard")
+            # 真实分镜多是「镜一：…镜二：…」一整段，先走宽松切分器
+            if isinstance(sb, str) and MEDIA:
+                try:
+                    shots = MEDIA.split_storyboard(sb, total or 45)
+                except Exception as e:
+                    print(f"[factory] 分镜切分失败：{type(e).__name__}: {e}", flush=True)
+            if not shots and self.DL:
+                try:
+                    for idx, s in enumerate(self.DL.normalize_storyboard(sb, total or 45), 1):
+                        try:
+                            no = int(s.get("no") or idx)
+                        except (TypeError, ValueError):
+                            no = idx
+                        shots.append({"no": no,
+                                      "prompt": str(s.get("visual") or "").strip(),
+                                      "line": str(s.get("line") or "").strip(),
+                                      "sec": _num(s.get("dur") or 0), "asset": ""})
+                except Exception as e:
+                    print(f"[factory] 分镜归一化失败：{type(e).__name__}: {e}", flush=True)
+        # 没有任何时长的，按总时长均分，保证视频渠道有时长可用
         avg = round(total / len(shots), 2) if (total and shots) else 0
         for s in shots:
             if not s["sec"] and avg:
@@ -2732,9 +2746,13 @@ class Kernel:
                             "failed": len([j for j in jobs if j.get("status") == "failed"]),
                             "progress": max([int(j.get("progress") or 0) for j in jobs] or [0])},
             })
+        seconds = _num(item.get("seconds") or item.get("durationSec")
+                       or (item.get("plan") or {}).get("durationSec") or 0)
+        if not seconds:  # 内容单没记总时长时，用分镜时长之和兜底（前端显示要一致）
+            seconds = round(sum(s.get("sec") or 0 for s in out), 2)
         return {"traceId": trace_id, "itemId": item_id, "projectId": project_id,
                 "title": item.get("title") or "", "tone": item.get("tone") or "",
-                "stage": item.get("stage") or "", "seconds": _num(item.get("seconds") or 0),
+                "stage": item.get("stage") or "", "seconds": seconds,
                 "maxSec": cap, "channels": chans, "shots": out,
                 "activeTrace": self.active_trace,
                 "stages": [{"stage": k, "label": v} for k, v in self.STAGE_BUTTONS.items()]}
@@ -2879,8 +2897,8 @@ class Kernel:
     def _stage_lane_run(self, rec):
         trace_id, stage = rec["traceId"], rec["stage"]
         deadline = time.time() + 3600
-        # 手工多次启动允许排队：等当前这轮跑完再下一条，不覆盖别人
-        while self.active_trace and self.active_trace != trace_id and time.time() < deadline:
+        # 手工多次启动允许排队：等当前这轮（含同一 trace）跑完再下一条，不覆盖别人
+        while self.active_trace and time.time() < deadline:
             time.sleep(3)
         rec.update(status="running", startedAt=iso_now(), note="已下发流水线")
         self.emit("factory-stage", trace_id, dict(rec))
@@ -3917,25 +3935,13 @@ class Kernel:
         return made
 
     def _backfill_knowledge(self):
-        """启动修复：最近一轮已有交付物、但知识库没有对应条目时，按定稿标题补登。"""
-        if not self.contents or not self.knowledge:
-            return
-        latest_trace = ""
-        for item in self.contents:
-            if item.get("traceId") and item.get("title"):
-                latest_trace = item["traceId"]
-        if not latest_trace:
-            return
-        existing = {k.get("title") for k in self.knowledge
-                    if str(k.get("sourceTrace") or k.get("traceId") or "").startswith(latest_trace)}
-        todo = [i for i in self.contents
-                if i.get("traceId") == latest_trace and i.get("title") not in existing]
-        if not todo:
-            return
-        self.archive_knowledge(latest_trace, [
-            {"projectId": i.get("projectId"), "title": i.get("title"),
-             "body": f"启动补登：交付物已落盘（阶段 {i.get('stage')}）",
-             "tags": [str(i.get("stage") or "")]} for i in todo], stage_label="启动补登")
+        """已禁用自动补登。
+
+        流水线选题(deliverable items, 均带 traceId)不属于知识库/知识图谱，
+        不应自动沉淀为知识条目。真 KB 由 OPC/知识库 目录的 md 经 load_knowledge
+        加载；交付物目录(OPC/交付物/tr_*)只用于历史交付清单，不回填知识库。
+        """
+        return
 
     # ---------- 快照 ----------
     def snapshot(self):

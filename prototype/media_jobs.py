@@ -17,6 +17,7 @@
 """
 import json
 import os
+import re
 import shutil
 import sqlite3
 import threading
@@ -152,6 +153,80 @@ _PROBE = {"at": 0.0, "data": {}}
 _PROBE_LOCK = threading.Lock()
 
 
+_CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+_SHOT_HEAD = re.compile(
+    r"镜(?:头)?\s*([一二三四五六七八九十\d]{1,3})\s*[（(]?\s*"
+    r"(?:(\d+(?:\.\d+)?)\s*[-–—~至]\s*(\d+(?:\.\d+)?)\s*s|(\d+(?:\.\d+)?)\s*s)?\s*[）)]?\s*[：:，,]?")
+_LINE_LABEL = re.compile(r"(?:台词|口播|旁白|配音)\s*[:：]")
+_VIS_LABEL = re.compile(r"(?:画面|视觉|镜内)\s*[:：]")
+_ASSET_LABEL = re.compile(r"插图\s*[:：]?\s*")
+_TRIM = " \t\r\n／/｜|；;。、,，"
+
+
+def _cn_num(tok):
+    if tok.isdigit():
+        return int(tok)
+    if tok in _CN_NUM:
+        return _CN_NUM[tok]
+    if len(tok) == 2 and tok[0] == "十":
+        return 10 + _CN_NUM.get(tok[1], 0)
+    if len(tok) == 2 and tok[1] == "十":
+        return _CN_NUM.get(tok[0], 0) * 10
+    return None
+
+
+def split_storyboard(text, total_sec=0):
+    """把模型写的整段分镜按「镜一：／镜2 0–8s／镜3（8-17s）」切成清单。
+
+    真实分镜文本一行到底、镜号写法五花八门（中文数字、时间码、括号），
+    DL.normalize_storyboard 只按行切，所以这里单独做一个宽松切分器：
+    切出每镜 画面（提示词）/ 台词（音频用）/ 时长 / 插图标注。
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+    heads = list(_SHOT_HEAD.finditer(raw))
+    if len(heads) < 2:
+        return []
+    out = []
+    for idx, m in enumerate(heads):
+        end = heads[idx + 1].start() if idx + 1 < len(heads) else len(raw)
+        seg = raw[m.end():end]
+        if m.group(2) and m.group(3):
+            sec = round(float(m.group(3)) - float(m.group(2)), 2)
+        elif m.group(4):
+            sec = round(float(m.group(4)), 2)
+        else:
+            sec = 0.0
+        line = ""
+        lm = _LINE_LABEL.search(seg)
+        if lm:
+            line = seg[lm.end():]
+            seg = seg[:lm.start()]
+            am = _ASSET_LABEL.search(line)
+            if am:
+                line = line[:am.start()]
+        asset = ""
+        am = _ASSET_LABEL.search(seg)
+        if am:
+            asset = seg[am.end():]
+            seg = seg[:am.start()]
+        vm = _VIS_LABEL.search(seg)
+        if vm:
+            seg = seg[vm.end():]
+        for cut in ("）", ")", "，淡入", "。"):
+            asset = asset.split(cut)[0]
+        out.append({"no": _cn_num(m.group(1)) or (idx + 1),
+                    "prompt": seg.strip(_TRIM + "（("), "line": line.strip(_TRIM),
+                    "sec": sec, "asset": asset.strip(_TRIM + "（(")})
+    # 没有逐镜时间码的，按总时长均分
+    if total_sec and all(not s["sec"] for s in out):
+        each = round(float(total_sec) / len(out), 2)
+        for s in out:
+            s["sec"] = each
+    return out
+
+
 def _probe_media_gen():
     try:
         d = _http_json(MEDIAGEN + "/v1/backends", timeout=4)
@@ -279,17 +354,21 @@ def plan_duration(ch_name, ch, params, sec):
         return 0.0, {}, ""
     cap = min([x for x in (ch.get("max_sec"), SHOT_MAX_SEC) if x])
     want = float(sec or 0) or cap
-    note = ""
-    if want > cap + 1e-6:
-        note = f"分镜时长 {want:.1f}s 超过 {ch_name} 上限 {cap:.1f}s，已夹到上限"
-        want = cap
+    over = want > cap + 1e-6
+    capped = min(want, cap)
     if ch_name in ("wan21", "minimax_h3"):
-        frames, fps = _frames_for(want, params.get("fps") or 16, cap)
+        frames, fps = _frames_for(capped, params.get("fps") or 16, cap)
         actual = round(frames / fps, 2)
-        if not note and want - actual >= 0.5:  # 明显被帧数约束拉低才提示，避免噪音
+        if over:
+            note = f"分镜时长 {want:.1f}s 超过 {ch_name} 上限 {cap:.1f}s，已夹到 {actual:.2f}s"
+        elif want - actual >= 0.5:  # 明显被帧数约束拉低才提示，避免噪音
             note = f"按帧数约束（{frames} 帧 @{fps}fps）实际 {actual:.2f}s"
+        else:
+            note = ""
         return actual, {"num_frames": frames, "fps": fps}, note
-    return round(want, 2), {}, note
+    if over:
+        return round(capped, 2), {}, f"分镜时长 {want:.1f}s 超过 {ch_name} 上限 {cap:.1f}s，已夹到 {capped:.2f}s"
+    return round(want, 2), {}, ""
 
 
 # ---------------------------------------------------------------- 存储
@@ -400,8 +479,13 @@ class Manager:
         prompt = fields.get("prompt", cur.get("prompt")) or ""
         line = fields.get("line", cur.get("line")) or ""
         sec = fields.get("sec", cur.get("sec"))
-        chans = fields.get("channels", json.loads(cur.get("channels") or "[]"))
-        params = fields.get("params", json.loads(cur.get("params") or "{}"))
+        # 没传渠道/参数（或传 None）时保留上次选择，避免「只改提示词」把方案清空
+        chans = fields.get("channels")
+        if chans is None:
+            chans = json.loads(cur.get("channels") or "[]")
+        params = fields.get("params")
+        if params is None:
+            params = json.loads(cur.get("params") or "{}")
         rec = {"trace_id": trace_id, "item_id": item_id, "shot_no": int(shot_no),
                "prompt": prompt, "line": line, "sec": sec,
                "channels": json.dumps(chans or [], ensure_ascii=False),
@@ -809,6 +893,13 @@ def _deliver(mgr, row, result):
     stem = f"shot{int(row.get('shot_no') or 0):02d}-{row['channel']}-r{int(row.get('run_no') or 1)}"
     dest = os.path.join(out_dir, stem + ext)
     shutil.copyfile(src, dest)
+    # 临时下载中转文件（.cache/media 下）落盘后即删，成品只在交付目录留一份
+    cache_dir = os.path.join(BASE_DIR, ".cache", "media")
+    if os.path.abspath(src).startswith(os.path.abspath(cache_dir)):
+        try:
+            os.remove(src)
+        except OSError:
+            pass
     url = ""
     if vault:
         try:

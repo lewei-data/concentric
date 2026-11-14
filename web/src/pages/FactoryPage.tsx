@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useGetIdentity } from "@refinedev/core";
 import type { OpcUser } from "../types";
 import { appRoot } from "../appRoot";
+import { FactoryShotsPanel } from "../components/FactoryShots";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
@@ -129,6 +130,8 @@ export function FactoryPage() {
   const [stepOpen, setStepOpen] = useState<{ traceId: string; stageId: string; name: string } | null>(null);
   const [stepDetail, setStepDetail] = useState<StepDetail | null>(null);
   const [stepLoading, setStepLoading] = useState(false);
+  // 分镜工作台：按内容单展开（分镜清单 + 多渠道并发制作）
+  const [wsOpen, setWsOpen] = useState<{ traceId: string; itemId: string } | null>(null);
 
   const toggleStep = (traceId: string, stageId: string, name: string) => {
     if (stepOpen?.traceId === traceId && stepOpen?.stageId === stageId) {
@@ -304,6 +307,15 @@ export function FactoryPage() {
                   </div>
                   <div className="fac-product-reason" title={p.reason}>CCO 决策依据：{p.reason}</div>
                   <div className="fac-product-ctl">
+                    <button
+                      type="button"
+                      className={`btn fac-btn ${wsOpen?.traceId === p.traceId ? "" : "btn-ghost"}`}
+                      onClick={() => setWsOpen(
+                        wsOpen?.traceId === p.traceId ? null : { traceId: p.traceId, itemId: p.itemId },
+                      )}
+                    >
+                      {wsOpen?.traceId === p.traceId ? "收起分镜工作台" : "分镜工作台"}
+                    </button>
                     {isBoss && p.run.status !== "completed" && p.run.stage && (
                       <button
                         type="button"
@@ -361,6 +373,16 @@ export function FactoryPage() {
                     })}
                   </div>
                 </div>
+
+                {/* 分镜工作台：逐镜改提示词、按渠道并发制作、启停重试、三环节手工启动 */}
+                {wsOpen?.traceId === p.traceId && (
+                  <FactoryShotsPanel
+                    traceId={p.traceId}
+                    itemId={p.itemId}
+                    isBoss={isBoss}
+                    onClose={() => setWsOpen(null)}
+                  />
+                )}
 
                 {/* 工位详情内嵌展示 */}
                 {stepOpen?.traceId === p.traceId && (

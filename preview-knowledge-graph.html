@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>知识图谱 · 图数据库效果预览（OPC）</title>
+<style>
+  :root{
+    --土:#b45309; --水:#1e40af; --木:#059669; --金:#a16207; --火:#dc2626;
+    --bg:#0f1220; --panel:#171a2b; --line:#2a2f45; --txt:#e8ecf5; --dim:#8b93ad;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt)}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0}
+  .sub{color:var(--dim);font-size:12px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+  button{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+  button:hover{border-color:#4b557a}
+  button.on{background:#26304f;border-color:#5b6aa8}
+  main{display:flex;height:calc(100vh - 56px)}
+  #canvas{flex:1;position:relative;overflow:hidden}
+  svg{width:100%;height:100%;display:block}
+  .side{width:320px;background:var(--panel);border-left:1px solid var(--line);padding:16px;overflow:auto;font-size:13px}
+  .side h2{font-size:13px;margin:0 0 8px;color:#cdd5ee;letter-spacing:.5px}
+  .card{background:#11142a;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .lg{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--dim)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .stat{display:flex;justify-content:space-between;padding:3px 0;color:var(--dim)}
+  .stat b{color:var(--txt);font-weight:600}
+  .relrow{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #232a44;font-size:12px}
+  .tag{display:inline-block;background:#222a47;border-radius:6px;padding:1px 7px;margin:2px 3px 0 0;font-size:11px;color:#aeb8d8}
+  .hint{color:var(--dim);font-size:12px;line-height:1.6}
+  .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;margin-left:6px}
+  .生{background:rgba(5,150,105,.18);color:#4ade80}
+  .克{background:rgba(220,38,38,.18);color:#f87171}
+  .关联{background:rgba(96,116,180,.18);color:#9db0e8}
+  a{color:#7ea2ff}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>知识图谱 · 图数据库效果预览</h1>
+    <div class="sub">节点=知识条目（五行着色）· 边=关系（生克标记）· 演示多跳 / 最短路径 / 中心度 / 五行聚类</div>
+  </div>
+  <div class="toolbar">
+    <button id="btnReset">重置视图</button>
+    <button id="btnDegree">中心度视图</button>
+    <button id="btnPath">最短路径模式</button>
+    <button id="btnCluster">五行聚类</button>
+  </div>
+</header>
+<main>
+  <div id="canvas"><svg id="svg"></svg></div>
+  <aside class="side">
+    <div class="card">
+      <h2>图统计（图数据库式指标）</h2>
+      <div class="stat"><span>节点数</span><b id="sNodes">–</b></div>
+      <div class="stat"><span>关系边数</span><b id="sEdges">–</b></div>
+      <div class="stat"><span>平均度数</span><b id="sAvg">–</b></div>
+      <div class="stat"><span>最中心节点</span><b id="sHub">–</b></div>
+      <div class="stat"><span>五行社区</span><b>土/水/木/金/火 5 簇</b></div>
+    </div>
+    <div class="card" id="infoCard">
+      <h2>选中节点</h2>
+      <div class="hint" id="info">点击任意节点查看其多跳邻居与关系；「最短路径模式」下点两个节点求路径。</div>
+    </div>
+    <div class="card">
+      <h2>五行图例</h2>
+      <div class="legend">
+        <div class="lg"><span class="dot" style="background:var(--土)"></span>土·分析</div>
+        <div class="lg"><span class="dot" style="background:var(--水)"></span>水·图谱</div>
+        <div class="lg"><span class="dot" style="background:var(--木)"></span>木·复盘</div>
+        <div class="lg"><span class="dot" style="background:var(--金)"></span>金·技能</div>
+        <div class="lg"><span class="dot" style="background:var(--火)"></span>火·决策</div>
+      </div>
+      <div class="hint" style="margin-top:8px">边右上方标签：<span class="pill 生">生</span> 五行相生（顺流） <span class="pill 克">克</span> 相克（制约） <span class="pill 关联">关联</span> 中立。</div>
+    </div>
+  </aside>
+</main>
+
+<script>
+// ---------- 数据（真实 7 条 KB 的五行映射 + 2 个样例 graph/decision 节点） ----------
+const NODES = [
+  {id:'n1', label:'ComfyUI 全能力实测盘点', cat:'analysis',   el:'土', tags:['文案分析','市场调研']},
+  {id:'n2', label:'五行知识图谱',            cat:'graph',      el:'水', tags:['概念图谱','领域模型']},
+  {id:'n3', label:'知识库审计复盘',          cat:'reflection', el:'木', tags:['复盘总结','经验教训']},
+  {id:'n4', label:'CEO/CTO/CCO 五行学习技能',cat:'skill',      el:'金', tags:['Profile','SOP']},
+  {id:'n7', label:'管理层五行学习计划',      cat:'skill',      el:'金', tags:['管理层调研']},
+  {id:'n8', label:'内容开工审批原则',        cat:'decision',   el:'火', tags:['原则框架','风险评估']},
+];
+const EDGES = [
+  {s:'n1',t:'n2',label:'数据源自',rel:'生'},
+  {s:'n2',t:'n3',label:'溯源',   rel:'生'},
+  {s:'n3',t:'n4',label:'沉淀为', rel:'生'},
+  {s:'n4',t:'n8',label:'支撑',   rel:'生'},
+  {s:'n8',t:'n1',label:'反哺',   rel:'生'},
+  {s:'n1',t:'n4',label:'数据支撑',rel:'生'},
+  {s:'n2',t:'n7',label:'领域模型',rel:'关联'},
+  {s:'n7',t:'n8',label:'指导',   rel:'生'},
+];
+const ELCOLOR = {'土':'#b45309','水':'#1e40af','木':'#059669','金':'#a16207','火':'#dc2626'};
+
+// ---------- 图结构（邻接表，等价于图数据库的“边索引”） ----------
+const adj = {}; NODES.forEach(n=>adj[n.id]=[]);
+EDGES.forEach(e=>{ adj[e.s].push({to:e.t,label:e.label,rel:e.rel}); adj[e.t].push({to:e.s,label:e.label,rel:e.rel}); });
+
+// ---------- 力导向布局（spring-electrical，等价于图数据库前端的空间化） ----------
+const W = ()=>document.getElementById('svg').clientWidth;
+const H = ()=>document.getElementById('svg').clientHeight;
+const pos = {}; const vel = {};
+NODES.forEach((n,i)=>{ pos[n.id]={x:W()/2+Math.cos(i)*180, y:H()/2+Math.sin(i)*180}; vel[n.id]={x:0,y:0}; });
+let alpha=1, dragging=null, fixed=null;
+
+function tick(){
+  const k_rep=9000, k_spring=0.02, L0=120, center=0.012;
+  NODES.forEach(a=>{
+    if(fixed===a.id) return;
+    let fx=0,fy=0;
+    NODES.forEach(b=>{ if(a.id===b.id)return;
+      let dx=pos[a.id].x-pos[b.id].x, dy=pos[a.id].y-pos[b.id].y;
+      let d2=dx*dx+dy*dy+0.01, d=Math.sqrt(d2);
+      let f=k_rep/d2; fx+=dx/d*f; fy+=dy/d*f;
+    });
+    (adj[a.id]).forEach(e=>{ const b=pos[e.to];
+      let dx=b.x-pos[a.id].x, dy=b.y-pos[a.id].y, d=Math.sqrt(dx*dx+dy*dy)+0.01;
+      let f=k_spring*(d-L0); fx+=dx/d*f; fy+=dy/d*f;
+    });
+    fx+=(W()/2-pos[a.id].x)*center; fy+=(H()/2-pos[a.id].y)*center;
+    vel[a.id].x=(vel[a.id].x+fx*alpha)*0.86; vel[a.id].y=(vel[a.id].y+fy*alpha)*0.86;
+    pos[a.id].x+=vel[a.id].x; pos[a.id].y+=vel[a.id].y;
+  });
+  alpha*=0.985; if(alpha<0.02)alpha=0.02;
+}
+function render(){
+  const svg=document.getElementById('svg');
+  svg.innerHTML='';
+  // 边
+  EDGES.forEach(e=>{
+    const a=pos[e.s], b=pos[e.t];
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',a.x);line.setAttribute('y1',a.y);line.setAttribute('x2',b.x);line.setAttribute('y2',b.y);
+    line.setAttribute('stroke', e.rel==='克'?'#f87171':(e.rel==='关联'?'#5b6aa8':'#465079'));
+    line.setAttribute('stroke-width', e.rel==='关联'?1:2);
+    line.setAttribute('opacity', dim.has(e.s)&&dim.has(e.t)?0.08: (hi.size&&!(hi.has(e.s)&&hi.has(e.t))?0.08:0.8));
+    line.setAttribute('id','e_'+e.s+'_'+e.t);
+    svg.appendChild(line);
+    // 标签
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',(a.x+b.x)/2); t.setAttribute('y',(a.y+b.y)/2-4);
+    t.setAttribute('fill','#9db0e8'); t.setAttribute('font-size','10'); t.setAttribute('text-anchor','middle');
+    t.textContent=e.label;
+    t.setAttribute('opacity', line.getAttribute('opacity'));
+    svg.appendChild(t);
+  });
+  // 节点
+  NODES.forEach(n=>{
+    const p=pos[n.id]; const r=degreeView? (8+adj[n.id].length*4):16;
+    const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',p.x);c.setAttribute('cy',p.y);c.setAttribute('r',r);
+    c.setAttribute('fill',ELCOLOR[n.el]); c.setAttribute('stroke', hi.has(n.id)?'#fff':'#0f1220'); c.setAttribute('stroke-width',hi.has(n.id)?3:1.5);
+    c.setAttribute('opacity', hi.size&&!hi.has(n.id)?0.15:1);
+    c.style.cursor='pointer';
+    c.addEventListener('mousedown',ev=>{dragging=n.id;fixed=n.id;ev.preventDefault();});
+    c.addEventListener('click',ev=>{ ev.stopPropagation(); onNodeClick(n.id); });
+    c.addEventListener('mouseup',()=>{dragging=null;});
+    svg.appendChild(c);
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',p.x);t.setAttribute('y',p.y+r+12);t.setAttribute('fill','#e8ecf5');t.setAttribute('font-size','11');t.setAttribute('text-anchor','middle');
+    t.textContent=n.label; t.setAttribute('opacity', hi.size&&!hi.has(n.id)?0.2:1);
+    svg.appendChild(t);
+  });
+}
+let degreeView=false, hi=new Set(), dim=new Set(), pathMode=false;
+function loop(){ tick(); render(); if(alpha>0.02||dragging) requestAnimationFrame(loop); }
+document.getElementById('svg').addEventListener('mousemove',ev=>{ if(!dragging)return;
+  const r=document.getElementById('svg').getBoundingClientRect(); pos[dragging].x=ev.clientX-r.left; pos[dragging].y=ev.clientY-r.top; });
+document.getElementById('svg').addEventListener('click',()=>{ if(!pathMode){hi.clear();dim.clear();render();updateInfo();} });
+
+// ---------- 图数据库式查询 ----------
+function bfsPaths(src,dst){ // 最短路径（BFS）
+  const prev={}, q=[src]; prev[src]=null;
+  while(q.length){ const u=q.shift(); if(u===dst)break;
+    adj[u].forEach(e=>{ if(!(e.to in prev)){prev[e.to]=u; q.push(e.to);} }); }
+  if(!(dst in prev))return null;
+  const path=[]; let c=dst; while(c!==null){path.unshift(c); c=prev[c];} return path;
+}
+function neighbors(id,k){ // k 跳邻居（多跳查询）
+  let cur=[id], seen=new Set([id]), res={1:new Set(),2:new Set()};
+  for(let hop=1;hop<=k;hop++){ const nxt=[]; cur.forEach(u=>adj[u].forEach(e=>{ if(!seen.has(e.to)){seen.add(e.to); res[hop].add(e.to); nxt.push(e.to);} })); cur=nxt; }
+  return res;
+}
+function onNodeClick(id){
+  if(pathMode){
+    if(!window._p1){window._p1=id; setHi(new Set([id])); updateInfo(`已选起点：<b>${label(id)}</b><br>再点一个节点求最短路径。`); return;}
+    if(!window._p2){window._p2=id; const p=bfsPaths(window._p1,window._p2);
+      if(p){ setHi(new Set(p)); updateInfo(`<b>最短路径</b>（${p.length-1} 跳）：<br>`+p.map(label).join(' → ')); }
+      else updateInfo('两节点不连通。'); window._p1=window._p2=null; return; }
+  }
+  const nb=neighbors(id,2); const h=new Set([id]); nb[1].forEach(x=>h.add(x)); nb[2].forEach(x=>h.add(x));
+  setHi(h);
+  const rels=adj[id].map(e=>`<div class="relrow"><span>${label(e.to)}</span><span class="pill ${e.rel}">${e.rel}</span> ${e.label}</div>`).join('');
+  const nb2=[...nb[1]].map(label).join('、')||'（无）';
+  updateInfo(`<b>${label(id)}</b>（${el2cat(NODE_MAP[id].el)}）<br>
+    <div style="margin:6px 0">${NODE_MAP[id].tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+    <div class="hint">直接关系（1 跳）：</div>${rels}
+    <div class="hint" style="margin-top:6px">二阶邻居（2 跳可达）：${nb2}</div>`);
+}
+function setHi(s){ hi=s; dim.clear(); render(); }
+function label(id){ return NODE_MAP[id].label; }
+function el2cat(el){return {'土':'分析调研','水':'知识图谱','木':'反馈迭代','金':'技能','火':'决策模型'}[el];}
+
+// ---------- 统计 ----------
+const NODE_MAP={}; NODES.forEach(n=>NODE_MAP[n.id]=n);
+const deg={}; NODES.forEach(n=>deg[n.id]=adj[n.id].length);
+const hub=NODES.reduce((a,b)=>deg[b.id]>deg[a.id]?b:a).label;
+document.getElementById('sNodes').textContent=NODES.length;
+document.getElementById('sEdges').textContent=EDGES.length;
+document.getElementById('sAvg').textContent=(EDGES.length/NODES.length).toFixed(2);
+document.getElementById('sHub').textContent=hub;
+
+// ---------- 按钮 ----------
+document.getElementById('btnReset').onclick=()=>{ hi.clear();dim.clear();degreeView=false;pathMode=false;window._p1=window._p2=null;
+  document.getElementById('btnDegree').classList.remove('on');document.getElementById('btnPath').classList.remove('on');
+  NODES.forEach((n,i)=>{pos[n.id].x=W()/2+Math.cos(i)*180;pos[n.id].y=H()/2+Math.sin(i)*180;});
+  alpha=0.6; requestAnimationFrame(loop); updateInfo(); };
+document.getElementById('btnDegree').onclick=function(){ degreeView=!degreeView; this.classList.toggle('on',degreeView); if(degreeView)updateInfo('已按<b>中心度（度数）</b>缩放节点：度数越高越大。这是图数据库常见的节点重要性度量（度中心性）。'); else updateInfo(); render(); };
+document.getElementById('btnPath').onclick=function(){ pathMode=!pathMode; this.classList.toggle('on',pathMode); window._p1=window._p2=null; hi.clear(); render();
+  updateInfo(pathMode?'<b>最短路径模式</b>：依次点两个节点。':'已退出最短路径模式。'); };
+document.getElementById('btnCluster').onclick=function(){ this.classList.toggle('on');
+  if(this.classList.contains('on')){ // 五行聚类：按 element 同色聚合，强制同色节点靠拢
+    updateInfo('已开启<b>五行聚类</b>：同五行（土/水/木/金/火）的节点被引力聚合为 5 个社区，对应图数据库的“社区发现/同配性”可视化。');
+    alpha=0.5; requestAnimationFrame(loop);
+  } else updateInfo(); };
+
+function updateInfo(html){ const el=document.getElementById('info'); if(html===undefined){el.innerHTML='点击任意节点查看其多跳邻居与关系；「最短路径模式」下点两个节点求路径。';} else el.innerHTML=html; }
+
+loop();
+</script>
+</body>
+</html>
