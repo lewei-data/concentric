@@ -1675,8 +1675,16 @@ class Handler(BaseHTTPRequestHandler):
         lo = _iso_shift(started, -2) if started else ""
         hi = _iso_shift(finished, +2) if finished else iso_now()   # 进行中：取到当前时刻
         events = self._kernel().db.trace_events_between(trace_id, lo, hi)
+        artifacts = []
+        if WK is not None:
+            try:
+                idx = self._kernel()._factory_works_index()
+                artifacts = WK.step_artifacts(trace_id, stage_id, (idx or (None,))[0])
+            except Exception as e:
+                print(f"[factory] 阶段成果扫描失败：{type(e).__name__}: {e}", flush=True)
         return {"ok": True, "step": _step_view(step),
-                "events": events, "traceId": trace_id, "stageId": stage_id}
+                "events": events, "artifacts": artifacts,
+                "traceId": trace_id, "stageId": stage_id}
 
     def _trace(self, trace):
         with self._kernel().lock:

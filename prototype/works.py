@@ -51,6 +51,19 @@ STAGE_LABELS = {
     "archived": "已归档",
 }
 
+# 车间工位 → 阶段成果文件（制片工厂工位详情内嵌展示用）：
+# 交付目录里存在哪个就展示哪个；md 附带正文，图片/视频走 /vault 只读发布
+STAGE_ARTIFACTS = {
+    "topic": [("01-topic.md", "选题文稿", "md")],
+    "assessment": [("08-assessment.md", "制作评估", "md")],
+    "copy": [("02-copy.md", "文案成稿", "md")],
+    "sample": [("03-storyboard.md", "分镜剧本", "md")],
+    "render": [("05-preview.mp4", "预览样片", "video")],
+    "sample_review": [("05-preview.mp4", "预览样片", "video")],
+    "final": [("05-final.mp4", "最终成片", "video"), ("04-cover.png", "封面图", "image")],
+    "review": [("09-review.md", "评审记录", "md")],
+}
+
 STATUS_MAP = {
     "topic": ("制作中", "doing"),
     "copy": ("制作中", "doing"),
@@ -458,10 +471,11 @@ def detail(work_id, approvals=None, factory=None, step_status=None):
     """GET /api/works/<id>：档案主记录 + markdown 原文，供作品档案详情页展示。"""
     if factory is not None:
         for (trace, item_id), f in factory.items():
-            if _work_id(trace, f.get("itemId") or "") != work_id:
-                continue
             fv = _factory_view(f, step_status)
             folder, sub = _folder_for(trace, f.get("projectId"), item_id)
+            # 列表 id 用的是目录名（sub），无目录时回退 itemId，两种都需匹配
+            if _work_id(trace, sub or item_id) != work_id:
+                continue
             if not folder:
                 return _factory_record(trace, f, fv)
             rec = _build(folder, trace, sub, approvals, f, step_status)
@@ -489,3 +503,78 @@ def detail(work_id, approvals=None, factory=None, step_status=None):
         rec["docs"] = docs
         return rec
     return None
+
+
+def _manifest_restore(folder, trace, sub, stage_id):
+    """md 交付文件没落盘时，从 _render/manifest.json 还原该环节的文本成果。
+
+    copy=各镜台词成稿；sample=分镜表（镜号/类型/时间轴/台词摘要）。
+    """
+    path = os.path.join(folder, "_render", "manifest.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            man = json.load(f)
+    except (OSError, ValueError):
+        return None
+    scenes = man.get("scenes") or []
+    if not scenes:
+        return None
+    if stage_id == "copy":
+        lines = [str(s.get("line") or "").strip() for s in scenes if s.get("line")]
+        if not lines:
+            return None
+        text = "\n\n".join(f"**{i + 1}.** {ln}" for i, ln in enumerate(lines))
+        label = "文案成稿（按渲染记录还原）"
+    elif stage_id == "sample":
+        rows = ["| 镜号 | 类型 | 起 | 止 | 台词摘要 |", "| --- | --- | --- | --- | --- |"]
+        for i, s in enumerate(scenes):
+            tin = float(s.get("in_seconds") or 0)
+            tout = float(s.get("out_seconds") or 0)
+            line = (str(s.get("line") or "").strip()[:40] or "-").replace("|", "／")
+            rows.append(f"| {i + 1} | {s.get('type') or '-'} | {tin:.1f}s | {tout:.1f}s | {line} |")
+        text = "\n".join(rows)
+        label = "分镜剧本（按渲染记录还原）"
+    else:
+        return None
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return {"name": "_render/manifest.json", "label": label, "kind": "md",
+            "size": st.st_size, "at": _iso(st.st_mtime),
+            "url": f"{URL_PREFIX}/{trace}/{sub}/_render/manifest.json",
+            "text": text}
+
+
+def step_artifacts(trace, stage_id, factory):
+    """车间工位阶段成果：交付目录里该环节对应的文件（图片/视频/md 正文）。
+
+    同一 trace 可能有多件产品（不同内容单），逐件查目录后合并；
+    md 类成果没落盘时回退到 _render/manifest.json 还原文本，保证工位能看到阶段产出。
+    """
+    out = []
+    for (t, item_id), f in (factory or {}).items():
+        if t != trace:
+            continue
+        folder, sub = _folder_for(t, f.get("projectId"), item_id)
+        if not folder:
+            continue
+        for name, label, kind in STAGE_ARTIFACTS.get(stage_id, []):
+            path = os.path.join(folder, name)
+            if not os.path.isfile(path):
+                if kind == "md":
+                    restored = _manifest_restore(folder, t, sub, stage_id)
+                    if restored:
+                        out.append(restored)
+                continue
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            entry = {"name": name, "label": label, "kind": kind,
+                     "size": st.st_size, "at": _iso(st.st_mtime),
+                     "url": f"{URL_PREFIX}/{t}/{sub}/{name}"}
+            if kind == "md":
+                entry["text"] = _read(path, 60000)
+            out.append(entry)
+    return out

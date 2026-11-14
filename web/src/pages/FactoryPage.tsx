@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { useGetIdentity } from "@refinedev/core";
 import type { OpcUser } from "../types";
+
+const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
 // ---------- 类型 ----------
 interface Workshop {
@@ -60,10 +62,21 @@ interface StepEvent {
   at: string;
   data: Record<string, unknown> | null;
 }
+/* 阶段成果：交付目录里该环节对应的文件（md 附正文，图片/视频走 /vault 只读发布） */
+interface StepArtifact {
+  name: string;
+  label: string;
+  kind: "md" | "image" | "video";
+  size: number;
+  at: string;
+  url: string;
+  text?: string;
+}
 interface StepDetail {
   ok: boolean;
   step?: StepView;
   events?: StepEvent[];
+  artifacts?: StepArtifact[];
   error?: string;
 }
 
@@ -86,6 +99,13 @@ function shortTime(value?: string) {
   return value ? value.replace("T", " ").slice(0, 19) : "-";
 }
 
+function fmtSize(bytes: number) {
+  if (!bytes) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 async function factoryGet<T>(url: string): Promise<T> {
   const res = await fetch(url, { credentials: "include", cache: "no-store" });
   if (res.status === 401) {
@@ -105,6 +125,15 @@ export function FactoryPage() {
   const [stepOpen, setStepOpen] = useState<{ traceId: string; stageId: string; name: string } | null>(null);
   const [stepDetail, setStepDetail] = useState<StepDetail | null>(null);
   const [stepLoading, setStepLoading] = useState(false);
+
+  const toggleStep = (traceId: string, stageId: string, name: string) => {
+    if (stepOpen?.traceId === traceId && stepOpen?.stageId === stageId) {
+      setStepOpen(null);
+      setStepDetail(null);
+      return;
+    }
+    openStep(traceId, stageId, name);
+  };
   const [resuming, setResuming] = useState<string>("");
   const [resumeMsg, setResumeMsg] = useState("");
 
@@ -282,7 +311,7 @@ export function FactoryPage() {
                           type="button"
                           className={`fac-node n-${status}${status === "running" ? " pulse" : ""}`}
                           title={`${cs.name} · ${STATUS_LABEL[status] || status}`}
-                          onClick={() => openStep(p.traceId, cs.opcStage, cs.name)}
+                          onClick={() => toggleStep(p.traceId, cs.opcStage, cs.name)}
                         >
                           <span className="fac-node-icon" aria-hidden="true">
                             {status === "done" ? (
@@ -308,6 +337,102 @@ export function FactoryPage() {
                     })}
                   </div>
                 </div>
+
+                {/* 工位详情内嵌展示 */}
+                {stepOpen?.traceId === p.traceId && (
+                  <div className="fac-step-inline">
+                    <div className="fac-step-inline-head">
+                      <h4>{stepOpen.name} · 处理过程</h4>
+                      <button type="button" className="btn btn-ghost fac-btn" onClick={() => setStepOpen(null)}>
+                        收起
+                      </button>
+                    </div>
+                    {stepLoading && <div className="fac-empty">加载中…</div>}
+                    {!stepLoading && stepDetail && !stepDetail.ok && (
+                      <div className="fac-error">{stepDetail.error || "详情加载失败"}</div>
+                    )}
+                    {!stepLoading && stepDetail?.ok && (
+                      <>
+                        <div className="fac-step-info">
+                          <span className={`fac-run s-${stepDetail.step?.status}`}>
+                            {STATUS_LABEL[stepDetail.step?.status || ""] || stepDetail.step?.status}
+                          </span>
+                          <span className="muted">
+                            开工 {shortTime(stepDetail.step?.started_at)} · 完工{" "}
+                            {shortTime(stepDetail.step?.finished_at) || "进行中"}
+                            {stepDetail.step?.detail?.items != null && ` · 涉及内容单 ${stepDetail.step.detail.items} 条`}
+                            {stepDetail.step?.om_stage && ` · OpenMontage 阶段 ${stepDetail.step.om_stage}`}
+                          </span>
+                        </div>
+                        <div className="fac-artifacts">
+                          <h5 className="fac-artifacts-title">阶段成果</h5>
+                          {(stepDetail.artifacts ?? []).length === 0 ? (
+                            <div className="fac-empty">
+                              该工位暂无落盘成果（交付目录未生成，或此环节不产出文件）。
+                            </div>
+                          ) : (
+                            stepDetail.artifacts!.map((a) => (
+                              <div key={`${a.url}`} className="fac-artifact">
+                                <div className="fac-artifact-head">
+                                  <b>{a.label}</b>
+                                  <span className="muted">
+                                    {a.name} · {fmtSize(a.size)} · {shortTime(a.at)}
+                                  </span>
+                                  <a href={a.url} target="_blank" rel="noopener noreferrer">
+                                    新窗口打开 ↗
+                                  </a>
+                                </div>
+                                {a.kind === "image" && (
+                                  <img className="fac-artifact-img" src={a.url} alt={a.label} />
+                                )}
+                                {a.kind === "video" && (
+                                  <video
+                                    className="fac-artifact-video"
+                                    controls
+                                    preload="metadata"
+                                    src={a.url}
+                                  />
+                                )}
+                                {a.kind === "md" && a.text && (
+                                  <div className="fac-artifact-md">
+                                    <Suspense fallback={<span className="muted">正文渲染中…</span>}>
+                                      <MarkdownBody text={a.text} />
+                                    </Suspense>
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="fac-events">
+                          {(() => {
+                            const all = stepDetail.events ?? [];
+                            if (all.length === 0) return <div className="fac-empty">该工位暂无事件记录</div>;
+                            const tail = all.slice(-80);
+                            return (
+                              <>
+                                {all.length > tail.length && (
+                                  <div className="muted fac-event-more">
+                                    共 {all.length} 条事件，展示最近 {tail.length} 条
+                                  </div>
+                                )}
+                                {tail.map((ev) => (
+                                  <div key={ev.id} className="fac-event">
+                                    <span className="fac-event-kind">{ev.kind}</span>
+                                    <span className="fac-event-at">{shortTime(ev.at)}</span>
+                                    <code className="fac-event-data">
+                                      {JSON.stringify(ev.data).slice(0, 260)}
+                                    </code>
+                                  </div>
+                                ))}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })
@@ -350,7 +475,11 @@ export function FactoryPage() {
                     {historyProducts.map((p) => (
                       <tr key={`his-${p.itemId || p.traceId}`}>
                         <td className="nowrap mono">{p.serialNo}</td>
-                        <td>{p.title}</td>
+                        <td>
+                          <a href={`/app/works/${p.traceId}__${p.itemId}`} className="fac-work-link">
+                            {p.title}
+                          </a>
+                        </td>
                         <td className="nowrap">
                           {p.workshopNo ? `${p.workshopNo}号车间 · ${p.craftName}` : "-"}
                         </td>
@@ -417,66 +546,6 @@ export function FactoryPage() {
         })}
       </div>
 
-      {/* 工位详情弹窗 */}
-      {stepOpen && (
-        <div className="fac-modal" role="dialog" aria-modal="true" onClick={() => setStepOpen(null)}>
-          <div className="fac-modal-body" onClick={(e) => e.stopPropagation()}>
-            <div className="fac-modal-head">
-              <h3>
-                {stepOpen.name} · 处理过程
-                <small className="muted"> trace {stepOpen.traceId}</small>
-              </h3>
-              <button type="button" className="btn btn-ghost" onClick={() => setStepOpen(null)}>
-                关闭
-              </button>
-            </div>
-            {stepLoading && <div className="fac-empty">加载中…</div>}
-            {!stepLoading && stepDetail && !stepDetail.ok && (
-              <div className="fac-error">{stepDetail.error || "详情加载失败"}</div>
-            )}
-            {!stepLoading && stepDetail?.ok && (
-              <>
-                <div className="fac-step-info">
-                  <span className={`fac-run s-${stepDetail.step?.status}`}>
-                    {STATUS_LABEL[stepDetail.step?.status || ""] || stepDetail.step?.status}
-                  </span>
-                  <span className="muted">
-                    开工 {shortTime(stepDetail.step?.started_at)} · 完工{" "}
-                    {shortTime(stepDetail.step?.finished_at) || "进行中"}
-                    {stepDetail.step?.detail?.items != null && ` · 涉及内容单 ${stepDetail.step.detail.items} 条`}
-                    {stepDetail.step?.om_stage && ` · OpenMontage 阶段 ${stepDetail.step.om_stage}`}
-                  </span>
-                </div>
-                <div className="fac-events">
-                  {(() => {
-                    const all = stepDetail.events ?? [];
-                    if (all.length === 0) return <div className="fac-empty">该工位暂无事件记录</div>;
-                    const tail = all.slice(-80);
-                    return (
-                      <>
-                        {all.length > tail.length && (
-                          <div className="muted fac-event-more">
-                            共 {all.length} 条事件，展示最近 {tail.length} 条
-                          </div>
-                        )}
-                        {tail.map((ev) => (
-                          <div key={ev.id} className="fac-event">
-                            <span className="fac-event-kind">{ev.kind}</span>
-                            <span className="fac-event-at">{shortTime(ev.at)}</span>
-                            <code className="fac-event-data">
-                              {JSON.stringify(ev.data).slice(0, 260)}
-                            </code>
-                          </div>
-                        ))}
-                      </>
-                    );
-                  })()}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </section>
   );
 }

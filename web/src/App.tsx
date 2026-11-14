@@ -58,6 +58,7 @@ export default function App() {
             <Route path="/ops" element={<Suspense fallback={<PageFallback />}><OpsPage /></Suspense>} />
             <Route path="/models" element={<Suspense fallback={<PageFallback />}><ModelsPage /></Suspense>} />
             <Route path="/works" element={<Suspense fallback={<PageFallback />}><WorksPage /></Suspense>} />
+            <Route path="/works/:id" element={<Suspense fallback={<PageFallback />}><WorksPage /></Suspense>} />
             <Route path="/factory" element={<Suspense fallback={<PageFallback />}><FactoryPage /></Suspense>} />
             <Route path="/hotspots" element={<Suspense fallback={<PageFallback />}><HotspotsPage /></Suspense>} />
             <Route path="/knowledge" element={<Suspense fallback={<PageFallback />}><KnowledgePage /></Suspense>} />

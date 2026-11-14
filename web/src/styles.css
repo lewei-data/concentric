@@ -1188,20 +1188,55 @@ a:hover {
   gap: 8px;
 }
 
-/* 有详情时把列表收窄，档案栏固定 440px */
-.panel-grid.works-grid {
-  grid-template-columns: minmax(0, 1fr) 440px;
-}
+/* ---------- 作品档案详情页：左侧文字介绍，右侧手机比例播放 ---------- */
+.work-back-row { margin-bottom: 12px; }
 
-@media (max-width: 1200px) {
-  .panel-grid.works-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+.works-detail-page .work-detail-head { align-items: flex-start; }
+.works-detail-page .work-detail-head h1 { margin: 2px 0 0; font-size: 22px; }
 
-.works-detail {
-  max-height: calc(100vh - 100px);
-  overflow: auto;
+.work-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+.work-detail-main { min-width: 0; }
+
+.work-detail-side {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+/* 竖屏 9:16，和手机屏幕比例一致 */
+.work-phone-frame {
+  width: 300px;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+  background: #0b1220;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: var(--shadow-2);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.work-phone-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+.work-side-caption { font-size: 12px; text-align: center; }
+
+@media (max-width: 1100px) {
+  .work-detail-layout { grid-template-columns: minmax(0, 1fr); }
+  .work-detail-side { position: static; }
 }
 
 .mono {
@@ -4095,6 +4130,8 @@ a:hover {
   padding: 22px; text-align: center; color: var(--muted); font-size: 13px;
   background: var(--surface-soft); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
 }
+.fac-work-link { color: var(--accent); text-decoration: none; font-weight: 500; }
+.fac-work-link:hover { text-decoration: underline; }
 .fac-product { padding: 16px 0 6px; border-top: 1px dashed var(--border-strong); }
 .fac-product:first-of-type { border-top: 0; }
 .fac-product-head { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; margin-bottom: 12px; }
@@ -4163,24 +4200,19 @@ a:hover {
 .fac-node-kind { font-size: 11px; color: var(--muted); }
 .fac-node-om { font-size: 10px; color: #9aa7c2; }
 
-/* 工位详情弹窗 */
-.fac-modal {
-  position: fixed; inset: 0; z-index: 60; background: rgba(15, 23, 42, 0.42);
-  display: grid; place-items: center; padding: 24px;
+/* 工位详情内嵌 */
+.fac-step-inline {
+  margin: 12px 0 8px; padding: 14px 16px;
+  background: var(--surface-soft); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
-.fac-modal-body {
-  width: min(860px, 100%); max-height: 80vh; overflow: auto;
-  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-2);
-  padding: 18px 22px 22px;
-}
-.fac-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.fac-modal-head h3 { margin: 0; font-size: 16px; }
-.fac-modal-head small { font-weight: 400; }
+.fac-step-inline-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.fac-step-inline-head h4 { margin: 0; font-size: 14px; }
 .fac-step-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; font-size: 13px; }
 .fac-events { display: flex; flex-direction: column; gap: 8px; }
 .fac-event {
   display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: baseline;
-  padding: 8px 12px; background: var(--surface-soft); border: 1px solid var(--border);
+  padding: 8px 12px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-sm); font-size: 12px;
 }
 .fac-event-kind {
@@ -4192,6 +4224,31 @@ a:hover {
   font-family: var(--font-mono); font-size: 11px; color: var(--text-soft);
   word-break: break-all; white-space: pre-wrap;
 }
+
+/* 工位阶段成果：图片/视频/md 正文内嵌展示 */
+.fac-artifacts { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; }
+.fac-artifacts-title { margin: 0; font-size: 12px; font-weight: 700; color: var(--text-soft); }
+.fac-artifact {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.fac-artifact-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.fac-artifact-head b { font-size: 13px; }
+.fac-artifact-head a { color: var(--accent-deep); font-size: 12px; margin-left: auto; }
+.fac-artifact-img {
+  max-width: 100%; max-height: 360px; border-radius: 8px;
+  border: 1px solid var(--border); object-fit: contain; background: #0f172a;
+}
+.fac-artifact-video {
+  width: 100%; max-height: 420px; border-radius: 8px;
+  border: 1px solid var(--border); background: #0f172a;
+}
+.fac-artifact-md {
+  max-height: 300px; overflow: auto; padding: 10px 14px; font-size: 13px;
+  background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px;
+}
+.fac-artifact-md > *:first-child { margin-top: 0; }
 
 @media (max-width: 900px) {
   .fac-product-head { grid-template-columns: 1fr; }
