@@ -761,6 +761,37 @@ class Handler(BaseHTTPRequestHandler):
         # ---------- 制片工厂（车间监控：工艺决策 + 工位过程） ----------
         if path == "/api/factory":
             return self._json(self._kernel().factory_view())
+        # ---------- 分镜工作台：分镜清单 / 渠道注册表 / 作业进度 / 环节手工启动 ----------
+        if path == "/api/factory/channels":
+            try:
+                return self._json({"ok": True, **self._kernel().factory_channels()})
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/factory/shots":
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                return self._json({"ok": True, **self._kernel().factory_shots(
+                    (qs.get("traceId") or qs.get("trace") or [""])[0],
+                    (qs.get("itemId") or qs.get("item") or [""])[0])})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/factory/jobs":
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                return self._json({"ok": True, **self._kernel().factory_jobs(
+                    (qs.get("traceId") or qs.get("trace") or [""])[0],
+                    (qs.get("itemId") or qs.get("item") or [""])[0])})
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/factory/stage/runs":
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                return self._json({"ok": True, **self._kernel().factory_stage_runs(
+                    (qs.get("traceId") or qs.get("trace") or [""])[0])})
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         # ---------- 用户中心 ----------
         if path == "/api/account":
             user = self._session_user() or {}
@@ -1915,6 +1946,39 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
             return self._json(res)
+        # ---------- 分镜工作台：手工编辑 / 多渠道并发启动 / 启停重试 / 环节多次启动 ----------
+        if path.startswith("/api/factory/"):
+            if user.get("role") != "老板":
+                return self._json({"ok": False, "error": "forbidden",
+                                   "reason": "仅老板可操作分镜工作台与手工启动环节"}, 403)
+            k = self._kernel()
+            try:
+                if path == "/api/factory/shots/save":
+                    rec = k.factory_shot_save(
+                        body.get("traceId"), body.get("itemId"), body.get("shotNo"),
+                        body.get("fields") or body)
+                    return self._json({"ok": True, "shot": {
+                        "shotNo": rec.get("shot_no"), "prompt": rec.get("prompt") or "",
+                        "line": rec.get("line") or "",
+                        "channels": json.loads(rec.get("channels") or "[]"),
+                        "params": json.loads(rec.get("params") or "{}")}})
+                if path == "/api/factory/jobs/start":
+                    return self._json(k.factory_run(
+                        body.get("traceId"), body.get("itemId") or "",
+                        body.get("kind") or "image", body.get("channels") or [],
+                        body.get("shots"), body.get("params") or {}))
+                if path == "/api/factory/jobs/cancel":
+                    return self._json(k.factory_cancel(body.get("jobIds") or []))
+                if path == "/api/factory/jobs/retry":
+                    return self._json(k.factory_retry(body.get("jobIds") or []))
+                if path == "/api/factory/stage/start":
+                    return self._json({"ok": True, "launch": k.factory_stage_start(
+                        body.get("traceId"), body.get("stage"))})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": False, "error": f"未知工厂操作：{path}"}, 404)
         if path == "/api/meetings":
             try:
                 trace, hs = self._kernel().inject_hotspot(body.get("title"), body.get("tags"), body.get("score"))

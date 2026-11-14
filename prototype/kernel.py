@@ -308,6 +308,10 @@ class Kernel:
         self.aborts = {}
         self.active_trace = ""
         self.last_hotspot = None
+        # 手工多次启动：素材制作/剪辑合成/终版合成的手工触发排队（不阻塞 HTTP 线程）
+        self.stage_launches = []
+        self._stage_queue = None
+        self._stage_thread = None
         self.startedAt = iso_now()          # 本次进程启动时间：快照用它区分“内存态归零”
         # 素材清单 / 运行时日志 / 过程库：按用户工作区隔离；owner 沿用存量位置
         self.materials_file = (os.path.join(self.data_dir, "materials.json")
@@ -2595,6 +2599,308 @@ class Kernel:
         info = self.resume_pipeline(trace_id)
         return {"ok": True, "traceId": trace_id, "action": "render",
                 "from": info.get("from"), "note": f"已从 {stage} 阶段重跑"}
+
+    # ---------- 分镜工作台：多渠道并行生成 + 三环节手工多次启动 ----------
+    STAGE_BUTTONS = {"render": "素材制作", "sample_review": "剪辑合成", "final": "终版合成"}
+
+    def _media(self):
+        """当前工作区的素材作业管理器（按 data_dir 隔离，绑定事件推送）。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        root = self.data_dir or os.path.dirname(os.path.abspath(__file__))
+        mgr = MEDIA.manager(os.path.join(root, "media_jobs.db"))
+        mgr.notify = self.emit
+        return mgr
+
+    def _shot_item(self, trace_id, item_id=""):
+        """取内容单：优先内存（最新），回退过程库 contents.raw。"""
+        with self.lock:
+            for it in self.contents:
+                if it.get("traceId") == trace_id and (not item_id or it.get("id") == item_id):
+                    return dict(it)
+        if not self.db:
+            return {}
+        try:
+            if item_id:
+                row = self.db.fetch_one(
+                    "SELECT raw FROM contents WHERE trace_id=? AND id=? LIMIT 1",
+                    (trace_id, item_id))
+            else:
+                row = self.db.fetch_one(
+                    "SELECT raw FROM contents WHERE trace_id=? ORDER BY created_at DESC LIMIT 1",
+                    (trace_id,))
+        except Exception as e:
+            print(f"[factory] 读内容单失败：{type(e).__name__}: {e}", flush=True)
+            return {}
+        if not row:
+            return {}
+        try:
+            return json.loads(row.get("raw") or "{}")
+        except ValueError:
+            return {}
+
+    def _shots_of(self, item):
+        """分镜清单：优先方案里的 storyboardShots（含素材标注），回退 storyboard 文本归一化。"""
+        plan = item.get("plan") or {}
+        shots = []
+        for idx, s in enumerate(plan.get("storyboardShots") or [], 1):
+            if not isinstance(s, dict):
+                continue
+            try:
+                no = int(s.get("no") or idx)
+            except (TypeError, ValueError):
+                no = idx
+            shots.append({"no": no,
+                          "prompt": str(s.get("画面") or s.get("prompt") or "").strip(),
+                          "line": str(s.get("台词") or s.get("line") or "").strip(),
+                          "sec": _num(s.get("秒") or s.get("sec") or 0),
+                          "asset": str(s.get("素材") or s.get("asset") or "").strip()})
+        if not shots and self.DL and item.get("storyboard"):
+            total = _num(item.get("seconds") or 0) or 45
+            try:
+                for idx, s in enumerate(self.DL.normalize_storyboard(item.get("storyboard"), total), 1):
+                    try:
+                        no = int(s.get("no") or idx)
+                    except (TypeError, ValueError):
+                        no = idx
+                    shots.append({"no": no,
+                                  "prompt": str(s.get("visual") or "").strip(),
+                                  "line": str(s.get("line") or "").strip(),
+                                  "sec": _num(s.get("dur") or 0), "asset": ""})
+            except Exception as e:
+                print(f"[factory] 分镜归一化失败：{type(e).__name__}: {e}", flush=True)
+        # 没有任何时长的，按总时长均分，保证视频渠道有时长可用
+        total = _num(item.get("seconds") or 0)
+        avg = round(total / len(shots), 2) if (total and shots) else 0
+        for s in shots:
+            if not s["sec"] and avg:
+                s["sec"] = avg
+        return shots
+
+    def _shot_out_dir(self, trace_id, project_id, item_id, kind):
+        sub = {"image": "images", "video": "videos", "audio": "audio"}[kind]
+        return os.path.join(self.vault_dir, "OPC", "交付物", trace_id,
+                            f"{project_id or 'x'}-{item_id or 'x'}", "assets", sub)
+
+    def factory_channels(self):
+        """渠道注册表 + 实时可用性（前端工作台渲染参数表单与渠道选择）。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败）")
+        chans, cap = MEDIA.channels(force=True)
+        return {"channels": chans, "maxSec": cap}
+
+    def factory_shots(self, trace_id, item_id=""):
+        """分镜清单 + 渠道注册表 + 每镜作业状态（前端工作台一次拉全）。"""
+        trace_id = str(trace_id or "").strip()
+        if not trace_id:
+            raise ValueError("缺少 traceId")
+        mgr = self._media()
+        item = self._shot_item(trace_id, item_id)
+        item_id = str(item_id or item.get("id") or "").strip()
+        project_id = str(item.get("projectId") or "").strip()
+        shots = self._shots_of(item)
+        overrides = mgr.shots(trace_id, item_id) if item_id else {}
+        job_rows = mgr.jobs(trace_id, item_id, limit=400) if item_id else []
+        by_shot = {}
+        for j in job_rows:
+            by_shot.setdefault(int(j.get("shotNo") or 0), []).append(j)
+        chans, cap = MEDIA.channels()
+        out = []
+        for s in shots:
+            ov = overrides.get(s["no"]) or {}
+            try:
+                saved_ch = json.loads(ov.get("channels") or "[]")
+            except ValueError:
+                saved_ch = []
+            try:
+                saved_params = json.loads(ov.get("params") or "{}")
+            except ValueError:
+                saved_params = {}
+            jobs = by_shot.get(s["no"]) or []
+            active = [j for j in jobs if j.get("status") in ("queued", "running")]
+            done = [j for j in jobs if j.get("status") == "done"]
+            out.append({
+                "no": s["no"],
+                "prompt": ov.get("prompt") if ov.get("prompt") not in (None, "") else s["prompt"],
+                "line": ov.get("line") if ov.get("line") not in (None, "") else s["line"],
+                "sec": _num(ov.get("sec")) if ov.get("sec") not in (None, "") else s["sec"],
+                "asset": s["asset"],
+                "channels": saved_ch,
+                "params": saved_params,
+                "jobs": jobs,
+                "summary": {"total": len(jobs), "active": len(active), "done": len(done),
+                            "failed": len([j for j in jobs if j.get("status") == "failed"]),
+                            "progress": max([int(j.get("progress") or 0) for j in jobs] or [0])},
+            })
+        return {"traceId": trace_id, "itemId": item_id, "projectId": project_id,
+                "title": item.get("title") or "", "tone": item.get("tone") or "",
+                "stage": item.get("stage") or "", "seconds": _num(item.get("seconds") or 0),
+                "maxSec": cap, "channels": chans, "shots": out,
+                "activeTrace": self.active_trace,
+                "stages": [{"stage": k, "label": v} for k, v in self.STAGE_BUTTONS.items()]}
+
+    def factory_shot_save(self, trace_id, item_id, shot_no, fields):
+        """保存分镜提示词/台词/时长/渠道与参数（同时回写内容单，后续重跑沿用）。"""
+        mgr = self._media()
+        rec = mgr.shot_save(trace_id, item_id, shot_no, fields or {})
+        # 回写内容单，保证「素材制作」重跑时用的是改过的提示词
+        with self.lock:
+            target = None
+            for it in self.contents:
+                if it.get("traceId") == trace_id and it.get("id") == item_id:
+                    target = it
+                    break
+        if target is None:
+            target = self._shot_item(trace_id, item_id) or None
+        if target:
+            plan = target.setdefault("plan", {})
+            arr = plan.get("storyboardShots") or []
+            changed = False
+            for idx, s in enumerate(arr, 1):
+                if not isinstance(s, dict):
+                    continue
+                try:
+                    no = int(s.get("no") or idx)
+                except (TypeError, ValueError):
+                    no = idx
+                if no != int(shot_no):
+                    continue
+                if fields.get("prompt") not in (None, ""):
+                    s["画面"] = fields["prompt"]
+                if fields.get("line") not in (None, ""):
+                    s["台词"] = fields["line"]
+                if fields.get("sec") not in (None, ""):
+                    s["秒"] = _num(fields["sec"])
+                changed = True
+                break
+            if changed:
+                try:
+                    if self.db:
+                        self.db.upsert_content(target)
+                except Exception as e:
+                    print(f"[factory] 分镜回写失败：{type(e).__name__}: {e}", flush=True)
+        return rec
+
+    def factory_run(self, trace_id, item_id, kind, channels, shots=None, params=None):
+        """把所选分镜按所选渠道并发提交（同一提示词可同时投多个渠道）。"""
+        mgr = self._media()
+        data = self.factory_shots(trace_id, item_id)
+        if not data["shots"]:
+            raise ValueError("该内容单没有分镜清单（先在方案里生成分镜）")
+        want = {int(s) for s in (shots or []) if str(s).strip().isdigit()}
+        targets = [s for s in data["shots"] if not want or s["no"] in want]
+        if not targets:
+            raise ValueError("所选分镜不存在")
+        jobs, warnings = [], []
+        for s in targets:
+            merged = {}
+            for name, p in (params or {}).items():
+                base = dict((s.get("params") or {}).get(name) or {})
+                base.update(p or {})
+                merged[name] = base
+            for name in channels or []:
+                if name not in merged:
+                    merged[name] = dict((s.get("params") or {}).get(name) or {})
+            try:
+                res = mgr.submit(
+                    trace_id=data["traceId"], item_id=data["itemId"],
+                    project_id=data["projectId"], shot_no=s["no"], kind=kind,
+                    channels=channels, prompt=s["prompt"], line=s["line"], sec=s["sec"],
+                    params=merged, out_dir=self._shot_out_dir(data["traceId"], data["projectId"],
+                                                              data["itemId"], kind),
+                    vault_dir=self.vault_dir)
+            except ValueError as e:
+                raise ValueError(f"分镜 {s['no']}：{e}")
+            jobs.extend(res["jobs"])
+            warnings.extend(f"分镜{s['no']}：{w}" for w in res["warnings"])
+        if jobs:
+            self.emit("media-jobs", data["traceId"],
+                      {"itemId": data["itemId"], "kind": kind, "channels": list(channels or []),
+                       "count": len(jobs), "shots": [s["no"] for s in targets]})
+        return {"ok": True, "jobs": jobs, "warnings": warnings,
+                "traceId": data["traceId"], "itemId": data["itemId"]}
+
+    def factory_jobs(self, trace_id, item_id=""):
+        mgr = self._media()
+        return {"jobs": mgr.jobs(str(trace_id or ""), str(item_id or ""), limit=400)}
+
+    def factory_cancel(self, job_ids):
+        mgr = self._media()
+        res = mgr.cancel(job_ids)
+        return {"ok": True, "results": res}
+
+    def factory_retry(self, job_ids):
+        mgr = self._media()
+        res = mgr.retry(job_ids)
+        return {"ok": True, "results": res}
+
+    # ---- 三环节手工多次启动：排队串行下发，不阻塞 HTTP
+    def _stage_lane(self):
+        if self._stage_queue is None:
+            self._stage_queue = queue.Queue()
+            self._stage_thread = threading.Thread(
+                target=self._stage_lane_loop, name=f"stage-lane-{id(self) % 10000}", daemon=True)
+            self._stage_thread.start()
+        return self._stage_queue
+
+    def factory_stage_start(self, trace_id, stage):
+        stage = str(stage or "").strip()
+        if stage not in self.STAGE_BUTTONS:
+            raise ValueError(f"未知环节：{stage}（可选 {'/'.join(self.STAGE_BUTTONS)}）")
+        if not self.db:
+            raise ValueError("过程库未启用（OPC_DB=0），无法手工启动环节")
+        if not self.db.pipeline_run(trace_id):
+            raise ValueError("过程库里没有这条 trace 的运行记录")
+        rec = {"id": uid("srun"), "traceId": trace_id, "stage": stage,
+               "label": self.STAGE_BUTTONS[stage], "status": "queued",
+               "queuedAt": iso_now(), "startedAt": "", "finishedAt": "", "note": ""}
+        self.stage_launches.append(rec)
+        del self.stage_launches[:-60]        # 只留最近 60 次手工启动记录
+        self._stage_queue_put(rec)
+        self.emit("factory-stage", trace_id, dict(rec))
+        return dict(rec)
+
+    def _stage_queue_put(self, rec):
+        self._stage_lane().put(rec)
+
+    def _stage_lane_loop(self):
+        q = self._stage_queue
+        while True:
+            rec = q.get()
+            try:
+                self._stage_lane_run(rec)
+            except Exception as e:
+                rec.update(status="failed", finishedAt=iso_now(),
+                           note=f"{type(e).__name__}: {e}")
+                self.emit("factory-stage", rec.get("traceId") or "", dict(rec))
+            finally:
+                q.task_done()
+
+    def _stage_lane_run(self, rec):
+        trace_id, stage = rec["traceId"], rec["stage"]
+        deadline = time.time() + 3600
+        # 手工多次启动允许排队：等当前这轮跑完再下一条，不覆盖别人
+        while self.active_trace and self.active_trace != trace_id and time.time() < deadline:
+            time.sleep(3)
+        rec.update(status="running", startedAt=iso_now(), note="已下发流水线")
+        self.emit("factory-stage", trace_id, dict(rec))
+        info = self._resend_stage(trace_id, stage)
+        rec.update(status="done", finishedAt=iso_now(),
+                   note=f"{info.get('note') or '已下发'}（断点 {info.get('from')}）")
+        self.emit("factory-stage", trace_id, dict(rec))
+
+    def factory_stage_runs(self, trace_id):
+        runs = [dict(r) for r in self.stage_launches if r.get("traceId") == trace_id]
+        current = ""
+        if self.db:
+            try:
+                row = self.db.pipeline_run(trace_id)
+                current = (row or {}).get("stage") or ""
+            except Exception:
+                current = ""
+        return {"runs": list(reversed(runs)), "current": current,
+                "activeTrace": self.active_trace,
+                "stages": [{"stage": k, "label": v} for k, v in self.STAGE_BUTTONS.items()]}
 
     def _stage_sample_review(self, c):
         """8. 样片三方评审（CCO + CTO + 本项目 PM），最多两轮"""
