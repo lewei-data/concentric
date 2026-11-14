@@ -48,6 +48,7 @@ KB_CATEGORIES = [
          {"key": "copywriting", "label": "文案分析"}, {"key": "short-video", "label": "短视频分析"},
          {"key": "market", "label": "市场调研"}, {"key": "competitor", "label": "竞品分析"},
          {"key": "trend", "label": "趋势洞察"},
+         {"key": "mgmt-research", "label": "管理层调研"},
      ]},
     {"key": "graph", "label": "知识图谱", "element": "水", "icon": "🌊",
      "slogan": "通联、溯源、无滞",
@@ -56,6 +57,7 @@ KB_CATEGORIES = [
      "tags": [
          {"key": "data-source", "label": "数据源关联"}, {"key": "concept", "label": "概念图谱"},
          {"key": "workflow", "label": "流程图谱"}, {"key": "domain", "label": "领域模型"},
+         {"key": "mgmt-benchmark", "label": "管理层对标"},
      ]},
     {"key": "skill", "label": "技能", "element": "金", "icon": "⚔️",
      "slogan": "精专、规整、耐用",
@@ -65,6 +67,7 @@ KB_CATEGORIES = [
          {"key": "hermes", "label": "Hermes 工具"}, {"key": "OpenMontage", "label": "OpenMontage 工艺"},
          {"key": "profile", "label": "Profile 软技能"}, {"key": "pipeline", "label": "流水线"},
          {"key": "ops", "label": "运维"}, {"key": "自定义", "label": "自定义"},
+         {"key": "mgmt-audit", "label": "管理层盘点"}, {"key": "mgmt-retire", "label": "淘汰标记"},
      ]},
     {"key": "decision", "label": "决策模型", "element": "火", "icon": "🔥",
      "slogan": "明断、守序、不妄",
@@ -74,6 +77,7 @@ KB_CATEGORIES = [
          {"key": "domain-model", "label": "领域模型"}, {"key": "strategy", "label": "战略决策"},
          {"key": "risk", "label": "风险评估"}, {"key": "principle", "label": "原则框架"},
          {"key": "heuristic", "label": "经验法则"},
+         {"key": "mgmt-insight", "label": "战略洞察"},
      ]},
     {"key": "reflection", "label": "反馈迭代", "element": "木", "icon": "🌿",
      "slogan": "循序、日新、有度",
@@ -83,6 +87,7 @@ KB_CATEGORIES = [
          {"key": "retrospective", "label": "复盘总结"}, {"key": "optimization", "label": "优化方案"},
          {"key": "lesson", "label": "经验教训"}, {"key": "feedback", "label": "用户反馈"},
          {"key": "iteration", "label": "迭代记录"},
+         {"key": "mgmt-evolve", "label": "技能进化"},
      ]},
 ]
 
@@ -92,13 +97,26 @@ def _infer_category(item):
     """根据已有 tags / projectId 推断旧条目的分类，未命中默认归入知识图谱。"""
     tags_lower = " ".join(str(t) for t in (item.get("tags") or [])).lower()
     title_lower = str(item.get("title") or "").lower()
-    if any(k in tags_lower or k in title_lower for k in ("技能", "skill", "方法", "sop")):
-        return "skill"
-    if any(k in tags_lower or k in title_lower for k in ("分析", "调研", "拆解", "短视频", "文案")):
-        return "analysis"
-    if any(k in tags_lower or k in title_lower for k in ("决策", "判断", "原则", "模型", "框架")):
+    combined = tags_lower + " " + title_lower
+    # 管理层学习标签优先级最高（精确匹配，避免被通用关键词抢先）
+    if "mgmt-evolve" in combined or "技能进化" in combined:
+        return "reflection"
+    if "mgmt-insight" in combined or "战略洞察" in combined:
         return "decision"
-    if any(k in tags_lower or k in title_lower for k in ("反思", "复盘", "优化", "迭代", "反馈", "教训")):
+    if "mgmt-benchmark" in combined or "管理层对标" in combined:
+        return "graph"
+    if "mgmt-research" in combined or "管理层调研" in combined:
+        return "analysis"
+    if "mgmt-audit" in combined or "mgmt-retire" in combined or "管理层盘点" in combined or "淘汰标记" in combined:
+        return "skill"
+    # 通用关键词（注意：「技能进化」已在上面精确匹配，此处「技能」不会误判）
+    if any(k in combined for k in ("技能", "skill", "方法", "sop")):
+        return "skill"
+    if any(k in combined for k in ("分析", "调研", "拆解", "短视频", "文案")):
+        return "analysis"
+    if any(k in combined for k in ("决策", "判断", "原则", "模型", "框架")):
+        return "decision"
+    if any(k in combined for k in ("反思", "复盘", "优化", "迭代", "反馈", "教训")):
         return "reflection"
     return "graph"
 
