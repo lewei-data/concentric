@@ -9,10 +9,30 @@ export type Hotspot = {
   fit?: Record<string, unknown>;
 };
 
+/** 知识库 5 大分类 */
+export type KnowledgeCategory = "skill" | "analysis" | "graph" | "decision" | "reflection";
+
+export type KnowledgeTagDef = {
+  key: string;
+  label: string;
+};
+
+export type CategoryDef = {
+  key: KnowledgeCategory;
+  label: string;
+  element: string;
+  icon: string;
+  slogan: string;
+  description: string;
+  color: string;
+  tags: KnowledgeTagDef[];
+};
+
 export type Knowledge = {
   id: string;
   title: string;
   summary: string;
+  category?: KnowledgeCategory;
   projectId?: string;
   traceId?: string;
   tags?: string[];

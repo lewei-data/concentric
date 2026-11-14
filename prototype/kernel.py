@@ -38,6 +38,70 @@ class BusyError(Exception):
 
 _PIPELINE_STOP = object()
 
+# ---------- 知识库 5 大分类定义（五行体系） ----------
+KB_CATEGORIES = [
+    {"key": "analysis", "label": "分析调研", "element": "土", "icon": "⛰️",
+     "slogan": "厚基、存真、稳态",
+     "description": "做厚事实底座，保障素材可信度与完整性；作为全体系的「土壤」，保持相对稳定",
+     "color": "#b45309",
+     "tags": [
+         {"key": "copywriting", "label": "文案分析"}, {"key": "short-video", "label": "短视频分析"},
+         {"key": "market", "label": "市场调研"}, {"key": "competitor", "label": "竞品分析"},
+         {"key": "trend", "label": "趋势洞察"},
+     ]},
+    {"key": "graph", "label": "知识图谱", "element": "水", "icon": "🌊",
+     "slogan": "通联、溯源、无滞",
+     "description": "核心价值在「连通」而非「堆节点」，建设实体间的关联链路与因果传导路径",
+     "color": "#1e40af",
+     "tags": [
+         {"key": "data-source", "label": "数据源关联"}, {"key": "concept", "label": "概念图谱"},
+         {"key": "workflow", "label": "流程图谱"}, {"key": "domain", "label": "领域模型"},
+     ]},
+    {"key": "skill", "label": "技能", "element": "金", "icon": "⚔️",
+     "slogan": "精专、规整、耐用",
+     "description": "像铸造器物一样打磨每个 Skill，边界清晰、输入输出明确、异常处理完备",
+     "color": "#a16207",
+     "tags": [
+         {"key": "hermes", "label": "Hermes 工具"}, {"key": "OpenMontage", "label": "OpenMontage 工艺"},
+         {"key": "profile", "label": "Profile 软技能"}, {"key": "pipeline", "label": "流水线"},
+         {"key": "ops", "label": "运维"}, {"key": "自定义", "label": "自定义"},
+     ]},
+    {"key": "decision", "label": "决策模型", "element": "火", "icon": "🔥",
+     "slogan": "明断、守序、不妄",
+     "description": "清晰的判断逻辑与优先级秩序，规则明确、边界清晰；顶层范式不轻易变动",
+     "color": "#dc2626",
+     "tags": [
+         {"key": "domain-model", "label": "领域模型"}, {"key": "strategy", "label": "战略决策"},
+         {"key": "risk", "label": "风险评估"}, {"key": "principle", "label": "原则框架"},
+         {"key": "heuristic", "label": "经验法则"},
+     ]},
+    {"key": "reflection", "label": "反馈迭代", "element": "木", "icon": "🌿",
+     "slogan": "循序、日新、有度",
+     "description": "遵循生长规律，小步持续优化；控制迭代节奏与灰度范围，避免拔苗助长",
+     "color": "#059669",
+     "tags": [
+         {"key": "retrospective", "label": "复盘总结"}, {"key": "optimization", "label": "优化方案"},
+         {"key": "lesson", "label": "经验教训"}, {"key": "feedback", "label": "用户反馈"},
+         {"key": "iteration", "label": "迭代记录"},
+     ]},
+]
+
+KB_CATEGORY_MAP = {c["key"]: c for c in KB_CATEGORIES}
+
+def _infer_category(item):
+    """根据已有 tags / projectId 推断旧条目的分类，未命中默认归入知识图谱。"""
+    tags_lower = " ".join(str(t) for t in (item.get("tags") or [])).lower()
+    title_lower = str(item.get("title") or "").lower()
+    if any(k in tags_lower or k in title_lower for k in ("技能", "skill", "方法", "sop")):
+        return "skill"
+    if any(k in tags_lower or k in title_lower for k in ("分析", "调研", "拆解", "短视频", "文案")):
+        return "analysis"
+    if any(k in tags_lower or k in title_lower for k in ("决策", "判断", "原则", "模型", "框架")):
+        return "decision"
+    if any(k in tags_lower or k in title_lower for k in ("反思", "复盘", "优化", "迭代", "反馈", "教训")):
+        return "reflection"
+    return "graph"
+
 class PipelineContext:
     """流水线阶段之间的共享状态（字段即阶段契约，不承载业务逻辑）。
 
@@ -199,6 +263,13 @@ class Kernel:
                 self.db.chat_upsert_thread("web:workbench", "web", "工作台 · 老板指令",
                                            [{"id": "owner", "name": "老板"}],
                                            self.startedAt, self.startedAt)
+                # DB 就绪后同步内存中的知识库到 SQLite（带完整字段）
+                with self.lock:
+                    kb_snapshot = list(self.knowledge)
+                for k in kb_snapshot:
+                    self.db.upsert_knowledge(k)
+                if kb_snapshot:
+                    print(f"[boot] 知识库同步到 SQLite：{len(kb_snapshot)} 条", flush=True)
             except Exception as e:
                 print(f"[boot] 过程库初始化失败：{type(e).__name__}: {e}", flush=True)
         self.ingestor = None
@@ -430,6 +501,10 @@ class Kernel:
                 disk_kb = self.DL.load_knowledge(limit=200)
                 if disk_kb:
                     self.knowledge = [self._kb_norm(k) for k in disk_kb]
+                    # 启动时同步到 SQLite（带完整字段）
+                    if self.db:
+                        for k in self.knowledge:
+                            self.db.upsert_knowledge(k)
             except Exception as e:
                 print(f"[boot] 恢复历史知识失败：{type(e).__name__}: {e}", flush=True)
         self._backfill_knowledge()
@@ -3098,11 +3173,13 @@ class Kernel:
     def _kb_norm(item):
         """统一知识条目结构：文件解析结果与内存归档保持同一套字段。"""
         body = str(item.get("body") or "")
+        category = item.get("category") or _infer_category(item)
         return {"id": item.get("id"), "projectId": item.get("projectId"),
                 "traceId": item.get("traceId") or item.get("sourceTrace") or "",
                 "sourceTrace": item.get("sourceTrace") or "",
                 "title": item.get("title") or "",
                 "summary": item.get("summary") or body[:80],
+                "category": category,
                 "body": body, "tags": item.get("tags") or [], "at": item.get("at") or ""}
 
     def _sync_knowledge_from_vault(self):
@@ -3121,6 +3198,10 @@ class Kernel:
             self.knowledge = fresh
         self._kb_stamp = stamp
         if len(fresh) != before:
+            # 同步到 SQLite（带完整字段）
+            if self.db:
+                for k in fresh:
+                    self.db.upsert_knowledge(k)
             self.emit("knowledge", "", {"stage": "vault-sync", "count": len(fresh)})
 
     def _sync_config_from_vault(self):
@@ -3203,11 +3284,37 @@ class Kernel:
         q = (qs.get("q", [""])[0] or "").strip().lower()
         return page, size, q
 
-    def knowledge_page(self, query=""):
-        """知识库分页列表：title 为完整标题，summary 供列表省略显示。"""
-        page, size, q = self._page_params(query)
+    def knowledge_categories(self):
+        """返回 4 大分类定义 + 各分类下的条目数，前端渲染 Tab 与标签筛选。"""
         with self.lock:
             items = list(self.knowledge)
+        counts = {}
+        for k in items:
+            cat = k.get("category") or _infer_category(k)
+            counts[cat] = counts.get(cat, 0) + 1
+        result = []
+        for c in KB_CATEGORIES:
+            entry = dict(c)
+            entry["count"] = counts.get(c["key"], 0)
+            result.append(entry)
+        return {"ok": True, "items": result, "total": len(result), "page": 1, "size": len(result)}
+
+    def knowledge_page(self, query=""):
+        """知识库分页列表：支持 ?category=&tag= 过滤，返回卡片摘要。"""
+        page, size, q = self._page_params(query)
+        qs = parse_qs(query)
+        cat_filter = (qs.get("category", [""])[0] or "").strip()
+        tag_filter = (qs.get("tag", [""])[0] or "").strip()
+        with self.lock:
+            items = list(self.knowledge)
+        # 确保每条都有 category 字段（旧数据懒推断）
+        for k in items:
+            if not k.get("category"):
+                k["category"] = _infer_category(k)
+        if cat_filter and cat_filter in KB_CATEGORY_MAP:
+            items = [k for k in items if k.get("category") == cat_filter]
+        if tag_filter:
+            items = [k for k in items if tag_filter in (k.get("tags") or [])]
         if q:
             items = [k for k in items if q in
                      f"{k.get('title') or ''} {k.get('summary') or ''} {k.get('body') or ''} "
@@ -3218,6 +3325,7 @@ class Kernel:
         rows = [{"id": k.get("id"),
                  "title": k.get("title") or k.get("summary") or "",
                  "summary": k.get("summary") or (k.get("title") or "")[:80],
+                 "category": k.get("category"),
                  "projectId": k.get("projectId"), "traceId": k.get("traceId"),
                  "tags": k.get("tags") or [], "at": k.get("at"),
                  "body": k.get("body") or ""} for k in items[start:start + size]]
@@ -3270,6 +3378,7 @@ class Kernel:
                     continue
                 entry = {"id": uid("kb"), "projectId": pid, "traceId": trace,
                          "sourceTrace": trace, "title": title, "summary": title[:80],
+                         "category": _infer_category({"title": title, "tags": tags}),
                          "body": body[:300] or "（归档占位）",
                          "tags": list(dict.fromkeys(tags))[:12], "at": iso_now()}
                 self.knowledge.append(entry)
@@ -3282,6 +3391,10 @@ class Kernel:
                         self.DL.save_knowledge(k)
                     except Exception as e:
                         print(f"[kb] 写回 Obsidian 失败：{type(e).__name__}: {e}", flush=True)
+            # 逐条写入 SQLite（带完整字段）
+            if self.db:
+                for k in made:
+                    self.db.upsert_knowledge(k)
             self.emit("knowledge", trace, {
                 "stage": stage_label, "count": len(made),
                 "latest": [{"title": k["title"], "summary": k.get("summary") or k["title"][:80],

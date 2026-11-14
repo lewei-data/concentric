@@ -140,7 +140,12 @@ CREATE TABLE IF NOT EXISTS knowledge (
   path       TEXT,
   tags       TEXT,
   updated_at TEXT,
-  raw        TEXT
+  raw        TEXT,
+  category   TEXT,
+  summary    TEXT,
+  project_id TEXT,
+  trace_id   TEXT,
+  body       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS contents (
@@ -502,6 +507,23 @@ class Store:
                         self._conn.execute("INSERT INTO schema_version(version) VALUES (2)")
                     else:
                         self._conn.execute("UPDATE schema_version SET version=2")
+                # 老库补列：knowledge 表新增分类/摘要/项目/追踪/正文等字段
+                cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(knowledge)")}
+                if cols and "category" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN category TEXT")
+                if cols and "summary" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN summary TEXT")
+                if cols and "project_id" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN project_id TEXT")
+                if cols and "trace_id" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN trace_id TEXT")
+                if cols and "body" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN body TEXT")
+                # knowledge 表索引（补列后创建，确保列存在）
+                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge(category)")
+                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge(project_id)")
+                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_trace ON knowledge(trace_id)")
+                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_updated ON knowledge(updated_at)")
                 # 保证始终有且只有一个全局默认（老板删掉默认通道后自动补一个）
                 if not self._conn.execute(
                         "SELECT 1 FROM llm_models WHERE is_default=1 LIMIT 1").fetchone():
@@ -672,12 +694,20 @@ class Store:
 
     def upsert_knowledge(self, k):
         try:
-            self.put("""INSERT INTO knowledge(id,title,path,tags,updated_at,raw)
-                        VALUES(?,?,?,?,?,?)
+            self.put("""INSERT INTO knowledge(id,title,path,tags,updated_at,raw,
+                        category,summary,project_id,trace_id,body)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(id) DO UPDATE SET title=excluded.title,path=excluded.path,
-                          tags=excluded.tags,updated_at=excluded.updated_at,raw=excluded.raw""",
+                          tags=excluded.tags,updated_at=excluded.updated_at,raw=excluded.raw,
+                          category=excluded.category,summary=excluded.summary,
+                          project_id=excluded.project_id,trace_id=excluded.trace_id,
+                          body=excluded.body""",
                      (k.get("id"), k.get("title"), k.get("path"), jdump(k.get("tags")),
-                      k.get("updatedAt") or k.get("at") or now_iso(), jdump(k)))
+                      k.get("updatedAt") or k.get("at") or now_iso(), jdump(k),
+                      k.get("category"), k.get("summary"),
+                      k.get("projectId") or k.get("project_id"),
+                      k.get("traceId") or k.get("trace_id"),
+                      k.get("body")))
         except Exception as e:
             _log(f"upsert_knowledge 失败：{type(e).__name__}: {e}")
 

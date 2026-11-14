@@ -675,6 +675,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(rec) if rec else self._json({"error": "meeting not found"}, 404)
         if path == "/api/knowledge":
             return self._json(self._kernel().knowledge_page(urlparse(self.path).query))
+        if path == "/api/knowledge/categories":
+            return self._json(self._kernel().knowledge_categories())
         if path.startswith("/api/knowledge/"):
             rec = self._kernel().knowledge_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "knowledge not found"}, 404)
