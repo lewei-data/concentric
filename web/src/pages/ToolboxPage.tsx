@@ -161,6 +161,9 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
           <div className="tb-bar"><i style={{ width: `${Math.max(2, job.progress)}%` }} /></div>
         )}
         {job.error && <p className="tb-job-error">{job.error}</p>}
+        {job.status === "done" && !job.outputUrl && (
+          <p className="muted">成品已从素材页删除</p>
+        )}
         {ready && (
           <div className="tb-job-links">
             <button type="button" className="tb-link" onClick={() => onOpen(job)}>

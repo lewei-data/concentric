@@ -508,6 +508,30 @@ class Manager:
             _log(f"工具箱列表失败：{e}")
             return []
 
+    def forget_output(self, dest):
+        """成品被删除后清掉指向它的产物字段。
+
+        任务历史保留（谁在什么时候跑过什么还能看到），只是不再给出一个必然 404 的地址；
+        dest 是目录时按前缀清空整棵子树。
+        """
+        dest = os.path.abspath(str(dest or "").strip())
+        if not dest:
+            return 0
+        try:
+            conn = self._conn()
+            try:
+                cur = conn.execute(
+                    "UPDATE jobs SET output_path=NULL, output_url=NULL "
+                    "WHERE output_path=? OR output_path LIKE ?",
+                    (dest, dest + "/%"))
+                conn.commit()
+                return cur.rowcount or 0
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            _log(f"清空产物记录失败：{e}")
+            return 0
+
     def shots(self, trace_id, item_id):
         try:
             conn = self._conn()

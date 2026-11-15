@@ -6,7 +6,8 @@ from datetime import timezone, timedelta
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIST = os.path.normpath(os.path.join(BASE_DIR, "..", "web", "dist"))
-# 对外发布目录：工具箱 / downloads 两个软链在里面，由 server.py 运行时下发（构建不复制）
+# 对外发布目录：downloads（公开）与 private_obsidian（私有，仅鉴权路由）软链在里面，
+# 均由 server.py 运行时下发（构建不复制，否则会跟随软链把几十 G 数据复制进 dist）
 WEB_PUBLIC = os.path.normpath(os.path.join(BASE_DIR, "..", "web", "public"))
 WEB_MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
             ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",

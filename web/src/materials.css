@@ -420,3 +420,180 @@
   background: #f1f5f9;
   font-size: 11px;
 }
+
+/* 个人空间：每行右侧挂一个删除入口（公共根不渲染） */
+.mat-list li {
+  display: flex;
+  align-items: center;
+}
+
+.mat-list li > .mat-entry {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.mat-del {
+  flex: none;
+  margin-right: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #b91c1c;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mat-del:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.mat-del:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 共享资料：按用途分标签（全部/短视频/音乐/图片/Skill/其它） */
+.mat-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.mat-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.mat-kind:hover {
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.mat-kind.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.mat-kind-n {
+  font-size: 11px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.mat-kind.active .mat-kind-n {
+  opacity: 0.8;
+}
+
+/* 行内「查看 / 播放」 */
+.mat-view {
+  flex: none;
+  margin-right: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #1d4ed8;
+  background: #fff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mat-view:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+/* 页内预览：图片直接看，音视频直接播 */
+.mat-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.mat-preview-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(1040px, 100%);
+  max-height: 100%;
+  padding: 14px 16px 18px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+}
+
+.mat-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mat-preview-head strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mat-preview-acts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.mat-preview-acts a {
+  font-size: 12px;
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+.mat-preview-acts button {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mat-preview-acts button:hover {
+  background: #f8fafc;
+}
+
+.mat-preview-box img,
+.mat-preview-box video {
+  max-width: 100%;
+  max-height: calc(100vh - 180px);
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #0f172a;
+}
+
+.mat-preview-box audio {
+  width: 100%;
+}

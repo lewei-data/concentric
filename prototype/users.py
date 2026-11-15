@@ -106,8 +106,127 @@ def _users_conn():
     for col in ("email", "avatar"):
         if col not in cols:
             con.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # 登录会话落库：内存 SESSIONS 一重启就空，但浏览器 cookie 还带着旧 token，
+    # 表现就是"页面能进、私有素材提示需要登录/没有 token"
+    con.execute("""CREATE TABLE IF NOT EXISTS sessions (
+        token      TEXT PRIMARY KEY,
+        phone      TEXT NOT NULL,
+        payload    TEXT NOT NULL,
+        exp        REAL NOT NULL,
+        created_at TEXT
+    )""")
     con.commit()
     return con
+
+
+def session_save(tok, user, exp):
+    """把登录会话写进 users.db，重启后仍认这个 cookie。"""
+    tok = str(tok or "").strip()
+    if not tok or not isinstance(user, dict):
+        return False
+    try:
+        con = _users_conn()
+        try:
+            with con:
+                con.execute(
+                    "INSERT OR REPLACE INTO sessions(token,phone,payload,exp,created_at)"
+                    " VALUES(?,?,?,?,?)",
+                    (tok, str(user.get("phone") or user.get("id") or ""),
+                     json.dumps(user, ensure_ascii=False), float(exp), iso_now()))
+            return True
+        finally:
+            con.close()
+    except Exception as e:
+        print(f"[users] 会话落库失败：{type(e).__name__}: {e}", flush=True)
+        return False
+
+
+def session_drop(tok):
+    """退出登录：把会话从库里也删掉，否则旧 cookie 还能复活。"""
+    tok = str(tok or "").strip()
+    if not tok:
+        return False
+    try:
+        con = _users_conn()
+        try:
+            with con:
+                con.execute("DELETE FROM sessions WHERE token=?", (tok,))
+            return True
+        finally:
+            con.close()
+    except Exception as e:
+        print(f"[users] 会话删除失败：{type(e).__name__}: {e}", flush=True)
+        return False
+
+
+def session_load_all():
+    """启动时把未过期的会话载回 SESSIONS，顺带清掉过期行。"""
+    now = time.time()
+    try:
+        con = _users_conn()
+        try:
+            with con:
+                con.execute("DELETE FROM sessions WHERE exp < ?", (now,))
+            rows = con.execute(
+                "SELECT token,payload,exp FROM sessions WHERE exp >= ?", (now,)).fetchall()
+        finally:
+            con.close()
+    except Exception as e:
+        print(f"[users] 会话恢复失败：{type(e).__name__}: {e}", flush=True)
+        return 0
+    n = 0
+    with SESS_LOCK:
+        for r in rows:
+            try:
+                u = json.loads(r["payload"])
+            except Exception:
+                continue
+            if isinstance(u, dict):
+                SESSIONS[r["token"]] = {"user": u, "exp": float(r["exp"])}
+                n += 1
+    print(f"[users] 会话恢复 {n} 条", flush=True)
+    return n
+
+
+# ---------- 个人默认 token（外部访问私有资料用，不带 cookie） ----------
+PRIVATE_TOKEN_FILE = ".private_token"
+
+
+def private_token(data_dir, create=False):
+    """读取/初始化个人 token。
+
+    放在用户自己的工作目录里，和私有资料同源：删了它下次登录会重新生成，
+    不需要登录态也能带着 token 取私有文件（APP、外部工具）。
+    """
+    data_dir = str(data_dir or "").strip()
+    if not data_dir or not os.path.isdir(data_dir):
+        return ""
+    path = os.path.join(data_dir, PRIVATE_TOKEN_FILE)
+    try:
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                tok = (f.read() or "").strip()
+            if tok:
+                return tok
+        if not create:
+            return ""
+        tok = secrets.token_urlsafe(24)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(tok)
+        return tok
+    except OSError as e:
+        print(f"[users] 个人 token 读写失败：{type(e).__name__}: {e}", flush=True)
+        return ""
+
+
+def private_token_ok(data_dir, given):
+    """常量时间比对 token，避免用 != 泄露前缀。"""
+    given = str(given or "").strip()
+    if not given:
+        return False
+    real = private_token(data_dir)
+    return bool(real) and hmac.compare_digest(real, given)
 
 def _hash_password(password, salt):
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),

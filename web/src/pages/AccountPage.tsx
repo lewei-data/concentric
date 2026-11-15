@@ -14,7 +14,7 @@ type AssetItem = {
 };
 type AccountResp = {
   ok: boolean;
-  user?: { phone: string; name: string; email: string; role: string; tenant: string; createdAt: string };
+  user?: { phone: string; name: string; email: string; role: string; tenant: string; createdAt: string; privateToken?: string };
   stats?: { agents: number; assetFiles: number; assetBytes: number };
   assets?: AssetItem[];
   settings?: Settings;
@@ -59,6 +59,7 @@ export function AccountPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
+  const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const avatarRef = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState({ name: "", email: "" });
@@ -333,6 +334,29 @@ export function AccountPage() {
               <div className="account-item"><small>注册时间</small><b>{u?.createdAt?.slice(0, 19).replace("T", " ") || "存量账号"}</b></div>
               <div className="account-item"><small>AI 员工</small><b>{stats?.agents ?? "—"} 名</b></div>
               <div className="account-item"><small>数据资产</small><b>{fmtBytes(stats?.assetBytes)} / {stats?.assetFiles ?? 0} 个文件</b></div>
+            </div>
+          </div>
+          <div className="card">
+            <h2>私有资料访问 token</h2>
+            <p className="muted">
+              登录本身就能看自己的私有资料，这个 token 是给外部工具 / APP 用的：
+              在链接后加 <code>?token=…</code> 即可，不需要登录 cookie。
+              只对本人 <code>conring/users/&lt;手机号&gt;/</code> 下的内容有效，等同于密码，别外传。
+            </p>
+            <div className="account-token">
+              <code>{u?.privateToken || "—"}</code>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={!u?.privateToken}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(u?.privateToken || "");
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1500);
+                }}
+              >
+                {copied ? "已复制" : "复制"}
+              </button>
             </div>
           </div>
         </>

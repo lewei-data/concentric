@@ -280,6 +280,30 @@ except Exception as e:
     print(f"[inventory] 盘点线程启动失败：{type(e).__name__}: {e}", flush=True)
 
 
+def _dir_sig(path, keep=None):
+    """目录快照指纹：看直接子项的名字/大小/时间，用来判断有没有增删改。
+
+    只看一层：浏览页展示的也只有一层，子目录内部变化由进入子目录时的指纹负责。
+    keep 给白名单用（个人空间根只认 工具箱/obsidian），免得内部库文件一写就误报刷新。
+    """
+    h = hashlib.sha1()
+    try:
+        with os.scandir(path) as it:
+            for e in sorted(it, key=lambda x: x.name):
+                if e.name.startswith("."):
+                    continue
+                if keep is not None and e.name not in keep:
+                    continue
+                try:
+                    st = e.stat()
+                    h.update(f"{e.name}|{st.st_size}|{st.st_mtime_ns}\n".encode())
+                except OSError:
+                    h.update(f"{e.name}|?\n".encode())
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "OPCWorkbench/3.0-hermes"
     protocol_version = "HTTP/1.1"
@@ -426,6 +450,8 @@ class Handler(BaseHTTPRequestHandler):
         tok = secrets.token_urlsafe(32)
         with SESS_LOCK:
             SESSIONS[tok] = {"user": user, "exp": now + SESSION_TTL}
+        USERS.session_save(tok, user, now + SESSION_TTL)
+        USERS.private_token(user.get("dataDir"), create=True)
         return self._json({"ok": True, "user": user},
                           cookie=f"{SESSION_COOKIE}={tok}; Path=/; HttpOnly; SameSite=Lax; "
                                  f"Max-Age={SESSION_TTL}")
@@ -464,6 +490,8 @@ class Handler(BaseHTTPRequestHandler):
             tok = secrets.token_urlsafe(32)
             with SESS_LOCK:
                 SESSIONS[tok] = {"user": user, "exp": now + SESSION_TTL}
+            USERS.session_save(tok, user, now + SESSION_TTL)
+            USERS.private_token(user.get("dataDir"), create=True)
             print(f"[auth] 注册用户登录成功 {ip} → {reg['phone']}", flush=True)
             return self._json({"ok": True, "user": user},
                               cookie=f"{SESSION_COOKIE}={tok}; Path=/; HttpOnly; SameSite=Lax; "
@@ -494,6 +522,8 @@ class Handler(BaseHTTPRequestHandler):
             for t in expired:
                 SESSIONS.pop(t, None)
             SESSIONS[tok] = {"user": user, "exp": now + SESSION_TTL}
+        USERS.session_save(tok, user, now + SESSION_TTL)
+        USERS.private_token(user.get("dataDir"), create=True)
         cookie = f"{SESSION_COOKIE}={tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}"
         print(f"[auth] 登录成功 {ip} → {user['name']}", flush=True)
         return self._json({"ok": True, "user": user}, cookie=cookie)
@@ -678,6 +708,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self._session_user():
                 return self._json({"ok": False, "error": "需要登录"}, 401)
             return self._json(self._materials_browse(urlparse(self.path).query))
+        if path == "/api/materials/watch":
+            # 长轮询，同样要求登录：私有目录的变动不能对外泄露
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._materials_watch(urlparse(self.path).query))
         # 工具箱：渠道规格 + 手工任务列表（会触发模型出图出片，要求登录）
         if path in ("/api/toolbox/channels", "/api/toolbox/jobs"):
             if not self._session_user():
@@ -842,7 +877,11 @@ class Handler(BaseHTTPRequestHandler):
                 "user": {"phone": user.get("phone") or "", "name": user.get("name") or "",
                          "email": user.get("email") or "",
                          "role": user.get("role") or "", "tenant": user.get("tenant") or "",
-                         "createdAt": created},
+                         "createdAt": created,
+                         # 个人 token：外部工具/APP 不带 cookie 取私有资料用，
+                         # 目录与 /private/<手机号>/ 的校验口径一致
+                         "privateToken": USERS.private_token(
+                             os.path.join(USERS_DIR, os.path.basename(data_dir)), create=True)},
                 "stats": {"agents": k_agents, "assetFiles": files, "assetBytes": total},
                 "assets": assets, "settings": self._account_settings(data_dir),
             })
@@ -1029,7 +1068,8 @@ class Handler(BaseHTTPRequestHandler):
         if not (target == root or target.startswith(root + os.sep)):
             return self._json({"error": "bad path"}, 404)
         if not os.path.isfile(target):
-            # 构建不再复制 public（那里挂着 19G / 4.2G 的软链），静态资源回落到 public 直取
+            # 构建不再复制 public（那里挂着 4.2G 的 downloads 软链），静态资源回落到 public 直取
+            # 注意 private_obsidian 已在本函数开头硬拒绝，不会走到这里
             pub = os.path.normpath(os.path.join(WEB_PUBLIC, rel or ""))
             if rel and pub.startswith(WEB_PUBLIC + os.sep) and os.path.isfile(pub):
                 return self._serve_media(pub)
@@ -1125,6 +1165,37 @@ class Handler(BaseHTTPRequestHandler):
             })
         return {"ok": True, "updated": str(data.get("updated") or ""), "items": out}
 
+    def _materials_root_of(self, root_name):
+        """解析浏览根，返回 (root, err)。private 的根由会话手机号决定，不接受参数指定别人的目录。"""
+        if root_name == "published":
+            return os.path.realpath(MATERIALS_ROOT), ""
+        if root_name == "downloads":
+            # 其它渠道落到 conring/downloads 的文件，经 public/downloads 软链统一浏览
+            return os.path.realpath(os.path.join(WEB_PUBLIC, "downloads")), ""
+        if root_name == "private":
+            root = self._my_private_root()
+            if root:
+                return root, ""
+            if not self._session_user():
+                return "", "需要登录后才能查看个人空间"
+            return "", "该账号下还没有个人空间目录（conring/users/<手机号>/）"
+        return os.path.realpath(os.path.join(self._kernel().vault_dir, "素材")), ""
+
+    def _materials_resolve(self, root_name, rel):
+        """根 + 相对路径 → 绝对路径，带越界、隐藏目录、存在性检查（浏览与监听共用一套口径）。"""
+        root, err = self._materials_root_of(root_name)
+        if err:
+            return root, "", err
+        full = os.path.realpath(os.path.join(root, rel)) if rel else root
+        if full != root and not full.startswith(root + os.sep):
+            return root, "", "越界访问"
+        # 根目录自身 relpath 结果是 "."，不能当成隐藏目录，否则"共享资料"根永远打不开
+        if full != root and any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep) if p):
+            return root, "", "隐藏目录不可访问"
+        if not os.path.isdir(full):
+            return root, "", "目录不存在"
+        return root, full, ""
+
     def _materials_browse(self, query):
         """素材目录浏览（只列直接子项，不递归、不读文件内容）。
 
@@ -1135,31 +1206,9 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(query or "")
         root_name = (q.get("root") or ["vault"])[0].strip()
         rel = (q.get("path") or [""])[0].strip().strip("/")
-        kern = self._kernel()
-        if root_name == "published":
-            root = os.path.realpath(MATERIALS_ROOT)
-        elif root_name == "downloads":
-            # 其它渠道落到 conring/downloads 的文件，经 public/downloads 软链统一浏览
-            root = os.path.realpath(os.path.join(WEB_PUBLIC, "downloads"))
-        elif root_name == "private":
-            # 个人空间：根由会话手机号决定，不能通过参数指定别人的目录
-            root = self._my_private_root()
-            if not root:
-                if not self._session_user():
-                    return {"ok": False, "error": "需要登录后才能查看个人空间",
-                            "root": root_name, "path": rel}
-                return {"ok": False,
-                        "error": "该账号下还没有个人空间目录（conring/users/<手机号>/）",
-                        "root": root_name, "path": rel}
-        else:
-            root = os.path.realpath(os.path.join(kern.vault_dir, "素材"))
-        full = os.path.realpath(os.path.join(root, rel)) if rel else root
-        if full != root and not full.startswith(root + os.sep):
-            return {"ok": False, "error": "越界访问"}
-        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep) if p):
-            return {"ok": False, "error": "隐藏目录不可访问"}
-        if not os.path.isdir(full):
-            return {"ok": False, "error": "目录不存在", "root": root_name, "path": rel}
+        root, full, err = self._materials_resolve(root_name, rel)
+        if err:
+            return {"ok": False, "error": err, "root": root_name, "path": rel}
         dirs, files, dir_err = [], [], 0
         try:
             with os.scandir(full) as it:
@@ -1178,15 +1227,112 @@ class Handler(BaseHTTPRequestHandler):
                         dir_err += 1
         except OSError as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}", "root": root_name, "path": rel}
+        if root_name == "private" and not rel:
+            # 个人空间根下还躺着 opc.db / media_jobs.db 这类内部库，既不该下载也不该删除，
+            # 干脆不列出来，只暴露白名单子目录（工具箱 / obsidian）
+            dirs = [d for d in dirs if d["name"] in self.PRIVATE_SUBS]
+            files = []
         dirs.sort(key=lambda x: x["name"])
         files.sort(key=lambda x: -x["mtime"])
+        # 指纹给前端长轮询用：服务器上直接增删文件时，页面能自己发现并刷新
+        keep = self.PRIVATE_SUBS if (root_name == "private" and not rel) else None
         resp = {"ok": True, "root": root_name, "path": rel,
                 "dirs": dirs[:300], "files": files[:500], "skipped": dir_err,
-                "counts": {"dirs": len(dirs), "files": len(files)}}
+                "counts": {"dirs": len(dirs), "files": len(files)},
+                "sig": _dir_sig(full, keep)}
         if root_name == "private":
             # 前端拼 /private/<手机号>/... 用；这个值只反映会话本人，不接受外部指定
             resp["phone"] = os.path.basename(root)
         return resp
+
+    def _materials_watch(self, query):
+        """长轮询：目录没变就挂着，变了立刻回，最多等 25 秒。
+
+        在服务器上直接维护文件（scp、同步盘、命令行删文件）的人不用手动刷新页面。
+        目录被删也算"变了"，前端重新拉一次 browse 后会自己回退到上级。
+        """
+        q = parse_qs(query or "")
+        root_name = (q.get("root") or ["vault"])[0].strip()
+        rel = (q.get("path") or [""])[0].strip().strip("/")
+        want = (q.get("sig") or [""])[0].strip()
+        _, full, err = self._materials_resolve(root_name, rel)
+        if err:
+            return {"ok": True, "changed": True, "sig": ""}
+        keep = self.PRIVATE_SUBS if (root_name == "private" and not rel) else None
+        deadline = time.time() + 25
+        cur = _dir_sig(full, keep)
+        while time.time() < deadline:
+            if cur != want:
+                return {"ok": True, "changed": True, "sig": cur}
+            time.sleep(1.0)
+            if not os.path.isdir(full):
+                return {"ok": True, "changed": True, "sig": ""}
+            cur = _dir_sig(full, keep)
+        return {"ok": True, "changed": False, "sig": cur}
+
+    def _materials_delete(self, body):
+        """删除个人空间里的文件/目录。
+
+        只接受 root=private：downloads / vault / published 都是公共或共享目录，
+        网页端一律不提供删除，那属于管理员在服务器上直接处理的范围。
+        """
+        root_name = str(body.get("root") or "").strip()
+        rel = str(body.get("path") or "").strip().strip("/")
+        recursive = bool(body.get("recursive"))
+        # 先认人再谈权限：_require_auth 只是运维层 Basic，且本机来源放行，
+        # 真正的用户身份在 cookie 会话里，未登录一律 401
+        if not self._session_user():
+            return self._json({"ok": False, "error": "需要登录"}, 401)
+        if root_name != "private":
+            return self._json(
+                {"ok": False,
+                 "error": "只允许删除个人空间的内容；downloads 等公共目录由管理员在服务器上处理"}, 403)
+        if not rel:
+            return self._json({"ok": False, "error": "缺少 path"}, 400)
+        base = self._my_private_root()
+        if not base:
+            return self._json({"ok": False, "error": "个人空间不可用"}, 403)
+        segs = [s for s in rel.split("/") if s]
+        if not segs or segs[0] not in self.PRIVATE_SUBS:
+            return self._json({"ok": False, "error": "该目录不允许经网页删除"}, 403)
+        root = os.path.realpath(os.path.join(base, segs[0]))
+        full = os.path.realpath(os.path.join(root, *segs[1:])) if len(segs) > 1 else root
+        if full == root:
+            return self._json({"ok": False, "error": "不能删除空间根目录"}, 403)
+        if not full.startswith(root + os.sep):
+            return self._json({"ok": False, "error": "越界路径"}, 403)
+        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep)):
+            return self._json({"ok": False, "error": "隐藏项不可删除"}, 403)
+        if os.path.islink(full):
+            return self._json({"ok": False, "error": "软链不可删除"}, 400)
+        if not os.path.exists(full):
+            return self._json({"ok": False, "error": "已经不存在了"}, 404)
+        is_dir = os.path.isdir(full)
+        if is_dir and not recursive:
+            # 目录必须显式 recursive：先报数量，让前端二次确认，绝不一次点击删掉整棵子树
+            try:
+                n = len(os.listdir(full))
+            except OSError as ex:
+                return self._json({"ok": False, "error": f"{type(ex).__name__}: {ex}"}, 500)
+            if n:
+                return self._json({"ok": False, "error": f"目录里还有 {n} 项",
+                                   "needConfirm": True, "count": n}, 409)
+        try:
+            if is_dir:
+                if recursive:
+                    shutil.rmtree(full)
+                else:
+                    os.rmdir(full)
+            else:
+                os.remove(full)
+        except OSError as ex:
+            return self._json({"ok": False, "error": f"{type(ex).__name__}: {ex}"}, 500)
+        # 工具箱成品删掉后，作业库里那条记录不该再指向一个必然 404 的地址
+        try:
+            self._kernel().forget_output(full)
+        except Exception as ex:
+            print(f"[materials] 清空产物记录失败：{type(ex).__name__}: {ex}", flush=True)
+        return self._json({"ok": True, "path": rel, "kind": "dir" if is_dir else "file"})
 
     def _material(self, rel):
         """素材库只读发布：/materials/... → MATERIALS_ROOT/...（限定目录、无隐藏目录）。"""
@@ -1221,7 +1367,7 @@ class Handler(BaseHTTPRequestHandler):
     PUBLIC_DIRS = {"downloads": "downloads"}
 
     def _public_file(self, path):
-        """/toolbox/... 、/downloads/... → web/public 下的软链目录（支持 Range）。"""
+        """/downloads/... → web/public 下的公开软链目录（支持 Range）。"""
         head, _, rest = path.lstrip("/").partition("/")
         sub = self.PUBLIC_DIRS.get(head)
         if not sub:
@@ -1276,15 +1422,27 @@ class Handler(BaseHTTPRequestHandler):
         """
         head, _, rest = path.lstrip("/").partition("/")
         user = self._session_user()
-        if not user:
-            return self._json({"error": "需要登录"}, 401)
-        me = os.path.basename(os.path.realpath(str(user.get("dataDir") or "").strip() or "/nonexistent"))
-        if not me or head != me:
-            return self._json({"error": "not found"}, 404)
+        base = None
+        if user:
+            me = os.path.basename(os.path.realpath(str(user.get("dataDir") or "").strip() or "/nonexistent"))
+            if not me or head != me:
+                return self._json({"error": "not found"}, 404)
+            base = self._my_private_root()
+        else:
+            # 没有 cookie 时用个人默认 token 兜底：APP / 外部工具直接取私有资料，
+            # token 存在用户自己的工作目录里，登录时初始化
+            given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+            if not given:
+                return self._json(
+                    {"error": "需要登录", "hint": "或在链接后带 ?token=<个人 token>"}, 401)
+            cand = os.path.realpath(os.path.join(USERS_DIR, head))
+            if not os.path.isdir(cand) or not USERS.private_token_ok(cand, given):
+                # 不区分"号码不存在"和"token 错"，避免试探
+                return self._json({"error": "not found"}, 404)
+            base = cand
         sub, _, rel = rest.partition("/")
         if sub not in self.PRIVATE_SUBS:
             return self._json({"error": "not found"}, 404)
-        base = self._my_private_root()
         if not base:
             return self._json({"error": "not found"}, 404)
         root = os.path.realpath(os.path.join(base, sub))
@@ -2086,6 +2244,9 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/api/chat/voice", "/api/chat/upload"):
             return self._chat_binary_post(path)
         body = self._body()
+        # 素材页删除：只放行个人空间（工具箱 / obsidian），公共目录一律拒绝
+        if path == "/api/materials/delete":
+            return self._materials_delete(body)
         # 知识图谱关系边的人工维护：确认 AI 抽取结果 / 手动连边 / 删除
         if path == "/api/knowledge/relations":
             action = str(body.get("action") or "upsert").strip().lower()
@@ -2175,7 +2336,7 @@ class Handler(BaseHTTPRequestHandler):
                                            "origin_ref": str(body.get("origin_ref") or "")})
             kern.db.flush()
             return self._json({"ok": True, "id": qid})
-        # 工具箱：手工提交单技能任务，进 media_jobs 队列，成品落 vault 素材目录
+        # 工具箱：手工提交单技能任务，进 media_jobs 队列，成品落个人空间 工具箱/（私有）
         if path == "/api/toolbox/jobs":
             try:
                 kern = self._kernel()
@@ -2250,6 +2411,7 @@ class Handler(BaseHTTPRequestHandler):
             tok = self._cookie_token()
             with SESS_LOCK:
                 SESSIONS.pop(tok, None)
+            USERS.session_drop(tok)
             return self._json({"ok": True},
                               cookie=f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
         user = self._session_user()
@@ -2671,6 +2833,7 @@ def main():
     args = ap.parse_args()
     if args.host not in LOOPBACK and args.host != "localhost" and not AUTH_USER:
         print("警告：绑定到非回环地址且未设置 OPC_BASIC_USER / OPC_BASIC_PASS，局域网内任何人可访问与审批")
+    USERS.session_load_all()   # 会话已落库，重启后老 cookie 依然有效
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     srv.daemon_threads = True
     auth = f"auth=Basic({AUTH_USER})" if AUTH_USER else "auth=off"
@@ -2681,9 +2844,6 @@ def main():
         print("\nbye")
     finally:
         srv.server_close()
-        if self._kernel().db:
-            self._kernel().db.run_end(self._kernel()._run_id)
-            self._kernel().db.close()
 
 
 if __name__ == "__main__":

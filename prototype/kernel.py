@@ -2686,7 +2686,7 @@ class Kernel:
         trace_id = "tb-" + os.urandom(4).hex()
         day = time.strftime("%Y-%m-%d")
         # 成品落在个人空间而不是公共 vault：工具箱内容属于本人的私有产物，
-# 因此不经 /vault 或 /toolbox 公开，只走 /private/<手机号>/工具箱/（服务端按会话校验）
+        # 因此不经 /vault 或 /toolbox 公开，只走 /private/<手机号>/工具箱/（服务端按会话校验）
         out_dir = os.path.join(self.data_dir or OWNER_DATA_DIR, "工具箱", day,
                                self.TOOLBOX_SUB[kind])
         try:
@@ -2713,6 +2713,16 @@ class Kernel:
         if MEDIA is None:
             return []
         return self._media().toolbox_jobs(limit=limit)
+
+    def forget_output(self, dest):
+        """成品从素材页删掉后，清空作业库里指向它的产物地址（历史记录保留）。"""
+        if MEDIA is None:
+            return 0
+        try:
+            return self._media().forget_output(dest)
+        except Exception as e:
+            print(f"[media] 清空产物记录失败：{type(e).__name__}: {e}", flush=True)
+            return 0
 
     def factory_shots(self, trace_id, item_id=""):
         """分镜清单 + 渠道注册表 + 每镜作业状态（前端工作台一次拉全）。"""

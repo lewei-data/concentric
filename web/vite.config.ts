@@ -23,7 +23,8 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: "dist",
-    // public/ 下有 工具箱、downloads 两个软链（指向 19G 素材库与 4.2G 下载目录）。
+    // public/ 下挂着 downloads 软链（指向 4.2G 下载目录），另有 private_obsidian 指向
+    // conring/users（私有，只经鉴权路由下发，绝不走静态兜底）。
     // 默认的 copyPublicDir 会跟随软链递归复制，构建会直接撑爆磁盘；
     // 故不复制，改由 server.py 运行时直接从 web/public 下发。
     copyPublicDir: false,

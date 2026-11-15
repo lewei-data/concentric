@@ -93,7 +93,8 @@ export function ToolboxGallery() {
                   className={`tg-card ${done ? "" : "tg-card--dead"}`}
                   role={done ? "button" : undefined}
                   tabIndex={done ? 0 : undefined}
-                  title={done ? "点开查看" : j.error || j.status}
+                  title={done ? "点开查看"
+                    : j.error || (j.status === "done" ? "成品已删除" : j.status)}
                   onClick={() => open(j)}
                   onKeyDown={(e) => {
                     if (!done) return;

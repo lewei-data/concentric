@@ -5472,3 +5472,24 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
 .fac-ws-job-err { color: var(--danger); max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fac-ws-job-note { color: var(--text-soft); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fac-ws-job-at { margin-left: auto; }
+
+/* 用户中心：私有资料访问 token */
+.account-token {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.account-token code {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  word-break: break-all;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
