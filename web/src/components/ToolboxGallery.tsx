@@ -32,6 +32,8 @@ export function ToolboxGallery() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [view, setView] = useState<ViewerItem | null>(null);
+  // 缩略图 404 说明文件已被删掉：立刻按“成品已删除”显示，不必等后端对账
+  const [broken, setBroken] = useState<Record<string, true>>({});
   // 和素材浏览共用同一个偏好键：在哪儿切过，回来还是那个看法
   const [mode, setMode] = useState<"list" | "grid">(() => {
     try {
@@ -125,7 +127,7 @@ export function ToolboxGallery() {
           {mode === "grid" ? (
             <div className="tg-grid">
             {list.map((j) => {
-              const done = j.status === "done" && !!j.outputUrl;
+              const done = j.status === "done" && !!j.outputUrl && !broken[j.id];
               return (
                 <div
                   key={j.id}
@@ -133,7 +135,8 @@ export function ToolboxGallery() {
                   role={done ? "button" : undefined}
                   tabIndex={done ? 0 : undefined}
                   title={done ? "点开查看"
-                    : j.error || (j.status === "done" ? "成品已删除" : j.status)}
+                    : broken[j.id] ? "成品文件已不在服务器上（可能已被删除）"
+                      : j.error || (j.status === "done" ? "成品已删除" : j.status)}
                   onClick={() => open(j)}
                   onKeyDown={(e) => {
                     if (!done) return;
@@ -145,11 +148,21 @@ export function ToolboxGallery() {
                 >
                   <div className="tg-thumb">
                     {done && j.outputUrl && j.kind === "image" && (
-                      <img src={siteUrl(j.outputUrl)} alt={j.prompt?.slice(0, 40) || ""} loading="lazy" />
+                      <img
+                        src={siteUrl(j.outputUrl)}
+                        alt={j.prompt?.slice(0, 40) || ""}
+                        loading="lazy"
+                        onError={() => setBroken((b) => (b[j.id] ? b : { ...b, [j.id]: true }))}
+                      />
                     )}
                     {done && j.outputUrl && j.kind === "video" && (
                       // #t=0.1 让浏览器取首帧当封面，否则缩略图是黑的
-                      <video src={`${siteUrl(j.outputUrl)}#t=0.1`} preload="metadata" muted />
+                      <video
+                        src={`${siteUrl(j.outputUrl)}#t=0.1`}
+                        preload="metadata"
+                        muted
+                        onError={() => setBroken((b) => (b[j.id] ? b : { ...b, [j.id]: true }))}
+                      />
                     )}
                     {done && j.kind === "audio" && <span className="tg-note">♪</span>}
                     {!done && <span className="tg-x">×</span>}
@@ -171,7 +184,7 @@ export function ToolboxGallery() {
           ) : (
             <ul className="mat-list">
               {list.map((j) => {
-                const done = j.status === "done" && !!j.outputUrl;
+                const done = j.status === "done" && !!j.outputUrl && !broken[j.id];
                 return (
                   <li key={j.id}>
                     <button
@@ -180,7 +193,8 @@ export function ToolboxGallery() {
                       disabled={!done}
                       onClick={() => open(j)}
                       title={done ? "点开查看"
-                        : j.error || (j.status === "done" ? "成品已删除" : j.status)}
+                        : broken[j.id] ? "成品文件已不在服务器上（可能已被删除）"
+                      : j.error || (j.status === "done" ? "成品已删除" : j.status)}
                     >
                       <span className="mat-icon" aria-hidden="true">{done ? "·" : "×"}</span>
                       <span className="mat-name">{j.prompt || j.note || "（无提示词）"}</span>

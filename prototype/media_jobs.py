@@ -493,7 +493,12 @@ class Manager:
             return []
 
     def toolbox_jobs(self, limit=40):
-        """工具箱手工任务：trace_id 以 tb- 开头，独立于流水线，按提交时间倒序。"""
+        """工具箱手工任务：trace_id 以 tb- 开头，独立于流水线，按提交时间倒序。
+
+        列表顺带对账：产物是磁盘上的文件，用户在资源管理器里删掉后库里还留着地址，
+        界面上就会一直挂着一个点开必然 404 的卡片。这里发现文件没了就把地址清掉
+        （任务历史保留），下次列表就只会显示“成品已删除”。
+        """
         try:
             conn = self._conn()
             try:
@@ -501,7 +506,31 @@ class Manager:
                     "SELECT * FROM jobs WHERE trace_id LIKE 'tb-%' "
                     "ORDER BY created_at DESC, id DESC LIMIT ?",
                     (max(1, min(int(limit), 200)),)).fetchall()
-                return [_view(dict(r)) for r in rows]
+                out, dead = [], []
+                for r in rows:
+                    row = dict(r)
+                    path = str(row.get("output_path") or "").strip()
+                    url = str(row.get("output_url") or "").strip()
+                    if url and path and not os.path.isfile(path):
+                        # 只有上级目录还在才判定“文件被删”，网络盘掉线时不误删记录
+                        if os.path.isdir(os.path.dirname(path)):
+                            dead.append(path)
+                            row["output_path"] = ""
+                            row["output_url"] = ""
+                            row["error"] = row.get("error") or "成品文件已删除"
+                        else:
+                            row["output_url"] = ""
+                            row["error"] = row.get("error") or "成品所在目录不可访问"
+                    out.append(_view(row))
+                if dead:
+                    conn.executemany(
+                        "UPDATE jobs SET output_path=NULL, output_url=NULL, "
+                        "error=CASE WHEN error IS NULL OR error='' THEN ? ELSE error END "
+                        "WHERE output_path=?",
+                        [("成品文件已删除", p) for p in dead])
+                    conn.commit()
+                    _log(f"工具箱对账：{len(dead)} 个成品已被删除，记录已清空")
+                return out
             finally:
                 conn.close()
         except sqlite3.Error as e:
