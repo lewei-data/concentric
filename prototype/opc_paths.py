@@ -19,7 +19,20 @@ FILE_MIME = {**WEB_MIME,
              ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf",
              ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
              ".mp4": "video/mp4", ".webm": "video/webm", ".ts": "text/plain; charset=utf-8",
-             ".ttf": "font/ttf", ".otf": "font/otf"}
+             ".ttf": "font/ttf", ".otf": "font/otf",
+             # 补全常见图片/音视频：缺表会被当 application/octet-stream 下发，
+             # 浏览器不内嵌显示（新窗口打开变下载或空白），素材页就会"看不到实际图片"
+             ".png": "image/png", ".bmp": "image/bmp", ".ico": "image/x-icon",
+             ".avif": "image/avif", ".heic": "image/heic", ".heif": "image/heif",
+             ".tif": "image/tiff", ".tiff": "image/tiff", ".svg": "image/svg+xml",
+             ".apng": "image/apng", ".jfif": "image/jpeg", ".pjpeg": "image/jpeg",
+             ".mov": "video/quicktime", ".m4v": "video/mp4", ".mkv": "video/x-matroska",
+             ".avi": "video/x-msvideo", ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv",
+             ".m3u8": "application/vnd.apple.mpegurl",
+             ".flac": "audio/flac", ".aac": "audio/aac", ".ogg": "audio/ogg",
+             ".opus": "audio/opus", ".wma": "audio/x-ms-wma", ".amr": "audio/amr",
+             ".vtt": "text/vtt; charset=utf-8", ".ass": "text/plain; charset=utf-8",
+             ".lrc": "text/plain; charset=utf-8", ".json": "application/json; charset=utf-8"}
 TZ = timezone(timedelta(hours=8))
 CLI = os.environ.get("OPC_HERMES_CLI", "/opt/sefs/hermes/run-hermes.sh")
 

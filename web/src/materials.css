@@ -866,6 +866,55 @@
   background: #fff;
 }
 
+/* 图片加载中 / 加载不出来：给明确提示和原图链接，别只留一块黑 */
+.mat-media-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 18px;
+  text-align: center;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  max-width: 100%;
+}
+
+.mat-media-fallback.is-full {
+  max-width: min(680px, 100%);
+  font-size: 13.5px;
+}
+
+.mat-media-fallback.is-loading {
+  padding: 40px 18px;
+  color: #94a3b8;
+}
+
+.mat-media-fallback strong {
+  font-size: 13.5px;
+  color: #fecdd3;
+}
+
+.mat-media-fallback code {
+  display: block;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, .16);
+  color: #bfdbfe;
+  font-size: 11.5px;
+  word-break: break-all;
+  max-height: 4.8em;
+  overflow: hidden;
+}
+
+.mat-media-fallback a {
+  color: #fff;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* 未知格式说明 */
 .mat-note-type {
   margin: 0 0 6px;
@@ -958,13 +1007,23 @@
   justify-content: center;
   min-height: 0;
   padding: 12px;
+  /* 大图（2048² 的 PNG 之类）按 1:1 看时能滚动，不再被裁掉一半、也翻不到下半截 */
+  overflow: auto;
 }
 
 .mat-fullview-stage img,
 .mat-fullview-stage video {
-  max-width: 100%;
-  max-height: 100%;
+  /* 用视口单位兜住：百分比 max-height 在 flex 里偶尔算成 none，图就按自然尺寸被裁掉 */
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 88px);
   object-fit: contain;
+  cursor: zoom-in;
+}
+
+.mat-fullview-stage img[data-zoom="1"] {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
 }
 
 .mat-fullview-audio {

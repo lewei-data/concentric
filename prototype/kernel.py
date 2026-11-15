@@ -2656,17 +2656,41 @@ class Kernel:
     # ---------- 工具箱：单技能手工验证（不进流水线，直接排队出片） ----------
     TOOLBOX_SUB = {"image": "图片", "video": "视频", "audio": "语音"}
 
+    def toolbox_save_frame(self, raw):
+        """校验并保存图生视频首帧，返回文件名（提交时作为 frame 传回）。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        if not raw:
+            raise ValueError("请求体为空（应上传图片文件）")
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError("首帧图片超过 8MB，请先压缩")
+        if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+            ext = ".png"
+        elif raw.startswith(b"\xff\xd8\xff"):
+            ext = ".jpg"
+        elif raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+            ext = ".webp"
+        else:
+            raise ValueError("仅支持 png / jpg / webp 图片")
+        name = "frame-" + os.urandom(6).hex() + ext
+        with open(os.path.join(MEDIA.frame_dir(), name), "wb") as f:
+            f.write(raw)
+        return name
+
     def toolbox_channels(self):
-        """渠道注册表 + 图生视频可用性。图生视频要首帧入参，media-gen 未接 animatediff。"""
+        """渠道注册表（分组/端点/能力）+ 图生视频可用性。"""
         if MEDIA is None:
             raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
         chans, cap = MEDIA.channels(force=True)
-        return {"channels": chans, "maxSec": cap,
-                "modes": {"i2v": False,
-                          "i2vReason": "media-gen 的 /v1/video/jobs 没有首帧入参，"
-                                       "animatediff（肖像微动）未接入，暂只支持文生视频"}}
+        i2v = [c["name"] for c in chans
+               if "i2v" in (c.get("modes") or []) and c.get("available")]
+        return {"channels": chans, "groups": MEDIA.groups(), "maxSec": cap,
+                "modes": {"i2v": bool(i2v), "i2vChannels": i2v,
+                          "i2vReason": "" if i2v else
+                          "当前没有可用的图生视频渠道（Wan2.2 TI2V 的视频端点 8189 不可达）"}}
 
-    def toolbox_run(self, kind, channels, prompt="", line="", sec=0.0, params=None):
+    def toolbox_run(self, kind, channels, prompt="", line="", sec=0.0, params=None,
+                    frame=""):
         """手工提交一条单技能任务：独立 trace（tb-），成品直接落 vault 素材目录。"""
         if MEDIA is None:
             raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
@@ -2683,6 +2707,17 @@ class Kernel:
         chans = [str(c).strip() for c in (channels or []) if str(c).strip()]
         if not chans:
             raise ValueError("至少选择一个渠道")
+        params = dict(params or {})
+        frame = os.path.basename(str(frame or "").strip())
+        if frame:
+            fp = os.path.join(MEDIA.frame_dir(), frame)
+            if not os.path.isfile(fp):
+                raise ValueError("首帧图片不存在或已被清理，请重新上传")
+            # 只往支持 i2v 的视频渠道挂首帧，其它渠道忽略（不静默改变语义）
+            for name in chans:
+                ch = MEDIA.CHANNELS.get(name) or {}
+                if "i2v" in (ch.get("modes") or []):
+                    params[name] = dict(params.get(name) or {}, frame=frame)
         trace_id = "tb-" + os.urandom(4).hex()
         day = time.strftime("%Y-%m-%d")
         # 成品落在个人空间而不是公共 vault：工具箱内容属于本人的私有产物，

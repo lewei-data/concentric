@@ -90,11 +90,123 @@
   color: #94a3b8;
 }
 
+.tb-chan-group + .tb-chan-group {
+  margin-top: 4px;
+}
+
+.tb-chan-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 6px;
+}
+
+.tb-chan-group-head b {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: #64748b;
+  text-transform: none;
+}
+
+.tb-chan-group-head small {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #a2aec0;
+}
+
 .tb-chans {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+/* 渠道卡片右上角的端点标识（comfy:8189 / media-gen:9103 …） */
+.tb-chan-ep {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #eef2f7;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.tb-chan-ep--busy {
+  background: #fff4e5;
+  color: #b45309;
+}
+
+/* 参数说明与建议值 */
+.tb-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #8b98ab;
+}
+
+/* 图生视频首帧 */
+.tb-frame {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px;
+  margin-bottom: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.tb-frame-img {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 84px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.tb-frame-img--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #b6c0cf;
+}
+
+.tb-frame-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tb-frame-pick {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.tb-frame-pick input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.tb-frame-pick:hover {
+  border-color: #94a3b8;
 }
 
 .tb-chan {

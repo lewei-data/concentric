@@ -74,6 +74,58 @@ function previewKind(name: string, ext: string): "image" | "audio" | "video" | "
   return k === "image" || k === "audio" || k === "video" ? k : "";
 }
 
+// 浏览器认不了的图片格式：别硬塞 <img>，直接提示 + 给原图链接
+const NO_INLINE_IMAGE = new Set(["heic", "heif", "tiff", "tif"]);
+
+/** 素材预览：加载中给提示，失败时把真实 URL 亮出来（否则只剩一块空白，分不清是路径错、没登录还是文件没了） */
+function MatMedia({ kind, url, name, ext, full }: {
+  kind: "image" | "audio" | "video"; url: string; name: string; ext: string; full?: boolean;
+}) {
+  const [state, setState] = useState<"loading" | "ok" | "err">("loading");
+  const [zoom, setZoom] = useState(false);
+  useEffect(() => { setState("loading"); setZoom(false); }, [url]);
+
+  if (kind === "audio") return <audio src={url} controls autoPlay onError={() => setState("err")} />;
+  if (kind === "video") return <video src={url} controls autoPlay onError={() => setState("err")} />;
+
+  const unsupported = NO_INLINE_IMAGE.has(String(ext || "").toLowerCase().replace(/^\./, ""));
+  const broken = state === "err" || unsupported;
+  return (
+    <>
+      {broken && (
+        <div className={`mat-media-fallback${full ? " is-full" : ""}`}>
+          <strong>{unsupported ? "这个格式浏览器不能直接显示" : "图片没加载出来"}</strong>
+          <code>{url}</code>
+          {!unsupported && (
+            <span>
+              常见原因：文件已被删除（404）、登录已过期（401）、或还在生成中。点下面可以直接打开原图确认。
+            </span>
+          )}
+          <a href={url} target="_blank" rel="noreferrer">
+            {unsupported ? "直接打开原图（可能需下载后查看）" : "直接打开原图"}
+          </a>
+        </div>
+      )}
+      {!unsupported && (
+        <img
+          src={url}
+          alt={name}
+          decoding="async"
+          data-zoom={zoom ? "1" : "0"}
+          style={state === "loading" ? { opacity: 0 } : undefined}
+          onClick={full ? () => setZoom((z) => !z) : undefined}
+          onLoad={() => setState("ok")}
+          onError={() => setState("err")}
+          title={full ? (zoom ? "点击：适应窗口" : "点击：1:1 原图") : undefined}
+        />
+      )}
+      {state === "loading" && !unsupported && (
+        <div className={`mat-media-fallback${full ? " is-full" : ""} is-loading`}>图片加载中…</div>
+      )}
+    </>
+  );
+}
+
 // 出不了缩略图的格式按用途分组配色，方块上用扩展名当封面，比一个通用问号好认
 const TONE_RULES: { tone: string; exts: string[] }[] = [
   { tone: "doc", exts: ["md", "markdown", "txt", "rtf", "doc", "docx", "pdf", "pages", "odt", "epub"] },
@@ -213,7 +265,7 @@ export function MaterialsPage() {
   const [kind, setKind] = useState<KindKey>("all");
   // 预览面板贴着被点的方块/按钮弹出；anchor 记的就是那个元素
   const [preview, setPreview] = useState<
-    { url: string; kind: "image" | "audio" | "video"; name: string; anchor: HTMLElement | null } | null
+    { url: string; kind: "image" | "audio" | "video"; name: string; ext?: string; anchor: HTMLElement | null } | null
   >(null);
   // 全屏观看层：媒体铺满屏幕，左上角带返回
   const [previewFull, setPreviewFull] = useState(false);
@@ -223,7 +275,7 @@ export function MaterialsPage() {
   >(null);
 
   useEffect(() => {
-    fetch("/api/materials", { credentials: "include" })
+    fetch(siteUrl("/api/materials"), { credentials: "include" })
       .then((r) => r.json())
       .then((d: { items?: MatItem[]; updated?: string }) => {
         setItems(Array.isArray(d.items) ? d.items : []);
@@ -236,7 +288,7 @@ export function MaterialsPage() {
     if (!silent) setBrowsing(true);
     try {
       const res = await fetch(
-        `/api/materials/browse?root=${r}&path=${encodeURIComponent(p)}`,
+        siteUrl(`/api/materials/browse?root=${r}&path=${encodeURIComponent(p)}`),
         { credentials: "include" },
       );
       setBrowse((await res.json()) as BrowseData);
@@ -273,7 +325,7 @@ export function MaterialsPage() {
         }
         try {
           const res = await fetch(
-            `/api/materials/watch?root=${effRoot}&path=${encodeURIComponent(path)}&sig=${sig}`,
+            siteUrl(`/api/materials/watch?root=${effRoot}&path=${encodeURIComponent(path)}&sig=${sig}`),
             { credentials: "include", signal: ctrl.signal },
           );
           const d = (await res.json()) as { ok?: boolean; changed?: boolean; sig?: string };
@@ -325,7 +377,7 @@ export function MaterialsPage() {
     }
     setDelBusy(rel);
     try {
-      const send = (recursive: boolean) => fetch("/api/materials/delete", {
+      const send = (recursive: boolean) => fetch(siteUrl("/api/materials/delete"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -379,7 +431,9 @@ export function MaterialsPage() {
 
   // 缩略图地址：照片墙一次铺几十上百张，原图太大，交给服务端压到 420px 宽
   const thumbUrl = useCallback(
-    (name: string) => `/api/materials/thumb?root=${effRoot}&path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`,
+    // 必须走 siteUrl 补前缀：公网挂在 /workbench/app 时，裸 /api/... 会打到主站接口（401），缩略图全空
+    (name: string) => siteUrl(
+      `/api/materials/thumb?root=${effRoot}&path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`),
     [effRoot, path],
   );
 
@@ -421,7 +475,7 @@ export function MaterialsPage() {
       if (pv) {
         setNotice(null);
         setPreviewFull(false);
-        setPreview({ url, kind: pv, name: f.name, anchor: el ?? null });
+        setPreview({ url, kind: pv, name: f.name, ext: f.ext, anchor: el ?? null });
         return;
       }
       const e = (f.ext || "").toLowerCase().replace(/^\./, "");
@@ -828,9 +882,7 @@ export function MaterialsPage() {
             </div>
           </div>
           <div className="mat-pop-stage">
-            {preview.kind === "image" && <img src={preview.url} alt={preview.name} />}
-            {preview.kind === "audio" && <audio src={preview.url} controls autoPlay />}
-            {preview.kind === "video" && <video src={preview.url} controls autoPlay />}
+            <MatMedia kind={preview.kind} url={preview.url} name={preview.name} ext={preview.ext ?? ""} />
           </div>
         </AnchoredPanel>
       )}
@@ -847,14 +899,15 @@ export function MaterialsPage() {
             <button type="button" className="mat-fullview-x" onClick={() => setPreview(null)} aria-label="关闭">×</button>
           </div>
           <div className="mat-fullview-stage">
-            {preview.kind === "image" && <img src={preview.url} alt={preview.name} />}
+            {preview.kind !== "audio" && (
+              <MatMedia kind={preview.kind} url={preview.url} name={preview.name} ext={preview.ext ?? ""} full />
+            )}
             {preview.kind === "audio" && (
               <div className="mat-fullview-audio">
                 <p>{preview.name}</p>
                 <audio src={preview.url} controls autoPlay />
               </div>
             )}
-            {preview.kind === "video" && <video src={preview.url} controls autoPlay />}
           </div>
         </div>
       )}

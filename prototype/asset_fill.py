@@ -41,6 +41,20 @@ def _comfy_image_url():
     return url
 
 
+def _comfy_video_url():
+    """取视频通道端点（Wan2.2 TI2V 等视频工作流跑在 8189 那个实例上）。"""
+    with open(COMFY_CFG, encoding="utf-8") as f:
+        cfg = json.load(f)
+    # 视频实例被长任务占满时可临时指到另一个实例：OPC_COMFY_VIDEO_URL=http://ip:8188
+    url = str(os.environ.get("OPC_COMFY_VIDEO_URL")
+              or ((cfg.get("endpoints") or {}).get("video") or {}).get("url")
+              or "").rstrip("/")
+    if not url:
+        raise RuntimeError("comfyui-ops/config.json 缺少 video 端点")
+    _http(url + "/system_stats", timeout=5)
+    return url
+
+
 def _pick_checkpoint(url):
     """从 /object_info 找一个可用底模；找不到就明确报错，不猜文件名。"""
     info = json.loads(_http(url + "/object_info", timeout=15).decode("utf-8"))

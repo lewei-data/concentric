@@ -110,6 +110,11 @@ from urllib.request import urlopen as _urlopen, Request as _UrlRequest
 import pipeline_defs as PIPE
 # ---------------- 模块化拆分后的组合根：功能模块见下列各文件 ----------------
 from opc_paths import *  # noqa: F401,F403 —— 路径与运行常量
+
+# 浏览器能直接内嵌展示的类型：这些用 inline 下发，其余（zip/pptx 等）走 attachment
+INLINE_MIME = re.compile(r"^(image/|video/|audio/|text/|application/pdf|application/json"
+                         r"|application/vnd\.apple\.mpegurl)")
+
 from utils import iso_now, uid, _to_int, _hotkey, _step_view, _iso_shift, _num
 from agent_defaults import DEFAULT_AGENT_SPEC, AGENTS_REQUIRED
 import company_config as CC
@@ -1481,22 +1486,12 @@ class Handler(BaseHTTPRequestHandler):
         if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep)):
             return self._json({"error": "not found"}, 404)
         ext = os.path.splitext(full)[1].lower()
-        ctype = {
+        # 与 /vault/ /private/ 共用同一张表，避免素材库里的 bmp/avif/heic 等被当二进制下载
+        ctype = FILE_MIME.get(ext) or {
             ".html": "text/html; charset=utf-8",
             ".js": "application/javascript; charset=utf-8",
             ".css": "text/css; charset=utf-8",
-            ".json": "application/json; charset=utf-8",
-            ".md": "text/plain; charset=utf-8",
-            ".txt": "text/plain; charset=utf-8",
-            ".srt": "text/plain; charset=utf-8",
-            ".svg": "image/svg+xml",
-            ".png": "image/png",
-            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-            ".webp": "image/webp", ".gif": "image/gif",
-            ".ttf": "font/ttf", ".otf": "font/otf", ".woff2": "font/woff2",
-            ".mp4": "video/mp4",
-            ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav",
-            ".pdf": "application/pdf",
+            ".woff2": "font/woff2",
         }.get(ext, "application/octet-stream")
         return self._serve_media(full, ctype)
 
@@ -1639,41 +1634,60 @@ class Handler(BaseHTTPRequestHandler):
         return self._serve_media(full)
 
     def _serve_media(self, full, ctype=None):
-        """只读下发一个已通过越界检查的文件：支持 Range，非 Range 分块（不整文件入内存）。"""
+        """只读下发一个已通过越界检查的文件：支持 Range（含 bytes=-N 尾段），非 Range 分块（不整文件入内存）。"""
         ext = os.path.splitext(full)[1].lower()
         ctype = ctype or FILE_MIME.get(ext, "application/octet-stream")
         size = os.path.getsize(full)
         m = re.match(r"bytes=(\d*)-(\d*)$", (self.headers.get("Range") or "").strip())
-        self.send_response(206 if m else 200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "no-cache")
-        if m:
-            start = int(m.group(1) or 0)
-            end = int(m.group(2)) if m.group(2) else size - 1
+        start, end = 0, size - 1
+        partial = False
+        unsatisfiable = False
+        if m and (m.group(1) or m.group(2)):
+            if not m.group(1):
+                # bytes=-N 表示"最后 N 个字节"。以前当成 0-N 处理，
+                # 返回的是文件头 N 字节，图片/视频只能解出最前面一小块（"只显示一部分"就是这个原因）
+                n = int(m.group(2) or 0)
+                start, end = max(0, size - n), size - 1
+            else:
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else size - 1
             end = min(end, size - 1)
             if start >= size or start > end:
-                self.send_header("Content-Range", f"bytes */{size}")
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-                return
+                unsatisfiable = True
+            else:
+                partial = True
+        self.send_response(416 if unsatisfiable else (206 if partial else 200))
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        # 图片/视频/PDF/文本一律 inline：新窗口打开时是"看"，而不是被浏览器下载
+        self.send_header("Content-Disposition",
+                         "inline" if INLINE_MIME.match(ctype) else "attachment")
+        self.send_header("Cache-Control", "no-cache")
+        if unsatisfiable:
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if partial:
             with open(full, "rb") as f:
                 f.seek(start)
                 body = f.read(end - start + 1)
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-        else:
-            # 非 Range 请求分块下发：素材里有上 G 的 mp4，整文件读入会打满内存
-            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             try:
-                with open(full, "rb") as f:
-                    shutil.copyfileobj(f, self.wfile, 256 * 1024)
+                self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
-        self.send_header("Content-Length", str(len(body)))
+        # 非 Range 请求分块下发：素材里有上 G 的 mp4，整文件读入会打满内存
+        self.send_header("Content-Length", str(size))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            with open(full, "rb") as f:
+                shutil.copyfileobj(f, self.wfile, 256 * 1024)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _comfy_preview(self, spec):
         """返回节点当前执行任务的最新预览帧（JPEG）；无帧时 204。"""
@@ -2404,6 +2418,15 @@ class Handler(BaseHTTPRequestHandler):
         # 二进制直传路由（不走 JSON 解析，body 是原始音频/文件）
         if path in ("/api/chat/voice", "/api/chat/upload"):
             return self._chat_binary_post(path)
+        # 图生视频首帧：无损直传（先于 _body() 拦截，否则 body 会被当 JSON 预读成空）
+        if path == "/api/toolbox/frame":
+            try:
+                name = self._kernel().toolbox_save_frame(self._raw_body())
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": True, "frame": name})
         body = self._body()
         # 素材页删除：只放行个人空间（工具箱 / obsidian），公共目录一律拒绝
         if path == "/api/materials/delete":
@@ -2509,6 +2532,7 @@ class Handler(BaseHTTPRequestHandler):
                     line=body.get("line") or "",
                     sec=body.get("sec") or 0,
                     params=params if isinstance(params, dict) else {},
+                    frame=body.get("frame") or "",
                 )
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)

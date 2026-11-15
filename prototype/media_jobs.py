@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 import urllib.error
@@ -41,7 +42,8 @@ MAX_WORKERS = int(os.environ.get("OPC_MEDIA_WORKERS", "6"))
 PROBE_TTL = 30.0
 
 KINDS = ("image", "video", "audio")
-LANE_LIMITS = {"comfyui": 1, "sd15": 1, "wan21": 1, "minimax_h3": 1, "qwen": 2, "cosyvoice": 2}
+LANE_LIMITS = {"comfyui": 1, "comfyui_video": 1, "sd15": 1, "wan21": 1,
+               "minimax_h3": 1, "qwen": 2, "cosyvoice": 2}
 
 
 # ---------------------------------------------------------------- 基础工具
@@ -77,76 +79,171 @@ def _http_json(url, timeout=15, data=None, method=None):
 
 
 # ---------------------------------------------------------------- 渠道注册表
+# 分组：ComfyUI 跑在 192.168.21.157 那台远程工作站上，media-gen / media-engine
+# 跑在 192.168.21.206，两者都不是本机进程，前端必须分组展示，别再混成「本地出图」。
+GROUPS = [
+    {"key": "comfy", "label": "ComfyUI 工作站（远程 192.168.21.157）",
+     "desc": "与 hermes 的 comfyui 技能同一套 ComfyUI（8188 出图 / 8189 视频），"
+             "纯 CPU 推理，单队列串行，排队看得见"},
+    {"key": "lan", "label": "局域网媒体服务（192.168.21.206）",
+     "desc": "media-gen 出图出片 + media-engine 语音，服务端自己排队，可并发"},
+]
+
 CHANNELS = {
     "comfyui": {
-        "kind": "image", "label": "ComfyUI · 本地出图",
-        "notes": "ComfyUI 工作流文生图（端点读 comfyui-ops/config.json），单队列串行",
+        "kind": "image", "group": "comfy",
+        "label": "ComfyUI · SD2.1 文生图",
+        "endpoint": "comfy:8188",
+        "notes": "ComfyUI 原生 KSampler 工作流（SD2.1 768），API 格式与 hermes comfyui 技能一致；"
+                 "单队列，CPU 单张约 1–3 分钟",
+        "modes": ["t2i"],
         "params": [
-            _p("width", "宽", "int", 768, min=256, max=1536, step=8),
-            _p("height", "高", "int", 1344, min=256, max=1536, step=8),
-            _p("steps", "采样步数", "int", 20, min=1, max=50),
-            _p("cfg", "提示词权重", "float", 6.5, min=1, max=20, step=0.5),
-            _p("negative", "反向提示词", "text", "低质量, 模糊, 水印, 变形"),
+            _p("width", "宽", "int", 768, min=256, max=1024, step=64, multiple=8,
+               hint="SD2.1 按 768 训练：长边别超 1024，否则容易出现重复人脸/肢体。"
+                    "竖屏封面用 768×1024，方图 768×768，横屏 1024×768"),
+            _p("height", "高", "int", 1024, min=256, max=1024, step=64, multiple=8,
+               hint="与宽一起决定构图比例：9:16 → 768×1024，16:9 → 1024×768"),
+            _p("steps", "采样步数", "int", 20, min=4, max=50,
+               hint="建议 20–30。低于 12 细节没长出来，高于 40 对 SD2.1 基本无提升，只变慢"),
+            _p("cfg", "提示词权重 CFG", "float", 7.5, min=1, max=20, step=0.5,
+               hint="建议 7–8。太低（<5）跑题，太高（>12）画面发硬发脆、色彩过饱和"),
+            _p("sampler", "采样器", "select", "euler",
+               options=["euler", "euler_ancestral", "dpmpp_2m", "dpmpp_2m_sde",
+                        "heun", "dpm_2", "ddim"],
+               hint="拿不准用 euler；要更细的皮肤/布料纹理用 dpmpp_2m；"
+                    "euler_ancestral 更有创意但同种子不可复现"),
+            _p("scheduler", "噪声调度", "select", "normal",
+               options=["normal", "karras", "exponential", "sgm_uniform", "simple"],
+               hint="normal 最稳；karras 出图更锐、对比更高；改调度器要同步调回 steps≈25"),
+            _p("seed", "随机种子", "int", -1, min=-1, max=2147483647,
+               hint="-1 表示每次随机；填固定数字可复现同一张图（想微调提示词时保留种子）"),
+            _p("negative", "反向提示词", "text", "低质量, 模糊, 水印, 变形",
+               hint="写要避免的东西：低质量、多余手指、文字/水印、畸形肢体；别重复正向词"),
+        ],
+    },
+    "comfyui_video": {
+        "kind": "video", "group": "comfy",
+        "label": "ComfyUI · Wan2.2 TI2V 5B 视频",
+        "endpoint": "comfy:8189",
+        "notes": "Wan2.2 TI2V-5B（文生视频 / 首帧图生视频），ComfyUI 原生工作流，"
+                 "输出 webm 后转 mp4；CPU 推理，一段 3s 480p 约 10–30 分钟",
+        "max_sec": 5.0,
+        "modes": ["t2v", "i2v"],
+        "params": [
+            _p("width", "宽", "int", 704, min=256, max=1280, step=16, multiple=16,
+               hint="官方原生 1280×704。CPU 上推荐 704×480：再高耗时翻倍，画质提升有限"),
+            _p("height", "高", "int", 480, min=256, max=1280, step=16, multiple=16,
+               hint="竖屏短剧用 480×704，横屏 704×480；宽高都会自动对齐到 16 的倍数"),
+            _p("steps", "采样步数", "int", 20, min=4, max=50,
+               hint="建议 20–30（没配加速 LoRA 不要低于 15，画面会抖成糊块）"),
+            _p("cfg", "提示词权重 CFG", "float", 5.0, min=1, max=20, step=0.5,
+               hint="Wan 系列建议 5 左右；超过 8 运动幅度会失控、物体开始变形"),
+            _p("fps", "帧率", "int", 16, min=8, max=24,
+               hint="16 帧最省算力且有电影感；24 更顺滑，但耗时和体积同比上升"),
+            _p("seed", "随机种子", "int", -1, min=-1, max=2147483647,
+               hint="-1 每次随机；固定种子便于对比不同提示词对同一构图的影响"),
+            _p("negative", "反向提示词", "text", "低质量, 模糊, 水印, 变形, 静止画面",
+               hint="视频要额外压制「静止、闪烁、画面撕裂、多余肢体」，这些是 Wan 的常见问题"),
         ],
     },
     "sd15": {
-        "kind": "image", "label": "media-gen · SD1.5 写实",
-        "notes": "media-gen SD15（Realistic Vision V5.1），CPU 串行队列",
+        "kind": "image", "group": "lan",
+        "label": "media-gen · SD1.5 写实",
+        "endpoint": "media-gen:9103",
+        "notes": "media-gen SD15（Realistic Vision V5.1），CPU 串行队列，人像写实稳",
+        "modes": ["t2i"],
         "params": [
-            _p("width", "宽", "int", 640, min=256, max=1024, step=8, multiple=8),
-            _p("height", "高", "int", 832, min=256, max=1024, step=8, multiple=8),
-            _p("steps", "采样步数", "int", 20, min=1, max=50),
-            _p("cfg", "提示词权重", "float", 6.0, min=1, max=20, step=0.5),
-            _p("negative_prompt", "反向提示词", "text", "低质量, 模糊, 水印"),
+            _p("width", "宽", "int", 640, min=256, max=1024, step=8, multiple=8,
+               hint="SD1.5 在 512–768 最稳；超过 832 易出现两个人头/双脸，长边建议 ≤768"),
+            _p("height", "高", "int", 832, min=256, max=1024, step=8, multiple=8,
+               hint="竖屏 640×832 / 512×768，横屏 832×512"),
+            _p("steps", "采样步数", "int", 20, min=4, max=50,
+               hint="建议 20–30；SD1.5 超过 35 步收益很小"),
+            _p("cfg", "提示词权重 CFG", "float", 6.0, min=1, max=20, step=0.5,
+               hint="写实人像 6–7 最自然；高于 9 皮肤会塑料感、明暗对比过硬"),
+            _p("seed", "随机种子", "int", -1, min=-1, max=2147483647,
+               hint="-1 随机；固定种子可复现，便于同一人物微调"),
+            _p("negative_prompt", "反向提示词", "text", "低质量, 模糊, 水印",
+               hint="写实向可加：卡通, 插画, 3D渲染, 变形手, 多余手指"),
         ],
     },
     "wan21": {
-        "kind": "video", "label": "WAN2.1 · 文生视频",
+        "kind": "video", "group": "lan",
+        "label": "media-gen · WAN2.1 文生视频",
+        "endpoint": "media-gen:9103",
         "notes": "WAN2.1-T2V-1.3B（480P），时长由 num_frames/fps 决定，最长 81 帧",
         "max_sec": 5.0,
+        "modes": ["t2v"],
         "params": [
-            _p("width", "宽", "int", 832, min=256, max=1280, step=16, multiple=16),
-            _p("height", "高", "int", 480, min=256, max=1280, step=16, multiple=16),
-            _p("fps", "帧率", "int", 16, min=8, max=24),
-            _p("steps", "采样步数", "int", 20, min=1, max=50),
-            _p("cfg", "提示词权重", "float", 5.0, min=1, max=20, step=0.5),
-            _p("negative_prompt", "反向提示词", "text", "低质量, 模糊, 水印, 变形"),
+            _p("width", "宽", "int", 832, min=256, max=1280, step=16, multiple=16,
+               hint="480P 档建议长边 ≤832；16:9 用 832×480，9:16 用 480×832"),
+            _p("height", "高", "int", 480, min=256, max=1280, step=16, multiple=16,
+               hint="与宽成对比；宽高自动对齐 16 的倍数"),
+            _p("fps", "帧率", "int", 16, min=8, max=24,
+               hint="16 帧是 1.3B 模型的训练档位；调高帧率等于同一时长要更多帧，耗时上升"),
+            _p("steps", "采样步数", "int", 20, min=4, max=50,
+               hint="建议 20；低于 12 动作会僵硬"),
+            _p("cfg", "提示词权重 CFG", "float", 5.0, min=1, max=20, step=0.5,
+               hint="Wan 系列 5 左右；越高越贴提示词，但运动越僵"),
+            _p("seed", "随机种子", "int", -1, min=-1, max=2147483647,
+               hint="-1 随机；固定种子可对比提示词改动"),
+            _p("negative_prompt", "反向提示词", "text", "低质量, 模糊, 水印, 变形",
+               hint="视频向建议加：静止, 闪烁, 画面撕裂, 畸形肢体"),
         ],
     },
     "minimax_h3": {
-        "kind": "video", "label": "MiniMax H3 · 文生视频",
-        "notes": "MiniMax H3 开源权重（本机未接入，选择后会明确失败，不静默降级）",
+        "kind": "video", "group": "lan",
+        "label": "media-gen · MiniMax H3 文生视频",
+        "endpoint": "media-gen:9103",
+        "notes": "MiniMax H3 开源权重（media-gen 未装载，选择后会明确失败，不静默降级）",
         "max_sec": 6.0,
+        "modes": ["t2v"],
         "params": [
             _p("width", "宽", "int", 832, min=256, max=1280, step=16, multiple=16),
             _p("height", "高", "int", 480, min=256, max=1280, step=16, multiple=16),
             _p("fps", "帧率", "int", 16, min=8, max=24),
             _p("steps", "采样步数", "int", 20, min=1, max=50),
             _p("cfg", "提示词权重", "float", 5.0, min=1, max=20, step=0.5),
+            _p("seed", "随机种子", "int", -1, min=-1, max=2147483647),
             _p("negative_prompt", "反向提示词", "text", "低质量, 模糊, 水印"),
         ],
     },
     "qwen": {
-        "kind": "audio", "label": "Qwen3-TTS · 千问",
+        "kind": "audio", "group": "lan",
+        "label": "Qwen3-TTS · 千问",
+        "endpoint": "media-engine:9200",
         "notes": "media-engine /v1/tts engine=qwen3（离线高质量，同步返回）",
+        "modes": ["tts"],
         "params": [
             _p("speaker", "音色", "select", "Vivian",
                options=["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan",
-                        "Aiden", "Ono_Anna", "Sohee"]),
-            _p("language", "语言", "text", "zh"),
-            _p("instruct", "情绪指令", "text", ""),
-            _p("speed", "语速", "float", 1.0, min=0.5, max=2.0, step=0.1),
+                        "Aiden", "Ono_Anna", "Sohee"],
+               hint="Vivian/Serena 女声偏年轻，Uncle_Fu/Dylan/Eric 男声，"
+                    "Ono_Anna/Sohee 女声偏温柔；音色名对不上会回退到第一个"),
+            _p("language", "语言", "select", "zh",
+               options=["zh", "en", "ja", "ko"],
+               hint="中文台词填 zh；中英混读也用 zh，模型会自动切换"),
+            _p("instruct", "情绪指令", "text", "",
+               hint="可留空，也可写「用兴奋的语气」「压低声音、急促」，直接影响语调"),
+            _p("speed", "语速", "float", 1.0, min=0.5, max=2.0, step=0.1,
+               hint="1.0 正常；口播偏慢用 0.9，急促旁白 1.1–1.2；超过 1.5 会明显失真"),
         ],
     },
     "cosyvoice": {
-        "kind": "audio", "label": "CosyVoice · 实时",
-        "notes": "media-engine /v1/tts engine=cosyvoice（实时、多 worker）",
+        "kind": "audio", "group": "lan",
+        "label": "CosyVoice · 实时",
+        "endpoint": "media-engine:9200",
+        "notes": "media-engine /v1/tts engine=cosyvoice（实时、多 worker，hermes 的 tts.provider 也走它）",
+        "modes": ["tts"],
         "params": [
             _p("voice", "音色", "select", "female-zh-real",
                options=["female-zh-real", "female-zh", "female-zh-short",
                         "m01", "m02", "m03", "f01", "f02", "f03",
-                        "backup-zh-cosy2"]),
-            _p("speed", "语速", "float", 1.0, min=0.5, max=2.0, step=0.1),
+                        "backup-zh-cosy2"],
+               hint="female-zh-real 最自然（真女主播音色）；m0x 男声、f0x 女声；"
+                    "backup-zh-cosy2 是备用引擎，主引擎排队时用"),
+            _p("speed", "语速", "float", 1.0, min=0.5, max=2.0, step=0.1,
+               hint="1.0 正常；0.9 更稳更适合口播；1.3 以上会有机械感"),
         ],
     },
 }
@@ -274,13 +371,20 @@ def _probe_media_gen():
                 for k in ("sd15", "wan21", "minimax_h3")}
 
 
-def _probe_comfyui():
+def _probe_comfy(name="comfyui"):
+    """按渠道探测对应 ComfyUI 端点（出图 8188 / 视频 8189 是两个独立实例）。"""
     try:
         import asset_fill
-        url = asset_fill._comfy_image_url()
+        url = (asset_fill._comfy_video_url() if name == "comfyui_video"
+               else asset_fill._comfy_image_url())
         return {"available": True, "reason": "", "endpoint": url}
     except Exception as e:
-        return {"available": False, "reason": f"ComfyUI 不可用：{type(e).__name__}: {e}"}
+        return {"available": False,
+                "reason": f"ComfyUI 端点不可用：{type(e).__name__}: {e}"}
+
+
+def _probe_comfyui():
+    return _probe_comfy("comfyui")
 
 
 def _probe_media_engine():
@@ -299,10 +403,10 @@ def channels(force=False):
     with _PROBE_LOCK:
         if force or time.time() - _PROBE["at"] > PROBE_TTL or not _PROBE["data"]:
             mg = _probe_media_gen()
-            comfy = _probe_comfyui()
             me = _probe_media_engine()
             _PROBE["data"] = {
-                "comfyui": comfy,
+                "comfyui": _probe_comfy("comfyui"),
+                "comfyui_video": _probe_comfy("comfyui_video"),
                 "sd15": mg.get("sd15") or {"available": False, "reason": "media-gen 未登记 sd15"},
                 "wan21": mg.get("wan21") or {"available": False, "reason": "media-gen 未登记 wan21"},
                 "minimax_h3": mg.get("minimax_h3") or {"available": False,
@@ -317,12 +421,21 @@ def channels(force=False):
         cap = ch.get("max_sec")
         out.append({
             "name": name, "kind": ch["kind"], "label": ch["label"], "notes": ch["notes"],
+            "group": ch.get("group") or "lan",
+            "endpoint": st.get("endpoint") or ch.get("endpoint") or "",
+            "modes": ch.get("modes") or [],
             "maxSec": min([x for x in (cap, SHOT_MAX_SEC) if x]) if ch["kind"] == "video" else None,
             "concurrency": LANE_LIMITS.get(name, 1),
+            "queue": int(st.get("queue") or 0),
             "available": bool(st.get("available")), "reason": st.get("reason") or "",
             "params": ch["params"],
         })
     return out, SHOT_MAX_SEC
+
+
+def groups():
+    """渠道分组元数据（顺序即前端展示顺序）。"""
+    return [dict(g) for g in GROUPS]
 
 
 def channel(name):
@@ -388,7 +501,7 @@ def plan_duration(ch_name, ch, params, sec):
     want = float(sec or 0) or cap
     over = want > cap + 1e-6
     capped = min(want, cap)
-    if ch_name in ("wan21", "minimax_h3"):
+    if ch_name in ("wan21", "minimax_h3", "comfyui_video"):
         frames, fps = _frames_for(capped, params.get("fps") or 16, cap)
         actual = round(frames / fps, 2)
         if over:
@@ -641,7 +754,12 @@ class Manager:
             if ch["kind"] != kind:
                 warnings.append(f"渠道 {name} 属于 {ch['kind']}，与所选类型 {kind} 不符，已跳过")
                 continue
-            p = _coerce_params(ch, params_all.get(name) or {})
+            raw_p = params_all.get(name) or {}
+            p = _coerce_params(ch, raw_p)
+            # 首帧不是「参数规格」里的项（是文件），单独带过来，且只认支持 i2v 的渠道
+            frame = os.path.basename(str(raw_p.get("frame") or "").strip())
+            if frame and "i2v" in (ch.get("modes") or []):
+                p["frame"] = frame
             dur, patch, note = plan_duration(name, ch, p, sec)
             p.update(patch)
             jid = "mj_" + uuid.uuid4().hex[:12]
@@ -796,7 +914,8 @@ def _run_job(mgr, job_id):
                 result = (_comfy_image if row["channel"] == "comfyui"
                           else _mediagen_image)(mgr, row, params, on_progress)
             elif row["kind"] == "video":
-                result = _mediagen_video(mgr, row, params, on_progress)
+                result = (_comfy_video if row["channel"] == "comfyui_video"
+                          else _mediagen_video)(mgr, row, params, on_progress)
             else:
                 result = _tts(mgr, row, params, on_progress)
         path, url = _deliver(mgr, row, result)
@@ -818,6 +937,93 @@ def _run_job(mgr, job_id):
 
 
 # ---- 渠道适配器：返回 {"path": 本地成品路径, "duration": 秒, "remote_id": ...}
+FRAME_DIR = os.path.join(BASE_DIR, ".cache", "frames")
+
+
+def _seed_of(params):
+    """seed=-1（或空）走随机，其它按原值复现。"""
+    try:
+        seed = int(params.get("seed"))
+    except (TypeError, ValueError):
+        seed = -1
+    return seed if seed >= 0 else int(time.time() * 1000) % (1 << 31)
+
+
+def _opt_names(info, node, field):
+    """取节点某字段的可选值（兼容 ComfyUI 新旧两种 object_info 格式）。"""
+    spec = (info.get(node) or {}).get("input", {}).get("required", {}).get(field) or []
+    if not isinstance(spec, list) or not spec:
+        return []
+    cand = spec[0] if isinstance(spec[0], list) else spec
+    return [str(x) for x in cand if isinstance(x, str)]
+
+
+def _pick_opt(info, node, field, pattern, fallback=""):
+    """按正则挑模型文件；挑不到就退回第一个候选（再没有返回 fallback）。"""
+    names = _opt_names(info, node, field)
+    for n in names:
+        if re.search(pattern, n, re.I):
+            return n
+    return names[0] if names else fallback
+
+
+def frame_dir():
+    os.makedirs(FRAME_DIR, exist_ok=True)
+    return FRAME_DIR
+
+
+def _safe_frame_path(name):
+    """首帧只允许读 .cache/frames 下的文件，挡住 ../ 之类的路径穿越。"""
+    p = os.path.abspath(os.path.join(FRAME_DIR, os.path.basename(str(name or ""))))
+    if not p.startswith(os.path.abspath(FRAME_DIR) + os.sep) or not os.path.isfile(p):
+        raise RuntimeError("首帧图片不存在或已被清理，请重新上传")
+    return p
+
+
+def _comfy_upload_image(url, path):
+    """把首帧图传到 ComfyUI 的 input 目录，返回 LoadImage 可用的文件名。"""
+    boundary = "----opc" + uuid.uuid4().hex
+    name = os.path.basename(path)
+    ctype = "image/png" if name.lower().endswith(".png") else "image/jpeg"
+    with open(path, "rb") as f:
+        blob = f.read()
+    parts = [
+        b"--" + boundary.encode() + b"\r\n",
+        b'Content-Disposition: form-data; name="image"; filename="' + name.encode() + b'"\r\n',
+        b"Content-Type: " + ctype.encode() + b"\r\n\r\n", blob, b"\r\n",
+        b"--" + boundary.encode() + b"\r\n",
+        b'Content-Disposition: form-data; name="overwrite"\r\n\r\ntrue\r\n',
+        b"--" + boundary.encode() + b"--\r\n",
+    ]
+    raw = _http(url + "/upload/image", timeout=120, data=b"".join(parts),
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    d = json.loads(raw.decode("utf-8") or "{}")
+    saved = str(d.get("name") or name)
+    sub = str(d.get("subfolder") or "")
+    return f"{sub}/{saved}" if sub else saved
+
+
+def _to_mp4(src):
+    """ComfyUI 只给 webm（vp9），转成 mp4 才能进剪辑；转失败就保留 webm。"""
+    ff = shutil.which("ffmpeg") or os.path.expanduser("~/.local/bin/ffmpeg")
+    if not ff or not os.path.isfile(ff):
+        return src
+    dst = os.path.splitext(src)[0] + ".mp4"
+    try:
+        subprocess.run([ff, "-y", "-loglevel", "error", "-i", src, "-c:v", "libx264",
+                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", dst],
+                       check=True, timeout=600)
+        if os.path.isfile(dst) and os.path.getsize(dst) > 1024:
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+            return dst
+    except Exception as e:  # noqa: BLE001 - 转码失败不影响交付，保留 webm
+        _log(f"webm→mp4 转码失败：{type(e).__name__}: {e}")
+    return src
+
+
 def _comfy_image(mgr, row, params, on_progress):
     import asset_fill
     url = asset_fill._comfy_image_url()
@@ -834,11 +1040,12 @@ def _comfy_image(mgr, row, params, on_progress):
                          "clip": ["1", 1]}},
         "4": {"class_type": "EmptyLatentImage",
               "inputs": {"width": int(params.get("width") or 768),
-                         "height": int(params.get("height") or 1344), "batch_size": 1}},
+                         "height": int(params.get("height") or 1024), "batch_size": 1}},
         "5": {"class_type": "KSampler",
-              "inputs": {"seed": int(time.time() * 1000) % (1 << 31),
-                         "steps": steps, "cfg": float(params.get("cfg") or 6.5),
-                         "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0,
+              "inputs": {"seed": _seed_of(params),
+                         "steps": steps, "cfg": float(params.get("cfg") or 7.5),
+                         "sampler_name": params.get("sampler") or "euler",
+                         "scheduler": params.get("scheduler") or "normal", "denoise": 1.0,
                          "model": ["1", 0], "positive": ["2", 0],
                          "negative": ["3", 0], "latent_image": ["4", 0]}},
         "6": {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
@@ -886,11 +1093,104 @@ def _comfy_image(mgr, row, params, on_progress):
     raise TimeoutError("ComfyUI 出图超时")
 
 
+def _comfy_video(mgr, row, params, on_progress):
+    """Wan2.2 TI2V 5B：t2v 只吃提示词；i2v 额外把 params.frame 指定的首帧传进 ComfyUI。"""
+    import asset_fill
+    url = asset_fill._comfy_video_url()
+    info = json.loads(_http(url + "/object_info", timeout=25).decode("utf-8"))
+    unet = _pick_opt(info, "UNETLoader", "unet_name", r"ti2v")
+    clip = _pick_opt(info, "CLIPLoader", "clip_name", r"umt5")
+    vae = _pick_opt(info, "VAELoader", "vae_name", r"wan2\.2_vae")
+    if not (unet and clip and vae):
+        raise RuntimeError("ComfyUI 视频端点缺 Wan2.2 依赖模型"
+                           f"（unet={unet!r} clip={clip!r} vae={vae!r}）")
+    width = int(params.get("width") or 704)
+    height = int(params.get("height") or 480)
+    fps = int(params.get("fps") or 16)
+    length = max(5, int(params.get("num_frames") or 49))
+    length = ((length - 1) // 4) * 4 + 1          # Wan 要求 4k+1 帧
+    steps = int(params.get("steps") or 20)
+    graph = {
+        "1": {"class_type": "UNETLoader",
+              "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": clip, "type": "wan"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+        "4": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": row["prompt"], "clip": ["2", 0]}},
+        "5": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": params.get("negative") or "低质量, 模糊, 水印, 变形, 静止画面",
+                         "clip": ["2", 0]}},
+        "6": {"class_type": "Wan22ImageToVideoLatent",
+              "inputs": {"vae": ["3", 0], "width": width, "height": height,
+                         "length": length, "batch_size": 1}},
+        "7": {"class_type": "KSampler",
+              "inputs": {"seed": _seed_of(params), "steps": steps,
+                         "cfg": float(params.get("cfg") or 5.0),
+                         "sampler_name": params.get("sampler") or "euler",
+                         "scheduler": params.get("scheduler") or "simple", "denoise": 1.0,
+                         "model": ["1", 0], "positive": ["4", 0],
+                         "negative": ["5", 0], "latent_image": ["6", 0]}},
+        "8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["3", 0]}},
+        "9": {"class_type": "SaveWEBM",
+              "inputs": {"images": ["8", 0], "filename_prefix": "opc-shot",
+                         "codec": "vp9", "fps": float(fps), "crf": 28.0}},
+    }
+    i2v = ""
+    frame = str(params.get("frame") or "").strip()
+    if frame:
+        name = _comfy_upload_image(url, _safe_frame_path(frame))
+        graph["10"] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        graph["6"]["inputs"]["start_image"] = ["10", 0]
+        i2v = f"首帧 {name}"
+    on_progress(5)
+    resp = _http_json(url + "/prompt", timeout=25,
+                      data={"prompt": graph, "client_id": "opc-ops-video"})
+    pid = resp.get("prompt_id")
+    if not pid:
+        raise RuntimeError(f"ComfyUI 拒绝作业：{resp.get('node_errors') or resp}")
+    t0 = time.time()
+    deadline = t0 + float(os.environ.get("OPC_COMFY_VIDEO_TIMEOUT", "5400"))
+    # ComfyUI 不给 HTTP 进度，按「帧数×步数」估个耗时给出粗粒度进度
+    expect = max(180.0, length * steps * 0.9)
+    while time.time() < deadline:
+        _canceling(row["id"])
+        hist = _http_json(f"{url}/history/{pid}", timeout=20)
+        entry = hist.get(pid) or {}
+        if entry.get("status", {}).get("status_str") == "error":
+            raise RuntimeError("ComfyUI 视频作业失败（详见 8189 日志）")
+        outs = (entry.get("outputs") or {}).get("9") or {}
+        vids = outs.get("images") or outs.get("gifs") or []
+        if vids:
+            q = urllib.parse.urlencode({"filename": vids[0]["filename"],
+                                        "subfolder": vids[0].get("subfolder", ""),
+                                        "type": vids[0].get("type", "output")})
+            blob = _http(f"{url}/view?{q}", timeout=300)
+            src = os.path.join(BASE_DIR, ".cache", "media", f"{row['id']}.webm")
+            os.makedirs(os.path.dirname(src), exist_ok=True)
+            with open(src, "wb") as f:
+                f.write(blob)
+            on_progress(96)
+            note = (f"Wan2.2 TI2V · {unet} · {width}×{height} · "
+                    f"{length}帧@{fps}fps · {round(time.time() - t0, 1)}s")
+            if i2v:
+                note += f" · {i2v}"
+            return {"path": _to_mp4(src), "remote_id": pid,
+                    "duration": round(length / max(1, fps), 2), "note": note}
+        on_progress(5 + int(min(85, max(0.0, (time.time() - t0) / expect) * 85)))
+        time.sleep(3)
+    try:  # 超时别白占 8189 的队列
+        _http(url + "/interrupt", timeout=5, data=b"", method="POST",
+              headers={"Content-Type": "application/json"})
+    except Exception:
+        pass
+    raise TimeoutError("ComfyUI 视频超时（CPU 推理较慢，可在 8189 日志看进度）")
+
+
 def _mediagen_image(mgr, row, params, on_progress):
     body = {"prompt": row["prompt"], "negative_prompt": params.get("negative_prompt"),
             "width": int(params.get("width") or 640), "height": int(params.get("height") or 832),
             "steps": int(params.get("steps") or 20), "cfg": float(params.get("cfg") or 6.0),
-            "backend": "sd15", "wait": False}
+            "seed": _seed_of(params), "backend": "sd15", "wait": False}
     ack = _http_json(MEDIAGEN + "/v1/image/jobs", timeout=20, data=body)
     return _poll_mediagen(row, ack, on_progress)
 
@@ -900,7 +1200,8 @@ def _mediagen_video(mgr, row, params, on_progress):
             "width": int(params.get("width") or 832), "height": int(params.get("height") or 480),
             "num_frames": int(params.get("num_frames") or 33),
             "steps": int(params.get("steps") or 20), "cfg": float(params.get("cfg") or 5.0),
-            "fps": int(params.get("fps") or 16), "backend": row["channel"], "wait": False}
+            "fps": int(params.get("fps") or 16), "seed": _seed_of(params),
+            "backend": row["channel"], "wait": False}
     ack = _http_json(MEDIAGEN + "/v1/video/jobs", timeout=20, data=body)
     return _poll_mediagen(row, ack, on_progress)
 

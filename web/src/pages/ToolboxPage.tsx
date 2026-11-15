@@ -15,6 +15,8 @@ interface ParamSpec {
   max?: number;
   step?: number;
   options?: string[];
+  /** 参数说明 + 建议值，由后端渠道注册表给出（模型实际能力推导，不要在前端另编） */
+  hint?: string;
 }
 
 interface Channel {
@@ -22,10 +24,21 @@ interface Channel {
   kind: string;
   label: string;
   notes: string;
+  group?: string;
+  endpoint?: string;
+  modes?: string[];
+  /** ComfyUI 单队列：前面还有几个任务在跑/排队 */
+  queue?: number;
   available: boolean;
   reason: string;
   params: ParamSpec[];
   maxSec?: number | null;
+}
+
+interface GroupMeta {
+  key: string;
+  label: string;
+  desc: string;
 }
 
 interface Job {
@@ -71,6 +84,7 @@ function ParamField({
   value: unknown;
   onChange: (v: unknown) => void;
 }) {
+  const hint = spec.hint ? <small className="tb-hint">{spec.hint}</small> : null;
   if (spec.type === "select") {
     return (
       <label className="tb-field">
@@ -78,6 +92,7 @@ function ParamField({
         <select value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
           {(spec.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
+        {hint}
       </label>
     );
   }
@@ -94,6 +109,7 @@ function ParamField({
           step={spec.step ?? (spec.type === "int" ? 1 : 0.1)}
           onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
         />
+        {hint}
       </label>
     );
   }
@@ -101,6 +117,7 @@ function ParamField({
     <label className="tb-field tb-field--wide">
       <span>{spec.label}</span>
       <input type="text" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
+      {hint}
     </label>
   );
 }
@@ -192,6 +209,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
 
 export function ToolboxPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [groups, setGroups] = useState<GroupMeta[]>([]);
   const [cap, setCap] = useState(0);
   const [modes, setModes] = useState<{ i2v: boolean; i2vReason: string }>({ i2v: false, i2vReason: "" });
   const [loading, setLoading] = useState(true);
@@ -203,6 +221,8 @@ export function ToolboxPage() {
   const [line, setLine] = useState("");
   const [sec, setSec] = useState(3);
   const [mode, setMode] = useState<"t2v" | "i2v">("t2v");
+  const [frame, setFrame] = useState<{ name: string; url: string } | null>(null);
+  const [frameBusy, setFrameBusy] = useState(false);
   const [vals, setVals] = useState<Record<string, unknown>>({});
 
   const [busy, setBusy] = useState(false);
@@ -217,6 +237,26 @@ export function ToolboxPage() {
     [kindChans, chName],
   );
 
+  // 按服务分组渲染（ComfyUI 远程工作站 / 局域网媒体服务），顺序由后端给
+  const grouped = useMemo(() => {
+    const order = groups.map((g) => g.key);
+    const buckets = new Map<string, Channel[]>();
+    kindChans.forEach((c) => {
+      const k = c.group || "lan";
+      buckets.set(k, [...(buckets.get(k) || []), c]);
+    });
+    return [...buckets.entries()]
+      .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+      .map(([key, items]) => ({
+        meta: groups.find((g) => g.key === key) || { key, label: key, desc: "" },
+        items,
+      }));
+  }, [kindChans, groups]);
+
+  // 图生视频要「全局有可用渠道」且「当前渠道自己支持 i2v」
+  const chanI2v = !!active?.modes?.includes("i2v");
+  const canI2v = modes.i2v && chanI2v;
+
   const loadChannels = useCallback(async () => {
     setLoading(true);
     setFatal("");
@@ -224,11 +264,12 @@ export function ToolboxPage() {
       // 字面量 /api/... 不用补前缀：公网 nginx 会把 JS 里的 "/api/ 改写成 "/workbench/api/
       const r = await fetch("/api/toolbox/channels", { credentials: "include" });
       const d = await r.json() as {
-        ok?: boolean; error?: string; channels?: Channel[]; maxSec?: number;
+        ok?: boolean; error?: string; channels?: Channel[]; groups?: GroupMeta[]; maxSec?: number;
         modes?: { i2v: boolean; i2vReason: string };
       };
       if (!r.ok || !d.ok) { setFatal(d.error || "渠道清单读取失败"); return; }
       setChannels(d.channels || []);
+      setGroups(d.groups || []);
       setCap(Number(d.maxSec) || 6);
       if (d.modes) setModes(d.modes);
     } catch {
@@ -267,6 +308,8 @@ export function ToolboxPage() {
 
   useEffect(() => {
     if (active) setVals(defaultsOf(active));
+    // 换到不支持首帧的渠道时别把「图生视频」留在选中态，否则用户以为能出片
+    if (active && !(active.modes || []).includes("i2v")) setMode("t2v");
   }, [active?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -281,7 +324,10 @@ export function ToolboxPage() {
     setErr("");
     if (!active) { setErr("请选择渠道"); return; }
     if (!active.available) { setErr(`渠道不可用：${active.reason || "未就绪"}`); return; }
-    if (mode === "i2v") { setErr(modes.i2vReason || "图生视频当前不可用"); return; }
+    if (mode === "i2v") {
+      if (!chanI2v) { setErr(modes.i2vReason || "当前渠道不支持图生视频"); return; }
+      if (!frame) { setErr("图生视频需要先选一张首帧图"); return; }
+    }
     setBusy(true);
     try {
       const r = await fetch("/api/toolbox/jobs", {
@@ -295,6 +341,7 @@ export function ToolboxPage() {
           line: kind === "audio" ? line : "",
           sec: kind === "video" ? sec : 0,
           params: { [active.name]: vals },
+          frame: kind === "video" && mode === "i2v" && frame ? frame.name : "",
         }),
       });
       const d = await r.json() as { ok?: boolean; error?: string; note?: string; warnings?: string[] };
@@ -309,7 +356,30 @@ export function ToolboxPage() {
     }
   };
 
-  const canSubmit = !busy && !!active && active.available && (kind === "audio" ? !!line.trim() : !!prompt.trim());
+  const canSubmit = !busy && !!active && active.available
+    && (kind === "audio" ? !!line.trim() : !!prompt.trim())
+    && (kind !== "video" || mode === "t2v" || (canI2v && !!frame));
+
+  /** 首帧上传：直传二进制，后端落 .cache/frames，提交时只带文件名 */
+  const uploadFrame = async (file: File) => {
+    setErr("");
+    setFrameBusy(true);
+    try {
+      const r = await fetch("/api/toolbox/frame", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      const d = await r.json() as { ok?: boolean; frame?: string; error?: string };
+      if (!r.ok || !d.ok || !d.frame) { setErr(d.error || "首帧上传失败"); return; }
+      setFrame({ name: d.frame, url: URL.createObjectURL(file) });
+    } catch {
+      setErr("首帧上传失败");
+    } finally {
+      setFrameBusy(false);
+    }
+  };
 
   return (
     <div className="page tb-page">
@@ -348,21 +418,35 @@ export function ToolboxPage() {
           <section className="tb-card">
             <h2 className="tb-card-title">参数</h2>
 
-            <div className="tb-chans">
-              {kindChans.map((c) => (
-                <button
-                  key={c.name}
-                  type="button"
-                  className={`tb-chan ${chName === c.name ? "active" : ""} ${c.available ? "" : "off"}`}
-                  onClick={() => setChName(c.name)}
-                  title={c.notes}
-                >
-                  <b>{c.label}</b>
-                  <small>{c.available ? c.notes : (c.reason || "不可用")}</small>
-                </button>
-              ))}
-              {kindChans.length === 0 && <p className="muted">该类型暂无渠道</p>}
-            </div>
+            {grouped.map(({ meta, items }) => (
+              <div key={meta.key} className="tb-chan-group">
+                <div className="tb-chan-group-head">
+                  <b>{meta.label}</b>
+                  {meta.desc && <small>{meta.desc}</small>}
+                </div>
+                <div className="tb-chans">
+                  {items.map((c) => (
+                    <button
+                      key={c.name}
+                      type="button"
+                      className={`tb-chan ${chName === c.name ? "active" : ""} ${c.available ? "" : "off"}`}
+                      onClick={() => setChName(c.name)}
+                      title={c.notes}
+                    >
+                      <b>
+                        {c.label}
+                        {c.endpoint && <em className="tb-chan-ep">{c.endpoint}</em>}
+                        {c.available && !!c.queue && (
+                          <em className="tb-chan-ep tb-chan-ep--busy">排队 {c.queue}</em>
+                        )}
+                      </b>
+                      <small>{c.available ? c.notes : (c.reason || "不可用")}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {kindChans.length === 0 && <p className="muted">该类型暂无渠道</p>}
 
             {kind === "video" && (
               <div className="tb-modes">
@@ -376,13 +460,45 @@ export function ToolboxPage() {
                 <button
                   type="button"
                   className={`tb-mode ${mode === "i2v" ? "active" : ""}`}
-                  disabled={!modes.i2v}
-                  title={modes.i2vReason}
-                  onClick={() => { if (modes.i2v) setMode("i2v"); }}
+                  disabled={!canI2v}
+                  title={chanI2v ? modes.i2vReason : "当前渠道没有首帧输入能力"}
+                  onClick={() => { if (canI2v) setMode("i2v"); }}
                 >
-                  图生视频
+                  图生视频（首帧）
                 </button>
-                {!modes.i2v && <span className="tb-mode-note">{modes.i2vReason}</span>}
+                {!canI2v && (
+                  <span className="tb-mode-note">
+                    {chanI2v ? modes.i2vReason : "当前渠道不支持图生视频，切到「ComfyUI · Wan2.2 TI2V 5B」再试"}
+                  </span>
+                )}
+              </div>
+
+            )}
+            {kind === "video" && mode === "i2v" && canI2v && (
+              <div className="tb-frame">
+                {frame ? (
+                  <img className="tb-frame-img" src={frame.url} alt="首帧" />
+                ) : (
+                  <div className="tb-frame-img tb-frame-img--empty">未选</div>
+                )}
+                <div className="tb-frame-main">
+                  <label className="tb-frame-pick">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void uploadFrame(f);
+                        e.target.value = "";
+                      }}
+                    />
+                    <span>{frameBusy ? "上传中…" : frame ? "更换首帧" : "选择首帧图"}</span>
+                  </label>
+                  <small className="tb-hint">
+                    首帧决定构图、人物和画幅，视频第一帧就是它。PNG / JPG / WebP，≤ 8MB；
+                    建议先用「图片生成」出一张满意的大图再拿来当首帧
+                  </small>
+                </div>
               </div>
             )}
 
