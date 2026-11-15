@@ -82,6 +82,20 @@ interface GAnomaly {
   tone: "warn" | "ok";
 }
 
+/** 后端 knowledge_relations 返回的边（src/dst 为 knowledge.id） */
+interface ApiRel {
+  id: string;
+  src: string;
+  dst: string;
+  kind: string;
+  label?: string;
+  weight?: number;
+  origin?: string;
+  confirmed?: boolean;
+  /** JSON：{ tags, from, to }，from→to 为正文引用的真实方向 */
+  detail?: string;
+}
+
 interface Built {
   nodes: GNode[];
   edges: GLink[];
@@ -108,7 +122,7 @@ function nodeRadius(n: GNode): number {
   return 5 + Math.min(9, n.inDeg * 2.2);
 }
 
-function buildGraph(raw: Knowledge[]): Built {
+function buildGraph(raw: Knowledge[], rels: ApiRel[] = []): Built {
   const seen = new Set<string>();
   const entries = raw.filter((it) => {
     const id = String(it?.id ?? "").trim();
@@ -160,55 +174,92 @@ function buildGraph(raw: Knowledge[]): Built {
   });
   nodes.push(...entryNodes);
 
-  // ---- 共享标签建边：只取「信息量适中」的标签（出现 2~4 次）----
-  const tagGroups = new Map<string, GNode[]>();
-  for (const n of entryNodes) {
-    for (const t of new Set(n.tags)) {
-      if (!t) continue;
-      const arr = tagGroups.get(t) ?? [];
-      arr.push(n);
-      tagGroups.set(t, arr);
-    }
-  }
-
   interface Pair { a: GNode; b: GNode; tags: string[]; ref: boolean; from?: string; to?: string }
   const pairs = new Map<string, Pair>();
   const keyOf = (x: string, y: string) => (x < y ? `${x}||${y}` : `${y}||${x}`);
 
-  for (const [tag, arr] of tagGroups) {
-    const d = arr.length;
-    if (d < 2 || d > 4) continue;
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        const k = keyOf(arr[i].id, arr[j].id);
+  if (rels.length) {
+    // 边来自后端 knowledge_relations（单一事实源），前端不再自算
+    for (const r of rels) {
+      const a = byId.get(String(r.src));
+      const b = byId.get(String(r.dst));
+      if (!a || !b || a.id === b.id) continue;
+      const k = keyOf(a.id, b.id);
+      const tags = (String(r.label ?? "").match(/#([^\s、]+)/g) ?? []).map((t) => t.slice(1));
+      let from: string | undefined;
+      let to: string | undefined;
+      try {
+        const d = r.detail ? (JSON.parse(r.detail) as { from?: string; to?: string }) : null;
+        from = d?.from || undefined;
+        to = d?.to || undefined;
+      } catch {
+        // detail 损坏时退回只看 kind
+      }
+      if (!from && r.kind === "ref") {
+        from = a.id;
+        to = b.id;
+      }
+      const cur = pairs.get(k);
+      if (cur) {
+        for (const t of tags) if (!cur.tags.includes(t)) cur.tags.push(t);
+        cur.ref = cur.ref || r.kind === "ref";
+        cur.from = cur.from ?? from;
+        cur.to = cur.to ?? to;
+      } else {
+        pairs.set(k, { a, b, tags, ref: r.kind === "ref", from, to });
+      }
+    }
+  } else {
+    // 回退：关系表为空时按旧规则本地推导（首次上线 / 后端未建表兜底）
+    const tagGroups = new Map<string, GNode[]>();
+    for (const n of entryNodes) {
+      for (const t of new Set(n.tags)) {
+        if (!t) continue;
+        const arr = tagGroups.get(t) ?? [];
+        arr.push(n);
+        tagGroups.set(t, arr);
+      }
+    }
+    for (const [tag, arr] of tagGroups) {
+      const d = arr.length;
+      if (d < 2 || d > 4) continue;
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          const k = keyOf(arr[i].id, arr[j].id);
+          const cur = pairs.get(k);
+          if (cur) cur.tags.push(tag);
+          else pairs.set(k, { a: arr[i], b: arr[j], tags: [tag], ref: false });
+        }
+      }
+    }
+    const meta = entries.map((it) => ({
+      node: byId.get(String(it.id)) as GNode,
+      body: String(it.body ?? "").replace(/\s+/g, "").toLowerCase(),
+    }));
+    for (const A of meta) {
+      for (const B of meta) {
+        if (A.node.id === B.node.id) continue;
+        const core = coreTitle(B.node.title).toLowerCase();
+        if (core.length < 4) continue;
+        if (!A.body.includes(core)) continue;
+        const k = keyOf(A.node.id, B.node.id);
         const cur = pairs.get(k);
-        if (cur) cur.tags.push(tag);
-        else pairs.set(k, { a: arr[i], b: arr[j], tags: [tag], ref: false });
+        if (cur) {
+          cur.ref = true;
+          cur.from = cur.from ?? A.node.id;
+          cur.to = cur.to ?? B.node.id;
+        } else {
+          pairs.set(k, { a: A.node, b: B.node, tags: [], ref: true, from: A.node.id, to: B.node.id });
+        }
       }
     }
   }
 
-  // ---- 正文引用建边：A 的正文出现 B 的标题核心即视为「A 引用 B」----
-  const meta = entries.map((it) => ({
-    node: byId.get(String(it.id)) as GNode,
-    body: String(it.body ?? "").replace(/\s+/g, "").toLowerCase(),
-  }));
-  for (const A of meta) {
-    for (const B of meta) {
-      if (A.node.id === B.node.id) continue;
-      const core = coreTitle(B.node.title).toLowerCase();
-      if (core.length < 4) continue;
-      if (!A.body.includes(core)) continue;
-      B.node.inDeg += 1;
-      const k = keyOf(A.node.id, B.node.id);
-      const cur = pairs.get(k);
-      if (cur) {
-        cur.ref = true;
-        cur.from = cur.from ?? A.node.id;
-        cur.to = cur.to ?? B.node.id;
-      } else {
-        pairs.set(k, { a: A.node, b: B.node, tags: [], ref: true, from: A.node.id, to: B.node.id });
-      }
+  // 入度只统计正文引用；两条来源统一在此累加，避免边被合并时漏算
+  for (const p of pairs.values()) {
+    if (p.ref && p.from && p.to) {
+      const target = byId.get(p.to);
+      if (target) target.inDeg += 1;
     }
   }
 
@@ -288,6 +339,7 @@ export function GraphPage({ embedded = false }: { embedded?: boolean }) {
   const [rows, setRows] = useState<Knowledge[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [rels, setRels] = useState<ApiRel[]>([]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -324,6 +376,12 @@ export function GraphPage({ embedded = false }: { embedded?: boolean }) {
           if (items.length === 0 || all.length >= total || page >= 20) break;
           page += 1;
         }
+        // 关系边已落库，直接读；读不到时前端自行回退推导
+        const relRes = await fetch("/api/knowledge/relations", { credentials: "include" });
+        const relJson = relRes.ok
+          ? ((await relRes.json()) as { items?: ApiRel[] })
+          : { items: [] as ApiRel[] };
+        const relItems = relJson.items ?? [];
         if (!cancelled) {
           // 数据没变就不换引用，避免 60s 轮询把力导向布局重新抖动一次
           setRows((prev) => {
@@ -335,6 +393,13 @@ export function GraphPage({ embedded = false }: { embedded?: boolean }) {
                 && (a.body ?? "").length === (b.body ?? "").length;
             });
             return same ? prev : all;
+          });
+          setRels((prev) => {
+            const same = prev.length === relItems.length && relItems.every((r, i) => {
+              const b = prev[i];
+              return r.id === b.id && r.kind === b.kind && (r.label ?? "") === (b.label ?? "");
+            });
+            return same ? prev : relItems;
           });
           setLoadError(null);
         }
@@ -367,7 +432,7 @@ export function GraphPage({ embedded = false }: { embedded?: boolean }) {
     return () => ro.disconnect();
   }, [embedded]);
 
-  const built = useMemo<Built>(() => buildGraph(rows), [rows]);
+  const built = useMemo<Built>(() => buildGraph(rows, rels), [rows, rels]);
   const { nodes, edges, byId, stats, anomalies } = built;
 
   // ---- 按 graph tag 过滤 ----

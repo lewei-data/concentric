@@ -126,6 +126,32 @@ def _infer_category(item):
     return "graph"
 
 
+# ---------- 知识图谱关系边（启发式建边，规则与前端 GraphPage.buildGraph 一致） ----------
+KB_INJECT_ON = (os.environ.get("OPC_KB_INJECT", "1") or "1").strip().lower() \
+    not in ("0", "false", "no", "off")
+KB_INJECT_LIMIT = _to_int(os.environ.get("OPC_KB_INJECT_N"), 3) or 3
+
+
+def _rel_key(a, b):
+    """无序边键：同一对条目无论方向只存一条。"""
+    x, y = (a, b) if a < b else (b, a)
+    return f"{x}|{y}"
+
+
+def _core_title(title):
+    """去掉副标题与括注，得到用于「正文引用」匹配的标题核心。"""
+    s = str(title or "")
+    s = re.sub(r"[（(].*$", "", s)
+    s = re.sub(r"\s*[—–]\s*.*$", "", s)
+    return re.sub(r"\s+", "", s)
+
+
+def _bigrams(text):
+    """字符 bigram 集合：中文无需分词即可做粗粒度相关性打分。"""
+    s = re.sub(r"[\s\W_]+", "", str(text or "")).lower()
+    return {s[i:i + 2] for i in range(len(s) - 1)}
+
+
 def _kb_from_row(row):
     """SQLite knowledge 行归一化。
 
@@ -582,6 +608,10 @@ class Kernel:
             except Exception as e:
                 print(f"[boot] 恢复历史知识失败：{type(e).__name__}: {e}", flush=True)
         self._backfill_knowledge()
+        try:
+            self.rebuild_relations()      # 关系边落库：前端只读，不再每次自算
+        except Exception as e:
+            print(f"[boot] 关系边重建失败：{type(e).__name__}: {e}", flush=True)
         print(f"[boot] 恢复运行时历史：报告 {len(self.reports)} / 审批 {len(self.approvals)} / "
               f"热点 {len(self.hotspots)} / 知识 {len(self.knowledge)} / 消息 {len(self.messages)}", flush=True)
 
@@ -860,9 +890,19 @@ class Kernel:
         return None
 
     # ---------- 调用模型 ----------
-    def call_agent(self, aid, task, context="", extra="", schema=None):
+    def call_agent(self, aid, task, context="", extra="", schema=None, kb=None):
+        """调用员工。kb 控制知识库召回条数（0=不注入，None=默认上限）。"""
         a = self.agents[aid]
         self.set_agent(aid, "working", task[:40])
+        n = KB_INJECT_LIMIT if kb is None else _to_int(kb, 0)
+        if n > 0 and KB_INJECT_ON:
+            try:
+                block = self.recall_kb(f"{task}\n{context}", limit=n)
+            except Exception as e:      # 召回失败不能拖垮这次调用
+                block = ""
+                print(f"[kb] 召回失败，跳过注入：{type(e).__name__}: {e}", flush=True)
+            if block:
+                context = f"{context}\n\n{block}" if context else block
         data, meta = HERMES.ask(a, task, context, extra, schema)
         self.record_usage(aid, meta)
         self.set_agent(aid, "done", "已交付" if data else "降级交付")
@@ -3697,6 +3737,10 @@ class Kernel:
                 for k in fresh:
                     self.db.upsert_knowledge(k)
             self.emit("knowledge", "", {"stage": "vault-sync", "count": len(fresh)})
+        try:
+            self.rebuild_relations()      # 条目正文/标签变了，边要跟着重建
+        except Exception as e:
+            print(f"[kb] 关系边重建失败：{type(e).__name__}: {e}", flush=True)
 
     def _sync_config_from_vault(self):
         """项目配置/员工名册改动后自动热加载，不用手动点重载（仅 owner，共享 Obsidian 配置）。"""
@@ -3939,6 +3983,10 @@ class Kernel:
                 "stage": stage_label, "count": len(made),
                 "latest": [{"title": k["title"], "summary": k.get("summary") or k["title"][:80],
                             "projectId": k["projectId"], "id": k["id"]} for k in made[-3:]]})
+        try:
+            self.rebuild_relations()      # 新条目入档后补边，图谱随之长大
+        except Exception as e:
+            print(f"[kb] 关系边重建失败：{type(e).__name__}: {e}", flush=True)
         return made
 
     def _backfill_knowledge(self):
@@ -3949,6 +3997,138 @@ class Kernel:
         加载；交付物目录(OPC/交付物/tr_*)只用于历史交付清单，不回填知识库。
         """
         return
+
+    # ---------- 知识图谱关系边 ----------
+    def rebuild_relations(self):
+        """用启发式重建关系边并落库：共享标签 + 正文引用（与前端原规则一致）。
+
+        边入库后前端只读不算；后续 AI 抽取的边走 origin='ai'，不被此处覆盖。
+        """
+        with self.lock:
+            items = [k for k in self.knowledge
+                     if str(k.get("id") or "").strip() and str(k.get("title") or "").strip()]
+        by_id = {str(k["id"]): k for k in items}
+        pairs = {}
+        # 1) 共享标签：只取出现 2~4 次的标签，避免泛标签把全图连死
+        tag_groups = {}
+        for k in items:
+            for t in {str(x).strip() for x in (k.get("tags") or []) if str(x).strip()}:
+                tag_groups.setdefault(t, []).append(str(k["id"]))
+        for tag, ids in tag_groups.items():
+            if not 2 <= len(ids) <= 4:
+                continue
+            for i in range(len(ids)):
+                for j in range(i + 1, len(ids)):
+                    p = pairs.setdefault(_rel_key(ids[i], ids[j]),
+                                         {"src": ids[i], "dst": ids[j], "tags": [],
+                                          "ref": False, "from": "", "to": ""})
+                    p["tags"].append(tag)
+        # 2) 正文引用：A 的正文出现 B 的标题核心 → A 引用 B（有向）
+        meta = [(str(k["id"]), re.sub(r"\s+", "", str(k.get("body") or "")).lower())
+                for k in items]
+        for aid, body in meta:
+            if not body:
+                continue
+            for bid, _ in meta:
+                if aid == bid:
+                    continue
+                core = _core_title(by_id[bid].get("title")).lower()
+                if len(core) < 4 or core not in body:
+                    continue
+                p = pairs.setdefault(_rel_key(aid, bid),
+                                     {"src": aid, "dst": bid, "tags": [],
+                                      "ref": False, "from": "", "to": ""})
+                p["ref"] = True
+                if not p["from"]:
+                    p["from"], p["to"] = aid, bid
+        rows = []
+        for key, p in pairs.items():
+            tags = sorted(set(p["tags"]))
+            src, dst = p["src"], p["dst"]
+            if not tags and p["from"]:      # 纯引用边保留真实方向
+                src, dst = p["from"], p["to"]
+            rows.append({"id": key, "src": src, "dst": dst,
+                         "kind": "tag" if tags else "ref",
+                         "label": "、".join(f"#{t}" for t in tags) if tags else "引用",
+                         "weight": len(tags) + (1 if p["ref"] else 0),
+                         # detail 保留引用方向：同一对既共享标签又互引时，kind 会被合并成 tag，
+                         # 但入度统计仍需真实 from→to
+                         "detail": json.dumps({"tags": tags, "from": p["from"],
+                                               "to": p["to"]}, ensure_ascii=False)})
+        if self.db:
+            self.db.replace_relations(rows)
+            self.db.flush()
+        print(f"[kb] 关系边重建：{len(rows)} 条 / 条目 {len(items)}", flush=True)
+        return rows
+
+    def knowledge_relations(self):
+        """读取关系边（图谱页与提示词召回共用）；过滤掉指向已删除条目的孤儿边。"""
+        if not self.db:
+            return {"ok": True, "items": []}
+        keep = {str(k.get("id")) for k in self.knowledge if k.get("id")}
+        items = [{"id": r["id"], "src": r["src"], "dst": r["dst"],
+                  "kind": r.get("kind") or "tag", "label": r.get("label") or "",
+                  "weight": r.get("weight") or 1,
+                  "origin": r.get("origin") or "heuristic",
+                  "confirmed": bool(r.get("confirmed")),
+                  "detail": r.get("detail") or ""}
+                 for r in self.db.list_relations()
+                 if r["src"] in keep and r["dst"] in keep]
+        return {"ok": True, "items": items}
+
+    def recall_kb(self, text, limit=None):
+        """按字符 bigram 重合度召回知识条目，返回可直接拼进提示词的文本块。
+
+        不调模型、不走向量：标签命中权重高于标题命中，弱相关一律丢弃。
+        无命中返回空串，此时对提示词零影响。
+        """
+        limit = limit or KB_INJECT_LIMIT
+        q = _bigrams(text)
+        if not q:
+            return ""
+        with self.lock:
+            snapshot = list(self.knowledge)
+        scored = []
+        for k in snapshot:
+            title = str(k.get("title") or "").strip()
+            if not title:
+                continue
+            score = len(q & _bigrams(title)) * 3
+            tag_bg = set()
+            for t in (k.get("tags") or [])[:12]:
+                tag_bg |= _bigrams(t)
+            score += len(q & tag_bg) * 2
+            if score < 4:                   # 阈值：不够相关就别塞进提示词
+                continue
+            scored.append((score, k))
+        if not scored:
+            return ""
+        scored.sort(key=lambda x: -x[0])
+        picked = scored[:max(1, limit)]
+        title_of = {str(k.get("id")): str(k.get("title") or "") for k in snapshot}
+        lines = ["【公司知识库参考】（自动召回，用于对齐公司口径；与本任务无关可忽略，"
+                 "输出仍严格按 JSON 字段要求）"]
+        for i, (_, k) in enumerate(picked, 1):
+            title = str(k.get("title") or "").strip()
+            summary = re.sub(r"\s+", " ", str(k.get("summary") or k.get("body") or ""))[:110]
+            tags = "、".join(str(t) for t in (k.get("tags") or [])[:4])
+            lines.append(f"{i}. 《{title}》{('：' + summary) if summary else ''}"
+                         f"{('（标签：' + tags + '）') if tags else ''}")
+        picked_ids = {str(k.get("id")) for _, k in picked}
+        rels = []
+        for r in self.knowledge_relations().get("items") or []:
+            if r["src"] not in picked_ids and r["dst"] not in picked_ids:
+                continue
+            a, b = title_of.get(r["src"], ""), title_of.get(r["dst"], "")
+            if not a or not b:
+                continue
+            arrow = "→" if r["kind"] == "ref" else "—"
+            item = f"{a} {arrow} {b}（{r['label']}）"
+            if item not in rels:
+                rels.append(item)
+        if rels:
+            lines.append("相关关系：" + "；".join(rels[:5]))
+        return "\n".join(lines)
 
     # ---------- 快照 ----------
     def snapshot(self):

@@ -148,6 +148,23 @@ CREATE TABLE IF NOT EXISTS knowledge (
   body       TEXT
 );
 
+-- 知识图谱关系边：src/dst 均为 knowledge.id，id 用无序键保证同一对只有一条
+CREATE TABLE IF NOT EXISTS knowledge_relations (
+  id         TEXT PRIMARY KEY,
+  src        TEXT NOT NULL,
+  dst        TEXT NOT NULL,
+  kind       TEXT,
+  label      TEXT,
+  weight     REAL DEFAULT 1,
+  origin     TEXT DEFAULT 'heuristic',
+  confirmed  INTEGER DEFAULT 1,
+  detail     TEXT,
+  updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_krel_src ON knowledge_relations(src);
+CREATE INDEX IF NOT EXISTS idx_krel_dst ON knowledge_relations(dst);
+
 CREATE TABLE IF NOT EXISTS contents (
   id          TEXT PRIMARY KEY,
   trace_id    TEXT,
@@ -735,6 +752,49 @@ class Store:
                       k.get("body")))
         except Exception as e:
             _log(f"upsert_knowledge 失败：{type(e).__name__}: {e}")
+
+    def replace_relations(self, rows, origin="heuristic"):
+        """全量替换某一个来源的关系边（启发式重算用），不触碰 ai/manual 边。"""
+        try:
+            self.put("DELETE FROM knowledge_relations WHERE origin=?", (origin,))
+            for r in rows or []:
+                self.put("""INSERT INTO knowledge_relations
+                            (id,src,dst,kind,label,weight,origin,confirmed,detail,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)
+                            ON CONFLICT(id) DO UPDATE SET src=excluded.src,dst=excluded.dst,
+                              kind=excluded.kind,label=excluded.label,weight=excluded.weight,
+                              origin=excluded.origin,confirmed=excluded.confirmed,
+                              detail=excluded.detail,updated_at=excluded.updated_at""",
+                         (r.get("id"), r.get("src"), r.get("dst"), r.get("kind"),
+                          r.get("label"), _float(r.get("weight")) or 1.0,
+                          r.get("origin") or origin, 1 if r.get("confirmed", True) else 0,
+                          r.get("detail"), now_iso()))
+        except Exception as e:
+            _log(f"replace_relations 失败：{type(e).__name__}: {e}")
+
+    def upsert_relation(self, r):
+        try:
+            self.put("""INSERT INTO knowledge_relations
+                        (id,src,dst,kind,label,weight,origin,confirmed,detail,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,label=excluded.label,
+                          weight=excluded.weight,origin=excluded.origin,
+                          confirmed=excluded.confirmed,updated_at=excluded.updated_at""",
+                     (r.get("id"), r.get("src"), r.get("dst"), r.get("kind"),
+                      r.get("label"), _float(r.get("weight")) or 1.0,
+                      r.get("origin") or "manual", 1 if r.get("confirmed", True) else 0,
+                      r.get("detail"), now_iso()))
+        except Exception as e:
+            _log(f"upsert_relation 失败：{type(e).__name__}: {e}")
+
+    def delete_relation(self, rid):
+        try:
+            self.put("DELETE FROM knowledge_relations WHERE id=?", (rid,))
+        except Exception as e:
+            _log(f"delete_relation 失败：{type(e).__name__}: {e}")
+
+    def list_relations(self):
+        return self.fetch("SELECT * FROM knowledge_relations")
 
     def upsert_content(self, c):
         try:

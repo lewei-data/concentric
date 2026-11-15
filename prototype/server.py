@@ -700,6 +700,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._kernel().knowledge_page(urlparse(self.path).query))
         if path == "/api/knowledge/categories":
             return self._json(self._kernel().knowledge_categories())
+        if path == "/api/knowledge/relations":
+            return self._json(self._kernel().knowledge_relations())
         if path.startswith("/api/knowledge/"):
             rec = self._kernel().knowledge_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "knowledge not found"}, 404)
@@ -1843,6 +1845,34 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/api/chat/voice", "/api/chat/upload"):
             return self._chat_binary_post(path)
         body = self._body()
+        # 知识图谱关系边的人工维护：确认 AI 抽取结果 / 手动连边 / 删除
+        if path == "/api/knowledge/relations":
+            action = str(body.get("action") or "upsert").strip().lower()
+            rel_id = str(body.get("id") or "").strip()
+            kern = self._kernel()
+            if action == "delete":
+                if not rel_id:
+                    return self._json({"ok": False, "error": "缺少 id"}, 400)
+                if kern.db:
+                    kern.db.delete_relation(rel_id)
+                    kern.db.flush()
+                return self._json({"ok": True, "id": rel_id})
+            src = str(body.get("src") or "").strip()
+            dst = str(body.get("dst") or "").strip()
+            if not src or not dst or src == dst:
+                return self._json({"ok": False, "error": "src/dst 不能为空或相同"}, 400)
+            known = {str(k.get("id")) for k in kern.knowledge}
+            if src not in known or dst not in known:
+                return self._json({"ok": False, "error": "src/dst 必须是已存在的知识条目"}, 400)
+            a, b = (src, dst) if src < dst else (dst, src)
+            rid = f"{a}|{b}"
+            if kern.db:
+                kern.db.upsert_relation({"id": rid, "src": src, "dst": dst,
+                                         "kind": str(body.get("kind") or "manual"),
+                                         "label": str(body.get("label") or "人工关联"),
+                                         "weight": 1, "origin": "manual", "confirmed": True})
+                kern.db.flush()
+            return self._json({"ok": True, "id": rid})
         if path == "/api/register":
             return self._register(body)
         # ---------- 用户中心：参数设置 / 数据导入 ----------
