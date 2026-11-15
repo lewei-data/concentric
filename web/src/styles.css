@@ -4622,10 +4622,12 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
 }
 
 /* ===================== 桌面精灵（小秘书） ===================== */
+/* 默认落点：老板区域（顶栏身份卡）右侧、屏幕最上沿，层级最高不被遮挡 */
 .sec-sprite {
   position: fixed;
   right: 22px;
-  bottom: 24px;
+  top: 84px;
+  bottom: auto;
   width: 58px;
   height: 58px;
   border-radius: 50%;
@@ -4633,7 +4635,7 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   border: 2px solid #fff;
   box-shadow: 0 6px 20px rgba(99, 102, 241, .45);
   cursor: grab;
-  z-index: 2200;
+  z-index: 2400;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4679,7 +4681,8 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
 .sec-greet {
   position: fixed;
   right: 92px;
-  bottom: 40px;
+  top: 92px;
+  bottom: auto;
   max-width: 260px;
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -4688,13 +4691,15 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   font-size: 13px;
   color: #1e293b;
   box-shadow: 0 6px 18px rgba(15, 23, 42, .12);
-  z-index: 2200;
+  z-index: 2400;
+  animation: sec-bubble-pop .3s cubic-bezier(.2, 1.3, .4, 1) both;
 }
 
 .sec-panel {
   position: fixed;
-  right: 22px;
-  bottom: 94px;
+  right: 92px;
+  top: 84px;
+  bottom: auto;
   width: 390px;
   max-width: calc(100vw - 40px);
   height: 540px;
@@ -4784,52 +4789,92 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
 }
 .sec-entry:focus { border-color: #6366f1; }
 
-/* ---- 小秘书出场特效 ---- */
-.sec-entrance {
-  position: fixed; inset: 0; z-index: 3000;
-  background: radial-gradient(ellipse at center, rgba(99, 102, 241, .18), rgba(15, 23, 42, .72));
-  display: flex; align-items: center; justify-content: center;
-  animation: sec-fade .5s ease;
+/* ---- 小秘书出场特效：走两步 → 说句话 → 飞到右上角变小精灵 ---- */
+.sec-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  pointer-events: none;
+}
+.sec-intro-actor {
+  position: fixed;
+  width: 104px;
+  height: 104px;
+  pointer-events: auto;
+  cursor: pointer;
+  transform-origin: 100% 0%;
+  will-change: left, top, transform;
+  filter: drop-shadow(0 14px 26px rgba(79, 70, 229, .38));
+  animation: sec-fade .4s ease both;
 }
 @keyframes sec-fade { from { opacity: 0; } }
-.sec-entrance-card {
-  background: #fff;
-  border-radius: 20px;
-  padding: 34px 44px 28px;
-  max-width: 520px;
-  text-align: center;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, .4);
-  animation: sec-pop .55s cubic-bezier(.2, 1.4, .4, 1);
-}
-@keyframes sec-pop { from { opacity: 0; transform: scale(.72) translateY(30px); } }
-.sec-entrance-avatar {
+@keyframes sec-bubble-pop { from { opacity: 0; transform: translateY(8px) scale(.9); } }
+.sec-intro-body {
   position: relative;
-  width: 132px; height: 132px;
-  margin: 0 auto 14px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  border: 4px solid #c7d2fe;
-  display: flex; align-items: center; justify-content: center;
-  animation: sec-breath 2.6s ease-in-out infinite;
+  border: 3px solid #fff;
+  box-shadow: 0 10px 30px rgba(99, 102, 241, .42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
-@keyframes sec-breath { 50% { box-shadow: 0 0 0 16px rgba(139, 92, 246, .12); } }
-.sec-entrance-avatar img { width: 84%; height: 84%; border-radius: 50%; object-fit: cover; }
-.sec-entrance-avatar .sec-wave { bottom: -10px; width: 40px; height: 6px; }
-.sec-entrance-card h2 { margin: 6px 0 14px; font-size: 19px; color: #1e293b; }
-.sec-entrance-list {
-  text-align: left; margin: 0 0 20px;
-  padding: 14px 18px;
-  background: #f8fafc; border-radius: 12px;
-  list-style: none;
+.sec-intro-body img { width: 82%; height: 82%; border-radius: 50%; object-fit: cover; pointer-events: none; }
+.sec-intro-body .sec-fallback { font-size: 38px; }
+.sec-intro-actor[data-phase="walk"] .sec-intro-body { animation: sec-walk-bob .28s ease-in-out infinite alternate; }
+@keyframes sec-walk-bob {
+  from { transform: translateY(0) rotate(-3.5deg); }
+  to { transform: translateY(-8px) rotate(3.5deg); }
 }
-.sec-entrance-list li {
-  font-size: 13px; color: #334155; line-height: 1.9;
-  padding-left: 16px; position: relative;
+.sec-intro-legs {
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 24px;
+  transition: opacity .25s ease;
 }
-.sec-entrance-list li::before {
-  content: ""; position: absolute; left: 2px; top: .72em;
-  width: 6px; height: 6px; border-radius: 50%; background: #6366f1;
+.sec-intro-legs i {
+  width: 12px; height: 15px;
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(180deg, #4f46e5, #312e81);
+  opacity: .6;
 }
+.sec-intro-actor[data-phase="walk"] .sec-intro-legs i:first-child { animation: sec-leg .28s ease-in-out infinite alternate; }
+.sec-intro-actor[data-phase="walk"] .sec-intro-legs i:last-child { animation: sec-leg .28s ease-in-out infinite alternate-reverse; }
+@keyframes sec-leg { from { transform: translateY(0); } to { transform: translateY(7px); } }
+.sec-intro-actor[data-phase="fly"] .sec-intro-legs { opacity: 0; }
+
+.sec-intro-bubble {
+  position: absolute;
+  right: calc(100% + 16px);
+  top: 4px;
+  width: min(268px, 58vw);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px 14px 4px 14px;
+  padding: 12px 16px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, .2);
+  animation: sec-bubble-pop .32s cubic-bezier(.2, 1.3, .4, 1) both;
+}
+.sec-intro-bubble::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  bottom: 9px;
+  width: 14px; height: 14px;
+  background: #fff;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  transform: rotate(-45deg);
+}
+.sec-intro-bubble b { display: block; font-size: 15px; color: #1e293b; margin-bottom: 6px; }
+.sec-intro-bubble ul { margin: 0; padding-left: 16px; }
+.sec-intro-bubble li { font-size: 12.5px; color: #475569; line-height: 1.8; }
 
 /* ---- 对话框缩放手柄 ---- */
 .sec-resize {

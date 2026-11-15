@@ -55,6 +55,7 @@ export function ToolboxGallery() {
   useEffect(() => {
     let alive = true;
     const load = () => {
+      // 字面量 /api/... 交给网关改写，别在这里拼前缀（会变成 /workbench/workbench/api）
       fetch("/api/toolbox/jobs?limit=200", { credentials: "same-origin" })
         .then((r) => r.json())
         .then((d: { ok?: boolean; items?: ToolboxJob[]; error?: string }) => {
@@ -107,7 +108,8 @@ export function ToolboxGallery() {
 
   const open = (j: ToolboxJob) => {
     if (j.status !== "done" || !j.outputUrl || broken[j.id]) return;
-    setView({ url: siteUrl(j.outputUrl), kind: j.kind, title: j.prompt || j.note || "" });
+    // 传裸路径：MediaViewer 自己补服务根前缀，这里再拼一次会变成 /workbench/workbench/...
+    setView({ url: j.outputUrl, kind: j.kind, title: j.prompt || j.note || "" });
   };
 
   return (

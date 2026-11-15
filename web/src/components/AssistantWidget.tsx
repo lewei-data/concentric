@@ -34,6 +34,46 @@ const GREETINGS = [
 const CHAT_THREAD = "web:secretary";
 const APP_THREADS = ["app:secretary", "app:boss", "web:workbench"];
 
+// 精灵尺寸：静止时 58，出场时放大到 104（飞到右上角后缩回 58）
+const SPRITE_SIZE = 58;
+const INTRO_BIG = 104;
+// 默认落点：老板区域（顶栏右侧身份卡）右下方，贴屏幕最上沿，永不被顶栏/content 遮挡
+const SPRITE_TOP = 84;
+const SPRITE_RIGHT = 22;
+const POS_KEY = "sec-pos-v2";
+
+function clampSpritePos(p: { x: number; y: number }) {
+  const maxX = Math.max(6, window.innerWidth - SPRITE_SIZE - 6);
+  const maxY = Math.max(6, window.innerHeight - SPRITE_SIZE - 6);
+  return { x: Math.min(Math.max(6, p.x), maxX), y: Math.min(Math.max(6, p.y), maxY) };
+}
+
+// 出场「说话」位置：屏幕中部偏左（像走到老板面前汇报）
+function introStage() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  return {
+    x: Math.max(16, (vw - INTRO_BIG) / 2 - Math.min(140, vw * 0.12)),
+    y: Math.min(Math.max(150, vh * 0.56), Math.max(120, vh - INTRO_BIG - 48)),
+  };
+}
+
+// 出场结尾的落点：与静止精灵的默认位置重合（右上角，缩放基准在右上角）
+function introCorner() {
+  return { x: Math.max(8, window.innerWidth - SPRITE_RIGHT - INTRO_BIG), y: SPRITE_TOP };
+}
+
+function speakText(text: string) {
+  try {
+    const u = new SpeechSynthesisUtterance(text.slice(0, 200));
+    u.lang = "zh-CN";
+    u.rate = 1.05;
+    window.speechSynthesis.speak(u);
+  } catch {
+    /* 浏览器不支持朗读时仅做文字展示 */
+  }
+}
+
 async function getJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, { credentials: "include" });
@@ -76,11 +116,11 @@ export default function AssistantWidget() {
   const [notice, setNotice] = useState("");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  // 精灵绝对坐标（自由拖动到屏幕任意位置），null = 默认右下角
+  // 精灵绝对坐标（自由拖动到屏幕任意位置），null = 默认右上角（老板区域右侧最上层）
   const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
     try {
-      const v = JSON.parse(localStorage.getItem("sec-pos") || "null");
-      if (v && typeof v.x === "number" && typeof v.y === "number") return v;
+      const v = JSON.parse(localStorage.getItem(POS_KEY) || "null");
+      if (v && typeof v.x === "number" && typeof v.y === "number") return clampSpritePos(v);
     } catch { /* 忽略 */ }
     return null;
   });
@@ -110,45 +150,81 @@ export default function AssistantWidget() {
                                 sw: number; sh: number; mode: "move" | "resize" } | null>(null);
   const panelRef = useRef(panel);
   panelRef.current = panel;
-  // 出场特效（每次浏览器会话一次）
-  const [entrance, setEntrance] = useState<{ greeting: string; items: { kind: string; text: string }[] } | null>(null);
+  // 出场特效（每次登录/刷新一次）：走两步 → 说句话 → 飞到右上角变小精灵
+  const [intro, setIntro] = useState<{ phase: "walk" | "talk" | "fly"; greeting: string; lines: string[] } | null>(null);
+  const [introPos, setIntroPos] = useState<{ x: number; y: number } | null>(null);
 
-  // —— 出场特效：全屏展示小秘书，播报最新消息 ——
   useEffect(() => {
     if (sessionStorage.getItem("sec-hello")) return;
     sessionStorage.setItem("sec-hello", "1");
+    let alive = true;
+    const timers: number[] = [];
+    const stage = introStage();
+    // 先站在画面外一点，再「走两步」走到说话位
+    setIntro({ phase: "walk", greeting: "老板好！", lines: [] });
+    setIntroPos({ x: Math.max(8, stage.x - 150), y: stage.y });
+    const raf = requestAnimationFrame(() => { if (alive) setIntroPos(stage); });
+
     (async () => {
       const b = await getJson<{ greeting?: string; items?: { kind: string; text: string }[] }>(
         "/api/secretary/brief");
-      if (!b) return;
-      setEntrance({ greeting: b.greeting || "老板好！", items: b.items || [] });
-      const text = [b.greeting, ...(b.items || []).map((i) => i.text)].join("。");
-      try {
-        const u = new SpeechSynthesisUtterance(text.slice(0, 200));
-        u.lang = "zh-CN";
-        u.rate = 1.05;
-        window.speechSynthesis.speak(u);
-      } catch { /* 浏览器不支持时仅文字展示 */ }
+      if (!alive) return;
+      const greeting = b?.greeting || "老板好！";
+      const lines = (b?.items || []).map((i) => i.text).filter(Boolean).slice(0, 3);
+      setIntro((p) => (p ? { ...p, greeting, lines } : p));
+      speakText([greeting, ...lines].join("。"));
+      // 走到位 → 转身说话
+      timers.push(window.setTimeout(() => {
+        if (!alive) return;
+        setIntro((p) => (p ? { ...p, phase: "talk" } : p));
+      }, 2000));
+      // 说完话 → 飞到右上角落位、缩小成小精灵
+      timers.push(window.setTimeout(() => {
+        if (!alive) return;
+        setIntro((p) => (p ? { ...p, phase: "fly" } : p));
+        setIntroPos(introCorner());
+      }, 5900));
+      timers.push(window.setTimeout(() => {
+        if (!alive) return;
+        setIntro(null);
+        setIntroPos(null);
+        setGreet(greeting);
+        timers.push(window.setTimeout(() => setGreet(""), 8000));
+      }, 7100));
     })();
+
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      timers.forEach((t) => window.clearTimeout(t));
+    };
   }, []);
 
-  useEffect(() => {
-    if (!entrance) return;
-    const t = setTimeout(() => closeEntrance(), 18000);
-    return () => clearTimeout(t);
-  }, [entrance]);
-
-  function closeEntrance() {
-    setEntrance(null);
+  function skipIntro() {
+    setIntro(null);
+    setIntroPos(null);
     try { window.speechSynthesis.cancel(); } catch { /* 忽略 */ }
   }
 
-  // —— 打招呼（每次进入页面，1.5s 后冒泡） ——
+  // 窗口尺寸变化时把精灵拉回可视区域（默认位置由 CSS 兜住）
   useEffect(() => {
-    const t = setTimeout(() => setGreet(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]), 1500);
-    const t2 = setTimeout(() => setGreet(""), 9000);
-    return () => { clearTimeout(t); clearTimeout(t2); };
+    const onResize = () => {
+      if (!posRef.current) return;
+      const next = clampSpritePos(posRef.current);
+      posRef.current = next;
+      setPos(next);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // —— 打招呼（出场特效结束后冒泡，每次进入页面一次） ——
+  useEffect(() => {
+    if (intro) return;
+    const t = setTimeout(() => setGreet((g) => g || GREETINGS[Math.floor(Math.random() * GREETINGS.length)]), 800);
+    const t2 = setTimeout(() => setGreet(""), 10000);
+    return () => { clearTimeout(t); clearTimeout(t2); };
+  }, [intro]);
 
   // —— 拉取对话流（Web 线程 + APP 指令线程合并展示） ——
   const load = useCallback(async () => {
@@ -354,7 +430,7 @@ export default function AssistantWidget() {
   function onSpritePointerUp() {
     if (dragRef.current) {
       dragRef.current = null;
-      if (posRef.current) localStorage.setItem("sec-pos", JSON.stringify(posRef.current));
+      if (posRef.current) localStorage.setItem(POS_KEY, JSON.stringify(posRef.current));
     }
   }
   function onSpriteClick() {
@@ -371,8 +447,10 @@ export default function AssistantWidget() {
       if (p) { x = p.x; y = p.y; }
       else if (rect) {
         x = rect.left > vw / 2 ? rect.left - w - 14 : rect.right + 14;
-        y = Math.min(Math.max(64, rect.top - h / 2), vh - h - 14);
-      } else { x = vw - w - 22; y = vh - h - 100; }
+        // 精灵在屏幕最上方（老板区域右侧）：对话框直接挂在它下面，避免顶到顶栏
+        const below = rect.top + rect.height + 12;
+        y = below + h <= vh - 14 ? below : Math.min(Math.max(64, rect.top - h / 2), vh - h - 14);
+      } else { x = vw - w - 22; y = SPRITE_TOP + SPRITE_SIZE + 12; }
       x = Math.max(8, Math.min(x, Math.max(8, vw - w - 8)));
       y = Math.max(8, Math.min(y, Math.max(8, vh - h - 8)));
       return { x, y, w, h };
@@ -408,34 +486,58 @@ export default function AssistantWidget() {
   function onPanelPointerUp() {
     panelDragRef.current = null;
     if (panelRef.current) localStorage.setItem("sec-panel", JSON.stringify(panelRef.current));
-    if (posRef.current) localStorage.setItem("sec-pos", JSON.stringify(posRef.current));
+    if (posRef.current) localStorage.setItem(POS_KEY, JSON.stringify(posRef.current));
   }
 
-  const spriteStyle = pos
-    ? { left: pos.x, top: pos.y, right: "auto" as const, bottom: "auto" as const }
-    : undefined;
+  const spriteStyle: React.CSSProperties = {
+    ...(pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : {}),
+    // 出场特效进行中先隐藏静止精灵，落到右上角后再出现（位置重合，视觉连续）
+    ...(intro ? { opacity: 0, pointerEvents: "none" } : {}),
+  };
   const greetStyle = pos
     ? { left: Math.max(8, pos.x - 268), top: Math.max(8, pos.y - 8),
         right: "auto" as const, bottom: "auto" as const }
     : undefined;
 
-  const showGreet = greet && !open && !entrance;
+  const showGreet = greet && !open && !intro;
+  const introScale = intro?.phase === "fly" ? SPRITE_SIZE / INTRO_BIG : 1;
+  const introMove = intro?.phase === "walk"
+    ? "left 1.85s cubic-bezier(.42,.05,.58,.95), top 1.85s ease"
+    : "left 1.2s cubic-bezier(.55,-0.12,.34,1), top 1.2s cubic-bezier(.55,-0.12,.34,1)";
   return (
     <>
-      {/* 出场特效：全屏展示小秘书并播报最新消息 */}
-      {entrance && (
-        <div className="sec-entrance" onClick={closeEntrance}>
-          <div className="sec-entrance-card" onClick={(e) => e.stopPropagation()}>
-            <div className="sec-entrance-avatar">
-              <img src={SEC_AVATAR} alt="小秘书"
+      {/* 出场特效：走两步 → 说句话 → 飞到右上角变小精灵 */}
+      {intro && introPos && (
+        <div className="sec-intro" aria-live="polite">
+          <div
+            className="sec-intro-actor"
+            data-phase={intro.phase}
+            style={{
+              left: introPos.x,
+              top: introPos.y,
+              transform: `scale(${introScale})`,
+              transition: `${introMove}, transform 1.1s cubic-bezier(.55,-0.12,.34,1)`,
+            }}
+            onClick={skipIntro}
+            title="小秘书 · 点击跳过"
+            role="button"
+            aria-label="小秘书出场"
+          >
+            <div className="sec-intro-body">
+              <span className="sec-fallback" aria-hidden="true">秘</span>
+              <img src={SEC_AVATAR} alt="小秘书" draggable={false}
                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              <span className="sec-wave" aria-hidden />
+              <span className="sec-dot" />
             </div>
-            <h2>{entrance.greeting}</h2>
-            <ul className="sec-entrance-list">
-              {entrance.items.map((it, i) => <li key={i}>{it.text}</li>)}
-            </ul>
-            <button className="sec-btn primary" onClick={closeEntrance}>知道了，开始工作</button>
+            <span className="sec-intro-legs" aria-hidden="true"><i /><i /></span>
+            {intro.phase === "talk" && (
+              <div className="sec-intro-bubble">
+                <b>{intro.greeting}</b>
+                {intro.lines.length > 0 && (
+                  <ul>{intro.lines.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

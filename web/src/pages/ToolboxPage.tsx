@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { MediaViewer } from "../components/MediaViewer";
+import { siteUrl } from "../lib/siteUrl";
+import { appRoot } from "../appRoot";
 
 type Kind = "image" | "audio" | "video";
 
@@ -133,12 +135,12 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
           onClick={() => onOpen(job)}
           title="点开看大图"
         >
-          <img src={job.outputUrl} alt={job.prompt.slice(0, 40)} loading="lazy" />
+          <img src={siteUrl(job.outputUrl)} alt={job.prompt.slice(0, 40)} loading="lazy" />
         </button>
       ) : (
         <div className="tb-job-preview">
           {ready && job.kind === "video" && (
-            <video src={job.outputUrl} preload="metadata" muted />
+            <video src={siteUrl(job.outputUrl)} preload="metadata" muted />
           )}
           {ready && job.kind === "audio" && (
             <button type="button" className="tb-job-play" onClick={() => onOpen(job)} title="播放">
@@ -169,14 +171,14 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
             <button type="button" className="tb-link" onClick={() => onOpen(job)}>
               打开查看
             </button>
-            <a className="tb-link" href={job.outputUrl} target="_blank" rel="noreferrer">
+            <a className="tb-link" href={siteUrl(job.outputUrl)} target="_blank" rel="noreferrer">
               新窗口
             </a>
             {/* 整页跳转：让素材页按深链初始化 path（SPA 内跳会被切 tab 的重置逻辑覆盖） */}
             {dir && (
               <a
                 className="tb-link"
-                href={`/app/materials?tab=personal&path=${encodeURIComponent(dir)}`}
+                href={`${appRoot()}app/materials?tab=personal&path=${encodeURIComponent(dir)}`}
               >
                 所在目录
               </a>
@@ -219,6 +221,7 @@ export function ToolboxPage() {
     setLoading(true);
     setFatal("");
     try {
+      // 字面量 /api/... 不用补前缀：公网 nginx 会把 JS 里的 "/api/ 改写成 "/workbench/api/
       const r = await fetch("/api/toolbox/channels", { credentials: "include" });
       const d = await r.json() as {
         ok?: boolean; error?: string; channels?: Channel[]; maxSec?: number;
