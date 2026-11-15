@@ -481,3 +481,167 @@
   .al-note-input { display: none; }
   .al-ref-input { min-width: 120px; }
 }
+
+/* ── 待解决（问题池）tab ── */
+.kb-tab--q {
+  --kb-el-1: #64748b;
+  --kb-el-2: #94a3b8;
+}
+
+.kb-tab-logo--q {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #94a3b8;
+  border-radius: 50%;
+  color: #64748b;
+  font-size: 15px;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+}
+
+.kb-tab--q.active .kb-tab-logo--q {
+  border-style: solid;
+  border-color: #0f172a;
+  color: #fff;
+  background: #0f172a;
+}
+
+/* ── 问题池面板 ── */
+.kb-q-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.kb-q-ask {
+  display: flex;
+  gap: 8px;
+}
+
+.kb-q-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #0f172a;
+  background: #fff;
+}
+
+.kb-q-input:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: #60a5fa;
+}
+
+.kb-q-empty {
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  padding: 26px 20px;
+  text-align: center;
+  color: #64748b;
+}
+
+.kb-q-empty b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.kb-q-empty p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.kb-q-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kb-q-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.kb-q-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.kb-q-no {
+  flex: none;
+  padding-top: 2px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-q-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.kb-q-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #0f172a;
+}
+
+.kb-q-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.kb-q-origin {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-q-act {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.kb-q-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
+}
+
+.kb-q-select {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #0f172a;
+  background: #fff;
+}

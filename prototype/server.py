@@ -670,6 +670,17 @@ class Handler(BaseHTTPRequestHandler):
             if not self._session_user():
                 return self._json({"ok": False, "error": "需要登录"}, 401)
             return self._json(self._materials_browse(urlparse(self.path).query))
+        # 工具箱：渠道规格 + 手工任务列表（会触发模型出图出片，要求登录）
+        if path in ("/api/toolbox/channels", "/api/toolbox/jobs"):
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            try:
+                kern = self._kernel()
+                if path == "/api/toolbox/channels":
+                    return self._json({"ok": True, **kern.toolbox_channels()})
+                return self._json({"ok": True, "items": kern.toolbox_jobs(40)})
+            except Exception as e:  # noqa: BLE001 - 直接把原因给前端
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         # 资产盘点日报：读最近一次自动/手动盘点的落盘报告（老板可见）
         if path == "/api/asset/inventory/latest":
             if not self._owner_only():
@@ -2038,6 +2049,30 @@ class Handler(BaseHTTPRequestHandler):
                                            "origin_ref": str(body.get("origin_ref") or "")})
             kern.db.flush()
             return self._json({"ok": True, "id": qid})
+        # 工具箱：手工提交单技能任务，进 media_jobs 队列，成品落 vault 素材目录
+        if path == "/api/toolbox/jobs":
+            try:
+                kern = self._kernel()
+                params = body.get("params")
+                res = kern.toolbox_run(
+                    kind=body.get("kind"),
+                    channels=body.get("channels") or [],
+                    prompt=body.get("prompt") or "",
+                    line=body.get("line") or "",
+                    sec=body.get("sec") or 0,
+                    params=params if isinstance(params, dict) else {},
+                )
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            jobs = res.get("jobs") or []
+            warn = res.get("warnings") or []
+            note = (f"已发布 {len(jobs)} 条任务到工厂，成品完成后在「素材」中查看"
+                    if jobs else "任务未入队")
+            return self._json({"ok": bool(jobs), "note": note, "warnings": warn,
+                               "traceId": res.get("traceId"),
+                               "outDir": res.get("outDir"), "jobs": jobs})
         if path == "/api/register":
             return self._register(body)
         # ---------- 用户中心：参数设置 / 数据导入 ----------

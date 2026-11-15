@@ -490,6 +490,22 @@ class Manager:
             _log(f"列表失败：{e}")
             return []
 
+    def toolbox_jobs(self, limit=40):
+        """工具箱手工任务：trace_id 以 tb- 开头，独立于流水线，按提交时间倒序。"""
+        try:
+            conn = self._conn()
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM jobs WHERE trace_id LIKE 'tb-%' "
+                    "ORDER BY created_at DESC, id DESC LIMIT ?",
+                    (max(1, min(int(limit), 200)),)).fetchall()
+                return [_view(dict(r)) for r in rows]
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            _log(f"工具箱列表失败：{e}")
+            return []
+
     def shots(self, trace_id, item_id):
         try:
             conn = self._conn()
@@ -921,7 +937,17 @@ def _deliver(mgr, row, result):
     os.makedirs(out_dir, exist_ok=True)
     ext = os.path.splitext(src)[1].lower() or {"image": ".png", "video": ".mp4", "audio": ".wav"}[row["kind"]]
     stem = f"shot{int(row.get('shot_no') or 0):02d}-{row['channel']}-r{int(row.get('run_no') or 1)}"
+    # 工具箱手工任务没有分镜号，用 trace 后缀命名，避免一堆 shot00 分不清
+    if str(row.get("trace_id") or "").startswith("tb-"):
+        stem = f"tool-{row['channel']}-{str(row['trace_id'])[3:]}"
     dest = os.path.join(out_dir, stem + ext)
+    # 手工任务同渠道重复提交会撞名（流水线靠 shot_no 区分，工具箱没有分镜号），
+    # 撞名时追加序号，绝不覆盖已有成品
+    if os.path.exists(dest):
+        n = 2
+        while os.path.exists(os.path.join(out_dir, f"{stem}-{n}{ext}")):
+            n += 1
+        dest = os.path.join(out_dir, f"{stem}-{n}{ext}")
     shutil.copyfile(src, dest)
     # 临时下载中转文件（.cache/media 下）落盘后即删，成品只在交付目录留一份
     cache_dir = os.path.join(BASE_DIR, ".cache", "media")

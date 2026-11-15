@@ -12,6 +12,7 @@ import { LoginPage } from "./pages/LoginPage";
 const HotspotsPage = lazy(() => import("./pages/HotspotsPage").then((m) => ({ default: m.HotspotsPage })));
 const InspirationPage = lazy(() => import("./pages/InspirationPage").then((m) => ({ default: m.InspirationPage })));
 const MaterialsPage = lazy(() => import("./pages/MaterialsPage").then((m) => ({ default: m.MaterialsPage })));
+const ToolboxPage = lazy(() => import("./pages/ToolboxPage").then((m) => ({ default: m.ToolboxPage })));
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage").then((m) => ({ default: m.KnowledgePage })));
 const DecisionPage = lazy(() => import("./pages/DecisionPage").then((m) => ({ default: m.DecisionPage })));
 const ReflectionPage = lazy(() => import("./pages/ReflectionPage").then((m) => ({ default: m.ReflectionPage })));
@@ -59,6 +60,7 @@ export default function App() {
           >
             <Route path="/" element={<HomePage />} />
             <Route path="/materials" element={<Suspense fallback={<PageFallback />}><MaterialsPage /></Suspense>} />
+            <Route path="/toolbox" element={<Suspense fallback={<PageFallback />}><ToolboxPage /></Suspense>} />
             {/* 旧入口保留，创意灵感已并入「素材」页 */}
             <Route path="/inspiration" element={<Suspense fallback={<PageFallback />}><InspirationPage /></Suspense>} />
             <Route path="/ops" element={<Suspense fallback={<PageFallback />}><OpsPage /></Suspense>} />

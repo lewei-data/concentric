@@ -2653,6 +2653,65 @@ class Kernel:
         chans, cap = MEDIA.channels(force=True)
         return {"channels": chans, "maxSec": cap}
 
+    # ---------- 工具箱：单技能手工验证（不进流水线，直接排队出片） ----------
+    TOOLBOX_SUB = {"image": "图片", "video": "视频", "audio": "语音"}
+
+    def toolbox_channels(self):
+        """渠道注册表 + 图生视频可用性。图生视频要首帧入参，media-gen 未接 animatediff。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        chans, cap = MEDIA.channels(force=True)
+        return {"channels": chans, "maxSec": cap,
+                "modes": {"i2v": False,
+                          "i2vReason": "media-gen 的 /v1/video/jobs 没有首帧入参，"
+                                       "animatediff（肖像微动）未接入，暂只支持文生视频"}}
+
+    def toolbox_run(self, kind, channels, prompt="", line="", sec=0.0, params=None):
+        """手工提交一条单技能任务：独立 trace（tb-），成品直接落 vault 素材目录。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        kind = str(kind or "").strip()
+        if kind not in self.TOOLBOX_SUB:
+            raise ValueError("类型只能是 image / audio / video")
+        prompt = str(prompt or "").strip()
+        line = str(line or "").strip()
+        if kind == "audio":
+            if not (line or prompt):
+                raise ValueError("口播任务需要台词")
+        elif not prompt:
+            raise ValueError("出图/出片任务需要提示词")
+        chans = [str(c).strip() for c in (channels or []) if str(c).strip()]
+        if not chans:
+            raise ValueError("至少选择一个渠道")
+        trace_id = "tb-" + os.urandom(4).hex()
+        day = time.strftime("%Y-%m-%d")
+        out_dir = os.path.join(self.vault_dir, "素材", "工具箱", day,
+                               self.TOOLBOX_SUB[kind])
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except OSError as e:
+            raise ValueError(f"素材目录不可写（{out_dir}）：{e}") from e
+        mgr = self._media()
+        res = mgr.submit(trace_id=trace_id, item_id="toolbox", project_id="toolbox",
+                         shot_no=0, kind=kind, channels=chans, prompt=prompt,
+                         line=line, sec=_num(sec), params=params or {},
+                         out_dir=out_dir, vault_dir=self.vault_dir)
+        jobs = res.get("jobs") or []
+        if jobs:
+            try:
+                self.emit("toolbox.job", trace_id,
+                          {"jobIds": [j.get("id") for j in jobs], "kind": kind})
+            except Exception:  # noqa: BLE001 - 推送失败不影响已入队的作业
+                pass
+        return {"traceId": trace_id, "outDir": out_dir,
+                "jobs": jobs, "warnings": res.get("warnings") or []}
+
+    def toolbox_jobs(self, limit=40):
+        """工具箱最近的手工任务（含产物地址，供工作台轮询）。"""
+        if MEDIA is None:
+            return []
+        return self._media().toolbox_jobs(limit=limit)
+
     def factory_shots(self, trace_id, item_id=""):
         """分镜清单 + 渠道注册表 + 每镜作业状态（前端工作台一次拉全）。"""
         trace_id = str(trace_id or "").strip()

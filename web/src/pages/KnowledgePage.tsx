@@ -8,6 +8,7 @@ import { DecisionPage } from "./DecisionPage";
 import { ReflectionPage } from "./ReflectionPage";
 import { GraphPage } from "./GraphPage";
 import { AssetLinksPanel } from "../components/AssetLinksPanel";
+import { QuestionsPanel } from "../components/QuestionsPanel";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
@@ -119,7 +120,9 @@ export function KnowledgePage() {
   const [input, setInput] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const [activeCat, setActiveCat] = useState<KnowledgeCategory | "all">("all");
+  // "questions" = 待解决（问题池），不再是分类但占用第 6 个 tab 位
+  const [activeCat, setActiveCat] = useState<KnowledgeCategory | "all" | "questions">("questions");
+  const [openQuestions, setOpenQuestions] = useState(0);
   const [activeTag, setActiveTag] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -141,7 +144,7 @@ export function KnowledgePage() {
     return m;
   }, [categories]);
 
-  const activeCategory = activeCat === "all"
+  const activeCategory = activeCat === "all" || activeCat === "questions"
     ? null
     : categories.find((c) => c.key === activeCat) ?? null;
   const activeElement = wxOf(activeCategory?.element);
@@ -170,7 +173,7 @@ export function KnowledgePage() {
   const filters = useMemo(() => {
     const f: { field: string; operator: "eq"; value: unknown }[] = [];
     if (q) f.push({ field: "q", operator: "eq", value: q });
-    if (activeCat !== "all") f.push({ field: "category", operator: "eq", value: activeCat });
+    if (activeCat !== "all" && activeCat !== "questions") f.push({ field: "category", operator: "eq", value: activeCat });
     if (activeTag) f.push({ field: "tag", operator: "eq", value: activeTag });
     return f;
   }, [q, activeCat, activeTag]);
@@ -219,7 +222,7 @@ export function KnowledgePage() {
     setSelectedId(null);
   };
 
-  const switchCategory = useCallback((cat: KnowledgeCategory | "all", element?: string) => {
+  const switchCategory = useCallback((cat: KnowledgeCategory | "all" | "questions", element?: string) => {
     setActiveCat(cat);
     setActiveTag("");
     setPage(1);
@@ -270,18 +273,6 @@ export function KnowledgePage() {
 
       {/* ── 五行分类 ── */}
       <div className="kb-tabs" role="tablist" aria-label="知识库五行分类">
-        <button
-          type="button" role="tab" aria-selected={activeCat === "all"}
-          className={`kb-tab kb-tab--all ${activeCat === "all" ? "active" : ""}`}
-          onClick={() => switchCategory("all")}
-        >
-          <span className="kb-tab-logo"><WuxingLogo element={wx.element} size={28} /></span>
-          <span className="kb-tab-text">
-            <span className="kb-tab-label">全部</span>
-            <span className="kb-tab-slogan">五行周流 · 无类不包</span>
-          </span>
-          <span className="kb-tab-count">{total}</span>
-        </button>
         {categories.map((c) => {
           const el = wxOf(c.element);
           const theme = WUXING[el];
@@ -305,9 +296,23 @@ export function KnowledgePage() {
             </button>
           );
         })}
+        {/* 待解决：提出但还没有知识条目认领的问题 */}
+        <button
+          type="button" role="tab" aria-selected={activeCat === "questions"}
+          className={`kb-tab kb-tab--q ${activeCat === "questions" ? "active" : ""}`}
+          title="待解决 · 已提出但还没有知识来认领的问题"
+          onClick={() => switchCategory("questions")}
+        >
+          <span className="kb-tab-logo kb-tab-logo--q" aria-hidden="true">?</span>
+          <span className="kb-tab-text">
+            <span className="kb-tab-label">待解决</span>
+            <span className="kb-tab-slogan">已知之不足</span>
+          </span>
+          <span className="kb-tab-count">{openQuestions}</span>
+        </button>
       </div>
 
-      {/* ── 分类说明 + 真实标签筛选（全部视图同样可用） ── */}
+      {/* ── 分类说明 + 真实标签筛选 ── */}
       {(activeCategory || currentTags.length > 0) && (
         <div
           className="kb-sub-bar"
@@ -416,6 +421,8 @@ export function KnowledgePage() {
             )}
           </div>
         </div>
+      ) : activeCat === "questions" ? (
+        <QuestionsPanel onCountChange={setOpenQuestions} />
       ) : activeCat === "graph" ? (
         <GraphPage embedded />
       ) : activeCat === "decision" ? (
