@@ -753,7 +753,10 @@ export function MaterialsPage() {
                           title={d.name}
                         >
                           <span className="mat-tile-glyph" aria-hidden="true">▸</span>
-                          <span className="mat-tile-cap"><b>{d.name}</b></span>
+                          <span className="mat-tile-cap">
+                            <b>{d.name}</b>
+                            <small>目录</small>
+                          </span>
                         </button>
                         {(effRoot === "private" || effRoot === "collect") && (
                           <button

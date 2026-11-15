@@ -2151,6 +2151,47 @@ class Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _notify_boss(self, text, level="info", source="ops"):
+        """内部紧急通知：写入小秘书线程 + TTS 语音 + SSE 推送（老板精灵面板/APP 播放）。
+
+        只给本机调用方（CTO 巡检、cron、运维脚本）用；不对公网开放（非回环需登录）。
+        返回 spoken=False 表示 TTS 失败，调用方应降级为纯邮件。
+        """
+        k = self._kernel()
+        db = k.db
+        if not db:
+            raise ValueError("过程库未启用，无法播报")
+        tid = "web:secretary"
+        now = iso_now()
+        db.chat_upsert_thread(tid, "web", "Web · 小秘书",
+                              [{"id": "boss", "name": "老板"},
+                               {"id": "secretary", "name": "小秘书"}], now, now)
+        audio = ""
+        err = ""
+        try:
+            wav = voice_bridge.tts_synthesize(
+                str(text)[:300], os.path.join(
+                    self._chat_dir(), f"{datetime.now(TZ).strftime('%Y%m%d-%H%M%S')}-alert.wav"))
+            if wav:
+                audio = f"/chat-files/{os.path.basename(wav)}"
+        except Exception as e:  # noqa: BLE001
+            err = f"{type(e).__name__}: {e}"
+            print(f"[notify] TTS 失败：{err}", flush=True)
+        secret = k.agents.get("secretary", {}).get("name", "小秘书")
+        body = f"【{level.upper()}】{text}"
+        db.chat_insert({"thread_id": tid, "source": "web",
+                        "modality": "voice" if audio else "text",
+                        "direction": "outbound", "sender_id": "secretary",
+                        "sender_name": secret, "content": body[:4000], "content_kind": "text",
+                        "origin_table": "chat_web", "origin_id": uid("cw"), "reply_to": None,
+                        "meta": {"alert": 1, "level": level, "source": source,
+                                 "audio": audio, "error": err}, "created_at": iso_now()})
+        k.emit("chat.message", "", {"threadId": tid, "source": "web",
+                                    "direction": "outbound", "content": body[:160],
+                                    "audio": audio, "alert": 1, "level": level})
+        return {"threadId": tid, "audio": audio, "spoken": bool(audio),
+                "level": level, "source": source}
+
     def _chat_file(self, name):
         """读取 workspace/chat 下老板自己的聊天附件（realpath 防目录穿越）。"""
         if not self._CHAT_FILES_RE.fullmatch(name):
@@ -2585,6 +2626,20 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self._require_auth():
             return
+        # 内部紧急通知：CTO/巡检脚本在本机调用，让小秘书给老板语音播报（邮件之外的强提醒）
+        if path == "/api/notify/boss":
+            body = self._body()
+            text = str(body.get("text") or "").strip()
+            if not text:
+                return self._json({"ok": False, "error": "text 不能为空"}, 400)
+            try:
+                res = self._notify_boss(text, str(body.get("level") or "info"),
+                                        str(body.get("source") or "ops"))
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": True, **res})
         # 二进制直传路由（不走 JSON 解析，body 是原始音频/文件）
         if path in ("/api/chat/voice", "/api/chat/upload"):
             return self._chat_binary_post(path)
