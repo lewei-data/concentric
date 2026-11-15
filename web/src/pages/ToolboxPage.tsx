@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { MediaViewer } from "../components/MediaViewer";
 import { siteUrl } from "../lib/siteUrl";
@@ -39,6 +39,25 @@ interface GroupMeta {
   key: string;
   label: string;
   desc: string;
+}
+
+interface VoiceInfo {
+  id: string;
+  description: string;
+  prompt_text: string;
+  cloned: boolean;
+  sec: number;
+  /** 已微调轮次 */
+  rounds?: number;
+}
+
+interface VoiceProfile {
+  id: string;
+  count: number;
+  maxRounds: number;
+  rounds: { n: number; label: string; direction: string; sec: number }[];
+  directions: { key: string; label: string }[];
+  current: { text: string; sec: number };
 }
 
 interface Job {
@@ -231,6 +250,28 @@ export function ToolboxPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [zoom, setZoom] = useState<Job | null>(null);
 
+  // 音色克隆（口播语音面板）
+  const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneFile, setCloneFile] = useState<File | null>(null);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneText, setCloneText] = useState("");
+  const [cloneBusy, setCloneBusy] = useState(false);
+
+  // 网页录音（克隆参考 / 微调换参考共用一套录音器）
+  const recRef = useRef<{ mr: MediaRecorder; timer: number } | null>(null);
+  const [recOn, setRecOn] = useState(false);
+  const [recSec, setRecSec] = useState(0);
+  const [recTarget, setRecTarget] = useState<"clone" | "tune">("clone");
+
+  // 音色微调：按方向一轮轮叠加，每轮可试听 / 可撤销
+  const [tuneFor, setTuneFor] = useState("");
+  const [tuneDir, setTuneDir] = useState("");
+  const [tuneFile, setTuneFile] = useState<File | null>(null);
+  const [tuneText, setTuneText] = useState("");
+  const [tuneBusy, setTuneBusy] = useState(false);
+  const [tuneInfo, setTuneInfo] = useState<VoiceProfile | null>(null);
+
   const kindChans = useMemo(() => channels.filter((c) => c.kind === kind), [channels, kind]);
   const active = useMemo(
     () => kindChans.find((c) => c.name === chName) ?? null,
@@ -381,6 +422,224 @@ export function ToolboxPage() {
     }
   };
 
+  /** 音色表：media-engine 的 voices.json，clone- 开头的是自己克隆的 */
+  const loadVoices = async () => {
+    try {
+      const r = await fetch("/api/toolbox/voices", { credentials: "include" });
+      const d = await r.json() as { ok?: boolean; voices?: VoiceInfo[] };
+      if (d.ok) setVoices(d.voices || []);
+    } catch { /* 音色表读不到不阻塞配音 */ }
+  };
+
+  const doClone = async () => {
+    if (!cloneFile) { setErr("请先选择参考录音"); return; }
+    setErr(""); setToast(""); setCloneBusy(true);
+    try {
+      const q = new URLSearchParams({ name: cloneName.trim(), text: cloneText.trim() });
+      const r = await fetch(`/api/toolbox/voice/clone?${q.toString()}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": cloneFile.type || "application/octet-stream" },
+        body: cloneFile,
+      });
+      const d = await r.json() as {
+        ok?: boolean; id?: string; error?: string; warning?: string; sec?: number;
+      };
+      if (!r.ok || !d.ok || !d.id) { setErr(d.error || "克隆失败"); return; }
+      setCloneFile(null); setCloneName(""); setCloneText("");
+      setToast(d.warning || `已创建音色 ${d.id}（参考 ${d.sec ?? 0}s），可从上方音色下拉直接使用`);
+      await loadVoices();
+      await loadChannels();               // 音色下拉随之刷新
+      if ((active?.params || []).some((p) => p.key === "voice")) {
+        setVals((prev) => ({ ...prev, voice: d.id as string }));
+      }
+    } catch {
+      setErr("克隆失败：网络错误");
+    } finally {
+      setCloneBusy(false);
+    }
+  };
+
+  const delVoice = async (id: string) => {
+    if (!window.confirm(`删除音色 ${id}？已生成的配音不受影响`)) return;
+    try {
+      const r = await fetch("/api/toolbox/voice/delete", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const d = await r.json() as { ok?: boolean; error?: string };
+      if (!r.ok || !d.ok) { setErr(d.error || "删除失败"); return; }
+      setToast(`已删除 ${id}`);
+      await loadVoices();
+      await loadChannels();
+    } catch {
+      setErr("删除失败：网络错误");
+    }
+  };
+
+  useEffect(() => {
+    void loadVoices();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 录音最长 15 秒：太长 zero-shot 反而漂，用户重录也比等长录音快 */
+  const REC_MAX = 15;
+
+  const stopRec = useCallback(() => {
+    const r = recRef.current;
+    if (!r) return;
+    window.clearInterval(r.timer);
+    recRef.current = null;
+    setRecOn(false);
+    try { r.mr.stop(); } catch { /* 已经停了 */ }
+  }, []);
+
+  // 录音中切走页面：一定要把麦克风关掉，否则浏览器/系统一直亮着录音图标
+  useEffect(() => () => {
+    const r = recRef.current;
+    if (r) {
+      window.clearInterval(r.timer);
+      try { r.mr.stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+      recRef.current = null;
+    }
+  }, []);
+
+  const startRec = async (target: "clone" | "tune") => {
+    setErr("");
+    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setErr("当前浏览器不支持网页录音；另外网页录音要求 HTTPS 或 localhost 访问，内网 http 地址会被浏览器禁用，请改用上传文件");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setErr("当前地址不是 HTTPS（或 localhost），浏览器禁止网页录音，请用 https 域名访问，或改用上传文件");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks: Blob[] = [];
+      mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const type = mr.mimeType || "audio/webm";
+        const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+        const stamp = new Date().toTimeString().slice(0, 8).replace(/:/g, "");
+        const file = new File([new Blob(chunks, { type })], `录音-${stamp}.${ext}`, { type });
+        if (target === "clone") {
+          setCloneFile(file);
+          setCloneName((n) => n || "我的音色");
+        } else {
+          setTuneFile(file);
+        }
+        setToast("录音已就绪，记得把刚才说的那句话逐字填进「参考文本」");
+      };
+      mr.start(200);
+      setRecSec(0);
+      setRecTarget(target);
+      setRecOn(true);
+      recRef.current = {
+        mr,
+        timer: window.setInterval(() => {
+          setRecSec((prev) => {
+            const n = prev + 1;
+            if (n >= REC_MAX) window.setTimeout(() => stopRec(), 0);
+            return n;
+          });
+        }, 1000),
+      };
+    } catch (e) {
+      const name = (e as { name?: string })?.name || "";
+      setErr(name === "NotAllowedError" || name === "SecurityError"
+        ? "浏览器没有给麦克风权限：请点地址栏的图标允许麦克风后重试，或改用上传文件"
+        : "打不开麦克风（可能被其他程序占用），请检查系统录音设备后重试");
+    }
+  };
+
+  const loadTune = async (id: string) => {
+    try {
+      const r = await fetch(`/api/toolbox/voice/profile?id=${encodeURIComponent(id)}`, { credentials: "include" });
+      const d = await r.json() as VoiceProfile & { ok?: boolean; error?: string };
+      if (d.ok) setTuneInfo(d);
+    } catch { /* 档案读不到就只展示方向，微调本身仍可用 */ }
+  };
+
+  const openTune = async (id: string) => {
+    if (tuneFor === id) { setTuneFor(""); return; }
+    setTuneFor(id);
+    setTuneDir("");
+    setTuneFile(null);
+    setTuneText("");
+    setTuneInfo(null);
+    await loadTune(id);
+  };
+
+  const doTune = async () => {
+    if (!tuneFor) return;
+    if (!tuneDir && !tuneFile) { setErr("请选一个微调方向，或换一段参考录音"); return; }
+    if (tuneFile && !tuneText.trim()) { setErr("换了新录音，就要填这段录音里逐字说的话"); return; }
+    setErr(""); setToast(""); setTuneBusy(true);
+    try {
+      const q = new URLSearchParams({
+        id: tuneFor, direction: tuneDir, text: tuneFile ? tuneText.trim() : "",
+      });
+      const r = await fetch(`/api/toolbox/voice/tune?${q.toString()}`, {
+        method: "POST",
+        credentials: "include",
+        headers: tuneFile ? { "Content-Type": tuneFile.type || "application/octet-stream" } : undefined,
+        body: tuneFile || undefined,
+      });
+      const d = await r.json() as {
+        ok?: boolean; rounds?: number; label?: string; error?: string; warning?: string;
+      };
+      if (!r.ok || !d.ok) { setErr(d.error || "微调失败"); return; }
+      setToast(d.warning || `第 ${d.rounds} 轮微调完成（${d.label}），点上面的播放器听听像不像`);
+      setTuneDir(""); setTuneFile(null); setTuneText("");
+      await loadVoices();
+      await loadChannels();
+      const cur = tuneFor;
+      // 刷新渠道参数会把音色选回默认值，这里把它拨回刚微调的这个音色
+      if ((active?.params || []).some((p) => p.key === "voice")) {
+        setVals((prev) => ({ ...prev, voice: cur }));
+      }
+      await loadTune(cur);
+    } catch {
+      setErr("微调失败：网络错误");
+    } finally {
+      setTuneBusy(false);
+    }
+  };
+
+  const undoTune = async (id: string) => {
+    setErr(""); setTuneBusy(true);
+    try {
+      const r = await fetch("/api/toolbox/voice/undo", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const d = await r.json() as { ok?: boolean; rounds?: number; undone?: string; error?: string };
+      if (!r.ok || !d.ok) { setErr(d.error || "撤销失败"); return; }
+      setToast(d.undone ? `已撤销「${d.undone}」，回到上一版音色` : "已撤销上一轮微调");
+      await loadVoices();
+      if ((active?.params || []).some((p) => p.key === "voice")) {
+        setVals((prev) => ({ ...prev, voice: id }));
+      }
+      await loadTune(id);
+    } catch {
+      setErr("撤销失败：网络错误");
+    } finally {
+      setTuneBusy(false);
+    }
+  };
+
+  const clonedVoices = voices.filter((v) => v.cloned);
+
   return (
     <div className="page tb-page">
       <div className="page-head">
@@ -503,15 +762,224 @@ export function ToolboxPage() {
             )}
 
             {kind === "audio" ? (
-              <label className="tb-field tb-field--wide">
-                <span>台词</span>
-                <textarea
-                  rows={5}
-                  value={line}
-                  placeholder="要念出来的内容，标点会影响停顿…"
-                  onChange={(e) => setLine(e.target.value)}
-                />
-              </label>
+              <>
+                <label className="tb-field tb-field--wide">
+                  <span>台词</span>
+                  <textarea
+                    rows={5}
+                    value={line}
+                    placeholder="要念出来的内容，标点会影响停顿…"
+                    onChange={(e) => setLine(e.target.value)}
+                  />
+                </label>
+
+                <div className="tb-clone">
+                  <button
+                    type="button"
+                    className="tb-clone-toggle"
+                    onClick={() => setCloneOpen((v) => !v)}
+                  >
+                    <b>克隆音色</b>
+                    <small>
+                      用自己的录音建一个音色，之后在「音色」下拉里直接选它配音
+                      {clonedVoices.length > 0 ? ` · 已有 ${clonedVoices.length} 个` : ""}
+                    </small>
+                    <em>{cloneOpen ? "收起" : "展开"}</em>
+                  </button>
+
+                  {cloneOpen && (
+                    <div className="tb-clone-body">
+                      <div className="tb-rec-row">
+                        <label className="tb-frame-pick">
+                          <input
+                            type="file"
+                            accept="audio/wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/ogg,.wav,.mp3,.m4a,.ogg"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0] || null;
+                              setCloneFile(f);
+                              if (f && !cloneName) setCloneName(f.name.replace(/\.[^.]+$/, ""));
+                              e.target.value = "";
+                            }}
+                          />
+                          <span>{cloneFile ? cloneFile.name : "选择参考录音（3–15 秒人声）"}</span>
+                        </label>
+                        {recOn && recTarget === "clone" ? (
+                          <button type="button" className="tb-rec-btn tb-rec-on" onClick={stopRec}>
+                            <i className="tb-rec-dot" />录音中 {recSec}s · 停止并采用
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="tb-rec-btn"
+                            disabled={recOn}
+                            onClick={() => void startRec("clone")}
+                          >
+                            立即录音
+                          </button>
+                        )}
+                      </div>
+                      <small className="tb-hint">
+                        直接用电脑麦克风录一段：点「立即录音」→ 正常说一句话（3–15 秒）→ 停止并采用。
+                        录音需要 https 或 localhost 访问，内网 http 地址浏览器会禁用麦克风。
+                      </small>
+
+                      <label className="tb-field tb-field--wide">
+                        <span>参考文本（必填）</span>
+                        <textarea
+                          rows={2}
+                          value={cloneText}
+                          placeholder="把这段录音里说的那句话逐字写下来…"
+                          onChange={(e) => setCloneText(e.target.value)}
+                        />
+                        <small className="tb-hint">
+                          必须一字不差地照抄录音内容：CosyVoice 靠它对齐音色，
+                          写错或抄短会合成出几乎无声的音频（后端会当场拦住并回滚）
+                        </small>
+                      </label>
+
+                      <label className="tb-field">
+                        <span>音色名称</span>
+                        <input
+                          type="text"
+                          value={cloneName}
+                          placeholder="例如 老板、阿May"
+                          onChange={(e) => setCloneName(e.target.value)}
+                        />
+                        <small className="tb-hint">会作为音色 id 出现在下拉里（自动加 clone- 前缀）</small>
+                      </label>
+
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={cloneBusy || !cloneFile || !cloneText.trim()}
+                        onClick={() => void doClone()}
+                      >
+                        {cloneBusy ? "克隆中…（约 10–30 秒）" : "开始克隆"}
+                      </button>
+
+                      {clonedVoices.length > 0 && (
+                        <div className="tb-clone-list">
+                          {clonedVoices.map((v) => (
+                            <div key={v.id} className="tb-clone-item">
+                              <div className="tb-clone-meta">
+                                <b>{v.id.replace(/^clone-/, "")}</b>
+                                <small>
+                                  {v.description || `参考 ${v.sec}s`}
+                                  {v.rounds ? ` · 已微调 ${v.rounds} 轮` : ""}
+                                </small>
+                              </div>
+                              <audio
+                                controls
+                                preload="none"
+                                src={`/api/toolbox/voice/ref?id=${encodeURIComponent(v.id)}&v=${v.rounds || 0}`}
+                              />
+                              <button
+                                type="button"
+                                className="tb-clone-tune"
+                                onClick={() => void openTune(v.id)}
+                              >
+                                {tuneFor === v.id ? "收起" : "微调"}
+                              </button>
+                              <button
+                                type="button"
+                                className="tb-clone-del"
+                                onClick={() => void delVoice(v.id)}
+                              >
+                                删除
+                              </button>
+
+                              {tuneFor === v.id && (
+                                <div className="tb-tune">
+                                  <div className="tb-tune-dirs">
+                                    {(tuneInfo?.directions || []).map((d) => (
+                                      <button
+                                        key={d.key}
+                                        type="button"
+                                        className={`tb-chip${tuneDir === d.key ? " on" : ""}`}
+                                        onClick={() => setTuneDir(tuneDir === d.key ? "" : d.key)}
+                                      >
+                                        {d.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <small className="tb-hint">
+                                    每点一次「应用微调」就往这个方向挪一小步，可以反复叠加不同方向，
+                                    一轮轮逼近想要的音色；每轮都会当场试合成一句，听不像就撤销。
+                                  </small>
+                                  <div className="tb-rec-row">
+                                    <label className="tb-frame-pick">
+                                      <input
+                                        type="file"
+                                        accept="audio/wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/ogg,.wav,.mp3,.m4a,.ogg,.webm"
+                                        onChange={(e) => {
+                                          setTuneFile(e.target.files?.[0] || null);
+                                          e.target.value = "";
+                                        }}
+                                      />
+                                      <span>{tuneFile ? tuneFile.name : "换一段更理想的参考录音（可选）"}</span>
+                                    </label>
+                                    {recOn && recTarget === "tune" ? (
+                                      <button type="button" className="tb-rec-btn tb-rec-on" onClick={stopRec}>
+                                        <i className="tb-rec-dot" />录音中 {recSec}s · 停止并采用
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="tb-rec-btn"
+                                        disabled={recOn}
+                                        onClick={() => void startRec("tune")}
+                                      >
+                                        立即录音
+                                      </button>
+                                    )}
+                                  </div>
+                                  {tuneFile && (
+                                    <label className="tb-field tb-field--wide">
+                                      <span>新录音的参考文本（必填）</span>
+                                      <textarea
+                                        rows={2}
+                                        value={tuneText}
+                                        placeholder="把新录音里说的那句话逐字写下来…"
+                                        onChange={(e) => setTuneText(e.target.value)}
+                                      />
+                                    </label>
+                                  )}
+                                  <div className="tb-tune-foot">
+                                    <small>
+                                      {tuneInfo
+                                        ? `已微调 ${tuneInfo.count}/${tuneInfo.maxRounds} 轮` +
+                                          (tuneInfo.rounds.length
+                                            ? `：${tuneInfo.rounds.map((r) => r.label).join(" → ")}`
+                                            : "")
+                                        : "正在读取微调档案…"}
+                                    </small>
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      disabled={tuneBusy || (!tuneDir && !tuneFile)}
+                                      onClick={() => void doTune()}
+                                    >
+                                      {tuneBusy ? "微调中…" : "应用微调"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="tb-clone-del"
+                                      disabled={tuneBusy || !(tuneInfo?.count)}
+                                      onClick={() => void undoTune(v.id)}
+                                    >
+                                      撤销上一轮
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               <label className="tb-field tb-field--wide">
                 <span>提示词</span>

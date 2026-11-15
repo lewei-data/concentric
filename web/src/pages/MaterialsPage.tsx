@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InspirationPage } from "./InspirationPage";
+import { CollectTasks } from "./CollectTasks";
 import { ToolboxGallery } from "../components/ToolboxGallery";
 import { AnchoredPanel } from "../components/AnchoredPanel";
 import { siteUrl } from "../lib/siteUrl";
@@ -34,11 +35,12 @@ const TABS = [
   { key: "index", label: "素材清单" },
   { key: "toolbox", label: "工具箱" },
   { key: "browse", label: "共享资料" },
+  { key: "collect", label: "自动采集" },
   { key: "personal", label: "个人 Obsidian" },
   { key: "idea", label: "创意灵感" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
-type RootKey = "vault" | "published" | "downloads" | "private";
+type RootKey = "vault" | "published" | "downloads" | "private" | "collect";
 
 // 「共享资料」按用途分标签：素材库里绝大部分是这几类，其它一律归"其它"
 type KindKey = "all" | "video" | "audio" | "image" | "skill" | "other";
@@ -300,12 +302,12 @@ export function MaterialsPage() {
     }
   }, []);
 
-  // 「个人 Obsidian」显示的是当前登录账号自己的目录，根由服务端按会话决定，
-  // 前端不传手机号（也没法传），切换根按钮在这个 tab 下不生效。
-  const effRoot: RootKey = tab === "personal" ? "private" : root;
+  // 「个人 Obsidian」「自动采集」都是当前登录账号自己的目录，根由服务端按会话决定，
+  // 前端不传手机号（也没法传），切换根按钮在这两个 tab 下不生效。
+  const effRoot: RootKey = tab === "personal" ? "private" : tab === "collect" ? "collect" : root;
 
   useEffect(() => {
-    if (tab === "browse" || tab === "personal") void loadBrowse(effRoot, path);
+    if (tab === "browse" || tab === "personal" || tab === "collect") void loadBrowse(effRoot, path);
   }, [tab, effRoot, path, loadBrowse]);
 
   // 目录监听：在服务器上直接增删改文件（同步盘、scp、命令行 rm）时页面自己跟上。
@@ -368,6 +370,8 @@ export function MaterialsPage() {
   const gridEndRef = useRef<HTMLDivElement>(null);
 
   const [delBusy, setDelBusy] = useState("");
+  // 「自动采集」标签里的定时任务设置面板（页内弹层，不跳走丢上下文）
+  const [collectTasks, setCollectTasks] = useState(false);
   const doDelete = useCallback(async (rel: string, isDir: boolean) => {
     const label = rel.split("/").pop() || rel;
     if (!window.confirm(isDir
@@ -420,6 +424,7 @@ export function MaterialsPage() {
     const tail = [...segs, name].map(encodeURIComponent).join("/");
     if (effRoot === "published") return siteUrl(`/materials/${tail}`);
     if (effRoot === "downloads") return siteUrl(`/downloads/${tail}`);
+    if (effRoot === "collect") return siteUrl(`/private/${browse?.phone ?? ""}/downloads/${tail}`);
     if (effRoot === "private") return siteUrl(`/private/${browse?.phone ?? ""}/${tail}`);
     return siteUrl(`/vault/${["素材", ...segs, name].map(encodeURIComponent).join("/")}`);
   }, [path, effRoot, browse?.phone]);
@@ -587,7 +592,7 @@ export function MaterialsPage() {
         </section>
       )}
 
-      {(tab === "browse" || tab === "personal") && (
+      {(tab === "browse" || tab === "personal" || tab === "collect") && (
         <section className="mat-section">
           {tab === "personal" && (
             <p className="muted mat-private-hint">
@@ -595,9 +600,26 @@ export function MaterialsPage() {
               （含 <code>工具箱</code>、<code>obsidian</code>，点面包屑可回到上级）
             </p>
           )}
+          {tab === "collect" && (
+            <p className="muted mat-private-hint">
+              自动采集的输出目录：<code>users/&lt;手机号&gt;/downloads</code>，只你自己可见 ·
+              定时任务（周期 / 数据源 / 目标数量 / 任务描述）在这里设，采完由 CCO 结合知识库出灵感，进「创意灵感 → 采集洞察」。
+            </p>
+          )}
           <div className="mat-browse-bar">
             <div className="mat-roots">
-              {tab === "personal" ? (
+              {tab === "collect" ? (
+                <>
+                  <span className="mat-root active">自动采集输出</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost mat-collect-btn"
+                    onClick={() => setCollectTasks(true)}
+                  >
+                    定时任务设置
+                  </button>
+                </>
+              ) : tab === "personal" ? (
                 <span className="mat-root active">个人 Obsidian</span>
               ) : (
                 <>
@@ -703,6 +725,20 @@ export function MaterialsPage() {
                     </p>
                   </div>
                 )}
+              {tab === "collect" && !browsing
+                && (browse.counts?.dirs ?? 0) === 0
+                && (browse.counts?.files ?? 0) === 0 && (
+                  <div className="tg-empty">
+                    <b>还没有采集结果</b>
+                    <p>
+                      采集任务到点会自动跑，结果落在这里（<code>users/&lt;手机号&gt;/downloads</code>）。
+                      也可以现在点上面的「定时任务设置」建一条，或对已有任务点「立即采集」先跑一轮。
+                    </p>
+                    <button type="button" className="btn" onClick={() => setCollectTasks(true)}>
+                      去设定时任务
+                    </button>
+                  </div>
+                )}
               {/* 缩略图墙：目录和文件都铺成方块，滚到底自动续下一屏 */}
               {viewMode === "grid" && (
                 <div className="mat-tiles">
@@ -719,7 +755,7 @@ export function MaterialsPage() {
                           <span className="mat-tile-glyph" aria-hidden="true">▸</span>
                           <span className="mat-tile-cap"><b>{d.name}</b></span>
                         </button>
-                        {effRoot === "private" && (
+                        {(effRoot === "private" || effRoot === "collect") && (
                           <button
                             type="button"
                             className="mat-tile-del"
@@ -767,7 +803,7 @@ export function MaterialsPage() {
                             </small>
                           </span>
                         </button>
-                        {effRoot === "private" && (
+                        {(effRoot === "private" || effRoot === "collect") && (
                           <button
                             type="button"
                             className="mat-tile-del"
@@ -798,7 +834,7 @@ export function MaterialsPage() {
                           <span className="mat-icon" aria-hidden="true">▸</span>
                           <span className="mat-name">{d.name}</span>
                         </button>
-                        {effRoot === "private" && (
+                        {(effRoot === "private" || effRoot === "collect") && (
                           <button
                             type="button"
                             className="mat-del"
@@ -844,7 +880,7 @@ export function MaterialsPage() {
                             {pv === "image" ? "查看" : "播放"}
                           </button>
                         )}
-                        {effRoot === "private" && (
+                        {(effRoot === "private" || effRoot === "collect") && (
                           <button
                             type="button"
                             className="mat-del"
@@ -934,6 +970,13 @@ export function MaterialsPage() {
       )}
 
       {tab === "idea" && <InspirationPage embedded />}
+
+      {collectTasks && (
+        <CollectTasks
+          onClose={() => setCollectTasks(false)}
+          onRan={() => { void loadBrowse("collect", path); }}
+        />
+      )}
     </div>
   );
 }

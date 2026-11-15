@@ -411,6 +411,53 @@ CREATE TABLE IF NOT EXISTS llm_schedule (
   updated_at  TEXT,
   updated_by  TEXT
 );
+
+-- 自动采集（素材「自动采集」标签）：每个用户在自己的 opc.db 里维护自己的采集任务
+CREATE TABLE IF NOT EXISTS collect_tasks (
+  id           TEXT PRIMARY KEY,
+  phone        TEXT NOT NULL DEFAULT '',
+  title        TEXT NOT NULL DEFAULT '',
+  sources      TEXT NOT NULL DEFAULT '',      -- 逗号分隔：douyin,xiaohongshu,bilibili,article,own_account
+  schedule     TEXT NOT NULL DEFAULT '',      -- daily@HH:MM / every@N（小时）
+  target_count INTEGER NOT NULL DEFAULT 20,
+  brief        TEXT NOT NULL DEFAULT '',      -- 采集任务描述（交给大模型理解）
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  status       TEXT NOT NULL DEFAULT 'idle',  -- idle/running/ok/error
+  last_run     TEXT NOT NULL DEFAULT '',
+  last_note    TEXT NOT NULL DEFAULT '',
+  next_run     TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL DEFAULT '',
+  updated_at   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS collect_runs (
+  id          TEXT PRIMARY KEY,
+  task_id     TEXT NOT NULL DEFAULT '',
+  phone       TEXT NOT NULL DEFAULT '',
+  started_at  TEXT NOT NULL DEFAULT '',
+  finished_at TEXT NOT NULL DEFAULT '',
+  ok          INTEGER NOT NULL DEFAULT 0,
+  file_count  INTEGER NOT NULL DEFAULT 0,
+  idea_count  INTEGER NOT NULL DEFAULT 0,
+  out_dir     TEXT NOT NULL DEFAULT '',
+  note        TEXT NOT NULL DEFAULT ''
+);
+
+-- 采集后的 CCO 分析结论：素材「创意灵感 → 采集洞察」读这张表，选题会也优先引用
+CREATE TABLE IF NOT EXISTS collect_ideas (
+  id         TEXT PRIMARY KEY,
+  phone      TEXT NOT NULL DEFAULT '',
+  task_id    TEXT NOT NULL DEFAULT '',
+  title      TEXT NOT NULL DEFAULT '',
+  summary    TEXT NOT NULL DEFAULT '',
+  detail     TEXT NOT NULL DEFAULT '',
+  tags       TEXT NOT NULL DEFAULT '',
+  source     TEXT NOT NULL DEFAULT '',
+  link       TEXT NOT NULL DEFAULT '',
+  asset      TEXT NOT NULL DEFAULT '',
+  score      REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -1764,6 +1811,150 @@ class Store:
                   "knowledge", "contents", "meetings", "meeting_speeches", "token_usage",
                   "chat_threads", "chat_messages"]
         return {t: self.scalar(f"SELECT COUNT(*) FROM {t}") for t in tables}
+
+    # ---------- 自动采集（素材页「自动采集」标签） ----------
+    def collect_tasks(self, phone=""):
+        """采集任务列表；phone 为空则返回全部（调度线程用）。"""
+        sql = "SELECT * FROM collect_tasks"
+        params = ()
+        if phone:
+            sql += " WHERE phone=?"
+            params = (phone,)
+        sql += " ORDER BY created_at DESC"
+        conn = self.read_conn()
+        try:
+            return [dict(r) for r in conn.execute(sql, params)]
+        finally:
+            conn.close()
+
+    def collect_task(self, task_id):
+        conn = self.read_conn()
+        try:
+            row = conn.execute("SELECT * FROM collect_tasks WHERE id=?", (task_id,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def collect_task_save(self, row):
+        """新增或整行更新采集任务（按 id 覆盖）。"""
+        row = dict(row or {})
+        fields = ["id", "phone", "title", "sources", "schedule", "target_count", "brief",
+                  "enabled", "status", "last_run", "last_note", "next_run",
+                  "created_at", "updated_at"]
+        vals = [row.get(f) if row.get(f) is not None else "" for f in fields]
+        vals[6] = _int(vals[6])
+        vals[7] = 1 if str(vals[7]).lower() not in ("0", "false", "no") else 0
+        with self._lock:
+            try:
+                with self._conn:
+                    self._conn.execute(
+                        f"INSERT INTO collect_tasks({','.join(fields)}) "
+                        f"VALUES({','.join('?' * len(fields))}) "
+                        f"ON CONFLICT(id) DO UPDATE SET "
+                        + ",".join(f"{f}=excluded.{f}" for f in fields if f != "id"),
+                        vals)
+            except sqlite3.Error as e:
+                _log(f"collect_task_save 失败：{e}")
+                return False
+        return True
+
+    def collect_task_patch(self, task_id, fields):
+        """局部更新（状态/下次运行时间/上次结果等）。"""
+        fields = {k: v for k, v in (fields or {}).items() if v is not None}
+        if not fields:
+            return False
+        sets = ",".join(f"{k}=?" for k in fields)
+        with self._lock:
+            try:
+                with self._conn:
+                    self._conn.execute(f"UPDATE collect_tasks SET {sets} WHERE id=?",
+                                       [*fields.values(), task_id])
+            except sqlite3.Error as e:
+                _log(f"collect_task_patch 失败：{e}")
+                return False
+        return True
+
+    def collect_task_delete(self, task_id, phone=""):
+        sql = "DELETE FROM collect_tasks WHERE id=?"
+        params = [task_id]
+        if phone:
+            sql += " AND phone=?"
+            params.append(phone)
+        with self._lock:
+            try:
+                with self._conn:
+                    cur = self._conn.execute(sql, params)
+                return cur.rowcount > 0
+            except sqlite3.Error as e:
+                _log(f"collect_task_delete 失败：{e}")
+                return False
+
+    def collect_run_insert(self, row):
+        row = dict(row or {})
+        fields = ["id", "task_id", "phone", "started_at", "finished_at", "ok",
+                  "file_count", "idea_count", "out_dir", "note"]
+        vals = [row.get(f) if row.get(f) is not None else "" for f in fields]
+        vals[5] = 1 if vals[5] else 0
+        vals[6], vals[7] = _int(vals[6]), _int(vals[7])
+        with self._lock:
+            try:
+                with self._conn:
+                    self._conn.execute(
+                        f"INSERT INTO collect_runs({','.join(fields)}) "
+                        f"VALUES({','.join('?' * len(fields))})", vals)
+            except sqlite3.Error as e:
+                _log(f"collect_run_insert 失败：{e}")
+
+    def collect_runs(self, task_id=None, phone="", limit=20):
+        sql = "SELECT * FROM collect_runs WHERE 1=1"
+        params = []
+        if task_id:
+            sql += " AND task_id=?"
+            params.append(task_id)
+        if phone:
+            sql += " AND phone=?"
+            params.append(phone)
+        sql += " ORDER BY started_at DESC LIMIT ?"
+        params.append(max(1, min(int(limit or 20), 200)))
+        conn = self.read_conn()
+        try:
+            return [dict(r) for r in conn.execute(sql, params)]
+        finally:
+            conn.close()
+
+    def collect_ideas(self, phone="", limit=60):
+        sql = "SELECT * FROM collect_ideas"
+        params = []
+        if phone:
+            sql += " WHERE phone=?"
+            params.append(phone)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(1, min(int(limit or 60), 400)))
+        conn = self.read_conn()
+        try:
+            return [dict(r) for r in conn.execute(sql, params)]
+        finally:
+            conn.close()
+
+    def collect_ideas_insert(self, rows):
+        rows = [dict(r) for r in (rows or [])]
+        if not rows:
+            return 0
+        with self._lock:
+            try:
+                with self._conn:
+                    self._conn.executemany(
+                        "INSERT OR REPLACE INTO collect_ideas(id,phone,task_id,title,summary,"
+                        "detail,tags,source,link,asset,score,created_at) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        [(r.get("id"), r.get("phone", ""), r.get("task_id", ""), r.get("title", ""),
+                          r.get("summary", ""), r.get("detail", ""), r.get("tags", ""),
+                          r.get("source", ""), r.get("link", ""), r.get("asset", ""),
+                          _float(r.get("score")), r.get("created_at", "")) for r in rows])
+                return len(rows)
+            except sqlite3.Error as e:
+                _log(f"collect_ideas_insert 失败：{e}")
+                return 0
 
 
 def _int(value):

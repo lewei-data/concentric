@@ -1841,12 +1841,26 @@ class Kernel:
                "项目": {pid: {"名称": self.projects[pid]["name"], "调性": self.tone[pid]}
                         for pid in self.PIDS},
                "老板指定方向": hint}
+        # 自动采集 → CCO 分析出的最新灵感：选题时优先采用（有就先占位，不足再用知识库条目补）
+        try:
+            import collector
+            fresh = collector.priority_ideas(self.data_dir, limit=8)
+        except Exception:
+            fresh = []
+        if fresh:
+            ctx["采集灵感（优先采用）"] = [
+                {"标题": r.get("title") or "", "灵感": r.get("summary") or "",
+                 "结合点": r.get("detail") or "", "标签": r.get("tags") or "",
+                 "来源": r.get("source") or "", "素材目录": r.get("asset") or ""}
+                for r in fresh]
         data, meta = self.call_agent(
             "cco",
             "你是 CCO。从给定知识库条目中提炼今日最佳选题：优先近 30 天、可复用结论扎实、"
             "与项目调性一致且具备制作可行性的认知；每个项目恰好 2 条（共 6 条）。"
             "要求：1) 不得直接照抄条目标题，要提炼成可拍选题；2) 必须引用具体知识条目（knowledgeRefs）；"
-            "3) 不引用热点榜单、不编造数字；4) 同一项目的两条之间要有差异化。",
+            "3) 不引用热点榜单、不编造数字；4) 同一项目的两条之间要有差异化；"
+            "5) 给了「采集灵感（优先采用）」时，先把这些灵感按项目落成选题（它们来自自动采集的最新素材，"
+            "老板要求优先采用），不足 6 条再用知识库条目补足，并在 reason 里注明「采集灵感」。",
             json.dumps(ctx, ensure_ascii=False),
             "额外 JSON 字段：final(数组，恰好 6 条，每条 {projectId,title,angle,form,durationSec,reason,knowledgeRefs})；"
             "excluded(数组，0-6 条，未采用的认知 {title, projectId, reason})；minutes(会议纪要 Markdown ≤800 字)。",
@@ -2676,6 +2690,51 @@ class Kernel:
         with open(os.path.join(MEDIA.frame_dir(), name), "wb") as f:
             f.write(raw)
         return name
+
+    def toolbox_voices(self):
+        """音色表（含 clone- 自建音色）；media-engine 每次合成前重读 voices.json，写入即生效。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        d = MEDIA.voices_list(force=True)
+        return {"default": d.get("default") or "",
+                "voices": d.get("voices") or [],
+                "cloned": [v["id"] for v in d.get("voices") or [] if v.get("cloned")]}
+
+    def toolbox_clone_voice(self, raw, name="", text="", owner=""):
+        """上传参考音频建音色：转 16k 单声道 wav + 写入共享 voices.json，无需重启 media-engine。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        return MEDIA.clone_voice(raw, text, name=name, owner=owner)
+
+    def toolbox_tune_voice(self, vid, direction="", raw=b"", text=""):
+        """微调一轮：按方向改参考音频（或换新录音）→ 重新登记 → 自检不过自动还原。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        return MEDIA.tune_clone_voice(vid, direction, raw, text)
+
+    def toolbox_undo_voice(self, vid):
+        """撤销最后一轮微调，回到上一版参考。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        return MEDIA.undo_tune(vid)
+
+    def toolbox_voice_profile(self, vid):
+        """微调档案：可选方向 + 已调轮次。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        return MEDIA.voice_profile(vid)
+
+    def toolbox_delete_voice(self, vid):
+        """删除自建音色（只允许 clone- 前缀，内置音色不可动）。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        return MEDIA.delete_clone_voice(vid)
+
+    def toolbox_voice_ref(self, vid):
+        """试听用：取某个克隆音色的参考音频路径。"""
+        if MEDIA is None:
+            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
+        return MEDIA.clone_ref_path(vid)
 
     def toolbox_channels(self):
         """渠道注册表（分组/端点/能力）+ 图生视频可用性。"""

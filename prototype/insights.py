@@ -31,6 +31,7 @@ _CACHE_LOCK = threading.Lock()
 CAT_HOTSPOT = "热点分析"
 CAT_VIDEO = "视频分析"
 CAT_DISTILL = "蒸馏启发"
+CAT_COLLECT = "采集洞察"     # 自动采集 → CCO 分析产出，选题时优先
 
 # 视频拆解文档：只挑真正含分析结论的文件，避免把素材说明/依赖树扫进来
 _VIDEO_NAMES = ("拆解", "给CCO", "汇总", "文案与分镜", "节奏")
@@ -95,6 +96,31 @@ def _item(category, sub_kind, title, summary, detail, tags, source, link,
         "score": score,
         "origin": origin,
     }
+
+
+def _collect_ideas(kernel):
+    """自动采集 → CCO 分析结论（用户库 collect_ideas 表）。"""
+    try:
+        st = getattr(kernel, "db", None)
+        rows = st.collect_ideas(phone="", limit=60) if st else []
+    except Exception:
+        rows = []
+    data_dir = str(getattr(kernel, "data_dir", "") or "")
+    phone = os.path.basename(data_dir.rstrip(os.sep)) if data_dir else ""
+    out = []
+    for r in rows:
+        rel = str(r.get("asset") or "").replace(os.sep, "/").strip("/")
+        link = str(r.get("link") or "")
+        if not link and rel and phone:
+            # 文件在个人私有目录：/private/<手机号>/downloads/<目录>/...
+            link = f"/private/{quote(phone)}/downloads/" + quote(rel, safe="/")
+        out.append(_item(
+            CAT_COLLECT, "自动采集", r.get("title"), r.get("summary"), r.get("detail"),
+            [t for t in str(r.get("tags") or "").replace("，", ",").split(",") if t.strip()],
+            str(r.get("source") or "自动采集"), link,
+            at=str(r.get("created_at") or ""),
+            score=(float(r.get("score") or 0) or None), origin="collect"))
+    return out
 
 
 def _hotspot_ideas(kernel, vault, link_prefix="/vault/", link_fn=None):
@@ -353,11 +379,15 @@ def build(kernel, refresh: bool = False, vault: str = None, link_prefix: str = "
         link_prefix=link_prefix, loose=personal, link_fn=link_fn)
     distill_items, kb_entries, meeting_count = _distill_ideas(
         kernel, vault, link_prefix, link_fn)
+    collect_items = _collect_ideas(kernel)
     items = hotspot_items + video_items + distill_items
     items.sort(key=lambda x: (str(x.get("at") or ""), str(x.get("title") or "")), reverse=True)
+    # 自动采集产出排最前：选题时优先从这里挑（前端口径简单，直接按顺序取）
+    if collect_items:
+        items = collect_items + items
 
     counts = {CAT_HOTSPOT: len(hotspot_items), CAT_VIDEO: len(video_items),
-              CAT_DISTILL: len(distill_items)}
+              CAT_DISTILL: len(distill_items), CAT_COLLECT: len(collect_items)}
     data = {
         "ok": True,
         "generatedAt": _now(),
@@ -369,6 +399,7 @@ def build(kernel, refresh: bool = False, vault: str = None, link_prefix: str = "
             "knowledgeEntries": kb_entries,
             "meetingConclusions": meeting_count,
             "hotspotRows": len(hotspot_items),
+            "collectIdeas": len(collect_items),
         },
         "items": items[:220],
         "scope": {
@@ -379,10 +410,12 @@ def build(kernel, refresh: bool = False, vault: str = None, link_prefix: str = "
             "当前只读你自己的库（个人 Obsidian），不混入公司共享内容。",
             "把拆解、笔记类 .md 放进库里，下一轮刷新就会出现在这里。",
             "热点线索仍来自公共热点采集，属于公开信息。",
+            "「采集洞察」来自素材页「自动采集」的定时任务：采完由 CCO 结合知识库分析产出，选题时优先采用。",
         ] if personal else [
             "热点线索来自 /api/hotspots（内存快照 + Obsidian 热点简报），简报角度来自「分项目可用角度」表。",
             "视频分析来自 Obsidian 素材拆解 / 给 CCO 的一页纸，以及仓库根目录的创意说明，按章节切分。",
             "蒸馏启发来自知识库归档的一句话结论 / 可复用点，以及选题评审会的定稿清单。",
+            "「采集洞察」来自素材页「自动采集」的定时任务：采完由 CCO 结合知识库分析产出，排在清单最前，选题时优先采用。",
         ]),
     }
     with _CACHE_LOCK:

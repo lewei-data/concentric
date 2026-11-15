@@ -15,12 +15,15 @@
   - 存储：独立 SQLite（默认 <工作区>/media_jobs.db，WAL），不与过程库 opc.db 抢写锁。
   - 只做「生成 + 取回」，不写业务状态；状态落库、事件由调用方（kernel）负责。
 """
+import contextlib
+import fcntl
 import json
 import os
 import re
 import shutil
 import sqlite3
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -40,6 +43,15 @@ MEDIAENGINE = os.environ.get("OPC_MEDIAENGINE_URL", "http://192.168.21.206:9200"
 SHOT_MAX_SEC = float(os.environ.get("OPC_SHOT_MAX_SEC", "6"))
 MAX_WORKERS = int(os.environ.get("OPC_MEDIA_WORKERS", "6"))
 PROBE_TTL = 30.0
+
+# 音色事实源：media-engine（192.168.21.206:9200）与 hermes 的 tts 共用这份表，
+# 且 Engine.voice() 每次合成前重读文件 —— 往这里追加一条就等于「注册新音色」，
+# 不必重启 media-engine（重启会打断网页配音与精灵语音）。
+TTS_VOICES_JSON = os.environ.get("OPC_TTS_VOICES_JSON", "/opt/sefs/mcp-tts/voices.json")
+TTS_REF_DIR = os.environ.get("OPC_TTS_REF_DIR", "/opt/sefs/mcp-tts/voices/ref")
+CLONE_PREFIX = "clone-"
+CLONE_MAX_SEC = 20.0
+CLONE_MIN_SEC = 1.5
 
 KINDS = ("image", "video", "audio")
 LANE_LIMITS = {"comfyui": 1, "comfyui_video": 1, "sd15": 1, "wan21": 1,
@@ -233,7 +245,8 @@ CHANNELS = {
         "kind": "audio", "group": "lan",
         "label": "CosyVoice · 实时",
         "endpoint": "media-engine:9200",
-        "notes": "media-engine /v1/tts engine=cosyvoice（实时、多 worker，hermes 的 tts.provider 也走它）",
+        "notes": "media-engine /v1/tts engine=cosyvoice（实时、多 worker，hermes 的 tts.provider 也走它）；"
+                 "音色下拉里的 clone-* 是自己克隆的音色",
         "modes": ["tts"],
         "params": [
             _p("voice", "音色", "select", "female-zh-real",
@@ -241,7 +254,8 @@ CHANNELS = {
                         "m01", "m02", "m03", "f01", "f02", "f03",
                         "backup-zh-cosy2"],
                hint="female-zh-real 最自然（真女主播音色）；m0x 男声、f0x 女声；"
-                    "backup-zh-cosy2 是备用引擎，主引擎排队时用"),
+                    "clone-* 是下方「克隆音色」里用你自己录音建出来的音色，"
+                    "列表会跟随 media-engine 实际音色表刷新"),
             _p("speed", "语速", "float", 1.0, min=0.5, max=2.0, step=0.1,
                hint="1.0 正常；0.9 更稳更适合口播；1.3 以上会有机械感"),
         ],
@@ -415,10 +429,15 @@ def channels(force=False):
             }
             _PROBE["at"] = time.time()
         probe = dict(_PROBE["data"])
+    # 克隆音色是运行期新增的，音色下拉必须按 voices.json 实际内容渲染
+    opts = voice_options()
     out = []
     for name, ch in CHANNELS.items():
         st = probe.get(name) or {}
         cap = ch.get("max_sec")
+        params = ch["params"]
+        if name == "cosyvoice" and opts:
+            params = [dict(p, options=opts) if p["key"] == "voice" else p for p in params]
         out.append({
             "name": name, "kind": ch["kind"], "label": ch["label"], "notes": ch["notes"],
             "group": ch.get("group") or "lan",
@@ -428,7 +447,7 @@ def channels(force=False):
             "concurrency": LANE_LIMITS.get(name, 1),
             "queue": int(st.get("queue") or 0),
             "available": bool(st.get("available")), "reason": st.get("reason") or "",
-            "params": ch["params"],
+            "params": params,
         })
     return out, SHOT_MAX_SEC
 
@@ -1252,6 +1271,532 @@ def params_sec(view):
         return 0
 
 
+# ---------------------------------------------------------------- 音色克隆
+# CosyVoice 的「音色」本质就是一条 zero-shot 参考（prompt_wav + prompt_text），
+# 内置 25 个音色就是这么登记的。所以克隆 = 把用户音频转成 16k 单声道 wav 落盘，
+# 再往共享的 voices.json 追加一条记录，media-engine 下次合成即认。
+_VOICES_CACHE = {"at": 0.0, "data": None}
+
+
+def _ffbin(name):
+    p = shutil.which(name) or os.path.expanduser(f"~/.local/bin/{name}")
+    return p if p and os.path.isfile(p) else ""
+
+
+def _audio_sec(path):
+    """读音频时长（秒），读不到返回 0，用于校验参考音频是否够长。"""
+    ff = _ffbin("ffprobe")
+    if not ff or not path or not os.path.isfile(path):
+        return 0.0
+    try:
+        r = subprocess.run([ff, "-v", "error", "-show_entries", "format=duration",
+                            "-of", "default=nw=1:nk=1", path],
+                           capture_output=True, text=True, timeout=60)
+        return float((r.stdout or "0").strip() or 0)
+    except Exception:
+        return 0.0
+
+
+def _slug(name):
+    s = re.sub(r"[^\w\u4e00-\u9fff-]+", "", str(name or "").replace(" ", "-"))
+    return s.strip("-_")[:24] or "myvoice"
+
+
+@contextlib.contextmanager
+def _voices_guard():
+    """voices.json 是 media-engine、hermes、本工具共用的表，改动必须加锁 + 原子替换。"""
+    os.makedirs(os.path.dirname(TTS_VOICES_JSON) or ".", exist_ok=True)
+    with open(TTS_VOICES_JSON + ".lock", "a+") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def _read_voices_cfg():
+    with open(TTS_VOICES_JSON, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _write_voices_cfg(cfg):
+    """临时文件 + os.replace：media-engine 可能正在读，绝不能让它读到半截 JSON。"""
+    tmp = TTS_VOICES_JSON + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, 0o664)
+    os.replace(tmp, TTS_VOICES_JSON)
+
+
+def voices_list(force=False):
+    """音色清单（含克隆标记）。内置音色不测时长，只有克隆的才算，避免每次探测都跑 ffprobe。"""
+    now = time.time()
+    if not force and _VOICES_CACHE["data"] and now - _VOICES_CACHE["at"] < 20:
+        return _VOICES_CACHE["data"]
+    try:
+        cfg = _read_voices_cfg()
+    except Exception as e:  # noqa: BLE001 - 表坏了不该让整个工具箱挂掉
+        _log(f"读音色表失败：{type(e).__name__}: {e}")
+        return {"default": "", "voices": []}
+    items = []
+    for vid, v in (cfg.get("voices") or {}).items():
+        cloned = vid.startswith(CLONE_PREFIX)
+        items.append({
+            "id": vid,
+            "description": v.get("description") or "",
+            "prompt_text": v.get("prompt_text") or "",
+            "cloned": cloned,
+            "sec": round(_audio_sec(v.get("prompt_wav") or ""), 2) if cloned else 0,
+            "rounds": len((_read_profile(vid) or {}).get("rounds") or []) if cloned else 0,
+        })
+    data = {"default": cfg.get("default") or "", "voices": items}
+    _VOICES_CACHE.update({"at": now, "data": data})
+    return data
+
+
+def voice_options():
+    """给渠道下拉用的音色 id 列表（克隆音色排在内置之后）。"""
+    vs = (voices_list() or {}).get("voices") or []
+    return [v["id"] for v in vs]
+
+
+def _clone_sample_path(vid):
+    safe = re.sub(r"[^\w\u4e00-\u9fff-]+", "", str(vid or ""))[:40] or "clone"
+    return os.path.join(BASE_DIR, ".cache", "media", f"clone-sample-{safe}.wav")
+
+
+def _probe_clone(vid):
+    """克隆完立刻试合成一句：既验证音色可用，也把这段样本留给用户当场试听。
+    返回 (状态, 说明, 样本路径)：ok / silent（文本不匹配，出空音）/ error（引擎问题）。
+    """
+    try:
+        res = _http_json(MEDIAENGINE + "/v1/tts", timeout=420,
+                         data={"text": "这是一段用来确认音色可用的试听，你听到的就是克隆后的声音。",
+                               "engine": "cosyvoice", "voice": vid, "speed": 1.0,
+                               "mode": "sync", "format": "json"})
+    except Exception as e:  # noqa: BLE001 - 引擎抖动不该否定用户刚建的音色
+        return "error", f"试合成未验证（{type(e).__name__}），音色已保存，可直接选它配音", ""
+    apath = str(res.get("audio_path") or "")
+    try:
+        dur = float(res.get("duration") or 0)
+    except (TypeError, ValueError):
+        dur = 0.0
+    if dur < 1.0:
+        return "silent", f"试合成仅 {dur:.2f}s", apath
+    return "ok", "", apath
+
+
+# ---------------------------------------------------------------- 音色微调
+# zero-shot 没有「训练」这一步，参考音频本身就决定了音色。所以微调 = 在上一版参考上
+# 按选定方向做一次确定性的声学处理（音高 / 语速 / 明亮度 / 轻重），重新登记成新参考，
+# 就等于往那个方向挪了一小步。每轮都做真合成自检 + 可试听 + 可撤销，于是能一轮轮逼近。
+TUNE_DIRECTIONS = {
+    "deeper":   {"label": "更低沉",   "pitch": 0.950, "tempo": 1.00, "volume": 1.00, "extra": ""},
+    "brighter": {"label": "更明亮",   "pitch": 1.050, "tempo": 1.00, "volume": 1.00, "extra": ""},
+    "younger":  {"label": "更年轻",   "pitch": 1.030, "tempo": 1.02, "volume": 1.00, "extra": ""},
+    "older":    {"label": "更成熟",   "pitch": 0.975, "tempo": 0.99, "volume": 1.00, "extra": ""},
+    "warm":     {"label": "更温柔",   "pitch": 0.990, "tempo": 0.97, "volume": 0.88,
+                 "extra": "lowpass=f=7200"},
+    "strong":   {"label": "更有力",   "pitch": 1.010, "tempo": 1.03, "volume": 1.20,
+                 "extra": "acompressor=threshold=0.12:ratio=3:attack=8:release=180"},
+    "faster":   {"label": "语速更快", "pitch": 1.000, "tempo": 1.08, "volume": 1.00, "extra": ""},
+    "slower":   {"label": "语速更慢", "pitch": 1.000, "tempo": 0.93, "volume": 1.00, "extra": ""},
+}
+TUNE_MAX_ROUNDS = 6
+_TUNE_PITCH_RANGE = (0.86, 1.16)
+_TUNE_TEMPO_RANGE = (0.86, 1.18)
+
+
+def _profile_path(vid):
+    safe = re.sub(r"[^\w\u4e00-\u9fff-]+", "", str(vid or ""))[:40] or "clone"
+    return os.path.join(BASE_DIR, ".cache", "media", f"voice-profile-{safe}.json")
+
+
+def _read_profile(vid):
+    """音色档案：初始参考 + 每轮微调记录（不放 voices.json，免得污染共享表）。"""
+    try:
+        with open(_profile_path(vid), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _write_profile(vid, prof):
+    p = _profile_path(vid)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(prof, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, p)
+
+
+def _profile_current(prof):
+    """当前生效的参考：最后一轮的产物，没调过就是初始参考。"""
+    rounds = (prof or {}).get("rounds") or []
+    if rounds:
+        return rounds[-1]
+    return (prof or {}).get("base") or {}
+
+
+def _transcode_ref(raw):
+    """任意音频字节 → 16k 单声道 wav（截到 CLONE_MAX_SEC），返回落盘路径。"""
+    if len(raw) > 20 * 1024 * 1024:
+        raise ValueError("参考音频超过 20MB，请截取 5–15 秒的片段再上传")
+    ff = _ffbin("ffmpeg")
+    if not ff:
+        raise RuntimeError("本机缺少 ffmpeg，无法把参考音频统一转成 16k 单声道 wav")
+    os.makedirs(TTS_REF_DIR, exist_ok=True)
+    fd, src = tempfile.mkstemp(suffix=".raw", dir=TTS_REF_DIR)
+    os.close(fd)
+    wav = os.path.join(TTS_REF_DIR, f"{CLONE_PREFIX}{uuid.uuid4().hex[:10]}.wav")
+    try:
+        with open(src, "wb") as f:
+            f.write(raw)
+        r = subprocess.run([ff, "-y", "-loglevel", "error", "-i", src, "-vn",
+                            "-ac", "1", "-ar", "16000", "-t", str(int(CLONE_MAX_SEC)), wav],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode != 0 or not os.path.isfile(wav) or os.path.getsize(wav) < 1024:
+            msg = (r.stderr or "").strip().splitlines()
+            with contextlib.suppress(OSError):
+                os.remove(wav)
+            raise ValueError("音频无法解析（请上传 wav / mp3 / m4a / ogg / webm）"
+                             + (f"：{msg[-1][:120]}" if msg else ""))
+    finally:
+        if os.path.exists(src):
+            os.remove(src)
+    return wav
+
+
+def _check_ref(wav, text):
+    """参考文本与录音时长必须对得上，否则 zero-shot 只会产出几乎无声的音频。"""
+    sec = _audio_sec(wav)
+    if sec < CLONE_MIN_SEC:
+        raise ValueError(f"参考音频只有 {sec:.1f}s，太短：请提供 3–15 秒连续说话的人声")
+    ratio = len(text) / max(0.8, sec)
+    if ratio < 1.0 or ratio > 12.0:
+        raise ValueError(
+            f"参考文本和录音时长对不上：{sec:.1f}s 的录音通常 {max(3, int(sec * 2.5))}–{int(sec * 6)} 个字，"
+            f"你填了 {len(text)} 个字。请只填这段录音里逐字说的话（不要写提示词或概括）")
+    return sec
+
+
+def _apply_direction(src_wav, d, out_wav):
+    """按方向处理参考音频：音高用 asetrate + atempo 反向抵消，时长不变，语速用 atempo。"""
+    ff = _ffbin("ffmpeg")
+    if not ff:
+        raise RuntimeError("本机缺少 ffmpeg，无法做音色微调")
+    p = float(d.get("pitch") or 1.0)
+    t = float(d.get("tempo") or 1.0)
+    v = float(d.get("volume") or 1.0)
+    chain = []
+    if abs(p - 1.0) > 1e-4:
+        chain.append(f"asetrate={int(round(16000 * p))},aresample=16000")
+        chain.append(f"atempo={1.0 / p:.6f}")
+    if abs(t - 1.0) > 1e-4:
+        chain.append(f"atempo={t:.6f}")
+    if abs(v - 1.0) > 1e-4:
+        chain.append(f"volume={v:.3f}")
+    if d.get("extra"):
+        chain.append(str(d["extra"]))
+    chain += ["aresample=16000", "aformat=channel_layouts=mono"]
+    r = subprocess.run([ff, "-y", "-loglevel", "error", "-i", src_wav, "-vn",
+                        "-af", ",".join(chain), "-ac", "1", "-ar", "16000", out_wav],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0 or not os.path.isfile(out_wav) or os.path.getsize(out_wav) < 1024:
+        msg = (r.stderr or "").strip().splitlines()
+        with contextlib.suppress(OSError):
+            os.remove(out_wav)
+        raise ValueError("音色微调失败（ffmpeg 处理参考音频出错）"
+                         + (f"：{msg[-1][:120]}" if msg else ""))
+    return out_wav
+
+
+def _cleanup_wav(path):
+    """只删参考目录里的文件，别的一概不动。"""
+    ref = os.path.abspath(TTS_REF_DIR)
+    p = str(path or "")
+    if p and os.path.abspath(p).startswith(ref + os.sep) and os.path.isfile(p):
+        with contextlib.suppress(OSError):
+            os.remove(p)
+
+
+def _save_sample(vid, apath):
+    """把试合成样本留作试听（比参考录音更接近实际配音效果）。"""
+    if not (apath and os.path.isfile(apath)):
+        return False
+    try:
+        os.makedirs(os.path.dirname(_clone_sample_path(vid)), exist_ok=True)
+        shutil.copyfile(apath, _clone_sample_path(vid))
+        return True
+    except OSError:
+        return False
+
+
+def clone_voice(raw, prompt_text, name="", owner=""):
+    """上传参考音频 → 16k 单声道 wav → 注册进 voices.json。返回新音色信息。"""
+    if not raw:
+        raise ValueError("没有收到音频数据（请上传一段 5–15 秒的干净人声）")
+    if len(raw) > 20 * 1024 * 1024:
+        raise ValueError("参考音频超过 20MB，请截取 5–15 秒的片段再上传")
+    text = str(prompt_text or "").strip()
+    if not text:
+        raise ValueError("必须填写「参考文本」：这段录音里说的原话，CosyVoice 靠它对齐音色")
+    if len(text) > 200:
+        raise ValueError("参考文本只填这段录音里的原话（200 字以内），不要写提示词")
+    wav = _transcode_ref(raw)
+    # zero-shot 靠 prompt_text 与录音对齐，文本写错会生成几乎无声的音频，
+    # 所以先用「字数/时长」做一次粗筛，别等合成出来才发现（实测 3.5s 却填 2 个字 → 0.04s 空音）。
+    try:
+        sec = _check_ref(wav, text)
+    except ValueError:
+        _cleanup_wav(wav)
+        raise
+
+    with _voices_guard():
+        cfg = _read_voices_cfg()
+        voices = cfg.setdefault("voices", {})
+        base = CLONE_PREFIX + _slug(name)
+        vid, i = base, 1
+        while vid in voices:
+            i += 1
+            vid = f"{base}-{i}"
+        desc = f"克隆音色 · {name.strip()[:20] or vid}｜参考 {sec:.1f}s" + (f"｜{owner}" if owner else "")
+        voices[vid] = {"description": desc, "prompt_wav": wav, "prompt_text": text}
+        _write_voices_cfg(cfg)
+    _VOICES_CACHE.update({"at": 0.0, "data": None})
+    # 最后一步自检：真合成一句。参考文本写错时 zero-shot 会「成功」返回一段不足 0.5s
+    # 的空音，用户拿到手只会以为坏了，所以当场拦下并回滚；正常就把这段样本留作试听。
+    state, why, apath = _probe_clone(vid)
+    if state == "silent":
+        with contextlib.suppress(Exception):
+            delete_clone_voice(vid)
+        raise ValueError("克隆失败：用新音色试合成只得到几乎没有声音的音频。多半是「参考文本」"
+                         "和录音内容不一致 —— 请逐字照抄录音里说的话再试")
+    sample = _save_sample(vid, apath)
+    # 初始参考存档：后面每一轮微调都在它之上叠加，撤销也靠它回到原声
+    with contextlib.suppress(OSError):
+        _write_profile(vid, {"id": vid, "created": time.time(),
+                             "base": {"wav": wav, "text": text, "sec": round(sec, 2)},
+                             "rounds": []})
+    return {"id": vid, "sec": round(sec, 2), "description": desc, "prompt_text": text,
+            "sample": sample, "warning": why if state == "error" else "", "rounds": 0}
+
+
+def tune_clone_voice(vid, direction="", raw=b"", prompt_text=""):
+    """按方向微调一轮：改参考音频 → 重新登记 → 真合成自检 → 留样本；失败自动还原。"""
+    vid = str(vid or "").strip()
+    if not vid.startswith(CLONE_PREFIX):
+        raise ValueError("只能微调自己克隆的音色（clone- 开头）")
+    key = str(direction or "").strip().lower()
+    d = TUNE_DIRECTIONS.get(key)
+    if not d and not raw:
+        raise ValueError("请选择一个微调方向（或重新录一段参考音频再微调）")
+    with _voices_guard():
+        cfg = _read_voices_cfg()
+        v = (cfg.get("voices") or {}).get(vid)
+    if not v:
+        raise ValueError(f"音色不存在：{vid}")
+    prof = _read_profile(vid)
+    if not prof:
+        # 老音色没有档案：用当前登记值当第 0 轮，保证还能继续微调
+        prof = {"id": vid, "created": time.time(),
+                "base": {"wav": str(v.get("prompt_wav") or ""),
+                         "text": str(v.get("prompt_text") or "")},
+                "rounds": []}
+    rounds = prof.get("rounds") or []
+    if len(rounds) >= TUNE_MAX_ROUNDS:
+        raise ValueError(f"这个音色已经微调 {len(rounds)} 轮，再叠加只会越来越糊："
+                         f"建议拿一段更理想的录音重建音色（或先撤销几轮）")
+    cur = _profile_current(prof)
+    old_wav = str(cur.get("wav") or "")
+    old_text = str(cur.get("text") or "")
+    if not old_wav or not os.path.isfile(old_wav):
+        raise ValueError("当前参考音频已不存在，无法继续微调")
+    cum_p = 1.0
+    cum_t = 1.0
+    for r in rounds:
+        cum_p *= float(r.get("pitch") or 1.0)
+        cum_t *= float(r.get("tempo") or 1.0)
+    if d:
+        np_, nt = cum_p * float(d["pitch"]), cum_t * float(d["tempo"])
+        if not (_TUNE_PITCH_RANGE[0] <= np_ <= _TUNE_PITCH_RANGE[1]):
+            raise ValueError(f"音高已经到极限（累计 {np_:.2f}×）：再往「{d['label']}」调只会失真，"
+                             f"建议换个方向或先撤销一轮")
+        if not (_TUNE_TEMPO_RANGE[0] <= nt <= _TUNE_TEMPO_RANGE[1]):
+            raise ValueError(f"语速已经到极限（累计 {nt:.2f}×）：再往「{d['label']}」调只会失真，"
+                             f"建议换个方向或先撤销一轮")
+
+    new_wav = ""
+    new_text = old_text
+    try:
+        if raw:
+            new_wav = _transcode_ref(raw)
+            new_text = str(prompt_text or "").strip()
+            if not new_text:
+                raise ValueError("换新录音就要同时填这段录音的「参考文本」")
+            _check_ref(new_wav, new_text)
+            if d:
+                tuned = os.path.join(TTS_REF_DIR, f"{CLONE_PREFIX}tune-{uuid.uuid4().hex[:10]}.wav")
+                _apply_direction(new_wav, d, tuned)
+                _cleanup_wav(new_wav)          # 中间产物不留
+                new_wav = tuned
+        else:
+            new_wav = os.path.join(TTS_REF_DIR, f"{CLONE_PREFIX}tune-{uuid.uuid4().hex[:10]}.wav")
+            _apply_direction(old_wav, d, new_wav)
+    except Exception:
+        _cleanup_wav(new_wav)
+        raise
+
+    with _voices_guard():
+        cfg = _read_voices_cfg()
+        voices = cfg.get("voices") or {}
+        if vid not in voices:
+            _cleanup_wav(new_wav)
+            raise ValueError(f"音色不存在：{vid}")
+        desc = voices[vid].get("description") or vid
+        voices[vid] = {"description": desc, "prompt_wav": new_wav, "prompt_text": new_text}
+        _write_voices_cfg(cfg)
+    _VOICES_CACHE.update({"at": 0.0, "data": None})
+
+    state, why, apath = _probe_clone(vid)
+    if state == "silent":
+        # 回滚到微调前：坏音色不能留在下拉里
+        with _voices_guard():
+            cfg = _read_voices_cfg()
+            if vid in (cfg.get("voices") or {}):
+                cfg["voices"][vid] = {"description": (cfg["voices"][vid].get("description") or vid),
+                                      "prompt_wav": old_wav, "prompt_text": old_text}
+                _write_voices_cfg(cfg)
+        _VOICES_CACHE.update({"at": 0.0, "data": None})
+        _cleanup_wav(new_wav)
+        raise ValueError("这次微调没通过自检（试合成几乎没声音），已还原到上一版："
+                         "换个方向、或换一段更清晰的参考录音再试")
+
+    label = d["label"] if d else "换参考录音"
+    prof["rounds"] = rounds + [{
+        "n": len(rounds) + 1, "at": round(time.time(), 1),
+        "direction": key or "re-record", "label": label,
+        "pitch": float(d["pitch"]) if d else 1.0,
+        "tempo": float(d["tempo"]) if d else 1.0,
+        "wav": new_wav, "text": new_text,
+        "sec": round(_audio_sec(new_wav), 2),
+    }]
+    with contextlib.suppress(OSError):
+        _write_profile(vid, prof)
+    sample = _save_sample(vid, apath)
+    return {"id": vid, "rounds": len(prof["rounds"]), "label": label,
+            "sec": round(_audio_sec(new_wav), 2), "sample": sample,
+            "warning": why if state == "error" else ""}
+
+
+def undo_tune(vid):
+    """撤销最后一轮微调，回到上一版参考。"""
+    vid = str(vid or "").strip()
+    if not vid.startswith(CLONE_PREFIX):
+        raise ValueError("只能撤销克隆音色的微调")
+    prof = _read_profile(vid)
+    rounds = (prof or {}).get("rounds") or []
+    if not rounds:
+        raise ValueError("这个音色还没有微调记录")
+    last = rounds[-1]
+    keep = rounds[:-1]
+    cur = keep[-1] if keep else (prof.get("base") or {})
+    wav, text = str(cur.get("wav") or ""), str(cur.get("text") or "")
+    if not wav or not os.path.isfile(wav):
+        raise ValueError("上一版参考音频已不存在，无法撤销")
+    with _voices_guard():
+        cfg = _read_voices_cfg()
+        voices = cfg.get("voices") or {}
+        if vid not in voices:
+            raise ValueError(f"音色不存在：{vid}")
+        voices[vid] = {"description": voices[vid].get("description") or vid,
+                       "prompt_wav": wav, "prompt_text": text}
+        _write_voices_cfg(cfg)
+    _VOICES_CACHE.update({"at": 0.0, "data": None})
+    prof["rounds"] = keep
+    with contextlib.suppress(OSError):
+        _write_profile(vid, prof)
+    _cleanup_wav(last.get("wav"))
+    state, why, apath = _probe_clone(vid)
+    if state != "silent":
+        _save_sample(vid, apath)
+    return {"id": vid, "rounds": len(keep), "undone": last.get("label") or "",
+            "warning": why if state == "error" else ""}
+
+
+def voice_profile(vid):
+    """微调档案：可选方向 + 已调轮次，前端据此渲染「微调」面板。"""
+    vid = str(vid or "").strip()
+    if not vid.startswith(CLONE_PREFIX):
+        raise ValueError("只能查看克隆音色的微调档案")
+    prof = _read_profile(vid) or {}
+    rounds = prof.get("rounds") or []
+    cur = _profile_current(prof)
+    return {
+        "id": vid,
+        "count": len(rounds),
+        "maxRounds": TUNE_MAX_ROUNDS,
+        "rounds": [{"n": r.get("n"), "label": r.get("label") or "",
+                    "direction": r.get("direction") or "",
+                    "sec": r.get("sec") or 0} for r in rounds],
+        "directions": [{"key": k, "label": v["label"]} for k, v in TUNE_DIRECTIONS.items()],
+        "current": {"text": cur.get("text") or "",
+                    "sec": round(_audio_sec(cur.get("wav") or ""), 2)},
+    }
+
+
+def delete_clone_voice(vid):
+    """只允许删 clone- 前缀的音色，内置音色一个都不能动。"""
+    vid = str(vid or "").strip()
+    if not vid.startswith(CLONE_PREFIX):
+        raise ValueError("只能删除自己克隆的音色（clone- 开头）")
+    with _voices_guard():
+        cfg = _read_voices_cfg()
+        voices = cfg.get("voices") or {}
+        if vid not in voices:
+            raise ValueError(f"音色不存在：{vid}")
+        v = voices.pop(vid)
+        _write_voices_cfg(cfg)
+    _VOICES_CACHE.update({"at": 0.0, "data": None})
+    wav = str(v.get("prompt_wav") or "")
+    ref = os.path.abspath(TTS_REF_DIR)
+    if wav and os.path.abspath(wav).startswith(ref + os.sep) and os.path.isfile(wav):
+        try:
+            os.remove(wav)
+        except OSError:
+            pass
+    # 微调轮次的中间 wav 与档案一起清掉，别在共享参考目录里留垃圾
+    prof = _read_profile(vid) or {}
+    for r in prof.get("rounds") or []:
+        _cleanup_wav(r.get("wav"))
+    _cleanup_wav((prof.get("base") or {}).get("wav"))
+    with contextlib.suppress(OSError):
+        os.remove(_profile_path(vid))
+    with contextlib.suppress(OSError):
+        os.remove(_clone_sample_path(vid))
+    return {"id": vid}
+
+
+def clone_ref_path(vid):
+    """试听用：优先返回克隆后试合成的样本（更像实际配音效果），没有则退回参考录音。"""
+    vid = str(vid or "").strip()
+    if not vid.startswith(CLONE_PREFIX):
+        raise ValueError("只能试听克隆音色")
+    sample = _clone_sample_path(vid)
+    if os.path.isfile(sample):
+        return sample
+    cfg = _read_voices_cfg()
+    v = (cfg.get("voices") or {}).get(vid) or {}
+    wav = str(v.get("prompt_wav") or "")
+    ref = os.path.abspath(TTS_REF_DIR)
+    if not wav or not os.path.abspath(wav).startswith(ref + os.sep) or not os.path.isfile(wav):
+        raise ValueError("该音色的参考音频已不存在")
+    return wav
+
+
 def _tts(mgr, row, params, on_progress):
     engine = "qwen3" if row["channel"] == "qwen" else "cosyvoice"
     body = {"text": row["prompt"], "engine": engine, "mode": "sync", "format": "json",
@@ -1296,7 +1841,7 @@ def _private_url(dest):
         return ""
     parts = rel.split(os.sep)
     # 与 server.PRIVATE_SUBS 保持一致：库里文件（opc.db 等）绝不能拼出可访问的链接
-    if len(parts) < 2 or not parts[0].isdigit() or parts[1] not in ("工具箱", "obsidian"):
+    if len(parts) < 2 or not parts[0].isdigit() or parts[1] not in ("工具箱", "obsidian", "downloads"):
         return ""
     return "/private/" + "/".join([parts[0]] + [urllib.parse.quote(p) for p in parts[1:]])
 

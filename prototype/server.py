@@ -284,6 +284,15 @@ try:
 except Exception as e:
     print(f"[inventory] 盘点线程启动失败：{type(e).__name__}: {e}", flush=True)
 
+# 素材「自动采集」：按用户各自的定时任务跑 hermes 采集 → 输出 users/<手机号>/downloads → CCO 分析出灵感
+try:
+    import collector
+    collector.start(lambda data_dir: _kernel_for(data_dir))
+    print("[collect] 自动采集调度线程已启动", flush=True)
+except Exception as e:
+    collector = None
+    print(f"[collect] 自动采集调度启动失败：{type(e).__name__}: {e}", flush=True)
+
 
 THUMB_DIR = os.path.join(tempfile.gettempdir(), "opc-workbench-thumbs")
 THUMB_IMG = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "tif", "tiff", "heic"}
@@ -802,6 +811,47 @@ class Handler(BaseHTTPRequestHandler):
             if not self._session_user():
                 return self._json({"ok": False, "error": "需要登录"}, 401)
             return self._materials_thumb(urlparse(self.path).query)
+        # ---------- 素材「自动采集」：个人定时采集任务 ----------
+        if path == "/api/collect/tasks":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._collect_tasks_get())
+        if path == "/api/collect/runs":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._collect_runs(urlparse(self.path).query))
+        if path == "/api/collect/ideas":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._collect_ideas(urlparse(self.path).query))
+        # 音色表 / 克隆音色试听（会暴露 media-engine 的音色配置，要求登录）
+        if path == "/api/toolbox/voices":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            try:
+                return self._json({"ok": True, **self._kernel().toolbox_voices()})
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/toolbox/voice/ref":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            try:
+                vid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+                return self._send_audio(self._kernel().toolbox_voice_ref(vid))
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/toolbox/voice/profile":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            try:
+                vid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+                return self._json({"ok": True, **self._kernel().toolbox_voice_profile(vid)})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         # 工具箱：渠道规格 + 手工任务列表（会触发模型出图出片，要求登录）
         if path in ("/api/toolbox/channels", "/api/toolbox/jobs"):
             if not self._session_user():
@@ -1274,6 +1324,19 @@ class Handler(BaseHTTPRequestHandler):
             if not self._session_user():
                 return "", "需要登录后才能查看个人空间"
             return "", "该账号下还没有个人空间目录（conring/users/<手机号>/）"
+        if root_name == "collect":
+            # 「自动采集」标签 = 个人私有目录 users/<手机号>/downloads（定时采集任务输出）
+            root = self._my_private_root()
+            if not root:
+                if not self._session_user():
+                    return "", "需要登录后才能查看自动采集目录"
+                return "", "该账号下还没有个人空间目录（conring/users/<手机号>/）"
+            d = os.path.join(root, "downloads")
+            try:
+                os.makedirs(d, exist_ok=True)
+            except OSError:
+                pass
+            return os.path.realpath(d), ""
         return os.path.realpath(os.path.join(self._kernel().vault_dir, "素材")), ""
 
     def _materials_resolve(self, root_name, rel):
@@ -1335,9 +1398,9 @@ class Handler(BaseHTTPRequestHandler):
                 "dirs": dirs[:300], "files": files[:500], "skipped": dir_err,
                 "counts": {"dirs": len(dirs), "files": len(files)},
                 "sig": _dir_sig(full, keep)}
-        if root_name == "private":
+        if root_name in ("private", "collect"):
             # 前端拼 /private/<手机号>/... 用；这个值只反映会话本人，不接受外部指定
-            resp["phone"] = os.path.basename(root)
+            resp["phone"] = os.path.basename(self._my_private_root() or "")
         return resp
 
     def _materials_file_of(self, root_name, rel):
@@ -1477,6 +1540,91 @@ class Handler(BaseHTTPRequestHandler):
             print(f"[materials] 清空产物记录失败：{type(ex).__name__}: {ex}", flush=True)
         return self._json({"ok": True, "path": rel, "kind": "dir" if is_dir else "file"})
 
+    # ---------------- 素材「自动采集」：个人定时采集任务 ----------------
+
+    def _collect_ctx(self):
+        """当前会话的 (手机号, 工作区目录)；owner 与普通用户都走 users/<手机号>。"""
+        user = self._session_user()
+        if not user:
+            return "", ""
+        data_dir = str(user.get("dataDir") or "").strip()
+        phone = os.path.basename(os.path.realpath(data_dir)) if data_dir else ""
+        return phone, os.path.realpath(data_dir) if data_dir else ""
+
+    def _collect_tasks_get(self):
+        if not collector:
+            return {"ok": False, "error": "采集模块未启动", "tasks": []}
+        phone, data_dir = self._collect_ctx()
+        if not phone:
+            return {"ok": False, "error": "取不到手机号/工作区", "tasks": []}
+        try:
+            tasks = collector.list_tasks(data_dir, phone)
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}", "tasks": []}
+        return {"ok": True, "tasks": tasks,
+                "sources": [{"key": k, "label": v} for k, v in collector.SOURCES],
+                "hermes": True}
+
+    def _collect_tasks_post(self, body):
+        if not collector:
+            return {"ok": False, "error": "采集模块未启动"}
+        phone, data_dir = self._collect_ctx()
+        if not phone:
+            return {"ok": False, "error": "取不到手机号/工作区"}
+        payload = body if isinstance(body, dict) else {}
+        res = collector.save_task(data_dir, phone, payload)
+        if res.get("ok"):
+            # 保存即保证输出目录存在，前端切到「自动采集」标签能立刻浏览
+            collector.downloads_dir(data_dir)
+            print(f"[collect] 任务已保存 phone={phone} id={res['task']['id']}", flush=True)
+        return res
+
+    def _collect_delete(self, body):
+        if not collector:
+            return {"ok": False, "error": "采集模块未启动"}
+        phone, data_dir = self._collect_ctx()
+        tid = str((body or {}).get("id") or "").strip()
+        if not tid:
+            return {"ok": False, "error": "缺少 id"}
+        return collector.delete_task(data_dir, phone, tid)
+
+    def _collect_run(self, body):
+        """立即采集：后台线程跑，HTTP 只回"已开始"，前端靠列表状态刷新。"""
+        if not collector:
+            return {"ok": False, "error": "采集模块未启动"}
+        phone, data_dir = self._collect_ctx()
+        tid = str((body or {}).get("id") or "").strip()
+        if not tid:
+            return {"ok": False, "error": "缺少 id"}
+        return collector.trigger(data_dir, phone, tid, lambda dd: _kernel_for(dd))
+
+    def _collect_runs(self, query):
+        if not collector:
+            return {"ok": False, "error": "采集模块未启动", "runs": []}
+        phone, data_dir = self._collect_ctx()
+        q = parse_qs(query or "")
+        tid = (q.get("taskId") or [""])[0].strip()
+        try:
+            rows = collector.runs(data_dir, phone, task_id=tid or None, limit=20)
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}", "runs": []}
+        return {"ok": True, "runs": rows}
+
+    def _collect_ideas(self, query):
+        if not collector:
+            return {"ok": False, "error": "采集模块未启动", "ideas": []}
+        phone, data_dir = self._collect_ctx()
+        q = parse_qs(query or "")
+        try:
+            limit = int((q.get("limit") or ["50"])[0])
+        except ValueError:
+            limit = 50
+        try:
+            rows = collector.ideas(data_dir, "", limit=max(1, min(limit, 200)))
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}", "ideas": []}
+        return {"ok": True, "ideas": rows}
+
     def _material(self, rel):
         """素材库只读发布：/materials/... → MATERIALS_ROOT/...（限定目录、无隐藏目录）。"""
         root = os.path.realpath(MATERIALS_ROOT)
@@ -1515,7 +1663,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._serve_media(full)
 
     # 个人空间下允许经 web 访问的子目录（白名单，避免 opc.db / media_jobs.db 被下发）
-    PRIVATE_SUBS = {"工具箱", "obsidian"}
+    # downloads = 素材页「自动采集」定时任务的输出目录
+    PRIVATE_SUBS = {"工具箱", "obsidian", "downloads"}
 
     def _my_private_root(self):
         """当前会话用户的个人空间根：conring/users/<手机号>/。
@@ -2127,6 +2276,17 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             shutil.copyfileobj(f, self.wfile, 256 * 1024)
 
+    def _send_audio(self, path):
+        """试听用：inline 返回 wav，不弹下载框。"""
+        size = os.path.getsize(path)
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with open(path, "rb") as f:
+            shutil.copyfileobj(f, self.wfile, 128 * 1024)
+
     def _account_assets(self, data_dir):
         """数据资产清单：按顶层条目聚合文件数与体积（全部打包进导出 zip）。"""
         items = []
@@ -2427,10 +2587,68 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
             return self._json({"ok": True, "frame": name})
+        # 音色克隆：body 是原始录音字节，名称/参考文本走 query（同 frame，先于 _body() 拦截）
+        if path == "/api/toolbox/voice/clone":
+            q = parse_qs(urlparse(self.path).query)
+            name = (q.get("name") or [""])[0].strip()[:24]
+            text = (q.get("text") or [""])[0].strip()
+            u = self._session_user() or {}
+            owner = str(u.get("name") or u.get("phone") or "")[:20]
+            try:
+                res = self._kernel().toolbox_clone_voice(self._raw_body(), name, text, owner)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": True, **res})
+        if path == "/api/toolbox/voice/delete":
+            vid = str(self._body().get("id") or "").strip()
+            try:
+                self._kernel().toolbox_delete_voice(vid)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": True, "id": vid})
+        # 音色微调：body 可为空（只按方向调），换新录音时是原始音频字节；参数走 query
+        if path == "/api/toolbox/voice/tune":
+            q = parse_qs(urlparse(self.path).query)
+            vid = (q.get("id") or [""])[0].strip()
+            direction = (q.get("direction") or [""])[0].strip()
+            text = (q.get("text") or [""])[0].strip()
+            try:
+                res = self._kernel().toolbox_tune_voice(vid, direction, self._raw_body(), text)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": True, **res})
+        if path == "/api/toolbox/voice/undo":
+            vid = str(self._body().get("id") or "").strip()
+            try:
+                res = self._kernel().toolbox_undo_voice(vid)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": True, **res})
         body = self._body()
-        # 素材页删除：只放行个人空间（工具箱 / obsidian），公共目录一律拒绝
+        # 素材页删除：只放行个人空间（工具箱 / obsidian / downloads），公共目录一律拒绝
         if path == "/api/materials/delete":
             return self._materials_delete(body)
+        # 素材「自动采集」：保存/删除任务、立即采集
+        if path == "/api/collect/tasks":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._collect_tasks_post(body))
+        if path == "/api/collect/delete":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._collect_delete(body))
+        if path == "/api/collect/run":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._collect_run(body))
         # 知识图谱关系边的人工维护：确认 AI 抽取结果 / 手动连边 / 删除
         if path == "/api/knowledge/relations":
             action = str(body.get("action") or "upsert").strip().lower()

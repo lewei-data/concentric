@@ -2563,6 +2563,7 @@ a:hover {
   background: var(--accent);
 }
 
+.ins-cat.cat-collect { background: #0284c7; }
 .ins-cat.cat-hot { background: #d97706; }
 .ins-cat.cat-video { background: #7c3aed; }
 .ins-cat.cat-distill { background: #059669; }

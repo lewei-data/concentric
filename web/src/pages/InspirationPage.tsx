@@ -30,10 +30,11 @@ type InspirationData = {
   error?: string;
 };
 
-const CATEGORIES = ["全部", "热点分析", "视频分析", "蒸馏启发"] as const;
+const CATEGORIES = ["全部", "采集洞察", "热点分析", "视频分析", "蒸馏启发"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 const CAT_CLASS: Record<string, string> = {
+  采集洞察: "cat-collect",
   热点分析: "cat-hot",
   视频分析: "cat-video",
   蒸馏启发: "cat-distill",
@@ -45,6 +46,7 @@ const SOURCE_LABELS: Record<string, string> = {
   videoDocs: "视频拆解文档",
   knowledgeEntries: "知识库条目",
   meetingConclusions: "评审会结论",
+  collectIdeas: "自动采集灵感",
 };
 
 const REFRESH_KINDS = new Set([
@@ -190,6 +192,7 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
   const counts = data?.counts || {};
   const stats = [
     { label: "灵感总数", value: counts.total ?? "-", tone: "total" },
+    { label: "采集洞察", value: counts["采集洞察"] ?? "-", tone: "collect" },
     { label: "来自热点分析", value: counts["热点分析"] ?? "-", tone: "hot" },
     { label: "来自视频分析", value: counts["视频分析"] ?? "-", tone: "video" },
     { label: "蒸馏启发", value: counts["蒸馏启发"] ?? "-", tone: "distill" },
@@ -202,7 +205,7 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
         <div>
           <h1>创意灵感</h1>
           <p className="ins-sub">
-            CCO 首席创意官视角 · 热点分析 → 视频拆解 → 选题蒸馏，三类线索与启发集中呈现
+            CCO 首席创意官视角 · 自动采集 → 热点分析 → 视频拆解 → 选题蒸馏，线索与启发集中呈现（采集洞察优先）
           </p>
         </div>
         <div className="ins-head-actions">
