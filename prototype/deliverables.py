@@ -67,9 +67,10 @@ MAIL_DIR = os.path.join(VAULT, "OPC", "邮件")
 
 
 def export_meeting(trace, data):
-    """写选题评审会纪要与邮件草稿（不代发，只落盘）。"""
+    """写选题会纪要与邮件草稿（不代发，只落盘）；标题随会议类型传入（知识库内化选题）。"""
     os.makedirs(os.path.join(MEET_DIR, _slug(trace)), exist_ok=True)
     os.makedirs(os.path.join(MAIL_DIR, _slug(trace)), exist_ok=True)
+    title = str(data.get("title") or "每日选题会")
     final = data.get("final") or {}
     lines = [str(data.get("minutes") or "").strip(), "", "## 定稿清单（每项目 2 条）", ""]
     for pid, topics in final.items():
@@ -82,9 +83,9 @@ def export_meeting(trace, data):
     with _lock:
         open(_local(m_url), "w", encoding="utf-8").write(body)
         mail = "\n".join([
-            "# 选题评审会 · 邮件草稿", "",
+            f"# {title} · 邮件草稿", "",
             "- 状态：**草稿，尚未发送**（当前未接入邮件服务）",
-            f"- 主题：选题评审会纪要 · {(data.get('hotspot') or {}).get('title', trace)}",
+            f"- 主题：{title}纪要 · {(data.get('hotspot') or {}).get('title', trace)}",
             f"- 收件人：{'、'.join(data.get('recipients') or [])}",
             f"- 抄送：{'、'.join(data.get('cc') or [])}",
             "", "## 正文", "", body,

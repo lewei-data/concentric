@@ -7,6 +7,7 @@ import { WuxingLogo } from "../components/WuxingLogo";
 import { DecisionPage } from "./DecisionPage";
 import { ReflectionPage } from "./ReflectionPage";
 import { GraphPage } from "./GraphPage";
+import { AssetLinksPanel } from "../components/AssetLinksPanel";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
@@ -410,6 +411,7 @@ export function KnowledgePage() {
                     <KbState kind="empty" text="这条归档没有正文，仅保留标题与标签" />
                   )}
                 </div>
+                <AssetLinksPanel kbId={String(selected.id)} />
               </>
             )}
           </div>

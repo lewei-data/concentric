@@ -300,14 +300,14 @@ def _distill_ideas(kernel, vault):
         if titles:
             for t in titles[:8]:
                 items.append(_item(
-                    CAT_DISTILL, "评审会定稿", t, f"{rec.get('title') or '选题评审会'} 定稿选题",
-                    concl, ["CCO 定稿", rec.get("title") or "选题评审会"],
-                    f"选题评审会 · {(at or '')[:10]} · {rec.get('title') or ''}",
+                    CAT_DISTILL, "选题定稿", t, f"{rec.get('title') or '每日选题'} 定稿选题",
+                    concl, ["CCO 定稿", rec.get("title") or "每日选题"],
+                    f"选题定稿 · {(at or '')[:10]} · {rec.get('title') or ''}",
                     "/app/meeting", at, None, "KERNEL.meeting_payload()"))
         else:
             items.append(_item(
-                CAT_DISTILL, "评审会结论", rec.get("title") or "评审会结论", concl, concl,
-                ["CCO 定稿"], f"选题评审会 · {(at or '')[:10]}", "/app/meeting",
+                CAT_DISTILL, "选题结论", rec.get("title") or "选题结论", concl, concl,
+                ["CCO 定稿"], f"选题定稿 · {(at or '')[:10]}", "/app/meeting",
                 at, None, "KERNEL.meeting_payload()"))
     return items, kept, meeting_count
 

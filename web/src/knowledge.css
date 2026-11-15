@@ -347,3 +347,137 @@
   .kb-detail-toolbar { padding: 10px 14px; flex-wrap: wrap; }
   .kb-pdf-viewer { height: 50vh; }
 }
+
+/* ── 资料 ↔ 认知 关联面板 ── */
+.al-panel {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.al-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.al-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.al-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.al-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.al-kind {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.al-kind-raw {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.al-kind-work {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.al-ref {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+}
+
+.al-role {
+  flex: none;
+  color: #64748b;
+}
+
+.al-note {
+  flex: none;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #94a3b8;
+}
+
+.al-del {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.al-del:hover {
+  color: #dc2626;
+}
+
+.al-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.al-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #0f172a;
+  background: #fff;
+}
+
+.al-input:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: #60a5fa;
+}
+
+.al-ref-input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.al-note-input {
+  width: 150px;
+}
+
+.al-add {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
+@media (max-width: 720px) {
+  .al-note-input { display: none; }
+  .al-ref-input { min-width: 120px; }
+}

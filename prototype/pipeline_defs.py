@@ -17,7 +17,7 @@ FILE = os.environ.get("OPC_PIPELINE_FILE", DEFAULT_FILE)
 
 # 执行器已实现的阶段 id；定义里出现未知 id 视为配置错误（防止拼写错误静默跳过）
 KNOWN_STAGES = (
-    "topic_meeting", "topic_review", "boss_report", "create_items",
+    "topic_meeting", "boss_report", "create_items",
     "production_approval", "assessment", "copy", "sample", "render",
     "sample_review", "final", "review", "publish_approval", "release",
     "archive", "report",
@@ -35,8 +35,8 @@ def _stage(pid, name, kind, item_stage="", om_stage="", rounds=2,
 
 # 与改造前 _pipeline 的阶段切分逐段对应，作为文件不可用时的兜底
 DEFAULT_STAGES = [
-    _stage("topic_meeting", "每日选题会", "produce", "topic", "research"),
-    _stage("topic_review", "选题评审会", "gate", "topic", "proposal"),
+    _stage("topic_meeting", "每日选题（知识库内化）", "produce", "topic", "research",
+           description="CCO 从知识库提炼 6 条最佳选题直出定稿，不评审"),
     _stage("boss_report", "选题结果汇报", "produce"),
     _stage("create_items", "建内容单", "produce", "topic"),
     _stage("production_approval", "开工审批", "approval",

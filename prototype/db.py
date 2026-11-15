@@ -145,8 +145,43 @@ CREATE TABLE IF NOT EXISTS knowledge (
   summary    TEXT,
   project_id TEXT,
   trace_id   TEXT,
-  body       TEXT
+  body       TEXT,
+  -- 认知维：只记「结论」的库不会长大，这四列负责「结论怎么来的、会不会错」
+  created_at    TEXT,                       -- 形成时间（updated_at 是最后修改，不能替代）
+  confidence    TEXT DEFAULT 'medium',      -- high / medium / low
+  invalid_when  TEXT,                       -- 失效条件（自然语言，一条即可）
+  superseded_by TEXT                        -- 被哪条修订/推翻（knowledge.id）
 );
+
+-- 资料层 ↔ 认知层：四种带方向的引用，asset_kind 只区分原料与成品，
+-- 加工过程靠 trace_id 贯穿（见 pipeline_runs / 交付物目录），不单列
+CREATE TABLE IF NOT EXISTS asset_links (
+  id         TEXT PRIMARY KEY,              -- kb_id|kind|ref|role 组合键
+  kb_id      TEXT NOT NULL,                 -- knowledge.id
+  asset_kind TEXT NOT NULL,                 -- raw(原料) | work(成品)
+  asset_ref  TEXT NOT NULL,                 -- 原料相对路径 / 成品编号 W-xxx
+  role       TEXT NOT NULL,                 -- evidence(证据) | applied(应用) | produced(产出) | verified(验证) | refutes(推翻)
+  note       TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_alink_kb ON asset_links(kb_id);
+CREATE INDEX IF NOT EXISTS idx_alink_ref ON asset_links(asset_kind, asset_ref);
+
+-- 问题池：库里如果只有答案没有疑问，认知就失去生长动力
+CREATE TABLE IF NOT EXISTS knowledge_questions (
+  id           TEXT PRIMARY KEY,
+  question     TEXT NOT NULL,
+  status       TEXT DEFAULT 'open',         -- open(待解) | answered(已有答案) | dropped(放弃)
+  asked_by     TEXT,
+  origin_ref   TEXT,                        -- 问题从哪来：素材路径 / traceId / 人工
+  answer_kb_id TEXT,                        -- 回答了它的知识条目
+  created_at   TEXT,
+  updated_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kq_status ON knowledge_questions(status);
 
 -- 知识图谱关系边：src/dst 均为 knowledge.id，id 用无序键保证同一对只有一条
 CREATE TABLE IF NOT EXISTS knowledge_relations (
@@ -536,6 +571,18 @@ class Store:
                     self._conn.execute("ALTER TABLE knowledge ADD COLUMN trace_id TEXT")
                 if cols and "body" not in cols:
                     self._conn.execute("ALTER TABLE knowledge ADD COLUMN body TEXT")
+                # 认知维补列（老库）：形成时间 / 置信度 / 失效条件 / 被谁替代
+                if cols and "created_at" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN created_at TEXT")
+                    # 老数据没有形成时间，用最后修改时间兜底，避免前端显示空
+                    self._conn.execute("UPDATE knowledge SET created_at=updated_at "
+                                       "WHERE created_at IS NULL")
+                if cols and "confidence" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN confidence TEXT DEFAULT 'medium'")
+                if cols and "invalid_when" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN invalid_when TEXT")
+                if cols and "superseded_by" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN superseded_by TEXT")
                 # knowledge 表索引（补列后创建，确保列存在）
                 self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge(category)")
                 self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge(project_id)")
@@ -550,9 +597,13 @@ class Store:
                     if pick:
                         self._conn.execute("UPDATE llm_models SET is_default=1 WHERE id=?",
                                            (pick["id"],))
+            # v3：知识认知维（created_at/confidence/invalid_when/superseded_by）
+            #     + asset_links（资料↔认知）+ knowledge_questions（问题池）
             row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
-                self._conn.execute("INSERT INTO schema_version(version) VALUES (1)")
+                self._conn.execute("INSERT INTO schema_version(version) VALUES (3)")
+            elif _int(row["version"]) < 3:
+                self._conn.execute("UPDATE schema_version SET version=3")
             self._conn.commit()
         try:
             os.chmod(self.path, 0o600)
@@ -795,6 +846,80 @@ class Store:
 
     def list_relations(self):
         return self.fetch("SELECT * FROM knowledge_relations")
+
+    # ---------- 资料 ↔ 认知 关联 ----------
+    def upsert_asset_link(self, link):
+        """挂一条引用：同一 (知识, 资产, 角色) 只存一条，重复挂只更新备注。"""
+        try:
+            kid = str(link.get("kb_id") or "").strip()
+            ref = str(link.get("asset_ref") or "").strip()
+            kind = str(link.get("asset_kind") or "raw").strip()
+            role = str(link.get("role") or "evidence").strip()
+            if not kid or not ref:
+                _log(f"资产关联缺参数，已忽略：kb_id={kid!r} asset_ref={ref!r}")
+                return None
+            lid = "|".join((kid, kind, ref, role))
+            self.put("""INSERT INTO asset_links
+                        (id,kb_id,asset_kind,asset_ref,role,note,created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?)
+                        ON CONFLICT(id) DO UPDATE SET note=excluded.note,
+                          updated_at=excluded.updated_at""",
+                     (lid, kid, kind, ref, role, link.get("note"), now_iso(), now_iso()))
+            return lid
+        except Exception as e:
+            _log(f"upsert_asset_link 失败：{type(e).__name__}: {e}")
+            return None
+
+    def delete_asset_link(self, lid):
+        try:
+            self.put("DELETE FROM asset_links WHERE id=?", (lid,))
+        except Exception as e:
+            _log(f"delete_asset_link 失败：{type(e).__name__}: {e}")
+
+    def list_asset_links(self, kb_id=None, asset_kind=None, asset_ref=None):
+        try:
+            if kb_id:
+                return self.fetch("SELECT * FROM asset_links WHERE kb_id=?", (kb_id,))
+            if asset_ref:
+                return self.fetch("SELECT * FROM asset_links "
+                                  "WHERE asset_kind=? AND asset_ref=?",
+                                  (asset_kind or "raw", asset_ref))
+            return self.fetch("SELECT * FROM asset_links")
+        except Exception as e:
+            _log(f"list_asset_links 失败：{type(e).__name__}: {e}")
+            return []
+
+    # ---------- 问题池：只有答案没有疑问，库就不会长大 ----------
+    def upsert_question(self, q):
+        try:
+            qid = str(q.get("id") or "").strip()
+            text = str(q.get("question") or "").strip()
+            if not text:
+                return None
+            if not qid:
+                qid = "kq" + os.urandom(4).hex()
+            self.put("""INSERT INTO knowledge_questions
+                        (id,question,status,asked_by,origin_ref,answer_kb_id,created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?)
+                        ON CONFLICT(id) DO UPDATE SET question=excluded.question,
+                          status=excluded.status, answer_kb_id=excluded.answer_kb_id,
+                          updated_at=excluded.updated_at""",
+                     (qid, text, q.get("status") or "open", q.get("asked_by"),
+                      q.get("origin_ref"), q.get("answer_kb_id"), now_iso(), now_iso()))
+            return qid
+        except Exception as e:
+            _log(f"upsert_question 失败：{type(e).__name__}: {e}")
+            return None
+
+    def list_questions(self, status=None):
+        try:
+            if status:
+                return self.fetch("SELECT * FROM knowledge_questions "
+                                  "WHERE status=? ORDER BY created_at DESC", (status,))
+            return self.fetch("SELECT * FROM knowledge_questions ORDER BY created_at DESC")
+        except Exception as e:
+            _log(f"list_questions 失败：{type(e).__name__}: {e}")
+            return []
 
     def upsert_content(self, c):
         try:

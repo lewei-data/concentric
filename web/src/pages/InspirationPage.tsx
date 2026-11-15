@@ -89,7 +89,8 @@ function shortTime(at?: string) {
   return m ? `${m[2]}-${m[3]} ${m[4]}:${m[5]}` : at.slice(0, 16);
 }
 
-export function InspirationPage() {
+/** embedded=true 时不渲染页头，供「素材」页内嵌为 tab 使用 */
+export function InspirationPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [data, setData] = useState<InspirationData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -188,6 +189,7 @@ export function InspirationPage() {
 
   return (
     <div className="ins-page">
+      {!embedded && (
       <div className="page-head">
         <div>
           <h1>创意灵感</h1>
@@ -204,6 +206,8 @@ export function InspirationPage() {
           </button>
         </div>
       </div>
+
+      )}
 
       {error && <div className="error-banner">{error}</div>}
 

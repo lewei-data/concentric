@@ -11,6 +11,7 @@ import { LoginPage } from "./pages/LoginPage";
 // 路由级代码分割：非首屏页面按需加载，主包只保留首页 + 登录页
 const HotspotsPage = lazy(() => import("./pages/HotspotsPage").then((m) => ({ default: m.HotspotsPage })));
 const InspirationPage = lazy(() => import("./pages/InspirationPage").then((m) => ({ default: m.InspirationPage })));
+const MaterialsPage = lazy(() => import("./pages/MaterialsPage").then((m) => ({ default: m.MaterialsPage })));
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage").then((m) => ({ default: m.KnowledgePage })));
 const DecisionPage = lazy(() => import("./pages/DecisionPage").then((m) => ({ default: m.DecisionPage })));
 const ReflectionPage = lazy(() => import("./pages/ReflectionPage").then((m) => ({ default: m.ReflectionPage })));
@@ -57,6 +58,8 @@ export default function App() {
             }
           >
             <Route path="/" element={<HomePage />} />
+            <Route path="/materials" element={<Suspense fallback={<PageFallback />}><MaterialsPage /></Suspense>} />
+            {/* 旧入口保留，创意灵感已并入「素材」页 */}
             <Route path="/inspiration" element={<Suspense fallback={<PageFallback />}><InspirationPage /></Suspense>} />
             <Route path="/ops" element={<Suspense fallback={<PageFallback />}><OpsPage /></Suspense>} />
             <Route path="/models" element={<Suspense fallback={<PageFallback />}><ModelsPage /></Suspense>} />

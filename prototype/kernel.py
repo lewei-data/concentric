@@ -1166,9 +1166,10 @@ class Kernel:
                 "source": f"{status.get('file') or '热点采集'} · {status.get('time') or '?'} 档"}
 
     def inject_hotspot(self, title=None, tags=None, score=None, force=False):
-        """注入热点并触发选题会。
+        """发起每日选题。
 
-        未显式传 title 时，热点由最新一档原始采集榜定义；采集缺失直接报错，不再写死文案。
+        显式传 title：老板指定方向（作为 CCO 选题的参考，不再按项目拆解热点）；
+        未传 title：完全由知识库驱动——CCO 从内化认知中提炼最佳选题，不读热点榜。
         """
         if not force:
             self._sweep_stale()
@@ -1187,41 +1188,47 @@ class Kernel:
                 raise ValueError("score 需为 0-1 的数字")
             if not 0 <= score <= 1:
                 raise ValueError("score 需在 0-1 之间")
-        basis, source = "", "手动注入"
+        basis, source, kind = "", "手动注入", "manual"
         if title and title.strip():
             title = title.strip()
             if score is None:
-                basis = "手动注入未提供热度"
+                basis = "老板指定方向（未提供热度）"
         else:
-            data = self._hotspot_from_collection()
-            if not data:
-                raise ValueError("暂无最新采集数据：OPC/热点采集 下没有当日榜单，请先执行采集")
-            title = data["title"]
-            tags = tags or data["tags"]
-            if score is None:
-                score = data["score"]
-            basis, source = data["scoreBasis"], data["source"]
+            # 每日选题改为知识库内化：不再从热点榜分别匹配三个项目
+            kb = self._kb_brief(limit=1)
+            if not kb["count"]:
+                raise ValueError("知识库暂无可用于选题的条目：请先在 OPC/知识库 归档内化认知")
+            title, kind = "知识库内化选题", "knowledge"
+            source = f"知识库 {kb['count']} 条"
+            score = 0.0
+            basis = "CCO 从知识库提炼最佳选题"
+            if not tags:
+                tags = list(kb["categories"].keys())[:4]
         if score is None:
             score = 0.8
         if isinstance(tags, str):
             tags = re.split(r"[/、,，]", tags)
-        tags = [str(t).strip() for t in (tags or []) if str(t).strip()] or ["综合"]
+        tags = [str(t).strip() for t in (tags or []) if str(t).strip()] or ["知识内化"]
         trace = uid("tr")
         hotspot = {"id": uid("hs"), "traceId": trace, "title": title, "source": source,
-                   "tags": tags, "score": score, "fit": {}, "at": iso_now()}
+                   "tags": tags, "score": score, "fit": {}, "at": iso_now(), "kind": kind}
         if basis:
             hotspot["scoreBasis"] = basis
         key = _hotkey(title)
         with self.lock:
-            idx = next((i for i in range(len(self.hotspots) - 1, -1, -1)
-                        if _hotkey(self.hotspots[i].get("title")) == key), -1)
-            if idx >= 0:
-                # 同一议题重复注入：替换列表里的旧记录（旧 trace 仍保留自己的快照）
-                hotspot["id"] = self.hotspots[idx].get("id") or hotspot["id"]
-                self.hotspots[idx] = hotspot
+            if kind == "knowledge":
+                # 知识库选题不是热点，不写进热点榜，只作为本轮的选题来源快照
+                self.last_hotspot = hotspot
             else:
-                self.hotspots.append(hotspot)
-            self.last_hotspot = hotspot
+                idx = next((i for i in range(len(self.hotspots) - 1, -1, -1)
+                            if _hotkey(self.hotspots[i].get("title")) == key), -1)
+                if idx >= 0:
+                    # 同一议题重复注入：替换列表里的旧记录（旧 trace 仍保留自己的快照）
+                    hotspot["id"] = self.hotspots[idx].get("id") or hotspot["id"]
+                    self.hotspots[idx] = hotspot
+                else:
+                    self.hotspots.append(hotspot)
+                self.last_hotspot = hotspot
             self.stats["traces"] += 1
             self.traces[trace] = {"traceId": trace, "hotspot": hotspot, "startedAt": iso_now(),
                                   "status": "running", "engine": MODE}
@@ -1404,93 +1411,62 @@ class Kernel:
     def _deg(self, aid, what):
         return self.fallback(aid, what)
 
-    def _coerce_topics(self, data, pid, hotspot):
-        """PM 选题卡：每项目恰好 4 条（CCO 有 12 选 9 的淘汰空间），模型漏项时规则兜底。"""
-        raw = (data or {}).get("topics")
-        out = []
-        if isinstance(raw, list):
-            for t in raw:
-                if not isinstance(t, dict):
-                    continue
-                title = str(t.get("title") or t.get("angle") or "").strip()
-                if not title:
-                    continue
-                out.append({"projectId": pid, "title": title[:60],
-                            "angle": str(t.get("angle") or title)[:80],
-                            "form": str(t.get("form") or "短视频")[:16],
-                            "durationSec": _to_int(t.get("durationSec"), 45),
-                            "reason": str(t.get("reason") or "")[:120]})
-        forms = ("热点解读", "延伸视角", "互动话题", "反常识问答")
-        while len(out) < 4:
-            i = len(out)
-            base = self.projects[pid]["name"]
-            angle = (hotspot.get("title") or "今日热点").strip()
-            out.append({"projectId": pid, "title": f"{angle}｜{base}{forms[i]}",
-                        "angle": f"从{base}定位切入{forms[i]}", "form": forms[i],
-                        "durationSec": 45, "reason": "规则兜底选题"})
-        return out[:4]
+    def _kb_brief(self, limit=40):
+        """选题上下文：知识库近期条目 + 分类/项目分布（CCO 内化提炼的唯一素材来源）。"""
+        with self.lock:
+            entries = [dict(k) for k in self.knowledge]
+        entries = [k for k in entries if str(k.get("title") or "").strip()]
+        entries.sort(key=lambda k: str(k.get("at") or ""), reverse=True)
+        cats, projs = {}, {}
+        for k in entries:
+            cat = str(k.get("category") or "未分类")
+            cats[cat] = cats.get(cat, 0) + 1
+            pid = str(k.get("projectId") or "all")
+            projs[pid] = projs.get(pid, 0) + 1
+        picked = [{"title": str(k.get("title"))[:60],
+                   "category": str(k.get("category") or ""),
+                   "projectId": str(k.get("projectId") or ""),
+                   "tags": [str(x)[:20] for x in (k.get("tags") or [])][:4],
+                   "at": str(k.get("at") or "")[:10],
+                   "summary": str(k.get("summary") or k.get("body") or "")[:160]}
+                  for k in entries[:limit]]
+        return {"count": len(entries), "categories": cats, "projects": projs, "entries": picked}
 
-    def _coerce_mgmt_topics(self, data):
-        raw = (data or {}).get("topics")
-        out = []
-        if isinstance(raw, list):
-            for t in raw:
-                if isinstance(t, dict):
-                    title = str(t.get("title") or t.get("angle") or "").strip()
-                    if title:
-                        out.append({"projectId": "all", "title": title[:60],
-                                    "angle": str(t.get("angle") or "")[:80],
-                                    "form": "管理层指定", "durationSec": 45,
-                                    "reason": "管理层指定选题"})
-        return out[:3]
-
-    def _coerce_selection(self, data, pm_topics):
-        """CCO 选 9 条：每个项目 3 条（从 4 条池中淘汰 1 条），缺项从 PM 池补齐。"""
-        raw = (data or {}).get("selected")
-        picked = {pid: [] for pid in self.PIDS}
+    def _coerce_cco_topics(self, data, kb):
+        """CCO 知识库选题卡：每项目恰好 2 条（共 6 条）；缺项用知识条目兜底，绝不从热点编造。"""
+        raw = (data or {}).get("final") or (data or {}).get("topics") or []
+        out = {pid: [] for pid in self.PIDS}
         if isinstance(raw, list):
             for t in raw:
                 if not isinstance(t, dict):
                     continue
                 pid = str(t.get("projectId") or "")
-                if pid not in picked:
-                    continue
                 title = str(t.get("title") or t.get("angle") or "").strip()
-                if not title:
+                if pid not in out or not title or len(out[pid]) >= 2:
                     continue
-                picked[pid].append({"projectId": pid, "title": title[:60],
-                                    "angle": str(t.get("angle") or "")[:80],
-                                    "form": str(t.get("form") or "短视频")[:16],
-                                    "durationSec": _to_int(t.get("durationSec"), 45),
-                                    "reason": str(t.get("reason") or "")[:120]})
+                out[pid].append({"projectId": pid, "title": title[:60],
+                                 "angle": str(t.get("angle") or title)[:80],
+                                 "form": str(t.get("form") or "内化提炼")[:16],
+                                 "durationSec": _to_int(t.get("durationSec"), 45),
+                                 "reason": str(t.get("reason") or "")[:140],
+                                 "knowledgeRefs": [str(x)[:60] for x in
+                                                   (t.get("knowledgeRefs") or [])][:3]})
         for pid in self.PIDS:
-            if len(picked[pid]) < 3:
-                picked[pid] += pm_topics[pid][:3 - len(picked[pid])]
-            picked[pid] = picked[pid][:3]
-        return picked
-
-    def _coerce_final(self, data, selected):
-        """评审会定 6 条：每个项目强制 2 条，缺项从 CCO 9 条中补齐。"""
-        raw = (data or {}).get("final")
-        final = {pid: [] for pid in self.PIDS}
-        if isinstance(raw, list):
-            for t in raw:
-                if not isinstance(t, dict):
-                    continue
-                pid = str(t.get("projectId") or "")
-                if pid not in final:
-                    continue
-                title = str(t.get("title") or t.get("angle") or "").strip()
-                if not title:
-                    continue
-                final[pid].append({"projectId": pid, "title": title[:60],
-                                   "angle": str(t.get("angle") or "")[:80],
-                                   "durationSec": _to_int(t.get("durationSec"), 45)})
-        for pid in self.PIDS:
-            if len(final[pid]) < 2:
-                final[pid] += selected[pid][:2 - len(final[pid])]
-            final[pid] = final[pid][:2]
-        return final
+            while len(out[pid]) < 2:
+                used = {t["title"] for pid2 in self.PIDS for t in out[pid2]}
+                cand = [e for e in kb["entries"]
+                        if e.get("projectId") in (pid, "", "all") and e["title"] not in used]
+                cand = cand or [e for e in kb["entries"] if e["title"] not in used]
+                if not cand:
+                    break
+                e = cand[0]
+                out[pid].append({"projectId": pid, "title": e["title"][:60],
+                                 "angle": e.get("summary") or e["title"], "form": "内化提炼",
+                                 "durationSec": 45,
+                                 "reason": f"知识库条目兜底（{e.get('at') or '—'}）",
+                                 "knowledgeRefs": [e["title"]]})
+            out[pid] = out[pid][:2]
+        return out
 
     def _coerce_plan(self, data, topic, idx):
         raw = (data or {}).get("assessment")
@@ -1839,197 +1815,132 @@ class Kernel:
             print(f"[pipeline] 断点文件写入失败：{e}", flush=True)
 
     def _stage_topic_meeting(self, c):
-        """1. 每日选题会：PM 各交 4 条（池 12）+ CEO/CTO 指定选题 + scout 简报，同波 6 个调用"""
-        # 1. 每日选题会：PM 各交 4 条（池 12）+ CEO/CTO 指定选题 + scout 简报，同波 6 个调用
-        participants = c.participants = ["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan", "scout", "kb_manager"]
-        agenda1 = [f"热点：{c.hotspot['title']}", "三项目各 4 条候选（池 12）", "CCO 12 选 9"]
-        self.meeting_begin(c.trace, "每日选题会", participants, agenda1)
-        self.set_scene("MEETING", c.trace, title="每日选题会", participants=participants, agenda=agenda1)
+        """1. 每日选题（知识库内化）：CCO 从知识库归档认知中提炼 6 条最佳选题（每项目 2 条）直出定稿。
+
+        不再按热点给三个项目分别匹配选题，也不再发起选题评审会：CCO 决策即定稿，直接进入汇报与建单。
+        """
+        self.guard_budget(c.trace)
+        kb = self._kb_brief()
+        if not kb["entries"]:
+            raise RuntimeError("知识库暂无可用于选题的条目：请先在 OPC/知识库 归档内化认知后再发起每日选题")
+        hint = str(c.hotspot.get("title") or "") if str(c.hotspot.get("kind") or "") != "knowledge" else ""
+        participants = c.participants = ["cco", "kb_manager"]
+        agenda = [f"知识来源：{hint or '知识库内化'}",
+                  f"知识条目 {kb['count']} 条（分类 {len(kb['categories'])} 个）",
+                  "CCO 提炼最佳选题：每项目 2 条，共 6 条", "不设评审会：CCO 决策即定稿"]
+        self.meeting_begin(c.trace, "每日选题会", participants, agenda)
+        self.set_scene("MEETING", c.trace, title="每日选题会", participants=participants, agenda=agenda)
         for aid in participants:
             self.set_agent(aid, "meeting", "选题会")
-            self.send("delegation", "ceo", aid, c.trace, {"task": "参会：按岗位职责提交/评估选题"},
-                      project=None if self.agents[aid]["projectId"] == "all" else self.agents[aid]["projectId"])
-        self.meeting_say("ceo", f"开会。今天的议题是热点「{c.hotspot['title']}」（热度 {c.hotspot['score']}）。"
-                                "请热点采集先报简报，三位产品经理各提 4 条候选，CCO 汇总 12 选 9。", "opening", c.trace)
+            self.send("delegation", "cco", aid, c.trace, {"task": "参会：知识库内化选题"}, priority=1)
+        self.meeting_say("cco", f"今天不从热点找题，直接从知识库 {kb['count']} 条内化认知里提炼："
+                                "每个项目 2 条，共 6 条；我定了就进制作，不再开评审会。", "opening", c.trace)
 
-        fit = c.hotspot.get("fit") or {}
-        ctx = (f"热点：{c.hotspot['title']}；热度 {c.hotspot['score']}；三项目匹配度："
-               f"文人莫克 {fit.get('wenren', '未评估')}，狗大人 {fit.get('gou', '未评估')}，"
-               f"同心圆 {fit.get('tongxinyuan', '未评估')}")
-        futures = {"scout": HERMES.pool.submit(
-            self.call_agent, "scout", "针对给定热点产出一条业务简报，并判断素材可用性。",
-            f"热点：{c.hotspot['title']}；热度 {c.hotspot['score']}；标签 {c.hotspot['tags']}")}
-        for pid, pm in c.pms:
-            futures[pm] = HERMES.pool.submit(
-                self.call_agent, pm,
-                f"提交 {self.projects[pid]['name']} 今日 4 条候选选题，供 CCO 与 CTO 汇总。",
-                ctx,
-                f"本项目匹配度 {fit.get(pid, '未评估')}。额外 JSON 字段：topics(数组，恰好 4 条，"
-                "每条 {title, angle, form, durationSec, reason})。",
-                "summary, evidence, confidence, tools, topics")
-        futures["ceo"] = HERMES.pool.submit(
-            self.call_agent, "ceo", "结合热点给出 0-3 条 CEO 指定选题与评审关注点。", ctx,
-            "额外 JSON 字段：topics(数组，0-3 条，每条 {title, angle})。",
-            "summary, evidence, confidence, tools, topics")
-        futures["cto"] = HERMES.pool.submit(
-            self.call_agent, "cto", "结合热点与素材/技术条件给出 0-3 条 CTO 指定选题与约束。", ctx,
-            "额外 JSON 字段：topics(数组，0-3 条，每条 {title, angle})。",
-            "summary, evidence, confidence, tools, topics")
-
-        scout_data, scout_meta = futures["scout"].result()
-        scout_result = scout_data or self._deg("scout", "热点简报")
-        for rcpt in ("ceo", "cco", "cto"):
-            self.send("biz.event", "scout", rcpt, c.trace,
-                      {"hotspot": c.hotspot, "result": scout_result,
-                       "text": f"热点上报：{c.hotspot['title']}（热度 {c.hotspot['score']}）"}, priority=1)
-        self.emit("engine-meta", c.trace, {"agent": "scout", **scout_meta})
-        self.meeting_say("scout", scout_result.get("summary") or
-                         f"热点「{c.hotspot['title']}」热度 {c.hotspot['score']}，素材可采集，建议三项目按匹配度跟进。",
-                         "report", c.trace)
-
-        pm_topics = {}
-        for pid, pm in c.pms:
-            data, meta = futures[pm].result()
-            data = data or self._deg(pm, "选题卡")
-            pm_topics[pid] = self._coerce_topics(data, pid, c.hotspot)
-            self.send("result", pm, "cco", c.trace,
-                      {"result": data, "topics": pm_topics[pid], "engine": meta["engine"],
-                       "latencyMs": meta.get("latencyMs", 0), "projectId": pid}, project=pid)
-            self.send("result", pm, "cto", c.trace,
-                      {"topics": pm_topics[pid], "engine": meta["engine"]}, project=pid)
-            self.meeting_say(pm, "提交 4 条候选：" + "；".join(t.get("title", "") for t in pm_topics[pid]),
-                             "speech", c.trace)
-        ceo_topics = self._coerce_mgmt_topics(futures["ceo"].result()[0])
-        cto_topics = self._coerce_mgmt_topics(futures["cto"].result()[0])
-        boss_topic = {"projectId": "all", "title": str(c.hotspot["title"])[:60],
-                      "angle": "老板注入选题", "form": "老板指定", "durationSec": 45,
-                      "reason": "老板直接指定"}
-
-        # 2. CCO 从 12 条池中淘汰 3 条 → 选 9 条（每项目 3 条），抄送 CEO、CTO
-        pool = {pid: pm_topics[pid] for pid in self.PIDS}
-        pool["_management"] = {"ceo": ceo_topics, "cto": cto_topics, "boss": [boss_topic]}
-        c.pool_size = sum(len(pm_topics[p]) for p in self.PIDS) + len(ceo_topics) + len(cto_topics) + 1
+        ctx = {"知识库": {"条目总数": kb["count"], "分类分布": kb["categories"],
+                        "项目分布": kb["projects"], "近期条目": kb["entries"]},
+               "项目": {pid: {"名称": self.projects[pid]["name"], "调性": self.tone[pid]}
+                        for pid in self.PIDS},
+               "老板指定方向": hint}
         data, meta = self.call_agent(
             "cco",
-            f"汇总 3 名产品经理的 {sum(len(pm_topics[p]) for p in self.PIDS)} 条创意，叠加 CEO/CTO/老板指定选题与自选创意，"
-            "按项目调性、匹配度、差异化去重，每个项目必须淘汰至少 1 条，最终选出 9 条（每项目恰好 3 条），"
-            "并给出被淘汰条目与理由。",
-            json.dumps(pool, ensure_ascii=False),
-            "额外 JSON 字段：selected(数组，恰好 9 条，每条 {projectId, title, angle, form, durationSec, reason})；"
-            "eliminated(数组，每条 {title, projectId, reason}，不得少于 3 条)。",
-            "summary, evidence, confidence, tools, selected, eliminated")
-        data = data or self._deg("cco", "选题汇总")
-        c.selected = self._coerce_selection(data, pm_topics)
-        # 淘汰记录必须可核：模型漏填时，用「PM 池 − 入选」补足，保证每项目至少 1 条可追溯
-        c.eliminated = [x for x in (data.get("eliminated") or []) if isinstance(x, dict)]
-        seen = {t.get("title") for v in c.selected.values() for t in v}
-        known = {str(x.get("title") or "") for x in c.eliminated}
-        for pid in self.PIDS:
-            for t in pm_topics[pid]:
-                if t["title"] not in seen and t["title"] not in known:
-                    c.eliminated.append({"projectId": pid, "title": t["title"],
-                                       "reason": "四选三未入选（按调性/匹配度/差异化淘汰，规则补记）"})
-                    known.add(t["title"])
+            "你是 CCO。从给定知识库条目中提炼今日最佳选题：优先近 30 天、可复用结论扎实、"
+            "与项目调性一致且具备制作可行性的认知；每个项目恰好 2 条（共 6 条）。"
+            "要求：1) 不得直接照抄条目标题，要提炼成可拍选题；2) 必须引用具体知识条目（knowledgeRefs）；"
+            "3) 不引用热点榜单、不编造数字；4) 同一项目的两条之间要有差异化。",
+            json.dumps(ctx, ensure_ascii=False),
+            "额外 JSON 字段：final(数组，恰好 6 条，每条 {projectId,title,angle,form,durationSec,reason,knowledgeRefs})；"
+            "excluded(数组，0-6 条，未采用的认知 {title, projectId, reason})；minutes(会议纪要 Markdown ≤800 字)。",
+            "summary, evidence, confidence, tools, final, excluded, minutes")
+        data = data or self._deg("cco", "知识库选题")
+        c.final = self._coerce_cco_topics(data, kb)
+        c.selected = {pid: list(v) for pid, v in c.final.items()}
+        c.pool_size = kb["count"]
+        c.eliminated = [x for x in (data.get("excluded") or []) if isinstance(x, dict)]
+        total = sum(len(v) for v in c.final.values())
         self.send("topic.select", "cco", "ceo", c.trace,
-                  {"selected": c.selected, "eliminated": c.eliminated,
-                   "poolSize": c.pool_size, "result": data, "engine": meta["engine"]}, priority=2)
+                  {"selected": c.selected, "eliminated": c.eliminated, "poolSize": c.pool_size,
+                   "result": data, "engine": meta["engine"], "source": "knowledge"}, priority=2)
         self.send("topic.select", "cco", "cto", c.trace,
                   {"selected": c.selected, "eliminated": c.eliminated, "cc": True,
                    "engine": meta["engine"]}, priority=1)
         self.emit("engine-meta", c.trace, {"agent": "cco", **meta})
-        picked = [t.get("title", "") for pid in self.PIDS for t in c.selected.get(pid, [])]
+        picked = [t.get("title", "") for pid in self.PIDS for t in c.final[pid]]
         self.meeting_say("cco", (data.get("summary") or
-                                 f"候选池共 {c.pool_size} 条，按调性与差异化去重后选出 9 条。") +
-                         (" 入选：" + "；".join(picked) if picked else ""), "decision", c.trace)
-        self.meeting_end(c.trace, f"每日选题会结束：候选池 {c.pool_size} 条，CCO 筛出 9 条（每项目 3 条），"
-                                "转入选题评审会定稿 6 条。")
+                                 f"从知识库 {kb['count']} 条认知中提炼出 {total} 条选题。") +
+                         (" 定稿：" + "；".join(picked) if picked else ""), "decision", c.trace)
 
-
-    def _stage_topic_review(self, c):
-        """3. CEO 召集选题评审会：CEO/CTO/CCO + 涉及项目 PM，最终定 6 条（每项目 2 条）"""
-        # 3. CEO 召集选题评审会：CEO/CTO/CCO + 涉及项目 PM，最终定 6 条（每项目 2 条）
-        agenda2 = ["复核 CCO 9 条", "逐项目定 2 条", "形成会议纪要"]
-        self.meeting_begin(c.trace, "选题评审会", c.participants, agenda2)
-        self.set_scene("MEETING", c.trace, title="选题评审会", participants=c.participants, agenda=agenda2)
-        for aid in ("cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"):
-            self.set_agent(aid, "meeting", "选题评审会")
-            self.send("delegation", "ceo", aid, c.trace,
-                      {"task": "参会：对 CCO 9 条选题复核并定稿 6 条"}, priority=2)
-        self.meeting_say("ceo", "现在复核 CCO 的 9 条，逐项目定 2 条。今天必须形成 6 条定稿和会议纪要。",
-                         "opening", c.trace)
-        data, meta = self.call_agent(
-            "ceo",
-            "主持选题评审会：从 CCO 的 9 条中逐项目定稿 2 条，共 6 条；"
-            "输出会议纪要（议题、参会人、结论、每项目 2 条及理由、后续分工），并给出收件人与抄送人。",
-            json.dumps({pid: c.selected[pid] for pid in self.PIDS}, ensure_ascii=False),
-            "额外 JSON 字段：final(数组，恰好 6 条，每条 {projectId,title,angle,durationSec})；"
-            "minutes(会议纪要 Markdown，≤1500字)；recipients(数组)；cc(数组)。",
-            "summary, evidence, confidence, tools, final, minutes, recipients, cc")
-        data = data or self._deg("ceo", "选题评审会")
-        c.final = self._coerce_final(data, c.selected)
+        # 会议纪要：只有一场选题会（知识库内化），CCO 结论即定稿，不再有第二场评审
         display = lambda xs: ["老板" if x == "owner" else self.agents.get(x, {}).get("name", x) for x in xs]
         minutes = str(data.get("minutes") or "").strip() or (
-            f"# 选题评审会\n\n- 议题：{c.hotspot['title']}\n- 参会："
-            + "、".join(display(["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"]))
-            + "\n- 结论：每项目定稿 2 条，共 6 条\n")
-        recipients = [str(x) for x in (data.get("recipients") or [])] or \
-            ["ceo", "cto", "cco", "pm_wenren", "pm_gou", "pm_tongxinyuan"]
+            f"# 每日选题会（知识库内化）\n\n- 知识来源：{hint or '知识库'}（{kb['count']} 条）\n"
+            "- 参会：" + "、".join(display(participants)) + "\n"
+            f"- 结论：CCO 提炼定稿 {total} 条（每项目 2 条），不发起评审会\n\n## 定稿\n"
+            + "\n".join(f"- {self.projects[pid]['name']}《{t['title']}》："
+                        f"{t.get('reason') or t.get('angle') or ''}"
+                        for pid in self.PIDS for t in c.final[pid]) + "\n")
+        recipients = [str(x) for x in (data.get("recipients") or [])] or ["cco", "ceo", "cto"]
         cc = [str(x) for x in (data.get("cc") or [])] or ["owner"]
         c.meeting_doc = {}
         if self.DL:
             try:
                 c.meeting_doc = self.DL.export_meeting(c.trace, {
-                    "title": "选题评审会", "minutes": minutes,
+                    "title": "每日选题会（知识库内化）", "minutes": minutes,
                     "recipients": display(recipients), "cc": display(cc),
                     "final": c.final, "hotspot": c.hotspot})
             except Exception as e:
                 print(f"[pipeline] 会议纪要落盘失败：{type(e).__name__}: {e}", flush=True)
-        self.send("decision", "ceo", "all", c.trace,
-                  {"text": f"定稿 6 条（每项目 2 条）：{c.hotspot['title']}",
+        self.send("decision", "cco", "all", c.trace,
+                  {"text": f"知识库内化定稿 {total} 条（每项目 2 条）",
                    "final": c.final, "minutes": minutes,
                    "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
                    "mailUrl": (c.meeting_doc or {}).get("mail", ""),
                    "result": data, "engine": meta["engine"]}, project="all", priority=2)
-        self.send("report.ready", "ceo", "owner", c.trace,
-                  {"kind": "meeting", "title": "选题评审会纪要",
+        self.send("report.ready", "cco", "owner", c.trace,
+                  {"kind": "meeting", "title": "每日选题会纪要（知识库内化）",
                    "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
                    "mailUrl": (c.meeting_doc or {}).get("mail", ""),
                    "recipients": recipients, "cc": cc}, priority=1)
-        c.conclusion = "定稿 6 条（每项目 2 条）：" + "；".join(
-            f"{self.projects[pid]['name']}《{t['title']}》" for pid in self.PIDS for t in c.final[pid])
-        self.meeting_say("ceo", "结论：" + c.conclusion + "。后续按项目进入制作，会议纪要已归档到 Obsidian。",
+        c.conclusion = (f"知识库内化定稿 {total} 条（每项目 2 条，知识条目 {kb['count']} 条，无评审）：" +
+                        "；".join(f"{self.projects[pid]['name']}《{t['title']}》"
+                                 for pid in self.PIDS for t in c.final[pid]))
+        self.meeting_say("cco", "结论：" + c.conclusion + "。纪要已归档，直接进制作前的开工审批。",
                          "conclusion", c.trace)
         self.meeting_end(c.trace, c.conclusion, (c.meeting_doc or {}).get("minutes", ""))
-        # 祁南（kb_manager）在选题定稿即归档，不再等发布审批；发布后只更新同一条
+        # 祁南（kb_manager）在选题定稿即归档：来源写知识内化，不再挂热点标签
         self.archive_knowledge(c.trace, [
             {"projectId": pid, "title": t.get("title"),
-             "body": f"选题定稿：{t.get('angle') or t.get('title')}；来源热点：{c.hotspot.get('title')}；"
-                     f"评审会结论：{c.conclusion[:120]}",
-             "tags": ["热点/" + str(c.hotspot.get("title") or "")[:24]] + list(c.hotspot.get("tags") or [])[:3]}
+             "body": f"选题定稿：{t.get('angle') or t.get('title')}；来源：知识库内化；"
+                     f"依据：{'、'.join(t.get('knowledgeRefs') or []) or '知识条目'}；"
+                     f"CCO 结论：{c.conclusion[:100]}",
+             "tags": ["知识内化"] + list(kb["categories"].keys())[:3]}
             for pid in self.PIDS for t in c.final.get(pid, [])])
-        self.set_scene("WORK", c.trace, title="定稿 6 条，进入制作")
+        self.set_scene("WORK", c.trace, title=f"定稿 {total} 条，进入制作")
 
 
     def _stage_boss_report(self, c):
-        """3.5 CCO 邮件汇报老板：选题评审结果 + 等待开工审批（抄送 CEO/CTO）"""
-        # 3.5 CCO 邮件汇报老板：选题评审结果 + 等待开工审批（抄送 CEO/CTO）
+        """3.5 CCO 邮件汇报老板：知识库选题定稿 + 等待开工审批（抄送 CEO/CTO）"""
         self.guard_budget(c.trace)
+        total = sum(len(v) for v in c.final.values())
+        src = "知识库内化" if str(c.hotspot.get("kind") or "") == "knowledge" \
+            else f"老板指定方向「{c.hotspot.get('title')}」"
         mail_lines = [
             f"老板：",
             "",
-            f"本轮选题评审已完成（热点：{c.hotspot['title']}）。",
-            f"候选池 {c.pool_size} 条 → CCO 筛出 9 条 → 评审会定稿 {sum(len(v) for v in c.final.values())} 条（每项目 2 条）。",
+            f"今日选题已完成（{src}）。",
+            f"知识库 {c.pool_size} 条内化认知 → CCO 提炼定稿 {total} 条（每项目 2 条），"
+            "不经评审会，CCO 决策即定稿。",
             "",
             "## 定稿清单",
         ]
         for pid in self.PIDS:
             mail_lines.append(f"### {self.projects[pid]['name']}")
             for t in c.final[pid]:
+                refs = "、".join(t.get("knowledgeRefs") or []) or "—"
                 mail_lines.append(
                     f"- 《{t['title']}》｜角度：{t.get('angle', '—')}｜形态：{t.get('form', '—')}｜"
-                    f"时长：{t.get('durationSec', '—')}s｜理由：{t.get('reason', '—')}")
+                    f"时长：{t.get('durationSec', '—')}s｜理由：{t.get('reason', '—')}｜知识依据：{refs}")
         if c.eliminated:
-            mail_lines += ["", "## 淘汰与原因"]
+            mail_lines += ["", "## 未采用的认知"]
             for e in c.eliminated[:12]:
                 mail_lines.append(f"- {e.get('title', '—')}：{e.get('reason', '—')}")
         mail_lines += [
@@ -2038,13 +1949,12 @@ class Kernel:
             "- 开工审批单已生成（含成本/素材/合规检查），请老板在 OPC 工作台批准后进入制作。",
             f"- 会议纪要：{(c.meeting_doc or {}).get('minutes', '（未生成）')}",
         ]
-        mail_subject = f"[选题评审] {str(c.hotspot['title'])[:30]} · 定稿 6 条，待开工审批"
+        mail_subject = f"[每日选题] {src} · 定稿 {total} 条，待开工审批"
         mail_body = "\n".join(mail_lines)
         self.send("biz.event", "cco", "owner", c.trace,
-                  {"text": "CCO 已邮件汇报选题评审结果，等待开工审批",
+                  {"text": "CCO 已邮件汇报知识库选题结果，等待开工审批",
                    "to": BOSS_MAIL, "cc": ["ceo", "cto"], "subject": mail_subject,
-                   "finalCount": sum(len(v) for v in c.final.values()),
-                   "eliminated": len(c.eliminated)}, priority=2)
+                   "finalCount": total, "eliminated": len(c.eliminated)}, priority=2)
         threading.Thread(target=self.mail_boss,
                          args=(mail_subject, mail_body, "cco", ["ceo", "cto"]),
                          daemon=True).start()

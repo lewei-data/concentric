@@ -14,23 +14,16 @@
 
 version: 1
 name: opc-content-pipeline
-description: 热点 → 选题 → 开工审批 → 制作 → 样片评审 → 定版 → 终审 → 发布审批 → 发布 → 归档 → 汇报
+description: 知识库 → 选题（CCO 内化提炼）→ 开工审批 → 制作 → 样片评审 → 定版 → 终审 → 发布审批 → 发布 → 归档 → 汇报
 projects: [wenren, gou, tongxinyuan]
 
 stages:
   - id: topic_meeting
-    name: 每日选题会
+    name: 每日选题（知识库内化）
     kind: produce
     item_stage: topic
     om_stage: research
-    description: PM 各提 3 条候选，CCO 9 选 6
-
-  - id: topic_review
-    name: 选题定稿（CCO+PM）
-    kind: gate
-    item_stage: topic
-    om_stage: proposal
-    description: CCO + 项目 PM 定稿 6 条并归档纪要（无需 CEO/CTO 参会）
+    description: CCO 从现有知识库的归档认知中提炼最佳选题（每项目 2 条，共 6 条）直出定稿；不再按热点分别匹配三项目，不再发起评审会
 
   - id: boss_report
     name: 选题结果汇报

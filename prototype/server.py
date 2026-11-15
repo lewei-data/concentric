@@ -664,6 +664,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._material(path[len("/materials/"):])
         if path == "/api/materials":
             return self._json(self._materials_index())
+        if path == "/api/materials/browse":
+            # 两个互不相通的根：published=服务端发布目录，vault=Obsidian 素材目录
+            # 会暴露真实目录结构，比静态发布更敏感，要求登录会话
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._materials_browse(urlparse(self.path).query))
         # 资产盘点日报：读最近一次自动/手动盘点的落盘报告（老板可见）
         if path == "/api/asset/inventory/latest":
             if not self._owner_only():
@@ -702,6 +708,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._kernel().knowledge_categories())
         if path == "/api/knowledge/relations":
             return self._json(self._kernel().knowledge_relations())
+        if path == "/api/knowledge/assets":
+            return self._json(self._knowledge_assets_view(urlparse(self.path).query))
+        if path == "/api/knowledge/questions":
+            return self._json(self._knowledge_questions_view(urlparse(self.path).query))
         if path.startswith("/api/knowledge/"):
             rec = self._kernel().knowledge_detail(path.rsplit("/", 1)[-1])
             return self._json(rec) if rec else self._json({"error": "knowledge not found"}, 404)
@@ -1007,6 +1017,54 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _knowledge_assets_view(self, query):
+        """知识条目 ↔ 原料/成品 的关联查询。
+
+        ?kb_id=              这条知识挂了哪些资产
+        ?asset_kind=&asset_ref=  这份资产被哪些知识引用（反查，补 kb_title）
+        """
+        q = parse_qs(query or "")
+        kb_id = (q.get("kb_id") or [""])[0].strip()
+        kind = (q.get("asset_kind") or [""])[0].strip()
+        ref = (q.get("asset_ref") or [""])[0].strip()
+        kern = self._kernel()
+        if not kern.db:
+            return {"ok": True, "items": []}
+        if kb_id:
+            rows = kern.db.list_asset_links(kb_id=kb_id)
+        elif ref:
+            rows = kern.db.list_asset_links(asset_kind=kind or "raw", asset_ref=ref)
+        else:
+            rows = kern.db.list_asset_links()
+        items = [{"id": r["id"], "kb_id": r["kb_id"], "asset_kind": r["asset_kind"],
+                  "asset_ref": r["asset_ref"], "role": r["role"],
+                  "note": r.get("note") or "", "created_at": r.get("created_at") or ""}
+                 for r in rows]
+        if ref and not kb_id:          # 反查时补标题，前端不必再逐条请求
+            title_of = {str(k.get("id")): str(k.get("title") or "") for k in kern.knowledge}
+            for it in items:
+                it["kb_title"] = title_of.get(it["kb_id"], "")
+        return {"ok": True, "items": items}
+
+    def _knowledge_questions_view(self, query):
+        """问题池：库里只有答案没有疑问，认知就失去生长动力。"""
+        q = parse_qs(query or "")
+        status = (q.get("status") or [""])[0].strip()
+        kern = self._kernel()
+        if not kern.db:
+            return {"ok": True, "items": [], "counts": {}}
+        title_of = {str(k.get("id")): str(k.get("title") or "") for k in kern.knowledge}
+        items = [{"id": r["id"], "question": r["question"], "status": r.get("status") or "open",
+                  "asked_by": r.get("asked_by") or "", "origin_ref": r.get("origin_ref") or "",
+                  "answer_kb_id": r.get("answer_kb_id") or "",
+                  "answer_title": title_of.get(str(r.get("answer_kb_id") or ""), ""),
+                  "created_at": r.get("created_at") or ""}
+                 for r in kern.db.list_questions(status or None)]
+        counts = {}
+        for it in items:
+            counts[it["status"]] = counts.get(it["status"], 0) + 1
+        return {"ok": True, "items": items, "counts": counts}
+
     def _materials_index(self):
         """首页「素材库」清单：读当前用户工作区的 materials.json，改文件下次刷新即生效。"""
         try:
@@ -1032,6 +1090,52 @@ class Handler(BaseHTTPRequestHandler):
                 "meta": str(it.get("meta") or ""),
             })
         return {"ok": True, "updated": str(data.get("updated") or ""), "items": out}
+
+    def _materials_browse(self, query):
+        """素材目录浏览（只列直接子项，不递归、不读文件内容）。
+
+        素材库在系统里有两套根，互不相通，这里同时开放：
+          published → MATERIALS_ROOT（materials.json 的 url 指向此处）
+          vault     → <vault>/素材（19G 原始素材实际所在地）
+        """
+        q = parse_qs(query or "")
+        root_name = (q.get("root") or ["vault"])[0].strip()
+        rel = (q.get("path") or [""])[0].strip().strip("/")
+        kern = self._kernel()
+        if root_name == "published":
+            root = os.path.realpath(MATERIALS_ROOT)
+        else:
+            root = os.path.realpath(os.path.join(kern.vault_dir, "素材"))
+        full = os.path.realpath(os.path.join(root, rel)) if rel else root
+        if full != root and not full.startswith(root + os.sep):
+            return {"ok": False, "error": "越界访问"}
+        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep) if p):
+            return {"ok": False, "error": "隐藏目录不可访问"}
+        if not os.path.isdir(full):
+            return {"ok": False, "error": "目录不存在", "root": root_name, "path": rel}
+        dirs, files, dir_err = [], [], 0
+        try:
+            with os.scandir(full) as it:
+                for e in it:
+                    if e.name.startswith("."):
+                        continue
+                    try:
+                        if e.is_dir():
+                            dirs.append({"name": e.name})
+                        else:
+                            st = e.stat()
+                            files.append({"name": e.name, "size": st.st_size,
+                                          "mtime": int(st.st_mtime),
+                                          "ext": os.path.splitext(e.name)[1].lower().lstrip(".")})
+                    except OSError:
+                        dir_err += 1
+        except OSError as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}", "root": root_name, "path": rel}
+        dirs.sort(key=lambda x: x["name"])
+        files.sort(key=lambda x: -x["mtime"])
+        return {"ok": True, "root": root_name, "path": rel,
+                "dirs": dirs[:300], "files": files[:500], "skipped": dir_err,
+                "counts": {"dirs": len(dirs), "files": len(files)}}
 
     def _material(self, rel):
         """素材库只读发布：/materials/... → MATERIALS_ROOT/...（限定目录、无隐藏目录）。"""
@@ -1309,7 +1413,7 @@ class Handler(BaseHTTPRequestHandler):
     _CHAT_AUDIO_EXT = {"wav", "mp3", "ogg", "m4a", "amr", "webm", "aac", "flac"}
     _CHAT_FILE_MAX = 25 * 1024 * 1024
     # 小秘书可以指挥 Web 端跳转的页面白名单（整页跳转 window.location.assign）
-    _CHAT_NAV = {"/", "/inspiration", "/ops", "/works", "/factory", "/hotspots",
+    _CHAT_NAV = {"/", "/materials", "/inspiration", "/ops", "/works", "/factory", "/hotspots",
                  "/knowledge", "/messages", "/org", "/account", "/account/assets",
                  "/account/settings", "/account/help", "/office", "/meeting"}
     _CHAT_FILES_RE = re.compile(
@@ -1873,6 +1977,67 @@ class Handler(BaseHTTPRequestHandler):
                                          "weight": 1, "origin": "manual", "confirmed": True})
                 kern.db.flush()
             return self._json({"ok": True, "id": rid})
+        # 资料 ↔ 认知：把原料/成品挂到知识条目上
+        if path == "/api/knowledge/assets":
+            kern = self._kernel()
+            if not kern.db:
+                return self._json({"ok": False, "error": "数据库未就绪"}, 500)
+            action = str(body.get("action") or "upsert").strip().lower()
+            if action == "delete":
+                lid = str(body.get("id") or "").strip()
+                if not lid:
+                    return self._json({"ok": False, "error": "缺少 id"}, 400)
+                kern.db.delete_asset_link(lid)
+                kern.db.flush()
+                return self._json({"ok": True, "id": lid})
+            kid = str(body.get("kb_id") or "").strip()
+            ref = str(body.get("asset_ref") or "").strip()
+            kind = str(body.get("asset_kind") or "raw").strip()
+            role = str(body.get("role") or "evidence").strip()
+            if kind not in ("raw", "work"):
+                return self._json({"ok": False, "error": "asset_kind 只支持 raw / work"}, 400)
+            if role not in ("evidence", "applied", "produced", "verified", "refutes"):
+                return self._json({"ok": False, "error": "role 不在允许范围"}, 400)
+            known = {str(k.get("id")) for k in kern.knowledge}
+            if kid not in known:
+                return self._json({"ok": False, "error": "kb_id 必须是已存在的知识条目"}, 400)
+            if not ref:
+                return self._json({"ok": False, "error": "asset_ref 不能为空"}, 400)
+            lid = kern.db.upsert_asset_link({"kb_id": kid, "asset_kind": kind,
+                                             "asset_ref": ref, "role": role,
+                                             "note": str(body.get("note") or "")})
+            kern.db.flush()
+            return self._json({"ok": True, "id": lid})
+        # 问题池：提问 / 标记已被某条知识回答
+        if path == "/api/knowledge/questions":
+            kern = self._kernel()
+            if not kern.db:
+                return self._json({"ok": False, "error": "数据库未就绪"}, 500)
+            action = str(body.get("action") or "upsert").strip().lower()
+            if action == "answer":
+                qid = str(body.get("id") or "").strip()
+                akid = str(body.get("answer_kb_id") or "").strip()
+                if not qid:
+                    return self._json({"ok": False, "error": "缺少 id"}, 400)
+                cur = [q for q in kern.db.list_questions() if q["id"] == qid]
+                if not cur:
+                    return self._json({"ok": False, "error": "问题不存在"}, 404)
+                old = cur[0]
+                kern.db.upsert_question({"id": qid, "question": old["question"],
+                                         "status": "answered" if akid else "open",
+                                         "asked_by": old.get("asked_by"),
+                                         "origin_ref": old.get("origin_ref"),
+                                         "answer_kb_id": akid})
+                kern.db.flush()
+                return self._json({"ok": True, "id": qid})
+            text = str(body.get("question") or "").strip()
+            if not text:
+                return self._json({"ok": False, "error": "问题不能为空"}, 400)
+            qid = kern.db.upsert_question({"question": text,
+                                           "asked_by": str(body.get("asked_by") or ""),
+                                           "origin_ref": str(body.get("origin_ref") or "")})
+            kern.db.flush()
+            return self._json({"ok": True, "id": qid})
         if path == "/api/register":
             return self._register(body)
         # ---------- 用户中心：参数设置 / 数据导入 ----------

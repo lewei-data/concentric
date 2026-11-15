@@ -177,11 +177,11 @@ def main():
         sse.wait(lambda evs: any(e.get("kind") == "state" for e in evs), 3)
         record("SSE 事件流建立", sse.count(kind="state") >= 1, f"state 帧={sse.count(kind='state')}")
 
-        # 3. 注入热点 → 选题会
+        # 3. 发起每日选题（知识库内化：CCO 从知识库提炼，不依赖热点榜）
         t0 = time.time()
         inj = post("/api/hotspots/inject")
         trace = inj["traceId"]
-        record("热点注入成功", bool(trace), trace)
+        record("每日选题已发起（知识库内化）", bool(trace), trace)
 
         hot_seen = sse.wait(lambda evs: any(
             e.get("kind") == "hotspot" and e.get("traceId") == trace for e in evs), 5)
@@ -191,32 +191,29 @@ def main():
         meeting = sse.wait(lambda evs: any(
             e.get("kind") == "scene" and e.get("data", {}).get("scene") == "MEETING" for e in evs), 60)
         meeting_latency = round(time.time() - t0, 2)
-        record("CEO 召集选题会（scene=MEETING）", meeting, f"{meeting_latency}s")
+        record("CCO 发起选题会（scene=MEETING）", meeting, f"{meeting_latency}s")
 
         # 真实模型单次调用 60-300s，超时上限 600s 时可能重试一次：选题段实测 8-16 分钟
         # 实测（2026-11-07）：CCO 事件 465s、定稿 660s；网关拥塞时会更慢
         selected = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "topic.select"
             and e.get("traceId") == trace for e in evs), 900)
-        record("CCO 9 选 6（每项目 2 条）", selected, f"{round(time.time() - t0, 2)}s")
+        record("CCO 知识库提炼定稿（每项目 2 条）", selected, f"{round(time.time() - t0, 2)}s")
         decided = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "decision"
             and e.get("traceId") == trace for e in evs), 900)
         decide_latency = round(time.time() - t0, 2)
-        record("热点→选题评审会定稿 ≤ 1800s", decided and decide_latency <= 1800, f"{decide_latency}s")
+        record("知识库→选题定稿 ≤ 1800s", decided and decide_latency <= 1800, f"{decide_latency}s")
 
         msgs = [m for m in sse.msgs(trace)]
         types = {m["type"] for m in msgs}
-        record("类型化消息 ≥ 20 条", len(msgs) >= 20, f"messages={len(msgs)}")
-        record("消息类型 ≥ 6 种", len(types) >= 6, ",".join(sorted(types)))
+        record("类型化消息 ≥ 12 条", len(msgs) >= 12, f"messages={len(msgs)}")
+        record("消息类型 ≥ 5 种", len(types) >= 5, ",".join(sorted(types)))
         record("CCO 选题（topic.select）", "topic.select" in types)
-        topic_sel = next((m for m in msgs if m["type"] == "topic.select"), {})
-        elim = (topic_sel.get("payload") or {}).get("eliminated") or []
-        record("CCO 未入选记录 ≥ 3 条", len(elim) >= 3, f"eliminated={len(elim)}")
         record("决议（decision）", "decision" in types)
         decision = next((m for m in msgs if m["type"] == "decision"), {})
         final = (decision.get("payload") or {}).get("final") or {}
-        record("评审会定稿 6 条（每项目 2 条）",
+        record("选题定稿 6 条（每项目 2 条）",
                all(len(final.get(p, [])) == 2 for p in ("wenren", "gou", "tongxinyuan")),
                json.dumps({k: len(v) for k, v in final.items()}, ensure_ascii=False))
 

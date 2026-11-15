@@ -1,0 +1,244 @@
+.mat-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.mat-sub {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.mat-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+/* ---- tabs ---- */
+.mat-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0;
+}
+
+.mat-tab {
+  border: none;
+  background: transparent;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.mat-tab:hover {
+  color: #0f172a;
+}
+
+.mat-tab.active {
+  color: #0f172a;
+  font-weight: 600;
+  border-bottom-color: #0f172a;
+}
+
+.mat-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- 清单 ---- */
+.mat-group-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.mat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.mat-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mat-card h4 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #0f172a;
+}
+
+.mat-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.mat-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.mat-meta {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.mat-open {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+/* ---- 浏览 ---- */
+.mat-browse-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.mat-roots {
+  display: flex;
+  gap: 6px;
+}
+
+.mat-root {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.mat-root.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.mat-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.mat-crumbs button {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.mat-crumbs button:hover {
+  text-decoration: underline;
+}
+
+.mat-sep {
+  color: #cbd5e1;
+}
+
+.mat-counts {
+  font-size: 12px;
+}
+
+.mat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.mat-list li + li {
+  border-top: 1px solid #f1f5f9;
+}
+
+.mat-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  font-size: 13px;
+  color: #0f172a;
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mat-entry:hover {
+  background: #f8fafc;
+}
+
+.mat-file-static {
+  color: #475569;
+  cursor: default;
+}
+
+.mat-file-static:hover {
+  background: transparent;
+}
+
+.mat-icon {
+  color: #94a3b8;
+  width: 12px;
+  flex: none;
+}
+
+.mat-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mat-dir .mat-name {
+  font-weight: 500;
+}
+
+.mat-file-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .mat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mat-file-meta {
+    display: none;
+  }
+}
