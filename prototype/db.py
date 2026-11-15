@@ -1842,7 +1842,7 @@ class Store:
                   "enabled", "status", "last_run", "last_note", "next_run",
                   "created_at", "updated_at"]
         vals = [row.get(f) if row.get(f) is not None else "" for f in fields]
-        vals[6] = _int(vals[6])
+        vals[5] = _int(vals[5])        # target_count（fields 下标：5=target_count，6=brief 必须保持文本）
         vals[7] = 1 if str(vals[7]).lower() not in ("0", "false", "no") else 0
         with self._lock:
             try:

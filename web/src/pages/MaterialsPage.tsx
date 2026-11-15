@@ -385,7 +385,7 @@ export function MaterialsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ root: "private", path: rel, recursive }),
+        body: JSON.stringify({ root: effRoot, path: rel, recursive }),
       });
       let res = await send(false);
       let data = (await res.json()) as { ok?: boolean; error?: string; needConfirm?: boolean; count?: number };

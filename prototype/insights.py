@@ -110,6 +110,11 @@ def _collect_ideas(kernel):
     out = []
     for r in rows:
         rel = str(r.get("asset") or "").replace(os.sep, "/").strip("/")
+        if rel and not os.path.splitext(rel)[1]:
+            # 素材目录本身不能直接下载：优先指向本轮分析报告，其次清单；都没有就不给链接
+            rel = next((f"{rel}/{name}" for name in ("创意灵感.md", "manifest.json", "采集说明.md")
+                        if data_dir and os.path.isfile(
+                            os.path.join(data_dir, "downloads", rel.replace("/", os.sep), name))), "")
         link = str(r.get("link") or "")
         if not link and rel and phone:
             # 文件在个人私有目录：/private/<手机号>/downloads/<目录>/...

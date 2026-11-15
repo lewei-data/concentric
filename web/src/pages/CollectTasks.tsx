@@ -336,7 +336,20 @@ export function CollectTasks({ onClose, onRan }: { onClose: () => void; onRan?: 
 
           {editing && (
             <section className="ct-form">
-              <h4>{draft?.id ? "编辑任务" : "新建任务"}</h4>
+              <div className="ct-form-head">
+                <h4>{draft?.id ? "编辑任务" : "新建任务"}</h4>
+                <div className="ct-acts">
+                  <button type="button" className="btn" onClick={() => void save()} disabled={busy}>
+                    {busy ? "保存中…" : "保存"}
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => setDraft(null)} disabled={busy}>
+                    取消
+                  </button>
+                </div>
+              </div>
+              <p className="muted ct-form-note">
+                保存后下次运行：{draft?.enabled ? fmtTime(draft?.next_run) : "不自动运行"}
+              </p>
 
               <label className="ct-field">
                 <span>任务名称</span>
@@ -442,18 +455,6 @@ export function CollectTasks({ onClose, onRan }: { onClose: () => void; onRan?: 
                 />
                 <span>启用（关掉只是不自动跑，任务和已采内容都保留）</span>
               </label>
-
-              <div className="ct-acts">
-                <button type="button" className="btn" onClick={() => void save()} disabled={busy}>
-                  {busy ? "保存中…" : "保存"}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => setDraft(null)} disabled={busy}>
-                  取消
-                </button>
-                <span className="muted">
-                  保存后下次运行：{draft?.enabled ? fmtTime(draft?.next_run) : "不自动运行"}
-                </span>
-              </div>
 
               {draft?.id && (
                 <div className="ct-runs">

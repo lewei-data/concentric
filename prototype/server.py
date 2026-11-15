@@ -1479,8 +1479,11 @@ class Handler(BaseHTTPRequestHandler):
     def _materials_delete(self, body):
         """删除个人空间里的文件/目录。
 
-        只接受 root=private：downloads / vault / published 都是公共或共享目录，
-        网页端一律不提供删除，那属于管理员在服务器上直接处理的范围。
+        只接受 root=private / collect：
+          private → <个人空间>/<白名单子目录（工具箱 / obsidian / downloads）>
+          collect → <个人空间>/downloads（「自动采集」标签，path 相对该目录）
+        downloads / vault / published 都是公共或共享目录，网页端一律不提供删除，
+        那属于管理员在服务器上直接处理的范围。
         """
         root_name = str(body.get("root") or "").strip()
         rel = str(body.get("path") or "").strip().strip("/")
@@ -1489,20 +1492,27 @@ class Handler(BaseHTTPRequestHandler):
         # 真正的用户身份在 cookie 会话里，未登录一律 401
         if not self._session_user():
             return self._json({"ok": False, "error": "需要登录"}, 401)
-        if root_name != "private":
+        if root_name not in ("private", "collect"):
             return self._json(
                 {"ok": False,
                  "error": "只允许删除个人空间的内容；downloads 等公共目录由管理员在服务器上处理"}, 403)
         if not rel:
             return self._json({"ok": False, "error": "缺少 path"}, 400)
-        base = self._my_private_root()
+        base = os.path.realpath(self._my_private_root() or "")
         if not base:
             return self._json({"ok": False, "error": "个人空间不可用"}, 403)
-        segs = [s for s in rel.split("/") if s]
-        if not segs or segs[0] not in self.PRIVATE_SUBS:
-            return self._json({"ok": False, "error": "该目录不允许经网页删除"}, 403)
-        root = os.path.realpath(os.path.join(base, segs[0]))
-        full = os.path.realpath(os.path.join(root, *segs[1:])) if len(segs) > 1 else root
+        if root_name == "collect":
+            root = os.path.realpath(os.path.join(base, "downloads"))
+            if not root.startswith(base + os.sep):
+                return self._json({"ok": False, "error": "越界路径"}, 403)
+            sub = rel
+        else:
+            segs = [s for s in rel.split("/") if s]
+            if not segs or segs[0] not in self.PRIVATE_SUBS:
+                return self._json({"ok": False, "error": "该目录不允许经网页删除"}, 403)
+            root = os.path.realpath(os.path.join(base, segs[0]))
+            sub = "/".join(segs[1:])
+        full = os.path.realpath(os.path.join(root, sub)) if sub else root
         if full == root:
             return self._json({"ok": False, "error": "不能删除空间根目录"}, 403)
         if not full.startswith(root + os.sep):
