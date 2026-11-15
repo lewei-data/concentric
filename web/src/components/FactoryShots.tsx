@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { siteUrl } from "../lib/siteUrl";
 
 /* 分镜工作台：分镜清单可改提示词/台词/时长，素材（图片/视频/音频）按渠道并发投递，
    同一个提示词可同时发多个渠道；每路作业独立进度、独立启停、失败重来。
@@ -645,10 +646,10 @@ export function FactoryShotsPanel({
                       {j.durationSec > 0 && <span className="muted">{j.durationSec}s</span>}
                       {j.outputUrl && (
                         j.kind === "image"
-                          ? <a className="fac-ws-out" href={j.outputUrl} target="_blank" rel="noopener noreferrer">
-                              <img src={j.outputUrl} alt={`镜${j.shotNo} ${j.channel}`} loading="lazy" />
+                          ? <a className="fac-ws-out" href={siteUrl(j.outputUrl)} target="_blank" rel="noopener noreferrer">
+                              <img src={siteUrl(j.outputUrl)} alt={`镜${j.shotNo} ${j.channel}`} loading="lazy" />
                             </a>
-                          : <a className="fac-ws-out-link" href={j.outputUrl} target="_blank" rel="noopener noreferrer">
+                          : <a className="fac-ws-out-link" href={siteUrl(j.outputUrl)} target="_blank" rel="noopener noreferrer">
                               {j.kind === "video" ? "▶ 播放" : "♪ 试听"}
                             </a>
                       )}

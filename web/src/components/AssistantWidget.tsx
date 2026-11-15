@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appRoot } from "../appRoot";
+import { siteUrl } from "../lib/siteUrl";
 
 // 头像在「服务根」下：公网挂在 /workbench/app，必须补前缀，否则 401/404 后图片被隐藏
 const SEC_AVATAR = `${appRoot()}avatars/secretary.png`;
@@ -497,7 +498,7 @@ export default function AssistantWidget() {
                 <div className="sec-bubble">
                   {m.modality === "voice" && <span className="sec-voice-tag">🎤 语音</span>}
                   {m.meta?.audio && (
-                    <audio controls preload="none" src={m.meta.audio} className="sec-audio" />
+                    <audio controls preload="none" src={siteUrl(m.meta.audio)} className="sec-audio" />
                   )}
                   {m.meta?.file && (
                     <a href={m.meta.file} target="_blank" rel="noreferrer" className="sec-file">

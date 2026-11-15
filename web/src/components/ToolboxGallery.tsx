@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { MediaViewer, type ViewerItem } from "./MediaViewer";
+import { siteUrl } from "../lib/siteUrl";
 
 type ToolboxJob = {
   id: string;
@@ -70,7 +71,7 @@ export function ToolboxGallery() {
 
   const open = (j: ToolboxJob) => {
     if (j.status !== "done" || !j.outputUrl) return;
-    setView({ url: j.outputUrl, kind: j.kind, title: j.prompt || j.note || "" });
+    setView({ url: siteUrl(j.outputUrl), kind: j.kind, title: j.prompt || j.note || "" });
   };
 
   return (
@@ -105,12 +106,12 @@ export function ToolboxGallery() {
                   }}
                 >
                   <div className="tg-thumb">
-                    {done && j.kind === "image" && (
-                      <img src={j.outputUrl} alt={j.prompt?.slice(0, 40) || ""} loading="lazy" />
+                    {done && j.outputUrl && j.kind === "image" && (
+                      <img src={siteUrl(j.outputUrl)} alt={j.prompt?.slice(0, 40) || ""} loading="lazy" />
                     )}
-                    {done && j.kind === "video" && (
+                    {done && j.outputUrl && j.kind === "video" && (
                       // #t=0.1 让浏览器取首帧当封面，否则缩略图是黑的
-                      <video src={`${j.outputUrl}#t=0.1`} preload="metadata" muted />
+                      <video src={`${siteUrl(j.outputUrl)}#t=0.1`} preload="metadata" muted />
                     )}
                     {done && j.kind === "audio" && <span className="tg-note">♪</span>}
                     {!done && <span className="tg-x">×</span>}

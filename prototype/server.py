@@ -280,6 +280,77 @@ except Exception as e:
     print(f"[inventory] 盘点线程启动失败：{type(e).__name__}: {e}", flush=True)
 
 
+THUMB_DIR = os.path.join(tempfile.gettempdir(), "opc-workbench-thumbs")
+THUMB_IMG = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "tif", "tiff", "heic"}
+THUMB_SEM = threading.Semaphore(3)
+THUMB_VID = {"mp4", "mov", "webm", "mkv", "avi", "m4v", "flv", "wmv", "mpg", "mpeg", "ts"}
+
+
+def _ffmpeg_bin():
+    """服务以普通用户跑，PATH 里未必有 ffmpeg，按常见位置兜底。"""
+    for p in (shutil.which("ffmpeg"), "/home/boray/.local/bin/ffmpeg",
+              "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"):
+        if p and os.path.exists(p):
+            return p
+    return ""
+
+
+def _thumb_for(src, width=420):
+    """生成并缓存缩略图，返回 jpg 路径；失败返回空串。
+
+    缓存键含大小和修改时间，文件被替换后会自动重算，不用手动清。
+    """
+    try:
+        st = os.stat(src)
+    except OSError:
+        return ""
+    key = hashlib.sha1(f"{src}|{st.st_size}|{st.st_mtime_ns}|{width}".encode()).hexdigest()
+    out = os.path.join(THUMB_DIR, key[:2], key + ".jpg")
+    if os.path.exists(out):
+        return out
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    ext = os.path.splitext(src)[1].lower().lstrip(".")
+    # 临时名必须保留 .jpg：ffmpeg 靠扩展名推断输出格式，写成 xxx.part 会直接报错
+    tmp = out + ".part.jpg"
+    # 照片墙一开就是几十个请求，每个都起 ffmpeg 会把机器压垮：排队取闸门，
+    # 等太久的那批直接返回空，前端先显示类型图标，下次滚动再补
+    if not THUMB_SEM.acquire(timeout=8):
+        return ""
+    try:
+        if ext in THUMB_VID:
+            exe = _ffmpeg_bin()
+            if not exe:
+                return ""
+            scale = f"scale='min({width},iw)':-2"
+            subprocess.run([exe, "-y", "-loglevel", "error", "-ss", "1", "-i", src,
+                            "-frames:v", "1", "-vf", scale, tmp],
+                           timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if not (os.path.exists(tmp) and os.path.getsize(tmp)):
+                # 1 秒处可能是黑场或还没有关键帧，退到首帧再试一次
+                subprocess.run([exe, "-y", "-loglevel", "error", "-i", src,
+                                "-frames:v", "1", "-vf", scale, tmp],
+                               timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            from PIL import Image
+            im = Image.open(src)
+            im = im.convert("RGB")
+            im.thumbnail((width, width * 3))
+            im.save(tmp, "JPEG", quality=82)
+        if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+            os.replace(tmp, out)
+            return out
+    except Exception:
+        pass
+    finally:
+        THUMB_SEM.release()
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    return ""
+
+
 def _dir_sig(path, keep=None):
     """目录快照指纹：看直接子项的名字/大小/时间，用来判断有没有增删改。
 
@@ -615,7 +686,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[http] {self.address_string()} {fmt % args}", flush=True)
 
+    def _strip_proxy_prefix(self):
+        """公网经 /workbench 反代：nginx 通常已经把前缀去掉，这里再兜一次，
+        保证 /workbench/private/...、/workbench/api/... 直连 8848 也能命中。"""
+        p = urlparse(self.path).path
+        if p == "/workbench" or p.startswith("/workbench/"):
+            self.path = self.path[len("/workbench"):] or "/"
+
     def do_GET(self):
+        self._strip_proxy_prefix()
         path = unquote(urlparse(self.path).path)
         if path != "/":
             path = path.rstrip("/")   # 允许 /office3d/ 或 /office3d%2F 这类结尾带斜杠的访问
@@ -713,6 +792,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self._session_user():
                 return self._json({"ok": False, "error": "需要登录"}, 401)
             return self._json(self._materials_watch(urlparse(self.path).query))
+        if path == "/api/materials/thumb":
+            # 照片墙一次要铺几十上百张，必须走缩略图：原图常见 2000px+，直接甩会把带宽吃满
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._materials_thumb(urlparse(self.path).query)
         # 工具箱：渠道规格 + 手工任务列表（会触发模型出图出片，要求登录）
         if path in ("/api/toolbox/channels", "/api/toolbox/jobs"):
             if not self._session_user():
@@ -1244,6 +1328,54 @@ class Handler(BaseHTTPRequestHandler):
             # 前端拼 /private/<手机号>/... 用；这个值只反映会话本人，不接受外部指定
             resp["phone"] = os.path.basename(root)
         return resp
+
+    def _materials_file_of(self, root_name, rel):
+        """根 + 相对路径 → 文件绝对路径（越界、隐藏目录口径与浏览完全一致）。"""
+        root, err = self._materials_root_of(root_name)
+        if err:
+            return "", err
+        full = os.path.realpath(os.path.join(root, rel)) if rel else root
+        if not full.startswith(root + os.sep):
+            return "", "越界访问"
+        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep) if p):
+            return "", "隐藏目录不可访问"
+        if not os.path.isfile(full):
+            return "", "文件不存在"
+        return full, ""
+
+    def _materials_thumb(self, query):
+        """缩略图：图片用 PIL 缩小，视频用 ffmpeg 抽一帧，统一回 JPEG。"""
+        q = parse_qs(query or "")
+        root_name = (q.get("root") or ["vault"])[0].strip()
+        rel_dir = (q.get("path") or [""])[0].strip().strip("/")
+        name = (q.get("name") or [""])[0].strip()
+        if not name or name.startswith(".") or "/" in name or "\\" in name:
+            return self._json({"ok": False, "error": "文件名无效"}, 400)
+        rel = f"{rel_dir}/{name}" if rel_dir else name
+        full, err = self._materials_file_of(root_name, rel)
+        if err:
+            return self._json({"ok": False, "error": err}, 404)
+        ext = os.path.splitext(name)[1].lower().lstrip(".")
+        if ext not in THUMB_IMG and ext not in THUMB_VID:
+            return self._json({"ok": False, "error": "该格式不支持缩略图"}, 415)
+        out = _thumb_for(full, 420)
+        if not out:
+            return self._json({"ok": False, "error": "缩略图生成失败"}, 404)
+        try:
+            with open(out, "rb") as f:
+                data = f.read()
+        except OSError:
+            return self._json({"ok": False, "error": "缩略图读取失败"}, 500)
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        # 私有目录的缩略图不能被共享缓存留下
+        self.send_header("Cache-Control", "private, max-age=86400")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _materials_watch(self, query):
         """长轮询：目录没变就挂着，变了立刻回，最多等 25 秒。
@@ -2237,6 +2369,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"0\r\n\r\n")
 
     def do_POST(self):
+        self._strip_proxy_prefix()
         path = urlparse(self.path).path
         if not self._require_auth():
             return

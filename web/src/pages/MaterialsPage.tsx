@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InspirationPage } from "./InspirationPage";
 import { ToolboxGallery } from "../components/ToolboxGallery";
+import { siteUrl } from "../lib/siteUrl";
 
 type MatItem = {
   id: string;
@@ -22,6 +23,8 @@ type BrowseData = {
   counts?: { dirs: number; files: number };
   skipped?: number;
   error?: string;
+  /** 目录指纹：内容一变就变，前端拿它做长轮询判断要不要重新拉 */
+  sig?: string;
   /** root=private 时由服务端回传本人手机号，用于拼 /private/<手机号>/... */
   phone?: string;
 };
@@ -46,6 +49,9 @@ const KINDS: { key: KindKey; label: string }[] = [
   { key: "skill", label: "Skill 文件" },
   { key: "other", label: "其它格式" },
 ];
+
+/** 缩略图墙每次多铺多少张，滚到底再续 */
+const GRID_PAGE = 60;
 
 const EXT_VIDEO = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "flv", "wmv", "mpg", "mpeg", "ts"]);
 const EXT_AUDIO = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "aiff", "amr"]);
@@ -124,8 +130,8 @@ export function MaterialsPage() {
       .catch(() => setIndexErr("素材清单读取失败"));
   }, []);
 
-  const loadBrowse = useCallback(async (r: RootKey, p: string) => {
-    setBrowsing(true);
+  const loadBrowse = useCallback(async (r: RootKey, p: string, silent = false) => {
+    if (!silent) setBrowsing(true);
     try {
       const res = await fetch(
         `/api/materials/browse?root=${r}&path=${encodeURIComponent(p)}`,
@@ -133,9 +139,10 @@ export function MaterialsPage() {
       );
       setBrowse((await res.json()) as BrowseData);
     } catch {
-      setBrowse({ ok: false, error: "目录读取失败" });
+      // 自动刷新失败时保留原列表，别因为一次网络抖动把页面清空
+      if (!silent) setBrowse({ ok: false, error: "目录读取失败" });
     } finally {
-      setBrowsing(false);
+      if (!silent) setBrowsing(false);
     }
   }, []);
 
@@ -147,7 +154,65 @@ export function MaterialsPage() {
     if (tab === "browse" || tab === "personal") void loadBrowse(effRoot, path);
   }, [tab, effRoot, path, loadBrowse]);
 
+  // 目录监听：在服务器上直接增删改文件（同步盘、scp、命令行 rm）时页面自己跟上。
+  // 走长轮询——没变化时服务端挂着不返回，一变就在 1 秒内回。
+  useEffect(() => {
+    if (tab !== "browse" && tab !== "personal") return;
+    if (!browse?.ok || !browse.sig) return;
+    let alive = true;
+    let sig = browse.sig;
+    const ctrl = new AbortController();
+    const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+    void (async () => {
+      while (alive) {
+        if (document.visibilityState === "hidden") {
+          await sleep(4000);
+          continue;
+        }
+        try {
+          const res = await fetch(
+            `/api/materials/watch?root=${effRoot}&path=${encodeURIComponent(path)}&sig=${sig}`,
+            { credentials: "include", signal: ctrl.signal },
+          );
+          const d = (await res.json()) as { ok?: boolean; changed?: boolean; sig?: string };
+          if (!alive) return;
+          if (d.changed) {
+            await loadBrowse(effRoot, path, true);
+            if (d.sig) sig = d.sig;
+            continue;
+          }
+          if (d.sig) sig = d.sig;
+          if (!d.ok) await sleep(3000);
+        } catch {
+          if (!alive) return;
+          await sleep(3000);
+        }
+      }
+    })();
+    // 从别的标签页切回来时立刻对一次，不用干等长轮询自然到期
+    const onVis = () => {
+      if (document.visibilityState === "visible") void loadBrowse(effRoot, path, true);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      alive = false;
+      ctrl.abort();
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [tab, effRoot, path, browse?.ok, browse?.sig, loadBrowse]);
+
   // 删除只发生在个人空间；公共目录（vault / 发布 / 外部下载）根本不渲染这个入口
+  // 列表 / 缩略图两种看法：照片墙一次能看很多张，选过的偏好记在本地
+  const [viewMode, setViewMode] = useState<"list" | "grid">(() => {
+    try {
+      return window.localStorage.getItem("mat.view") === "grid" ? "grid" : "list";
+    } catch {
+      return "list";
+    }
+  });
+  const [limit, setLimit] = useState(GRID_PAGE);
+  const gridEndRef = useRef<HTMLDivElement>(null);
+
   const [delBusy, setDelBusy] = useState("");
   const doDelete = useCallback(async (rel: string, isDir: boolean) => {
     const label = rel.split("/").pop() || rel;
@@ -199,15 +264,61 @@ export function MaterialsPage() {
   const fileUrl = useCallback((name: string) => {
     const segs = path.split("/").filter(Boolean);
     const tail = [...segs, name].map(encodeURIComponent).join("/");
-    if (effRoot === "published") return `/materials/${tail}`;
-    if (effRoot === "downloads") return `/downloads/${tail}`;
-    if (effRoot === "private") return `/private/${browse?.phone ?? ""}/${tail}`;
-    return `/vault/${["素材", ...segs, name].map(encodeURIComponent).join("/")}`;
+    if (effRoot === "published") return siteUrl(`/materials/${tail}`);
+    if (effRoot === "downloads") return siteUrl(`/downloads/${tail}`);
+    if (effRoot === "private") return siteUrl(`/private/${browse?.phone ?? ""}/${tail}`);
+    return siteUrl(`/vault/${["素材", ...segs, name].map(encodeURIComponent).join("/")}`);
   }, [path, effRoot, browse?.phone]);
 
   const shownFiles = useMemo(
     () => (browse?.files ?? []).filter((f) => kind === "all" || kindOf(f.name, f.ext) === kind),
     [browse?.files, kind],
+  );
+
+  // 缩略图地址：照片墙一次铺几十上百张，原图太大，交给服务端压到 420px 宽
+  const thumbUrl = useCallback(
+    (name: string) => `/api/materials/thumb?root=${effRoot}&path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`,
+    [effRoot, path],
+  );
+
+  const setView = useCallback((v: "list" | "grid") => {
+    setViewMode(v);
+    try {
+      window.localStorage.setItem("mat.view", v);
+    } catch {
+      // 隐私模式下 localStorage 不可写，只影响记住偏好
+    }
+  }, []);
+
+  // 换目录、换分类、换根都从第一屏重新开始
+  useEffect(() => {
+    setLimit(GRID_PAGE);
+  }, [tab, effRoot, path, kind]);
+
+  // 滚到底自动续一屏，避免一次性渲染几百个节点
+  useEffect(() => {
+    if (viewMode !== "grid") return;
+    const el = gridEndRef.current;
+    if (!el) return;
+    const ob = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setLimit((l) => Math.min(l + GRID_PAGE, shownFiles.length));
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
+    ob.observe(el);
+    return () => ob.disconnect();
+  }, [viewMode, shownFiles.length, limit]);
+
+  const openFile = useCallback(
+    (f: BrowseFile) => {
+      const pv = previewKind(f.name, f.ext);
+      if (pv) setPreview({ url: fileUrl(f.name), kind: pv, name: f.name });
+      else window.open(fileUrl(f.name), "_blank", "noopener");
+    },
+    [fileUrl],
   );
 
   // Esc 关预览；切目录时也顺手关掉，避免残留上一个文件
@@ -284,7 +395,7 @@ export function MaterialsPage() {
                     <div className="mat-card-foot">
                       {it.meta && <span className="mat-meta">{it.meta}</span>}
                       {it.url && (
-                        <a className="btn btn-ghost mat-open" href={it.url} target="_blank" rel="noreferrer">
+                        <a className="btn btn-ghost mat-open" href={siteUrl(it.url)} target="_blank" rel="noreferrer">
                           打开
                         </a>
                       )}
@@ -381,11 +492,32 @@ export function MaterialsPage() {
           {!browsing && browse?.error && <div className="error-banner">{browse.error}</div>}
           {!browsing && browse?.ok && (
             <>
-              <div className="mat-counts muted">
-                目录 {browse.counts?.dirs ?? 0} 个 · 文件 {browse.counts?.files ?? 0} 个
-                {kind !== "all" && `（当前分类 ${shownFiles.length} 个）`}
-                {browse.skipped ? ` · 跳过 ${browse.skipped} 个不可读项` : ""}
-                {(browse.counts?.files ?? 0) > 500 && "　（仅显示前 500 个文件）"}
+              <div className="mat-counts">
+                <span className="muted">
+                  目录 {browse.counts?.dirs ?? 0} 个 · 文件 {browse.counts?.files ?? 0} 个
+                  {kind !== "all" && `（当前分类 ${shownFiles.length} 个）`}
+                  {browse.skipped ? ` · 跳过 ${browse.skipped} 个不可读项` : ""}
+                  {(browse.counts?.files ?? 0) > 500 && "　（仅显示前 500 个文件）"}
+                  {viewMode === "grid" && shownFiles.length > limit && `　已铺 ${limit} / ${shownFiles.length}`}
+                </span>
+                <div className="mat-views" role="group" aria-label="查看方式">
+                  <button
+                    type="button"
+                    className={viewMode === "list" ? "active" : ""}
+                    onClick={() => setView("list")}
+                    title="一行一个，信息看得全"
+                  >
+                    列表
+                  </button>
+                  <button
+                    type="button"
+                    className={viewMode === "grid" ? "active" : ""}
+                    onClick={() => setView("grid")}
+                    title="方块缩略图，一屏看很多"
+                  >
+                    缩略图
+                  </button>
+                </div>
               </div>
               {tab === "personal"
                 && (browse.counts?.dirs ?? 0) === 0
@@ -398,7 +530,89 @@ export function MaterialsPage() {
                     </p>
                   </div>
                 )}
-              {(browse.dirs?.length ?? 0) > 0 && (
+              {/* 缩略图墙：目录和文件都铺成方块，滚到底自动续下一屏 */}
+              {viewMode === "grid" && (
+                <div className="mat-grid">
+                  {browse.dirs?.map((d) => {
+                    const relDir = path ? `${path}/${d.name}` : d.name;
+                    return (
+                      <div className="mat-tile mat-tile-dir" key={`dir-${d.name}`}>
+                        <button
+                          type="button"
+                          className="mat-tile-hit"
+                          onClick={() => setPath(relDir)}
+                          title={d.name}
+                        >
+                          <span className="mat-tile-glyph" aria-hidden="true">▸</span>
+                          <span className="mat-tile-cap"><b>{d.name}</b></span>
+                        </button>
+                        {effRoot === "private" && (
+                          <button
+                            type="button"
+                            className="mat-tile-del"
+                            disabled={delBusy === relDir}
+                            onClick={() => void doDelete(relDir, true)}
+                            title="删除这个目录（连同里面的内容）"
+                          >
+                            {delBusy === relDir ? "…" : "×"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {shownFiles.slice(0, limit).map((f) => {
+                    const k = kindOf(f.name, f.ext);
+                    const relPath = [...path.split("/").filter(Boolean), f.name].join("/");
+                    return (
+                      <div className={`mat-tile mat-tile-${k}`} key={`file-${f.name}`}>
+                        <button
+                          type="button"
+                          className="mat-tile-hit"
+                          onClick={() => openFile(f)}
+                          title={`${f.name}　${humanSize(f.size)}`}
+                        >
+                          {(k === "image" || k === "video") && (
+                            <>
+                              <span className="mat-tile-glyph" aria-hidden="true">{k === "video" ? "▶" : "▤"}</span>
+                              <img
+                                className="mat-tile-img"
+                                src={thumbUrl(f.name)}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              />
+                            </>
+                          )}
+                          {k === "audio" && <span className="mat-tile-glyph" aria-hidden="true">♫</span>}
+                          {(k === "skill" || k === "other") && (
+                            <span className="mat-tile-glyph" aria-hidden="true">▤</span>
+                          )}
+                          <span className="mat-tile-cap">
+                            <b>{f.name}</b>
+                            <small>
+                              {f.ext ? `${f.ext.toUpperCase()} · ` : ""}{humanSize(f.size)}
+                            </small>
+                          </span>
+                        </button>
+                        {effRoot === "private" && (
+                          <button
+                            type="button"
+                            className="mat-tile-del"
+                            disabled={delBusy === relPath}
+                            onClick={() => void doDelete(relPath, false)}
+                            title="删除这个文件"
+                          >
+                            {delBusy === relPath ? "…" : "×"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div ref={gridEndRef} className="mat-grid-end" aria-hidden="true" />
+                </div>
+              )}
+              {viewMode === "list" && (browse.dirs?.length ?? 0) > 0 && (
                 <ul className="mat-list">
                   {browse.dirs?.map((d) => {
                     const relDir = path ? `${path}/${d.name}` : d.name;
@@ -433,7 +647,7 @@ export function MaterialsPage() {
                   这个目录里没有「{KINDS.find((k) => k.key === kind)?.label}」类文件，换个标签看看。
                 </p>
               )}
-              {shownFiles.length > 0 && (
+              {viewMode === "list" && shownFiles.length > 0 && (
                 <ul className="mat-list">
                   {shownFiles.map((f) => {
                     const href = fileUrl(f.name);
