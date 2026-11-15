@@ -2506,6 +2506,23 @@ a:hover {
 
 .ins-search { min-width: 260px; max-width: 340px; }
 
+/* 读取范围徽标：一眼看出看的是自己库还是公司共享库 */
+.ins-scope {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #475569;
+  white-space: nowrap;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+}
+
+.ins-scope.is-personal {
+  color: #0f766e;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
 .ins-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

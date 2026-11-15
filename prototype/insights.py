@@ -74,8 +74,9 @@ def _clean(text, limit: int = 0) -> str:
     return s[:limit] if limit else s
 
 
-def _vault_link(rel: str) -> str:
-    return "/vault/" + quote(rel.replace(os.sep, "/"), safe="/")
+def _vault_link(rel: str, prefix: str = "/vault/") -> str:
+    """文件链接前缀由调用方给：owner 走 /vault/，个人库走 /my-obsidian/（登录态鉴权）。"""
+    return prefix + quote(rel.replace(os.sep, "/"), safe="/")
 
 
 def _item(category, sub_kind, title, summary, detail, tags, source, link,
@@ -96,7 +97,7 @@ def _item(category, sub_kind, title, summary, detail, tags, source, link,
     }
 
 
-def _hotspot_ideas(kernel, vault):
+def _hotspot_ideas(kernel, vault, link_prefix="/vault/", link_fn=None):
     items = []
     # 1) 运行时热点线索（内存快照 + Obsidian 热点简报恢复）
     try:
@@ -159,9 +160,10 @@ def _hotspot_ideas(kernel, vault):
             project, fit, angle, risk = cells[0], cells[1], cells[2], cells[3]
             detail = (f"项目：{project}\n适配度：{fit}\n可做的角度：{angle}\n"
                       f"风险与红线：{risk}\n简报：{name}")
+            brief_link = link_fn(rel) if link_fn else _vault_link(rel, link_prefix)
             items.append(_item(
                 CAT_HOTSPOT, "简报角度", f"{project}｜{angle}", angle, detail,
-                [project, fit, "热点简报"], f"热点简报 · {name}", _vault_link(rel),
+                [project, fit, "热点简报"], f"热点简报 · {name}", brief_link,
                 _file_time(path), fit_score.get(fit, 0.6), "Obsidian/OPC/热点采集"))
     return items, brief_count
 
@@ -187,16 +189,34 @@ def _sections(text):
     return out
 
 
-def _video_ideas(vault, include_repo_docs=True):
+def _video_ideas(vault, include_repo_docs=True, link_prefix="/vault/", loose=False, link_fn=None):
+    """扫描拆解类文档。
+
+    loose 用于个人库：个人库没有统一的「素材/」结构，文件名也不一定带「拆解」，
+    按普通文档全收，否则用户自己库里的东西永远进不来。
+    """
     items = []
     docs = []
-    video_dir = os.path.join(vault, "素材")
-    if os.path.isdir(video_dir):
-        for dirpath, dirnames, filenames in os.walk(video_dir):
+    seen = set()
+    # 标准位置是 <库>/素材；个人库常把文档直接放在品牌目录下，所以在库根再扫一遍
+    for base in (os.path.join(vault, "素材"), vault):
+        if not os.path.isdir(base):
+            continue
+        for dirpath, dirnames, filenames in os.walk(base):
+            if os.path.relpath(dirpath, base).count(os.sep) > 3:
+                dirnames[:] = []
+                continue
             dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
             for name in filenames:
-                if name.endswith(".md") and any(k in name for k in _VIDEO_NAMES):
-                    docs.append((os.path.join(dirpath, name), True))
+                if not name.endswith(".md"):
+                    continue
+                if not loose and not any(k in name for k in _VIDEO_NAMES):
+                    continue
+                full = os.path.join(dirpath, name)
+                if full in seen:
+                    continue
+                seen.add(full)
+                docs.append((full, True))
     # 仓库根目录的 CCO 创意说明（首发创意说明、得令风格三方案、方案一视频脚本）
     # 属于共享产品样例：仅存量公司空间（owner）读取，注册用户工作区不混入
     if include_repo_docs:
@@ -210,7 +230,7 @@ def _video_ideas(vault, include_repo_docs=True):
     for path, in_vault in docs:
         rel = (os.path.relpath(path, vault) if in_vault
                else os.path.relpath(path, REPO_ROOT))
-        link = _vault_link(rel) if in_vault else ""
+        link = (link_fn(rel) if link_fn else _vault_link(rel, link_prefix)) if in_vault else ""
         stem = os.path.splitext(os.path.basename(path))[0]
         tags = ["视频拆解" if in_vault else "创意说明", stem]
         noise = {"opt", "sefs", "home", "boray", "opc-workbench", "素材"}
@@ -231,7 +251,7 @@ def _video_ideas(vault, include_repo_docs=True):
     return items, len(docs)
 
 
-def _distill_ideas(kernel, vault):
+def _distill_ideas(kernel, vault, link_prefix="/vault/", link_fn=None):
     items = []
     kb_dir = os.path.join(vault, "OPC", "知识库")
     # kb_id → md 相对路径，给「查看原文」用
@@ -281,7 +301,7 @@ def _distill_ideas(kernel, vault):
             conclusion or k.get("summary") or k.get("title") or "",
             detail or body[:700], tags[:8] + ["知识库蒸馏"],
             f"知识库归档 · {kb_id or k.get('id') or ''}",
-            _vault_link(rel) if rel else "/app/knowledge",
+            (link_fn(rel) if link_fn else _vault_link(rel, link_prefix)) if rel else "/app/knowledge",
             k.get("at") or "", None, "KERNEL.knowledge"))
 
     # 评审会定稿结论：CCO 从 9 条里蒸馏出的 6 条选题
@@ -312,19 +332,27 @@ def _distill_ideas(kernel, vault):
     return items, kept, meeting_count
 
 
-def build(kernel, refresh: bool = False, vault: str = None):
-    """返回 /api/inspiration 的响应体。"""
+def build(kernel, refresh: bool = False, vault: str = None, link_prefix: str = "/vault/",
+          scope: str = "owner", link_fn=None):
+    """返回 /api/inspiration 的响应体。
+
+    vault 决定读哪份库（owner 全局 Obsidian / 用户个人库），link_prefix 决定
+    「查看原文」走哪个下载路由，scope 只用于前端标注当前看的是谁的范围。
+    """
     vault = vault or VAULT
+    personal = scope != "owner"
     with _CACHE_LOCK:
         cached = _CACHE["data"].get(vault)
         fresh = cached is not None and (time.time() - _CACHE["at"].get(vault, 0)) < CACHE_TTL
     if fresh and not refresh:
         return dict(cached, cached=True)
 
-    hotspot_items, brief_count = _hotspot_ideas(kernel, vault)
+    hotspot_items, brief_count = _hotspot_ideas(kernel, vault, link_prefix, link_fn)
     video_items, video_docs = _video_ideas(
-        vault, include_repo_docs=getattr(kernel, "is_owner", True))
-    distill_items, kb_entries, meeting_count = _distill_ideas(kernel, vault)
+        vault, include_repo_docs=getattr(kernel, "is_owner", True),
+        link_prefix=link_prefix, loose=personal, link_fn=link_fn)
+    distill_items, kb_entries, meeting_count = _distill_ideas(
+        kernel, vault, link_prefix, link_fn)
     items = hotspot_items + video_items + distill_items
     items.sort(key=lambda x: (str(x.get("at") or ""), str(x.get("title") or "")), reverse=True)
 
@@ -343,11 +371,19 @@ def build(kernel, refresh: bool = False, vault: str = None):
             "hotspotRows": len(hotspot_items),
         },
         "items": items[:220],
-        "notes": [
+        "scope": {
+            "kind": "personal" if personal else "owner",
+            "label": "个人库" if personal else "公司共享库",
+        },
+        "notes": ([
+            "当前只读你自己的库（个人 Obsidian），不混入公司共享内容。",
+            "把拆解、笔记类 .md 放进库里，下一轮刷新就会出现在这里。",
+            "热点线索仍来自公共热点采集，属于公开信息。",
+        ] if personal else [
             "热点线索来自 /api/hotspots（内存快照 + Obsidian 热点简报），简报角度来自「分项目可用角度」表。",
             "视频分析来自 Obsidian 素材拆解 / 给 CCO 的一页纸，以及仓库根目录的创意说明，按章节切分。",
             "蒸馏启发来自知识库归档的一句话结论 / 可复用点，以及选题评审会的定稿清单。",
-        ],
+        ]),
     }
     with _CACHE_LOCK:
         _CACHE["at"][vault] = time.time()

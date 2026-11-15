@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { siteUrl } from "../lib/siteUrl";
 
 type Idea = {
   id: string;
@@ -23,6 +24,8 @@ type InspirationData = {
   sources?: Record<string, number>;
   items?: Idea[];
   notes?: string[];
+  /** 当前读取范围：personal=只看自己的库，owner=公司共享库 */
+  scope?: { kind: string; label: string };
   error?: string;
 };
 
@@ -242,11 +245,21 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        {data?.scope && (
+          <span className={`ins-scope ${data.scope.kind === "personal" ? "is-personal" : ""}`}
+                title={data.scope.kind === "personal" ? "只读取你自己的库，不含公司共享内容" : "读取公司共享 Obsidian 库"}>
+            {data.scope.label}
+          </span>
+        )}
       </div>
 
       {loading && !data && <div className="ins-empty">正在读取热点简报、视频拆解与知识库…</div>}
       {!loading && filtered.length === 0 && (
-        <div className="ins-empty">当前筛选下没有灵感条目。换个分类或清空搜索试试。</div>
+        <div className="ins-empty">
+          {data?.scope?.kind === "personal"
+            ? "你的个人空间里还没有可聚合的文档。把拆解、笔记类 .md 放进个人 Obsidian 或知识库，重新聚合即可看到。"
+            : "当前筛选下没有灵感条目。换个分类或清空搜索试试。"}
+        </div>
       )}
 
       <section className="ins-grid" aria-label="灵感清单">
@@ -290,9 +303,9 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
                   </button>
                 )}
                 {it.link ? (
-                  <a href={it.link} target="_blank" rel="noreferrer">查看原文 →</a>
+                  <a href={siteUrl(it.link)} target="_blank" rel="noreferrer">查看原文 →</a>
                 ) : (
-                  <span className="muted">仓库文档 · 要点已内联</span>
+                  <span className="muted">要点已内联（该文件不在下载路由内）</span>
                 )}
               </div>
               {expanded && <pre className="ins-detail">{it.detail}</pre>}

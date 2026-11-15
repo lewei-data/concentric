@@ -891,12 +891,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._kernel().snapshot())
         # ---------- CCO 创意灵感 / CTO 运维监控（只读聚合） ----------
         if path == "/api/inspiration":
+            # 创意灵感已划入 private：未登录不给任何库内容，登录后只看自己的库
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
             if insights is None:
                 return self._json({"ok": False, "error": "灵感聚合模块未加载"}, 500)
             try:
                 refresh = (parse_qs(urlparse(self.path).query).get("refresh") or [""])[0] == "1"
-                return self._json(insights.build(self._kernel(), refresh=refresh,
-                                                 vault=self._kernel().vault_dir))
+                kern = self._kernel()
+                root, prefix, scope, link_fn = self._inspiration_scope(kern)
+                return self._json(insights.build(kern, refresh=refresh, vault=root,
+                                                 link_prefix=prefix, scope=scope,
+                                                 link_fn=link_fn))
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/ops":
@@ -1545,6 +1551,28 @@ class Handler(BaseHTTPRequestHandler):
             return None
         want = os.path.join(base, "obsidian")
         return want if os.path.isdir(want) else None
+
+    def _inspiration_scope(self, kern):
+        """创意灵感的读取范围：老板读公司共享库，其他人只读自己的空间。
+
+        个人空间以 <dataDir> 为根（obsidian / 素材 / 工具箱 / vault 都在里面），
+        不混入公司共享内容。个人空间里只有 obsidian 有独立下载路由，
+        其余目录的条目只给内联要点，不做无效链接。
+        """
+        if getattr(kern, "is_owner", False):
+            return kern.vault_dir, "/vault/", "owner", None
+
+        base = self._my_private_root()
+
+        def _link(rel):
+            relp = rel.replace(os.sep, "/")
+            if relp.startswith("obsidian/"):
+                return "/my-obsidian/" + quote(relp[len("obsidian/"):], safe="/")
+            return ""
+
+        if base:
+            return base, "/vault/", "personal", _link
+        return kern.vault_dir, "/vault/", "personal", None
 
     def _private_file(self, path):
         """/private/<手机号>/<子目录>/... → 只允许本人，且只放行白名单子目录。
