@@ -54,16 +54,33 @@ export function ToolboxGallery() {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/toolbox/jobs?limit=200", { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d: { ok?: boolean; items?: ToolboxJob[]; error?: string }) => {
-        if (!alive) return;
-        if (d.ok) setJobs(d.items ?? []);
-        else setErr(d.error || "读取失败");
-      })
-      .catch((e: Error) => { if (alive) setErr(e.message); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
+    const load = () => {
+      fetch("/api/toolbox/jobs?limit=200", { credentials: "same-origin" })
+        .then((r) => r.json())
+        .then((d: { ok?: boolean; items?: ToolboxJob[]; error?: string }) => {
+          if (!alive) return;
+          if (d.ok) {
+            setJobs(d.items ?? []);
+            // 产物可能被重新生成，失效标记跟着新数据一起作废
+            setBroken({});
+            setErr("");
+          } else setErr(d.error || "读取失败");
+        })
+        .catch((e: Error) => { if (alive) setErr(e.message); })
+        .finally(() => { if (alive) setLoading(false); });
+    };
+    load();
+    // 用户多半是去文件管理器删了成品再切回浏览器：一回来就重新对账，别等手动刷新
+    const onWake = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener("focus", onWake);
+    document.addEventListener("visibilitychange", onWake);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", onWake);
+      document.removeEventListener("visibilitychange", onWake);
+    };
   }, []);
 
   const groups = useMemo(() => {
@@ -89,7 +106,7 @@ export function ToolboxGallery() {
   }
 
   const open = (j: ToolboxJob) => {
-    if (j.status !== "done" || !j.outputUrl) return;
+    if (j.status !== "done" || !j.outputUrl || broken[j.id]) return;
     setView({ url: siteUrl(j.outputUrl), kind: j.kind, title: j.prompt || j.note || "" });
   };
 
