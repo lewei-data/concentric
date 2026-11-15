@@ -2,13 +2,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { appRoot } from "../appRoot";
 import { siteUrl } from "../lib/siteUrl";
 
-// 头像在「服务根」下：公网挂在 /workbench/app，必须补前缀，否则 401/404 后图片被隐藏
-const SEC_AVATAR = `${appRoot()}avatars/secretary.png`;
+// 头像在「服务根」下：公网挂在 /workbench/app，必须补前缀，否则 401/404 后图片被隐藏。
+// 备用地址：前端构建产物里的同款头像（同源、跟着 app 前缀走），主地址不可用时自动切过去。
+const AVATAR_SOURCES = [
+  `${appRoot()}avatars/secretary.png`,
+  `${appRoot()}app/assets/avatars-thumb/secretary.png`,
+];
+
+/** 小秘书头像：主地址失败自动回退备用地址；全部失败才留空（露出渐变底） */
+function SecretaryAvatar({ alt }: { alt: string }) {
+  const [idx, setIdx] = useState(0);
+  const failed = idx >= AVATAR_SOURCES.length;
+  const src = AVATAR_SOURCES[Math.min(idx, AVATAR_SOURCES.length - 1)];
+  if (failed) return null;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      draggable={false}
+      referrerPolicy="no-referrer"
+      onError={() => setIdx((i) => i + 1)}
+    />
+  );
+}
 
 /**
- * 桌面精灵（小秘书）：老板登录后浮动在工作区右下角。
- * - 打招呼 → 缩到屏幕边缘待命；
- * - 点击弹出对话框：文字 / 语音（录音转写）/ 文件 与小秘书互动；
+ * 桌面精灵（小秘书）：老板登录后浮动在工作区右上角（老板区域右侧、最上层）。
+ * - 出场特效：从右上角原地出现 → 走两步 → 说句话 → 回到右上角缩小成小精灵；
+ * - 点击头像展开对话框，再点一次收起：文字 / 语音（录音转写）/ 文件 与小秘书互动；
  * - 回复带语音（/chat-files/*.wav），自动播报；无音频时回退浏览器朗读；
  * - 监听 SSE chat.message（APP 指令链路的回复也会出现在对话流中）。
  */
@@ -48,19 +69,20 @@ function clampSpritePos(p: { x: number; y: number }) {
   return { x: Math.min(Math.max(6, p.x), maxX), y: Math.min(Math.max(6, p.y), maxY) };
 }
 
-// 出场「说话」位置：屏幕中部偏左（像走到老板面前汇报）
-function introStage() {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  return {
-    x: Math.max(16, (vw - INTRO_BIG) / 2 - Math.min(140, vw * 0.12)),
-    y: Math.min(Math.max(150, vh * 0.56), Math.max(120, vh - INTRO_BIG - 48)),
-  };
+// 出场「走两步」的距离：从右上角往左走一小段，再走回来
+function introWalkDistance() {
+  return Math.min(190, Math.max(96, window.innerWidth * 0.14));
+}
+
+// 静止精灵的默认落点（与 CSS 断点保持一致：窄屏顶栏换行，精灵整体下移）
+function spriteHome() {
+  return { right: SPRITE_RIGHT, top: window.innerWidth <= 980 ? 132 : SPRITE_TOP };
 }
 
 // 出场结尾的落点：与静止精灵的默认位置重合（右上角，缩放基准在右上角）
 function introCorner() {
-  return { x: Math.max(8, window.innerWidth - SPRITE_RIGHT - INTRO_BIG), y: SPRITE_TOP };
+  const home = spriteHome();
+  return { x: Math.max(8, window.innerWidth - home.right - INTRO_BIG), y: home.top };
 }
 
 function speakText(text: string) {
@@ -150,20 +172,27 @@ export default function AssistantWidget() {
                                 sw: number; sh: number; mode: "move" | "resize" } | null>(null);
   const panelRef = useRef(panel);
   panelRef.current = panel;
-  // 出场特效（每次登录/刷新一次）：走两步 → 说句话 → 飞到右上角变小精灵
+  // 出场特效（每次登录/刷新一次）：右上角现身 → 走两步 → 说句话 → 回到右上角变小精灵
   const [intro, setIntro] = useState<{ phase: "walk" | "talk" | "fly"; greeting: string; lines: string[] } | null>(null);
   const [introPos, setIntroPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    if (sessionStorage.getItem("sec-hello")) return;
-    sessionStorage.setItem("sec-hello", "1");
+    // 每次登录 / 刷新页面（文档加载）都放一次出场特效；站内路由切换不重放
     let alive = true;
     const timers: number[] = [];
-    const stage = introStage();
-    // 先站在画面外一点，再「走两步」走到说话位
+    const rafs: number[] = [];
+    // 起点就是右上角落点（老板拖动过则用拖动后的位置）
+    const saved = posRef.current;
+    const home = saved
+      ? { x: Math.max(6, saved.x + SPRITE_SIZE - INTRO_BIG), y: saved.y }
+      : introCorner();
+    const stage = { x: Math.max(12, home.x - introWalkDistance()), y: home.y };
     setIntro({ phase: "walk", greeting: "老板好！", lines: [] });
-    setIntroPos({ x: Math.max(8, stage.x - 150), y: stage.y });
-    const raf = requestAnimationFrame(() => { if (alive) setIntroPos(stage); });
+    setIntroPos(home);
+    // 先站稳（淡入），下一帧再迈步走过去（离开右上角一点，方便气泡展开）
+    rafs.push(requestAnimationFrame(() => {
+      rafs.push(requestAnimationFrame(() => { if (alive) setIntroPos(stage); }));
+    }));
 
     (async () => {
       const b = await getJson<{ greeting?: string; items?: { kind: string; text: string }[] }>(
@@ -178,11 +207,11 @@ export default function AssistantWidget() {
         if (!alive) return;
         setIntro((p) => (p ? { ...p, phase: "talk" } : p));
       }, 2000));
-      // 说完话 → 飞到右上角落位、缩小成小精灵
+      // 说完话 → 走回右上角、缩小成小精灵
       timers.push(window.setTimeout(() => {
         if (!alive) return;
         setIntro((p) => (p ? { ...p, phase: "fly" } : p));
-        setIntroPos(introCorner());
+        setIntroPos(home);
       }, 5900));
       timers.push(window.setTimeout(() => {
         if (!alive) return;
@@ -195,7 +224,7 @@ export default function AssistantWidget() {
 
     return () => {
       alive = false;
-      cancelAnimationFrame(raf);
+      rafs.forEach((r) => cancelAnimationFrame(r));
       timers.forEach((t) => window.clearTimeout(t));
     };
   }, []);
@@ -436,6 +465,8 @@ export default function AssistantWidget() {
   function onSpriteClick() {
     if (dragMovedRef.current) { dragMovedRef.current = false; return; }  // 拖拽结束不当作点击
     setGreet("");
+    // 再点一次头像 → 收起对话框（开/关都走这个入口）
+    if (open) { setOpen(false); return; }
     setOpen(true);
     // 对话框锚定在精灵旁边（精灵在右半屏→往左弹，否则往右弹；记住用户手动调整过的大小）
     setPanel((p) => {
@@ -450,7 +481,11 @@ export default function AssistantWidget() {
         // 精灵在屏幕最上方（老板区域右侧）：对话框直接挂在它下面，避免顶到顶栏
         const below = rect.top + rect.height + 12;
         y = below + h <= vh - 14 ? below : Math.min(Math.max(64, rect.top - h / 2), vh - h - 14);
-      } else { x = vw - w - 22; y = SPRITE_TOP + SPRITE_SIZE + 12; }
+      } else {
+        const home = spriteHome();
+        x = vw - w - home.right;
+        y = home.top + SPRITE_SIZE + 12;
+      }
       x = Math.max(8, Math.min(x, Math.max(8, vw - w - 8)));
       y = Math.max(8, Math.min(y, Math.max(8, vh - h - 8)));
       return { x, y, w, h };
@@ -524,9 +559,7 @@ export default function AssistantWidget() {
             aria-label="小秘书出场"
           >
             <div className="sec-intro-body">
-              <span className="sec-fallback" aria-hidden="true">秘</span>
-              <img src={SEC_AVATAR} alt="小秘书" draggable={false}
-                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <SecretaryAvatar alt="小秘书" />
               <span className="sec-dot" />
             </div>
             <span className="sec-intro-legs" aria-hidden="true"><i /><i /></span>
@@ -551,13 +584,12 @@ export default function AssistantWidget() {
         onPointerDown={onSpritePointerDown}
         onPointerMove={onSpritePointerMove}
         onPointerUp={onSpritePointerUp}
-        title="小秘书 · 点击对话，可拖到任意位置"
+        title={open ? "小秘书 · 再点一次收起对话" : "小秘书 · 点击对话（可拖到任意位置）"}
         role="button"
-        aria-label="小秘书"
+        aria-label={open ? "收起与小秘书的对话" : "打开与小秘书的对话"}
+        aria-expanded={open}
       >
-        <span className="sec-fallback" aria-hidden="true">秘</span>
-        <img src={SEC_AVATAR} alt="" draggable={false}
-             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        <SecretaryAvatar alt="小秘书" />
         <span className="sec-dot" />
         {speaking && <span className="sec-wave" aria-hidden />}
       </div>
