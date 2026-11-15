@@ -2685,7 +2685,9 @@ class Kernel:
             raise ValueError("至少选择一个渠道")
         trace_id = "tb-" + os.urandom(4).hex()
         day = time.strftime("%Y-%m-%d")
-        out_dir = os.path.join(self.vault_dir, "素材", "工具箱", day,
+        # 成品落在个人空间而不是公共 vault：工具箱内容属于本人的私有产物，
+# 因此不经 /vault 或 /toolbox 公开，只走 /private/<手机号>/工具箱/（服务端按会话校验）
+        out_dir = os.path.join(self.data_dir or OWNER_DATA_DIR, "工具箱", day,
                                self.TOOLBOX_SUB[kind])
         try:
             os.makedirs(out_dir, exist_ok=True)

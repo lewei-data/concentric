@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InspirationPage } from "./InspirationPage";
+import { ToolboxGallery } from "../components/ToolboxGallery";
 
 type MatItem = {
   id: string;
@@ -14,21 +15,26 @@ type BrowseDir = { name: string };
 type BrowseFile = { name: string; size: number; mtime: number; ext: string };
 type BrowseData = {
   ok: boolean;
-  root?: "vault" | "published";
+  root?: RootKey;
   path?: string;
   dirs?: BrowseDir[];
   files?: BrowseFile[];
   counts?: { dirs: number; files: number };
   skipped?: number;
   error?: string;
+  /** root=private 时由服务端回传本人手机号，用于拼 /private/<手机号>/... */
+  phone?: string;
 };
 
 const TABS = [
   { key: "index", label: "素材清单" },
+  { key: "toolbox", label: "工具箱" },
   { key: "browse", label: "目录浏览" },
+  { key: "personal", label: "个人 Obsidian" },
   { key: "idea", label: "创意灵感" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
+type RootKey = "vault" | "published" | "downloads" | "private";
 
 function humanSize(n: number): string {
   if (!n) return "0 B";
@@ -47,13 +53,29 @@ function shortDate(ts: number): string {
 }
 
 export function MaterialsPage() {
-  const [tab, setTab] = useState<TabKey>("index");
+  // 支持深链 /materials?tab=browse&path=工具箱/2026-11-15/图片
+  // 工具箱出片后直接跳到这里，省得用户自己在目录里翻
+  const boot = useMemo(() => {
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get("tab");
+    return {
+      tab: (TABS.some((x) => x.key === t) ? t : "index") as TabKey,
+      root: (["published", "downloads", "private"].includes(q.get("root") || "")
+        ? q.get("root") : "vault") as RootKey,
+      path: (q.get("path") || "").replace(/^\/+/, ""),
+    };
+  }, []);
+  // 「个人 Obsidian」默认直接进 obsidian 子目录（个人空间根下还有 工具箱）
+  const personalPath = "obsidian";
+
+  const [tab, setTab] = useState<TabKey>(boot.tab);
   const [items, setItems] = useState<MatItem[]>([]);
   const [updated, setUpdated] = useState("");
   const [indexErr, setIndexErr] = useState("");
 
-  const [root, setRoot] = useState<"vault" | "published">("vault");
-  const [path, setPath] = useState("");
+  const [root, setRoot] = useState<RootKey>(boot.root);
+  const [path, setPath] = useState(
+    boot.tab === "personal" && !boot.path ? "obsidian" : boot.path);
   const [browse, setBrowse] = useState<BrowseData | null>(null);
   const [browsing, setBrowsing] = useState(false);
 
@@ -67,7 +89,7 @@ export function MaterialsPage() {
       .catch(() => setIndexErr("素材清单读取失败"));
   }, []);
 
-  const loadBrowse = useCallback(async (r: "vault" | "published", p: string) => {
+  const loadBrowse = useCallback(async (r: RootKey, p: string) => {
     setBrowsing(true);
     try {
       const res = await fetch(
@@ -82,9 +104,23 @@ export function MaterialsPage() {
     }
   }, []);
 
+  // 「个人 Obsidian」显示的是当前登录账号自己的目录，根由服务端按会话决定，
+  // 前端不传手机号（也没法传），切换根按钮在这个 tab 下不生效。
+  const effRoot: RootKey = tab === "personal" ? "private" : root;
+
   useEffect(() => {
-    if (tab === "browse") void loadBrowse(root, path);
-  }, [tab, root, path, loadBrowse]);
+    if (tab === "browse" || tab === "personal") void loadBrowse(effRoot, path);
+  }, [tab, effRoot, path, loadBrowse]);
+
+  // 换 tab 时回到各自的入口目录；首次挂载跳过，否则会清掉深链里的 path
+  const firstTabRef = useRef(true);
+  useEffect(() => {
+    if (firstTabRef.current) {
+      firstTabRef.current = false;
+      return;
+    }
+    setPath(tab === "personal" ? personalPath : "");
+  }, [tab, personalPath]);
 
   const crumbs = useMemo(() => path.split("/").filter(Boolean), [path]);
 
@@ -161,24 +197,50 @@ export function MaterialsPage() {
         </section>
       )}
 
-      {tab === "browse" && (
+      {tab === "toolbox" && (
         <section className="mat-section">
+          <ToolboxGallery />
+        </section>
+      )}
+
+      {(tab === "browse" || tab === "personal") && (
+        <section className="mat-section">
+          {tab === "personal" && (
+            <p className="muted mat-private-hint">
+              仅当前登录账号可见 · 个人空间：<code>conring/users/&lt;手机号&gt;/</code>
+              （含 <code>工具箱</code>、<code>obsidian</code>，可点上面包屑回到上级）
+            </p>
+          )}
           <div className="mat-browse-bar">
             <div className="mat-roots">
-              <button
-                type="button"
-                className={root === "vault" ? "mat-root active" : "mat-root"}
-                onClick={() => { setRoot("vault"); setPath(""); }}
-              >
-                vault 素材
-              </button>
-              <button
-                type="button"
-                className={root === "published" ? "mat-root active" : "mat-root"}
-                onClick={() => { setRoot("published"); setPath(""); }}
-              >
-                发布素材
-              </button>
+              {tab === "personal" ? (
+                <span className="mat-root active">个人 Obsidian</span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className={root === "vault" ? "mat-root active" : "mat-root"}
+                    onClick={() => { setRoot("vault"); setPath(""); }}
+                  >
+                    vault 素材
+                  </button>
+                  <button
+                    type="button"
+                    className={root === "published" ? "mat-root active" : "mat-root"}
+                    onClick={() => { setRoot("published"); setPath(""); }}
+                  >
+                    发布素材
+                  </button>
+                  <button
+                    type="button"
+                    className={root === "downloads" ? "mat-root active" : "mat-root"}
+                    onClick={() => { setRoot("downloads"); setPath(""); }}
+                    title="其它渠道下载到 conring/downloads 的文件"
+                  >
+                    外部下载
+                  </button>
+                </>
+              )}
             </div>
             <nav className="mat-crumbs" aria-label="路径">
               <button type="button" onClick={() => setPath("")}>根目录</button>
@@ -202,6 +264,17 @@ export function MaterialsPage() {
                 {browse.skipped ? ` · 跳过 ${browse.skipped} 个不可读项` : ""}
                 {(browse.counts?.files ?? 0) > 500 && "　（仅显示前 500 个文件）"}
               </div>
+              {tab === "personal"
+                && (browse.counts?.dirs ?? 0) === 0
+                && (browse.counts?.files ?? 0) === 0 && (
+                  <div className="tg-empty">
+                    <b>{path ? "这个目录还是空的" : "个人空间还是空的"}</b>
+                    <p>
+                      位置是 <code>conring/users/&lt;手机号&gt;/{path || ""}</code>，只有你登录后才能看到。
+                      往里面放笔记，或把已有库同步进来，就会出现在这里。
+                    </p>
+                  </div>
+                )}
               {(browse.dirs?.length ?? 0) > 0 && (
                 <ul className="mat-list">
                   {browse.dirs?.map((d) => (
@@ -221,28 +294,25 @@ export function MaterialsPage() {
               {(browse.files?.length ?? 0) > 0 && (
                 <ul className="mat-list">
                   {browse.files?.map((f) => {
-                    const href = root === "published"
-                      ? `/materials/${path ? `${path}/` : ""}${encodeURIComponent(f.name)}`
-                      : "";
+                    // 各根对应各自的只读路由：private 走 /my-obsidian/（服务端按会话校验手机号）
+                    const segs = path.split("/").filter(Boolean);
+                    const tail = [...segs, f.name].map(encodeURIComponent).join("/");
+                    const href = effRoot === "published"
+                      ? `/materials/${tail}`
+                      : effRoot === "downloads"
+                        ? `/downloads/${tail}`
+                        : effRoot === "private"
+                          ? `/private/${browse?.phone ?? ""}/${tail}`
+                          : `/vault/${["素材", ...segs, f.name].map(encodeURIComponent).join("/")}`;
                     return (
                       <li key={f.name}>
-                        {href ? (
-                          <a className="mat-entry" href={href} target="_blank" rel="noreferrer">
-                            <span className="mat-icon" aria-hidden="true">·</span>
-                            <span className="mat-name">{f.name}</span>
-                            <span className="mat-file-meta">
-                              {f.ext ? `${f.ext.toUpperCase()}　` : ""}{humanSize(f.size)}　{shortDate(f.mtime)}
-                            </span>
-                          </a>
-                        ) : (
-                          <span className="mat-entry mat-file-static" title="文件在 vault，暂不支持在线预览">
-                            <span className="mat-icon" aria-hidden="true">·</span>
-                            <span className="mat-name">{f.name}</span>
-                            <span className="mat-file-meta">
-                              {f.ext ? `${f.ext.toUpperCase()}　` : ""}{humanSize(f.size)}　{shortDate(f.mtime)}
-                            </span>
+                        <a className="mat-entry" href={href} target="_blank" rel="noreferrer">
+                          <span className="mat-icon" aria-hidden="true">·</span>
+                          <span className="mat-name">{f.name}</span>
+                          <span className="mat-file-meta">
+                            {f.ext ? `${f.ext.toUpperCase()}　` : ""}{humanSize(f.size)}　{shortDate(f.mtime)}
                           </span>
-                        )}
+                        </a>
                       </li>
                     );
                   })}

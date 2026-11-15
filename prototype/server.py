@@ -644,6 +644,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(os.path.join("assets", "faces", name), "image/png")
         if path.startswith("/vault/"):
             return self._vault(path[len("/vault/"):])
+        # 对外发布目录：web/public 下挂的软链（downloads → conring/downloads）
+        if path.startswith("/downloads/"):
+            return self._public_file(path)
+        # 个人空间（工具箱 / obsidian）：URL 带手机号但身份只认会话，绝不能像 /vault 那样免登录
+        if path.startswith("/private/"):
+            return self._private_file(path[len("/private/"):])
+        if path.startswith("/my-obsidian/"):
+            return self._my_obsidian_file(path[len("/my-obsidian/"):])
         # 新版前端（Refine）外壳与构建资源公开：页面本身不含数据，数据接口仍在 /api 层鉴权
         # 带内容哈希的 JS/CSS 用长缓存，其余（含 index.html）每次校验，避免发版后拿到旧壳
         if path.startswith("/app/assets/"):
@@ -678,7 +686,11 @@ class Handler(BaseHTTPRequestHandler):
                 kern = self._kernel()
                 if path == "/api/toolbox/channels":
                     return self._json({"ok": True, **kern.toolbox_channels()})
-                return self._json({"ok": True, "items": kern.toolbox_jobs(40)})
+                try:
+                    lim = int((parse_qs(urlparse(self.path).query).get("limit") or ["40"])[0])
+                except (TypeError, ValueError):
+                    lim = 40
+                return self._json({"ok": True, "items": kern.toolbox_jobs(lim)})
             except Exception as e:  # noqa: BLE001 - 直接把原因给前端
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         # 资产盘点日报：读最近一次自动/手动盘点的落盘报告（老板可见）
@@ -1008,11 +1020,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def _web_dist(self, rel, immutable=False):
         """提供 Refine 前端构建产物（web/dist）；未命中的路径回退 index.html 以支持 SPA 路由。"""
+        # 个人空间软链就挂在 public 下，绝不能走静态兜底：命中一次就等于把所有人
+        # 的手机号目录（含 users.db）全量公开。它只走 /my-obsidian/（带会话校验）。
+        if os.path.normpath(rel or "").split(os.sep)[0] == "private_obsidian":
+            return self._json({"error": "not found"}, 404)
         root = WEB_DIST
         target = os.path.normpath(os.path.join(root, rel or "index.html"))
         if not (target == root or target.startswith(root + os.sep)):
             return self._json({"error": "bad path"}, 404)
         if not os.path.isfile(target):
+            # 构建不再复制 public（那里挂着 19G / 4.2G 的软链），静态资源回落到 public 直取
+            pub = os.path.normpath(os.path.join(WEB_PUBLIC, rel or ""))
+            if rel and pub.startswith(WEB_PUBLIC + os.sep) and os.path.isfile(pub):
+                return self._serve_media(pub)
+            # 带扩展名的是资源请求，不该回退成首页（否则图片 404 时会返回一坨 HTML）
+            if os.path.splitext(rel or "")[1]:
+                return self._json({"error": "not found"}, 404)
             target = os.path.join(root, "index.html")
         if not os.path.isfile(target):
             return self._json({"error": "web/dist 未构建，先在 web/ 执行 npm run build"}, 404)
@@ -1115,6 +1138,19 @@ class Handler(BaseHTTPRequestHandler):
         kern = self._kernel()
         if root_name == "published":
             root = os.path.realpath(MATERIALS_ROOT)
+        elif root_name == "downloads":
+            # 其它渠道落到 conring/downloads 的文件，经 public/downloads 软链统一浏览
+            root = os.path.realpath(os.path.join(WEB_PUBLIC, "downloads"))
+        elif root_name == "private":
+            # 个人空间：根由会话手机号决定，不能通过参数指定别人的目录
+            root = self._my_private_root()
+            if not root:
+                if not self._session_user():
+                    return {"ok": False, "error": "需要登录后才能查看个人空间",
+                            "root": root_name, "path": rel}
+                return {"ok": False,
+                        "error": "该账号下还没有个人空间目录（conring/users/<手机号>/）",
+                        "root": root_name, "path": rel}
         else:
             root = os.path.realpath(os.path.join(kern.vault_dir, "素材"))
         full = os.path.realpath(os.path.join(root, rel)) if rel else root
@@ -1144,9 +1180,13 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}", "root": root_name, "path": rel}
         dirs.sort(key=lambda x: x["name"])
         files.sort(key=lambda x: -x["mtime"])
-        return {"ok": True, "root": root_name, "path": rel,
+        resp = {"ok": True, "root": root_name, "path": rel,
                 "dirs": dirs[:300], "files": files[:500], "skipped": dir_err,
                 "counts": {"dirs": len(dirs), "files": len(files)}}
+        if root_name == "private":
+            # 前端拼 /private/<手机号>/... 用；这个值只反映会话本人，不接受外部指定
+            resp["phone"] = os.path.basename(root)
+        return resp
 
     def _material(self, rel):
         """素材库只读发布：/materials/... → MATERIALS_ROOT/...（限定目录、无隐藏目录）。"""
@@ -1174,17 +1214,98 @@ class Handler(BaseHTTPRequestHandler):
             ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav",
             ".pdf": "application/pdf",
         }.get(ext, "application/octet-stream")
-        try:
-            with open(full, "rb") as f:
-                body = f.read()
-        except OSError as e:
-            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(body)
+        return self._serve_media(full, ctype)
+
+    # 对外发布：web/public 下的软链目录 → URL 前缀
+    # 工具箱成品已改为私有（落在 conring/users/<手机号>/工具箱），不再从这里公开下发
+    PUBLIC_DIRS = {"downloads": "downloads"}
+
+    def _public_file(self, path):
+        """/toolbox/... 、/downloads/... → web/public 下的软链目录（支持 Range）。"""
+        head, _, rest = path.lstrip("/").partition("/")
+        sub = self.PUBLIC_DIRS.get(head)
+        if not sub:
+            return self._json({"error": "not found"}, 404)
+        base = os.path.join(WEB_PUBLIC, sub)
+        root = os.path.realpath(base)
+        full = os.path.realpath(os.path.join(base, rest))
+        if not full.startswith(root + os.sep) or not os.path.isfile(full):
+            return self._json({"error": "not found"}, 404)
+        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep)):
+            return self._json({"error": "not found"}, 404)
+        return self._serve_media(full)
+
+    # 个人空间下允许经 web 访问的子目录（白名单，避免 opc.db / media_jobs.db 被下发）
+    PRIVATE_SUBS = {"工具箱", "obsidian"}
+
+    def _my_private_root(self):
+        """当前会话用户的个人空间根：conring/users/<手机号>/。
+
+        必须经 public/private_obsidian 软链进入，再校验软链解析结果确实是该用户目录：
+        软链被改指别处、或目录不存在，一律返回 None（fail closed，不做任何回退兜底）。
+        """
+        user = self._session_user()
+        if not user:
+            return None
+        raw = str(user.get("dataDir") or "").strip()
+        if not raw:
+            return None
+        data_dir = os.path.realpath(raw)
+        if not os.path.isdir(data_dir):
+            return None
+        via_link = os.path.realpath(os.path.join(
+            WEB_PUBLIC, "private_obsidian", os.path.basename(data_dir)))
+        if via_link != data_dir:
+            print(f"[private] 软链指向与用户目录不一致，拒绝访问：{via_link} != {data_dir}", flush=True)
+            return None
+        return data_dir
+
+    def _my_obsidian_root(self):
+        """当前会话用户的个人 Obsidian 根：<users>/<手机号>/obsidian。"""
+        base = self._my_private_root()
+        if not base:
+            return None
+        want = os.path.join(base, "obsidian")
+        return want if os.path.isdir(want) else None
+
+    def _private_file(self, path):
+        """/private/<手机号>/<子目录>/... → 只允许本人，且只放行白名单子目录。
+
+        URL 里带手机号是为了可读，但绝不作为身份依据：必须与会话用户的手机号一致，
+        不一致直接 404（用 403 会暴露"该号码存在"）。
+        """
+        head, _, rest = path.lstrip("/").partition("/")
+        user = self._session_user()
+        if not user:
+            return self._json({"error": "需要登录"}, 401)
+        me = os.path.basename(os.path.realpath(str(user.get("dataDir") or "").strip() or "/nonexistent"))
+        if not me or head != me:
+            return self._json({"error": "not found"}, 404)
+        sub, _, rel = rest.partition("/")
+        if sub not in self.PRIVATE_SUBS:
+            return self._json({"error": "not found"}, 404)
+        base = self._my_private_root()
+        if not base:
+            return self._json({"error": "not found"}, 404)
+        root = os.path.realpath(os.path.join(base, sub))
+        full = os.path.realpath(os.path.join(root, rel))
+        if not full.startswith(root + os.sep) or not os.path.isfile(full):
+            return self._json({"error": "not found"}, 404)
+        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep)):
+            return self._json({"error": "not found"}, 404)
+        return self._serve_media(full)
+
+    def _my_obsidian_file(self, rel):
+        """/my-obsidian/... → 会话用户的 obsidian 目录（登录态 + 手机号隔离，支持 Range）。"""
+        root = self._my_obsidian_root()
+        if not root:
+            return self._json({"error": "需要登录"}, 401)
+        full = os.path.realpath(os.path.join(root, rel))
+        if not full.startswith(root + os.sep) or not os.path.isfile(full):
+            return self._json({"error": "not found"}, 404)
+        if any(p.startswith(".") for p in os.path.relpath(full, root).split(os.sep)):
+            return self._json({"error": "not found"}, 404)
+        return self._serve_media(full)
 
     def _vault(self, rel):
         """交付物只读发布：/vault/... → 当前用户 vault/...，支持 Range（视频拖动进度条要用）。"""
@@ -1197,14 +1318,12 @@ class Handler(BaseHTTPRequestHandler):
         rel_parts = os.path.relpath(full, root).split(os.sep)
         if full == os.path.realpath(CRED_FILE) or any(p.startswith(".") for p in rel_parts):
             return self._json({"error": "not found"}, 404)
+        return self._serve_media(full)
+
+    def _serve_media(self, full, ctype=None):
+        """只读下发一个已通过越界检查的文件：支持 Range，非 Range 分块（不整文件入内存）。"""
         ext = os.path.splitext(full)[1].lower()
-        ctype = {".md": "text/plain; charset=utf-8", ".png": "image/png",
-                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
-                 ".gif": "image/gif", ".svg": "image/svg+xml",
-                 ".pdf": "application/pdf",
-                 ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
-                 ".mp4": "video/mp4", ".json": "application/json; charset=utf-8",
-                 ".html": "text/html; charset=utf-8"}.get(ext, "application/octet-stream")
+        ctype = ctype or FILE_MIME.get(ext, "application/octet-stream")
         size = os.path.getsize(full)
         m = re.match(r"bytes=(\d*)-(\d*)$", (self.headers.get("Range") or "").strip())
         self.send_response(206 if m else 200)
@@ -1225,8 +1344,15 @@ class Handler(BaseHTTPRequestHandler):
                 body = f.read(end - start + 1)
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         else:
-            with open(full, "rb") as f:
-                body = f.read()
+            # 非 Range 请求分块下发：素材里有上 G 的 mp4，整文件读入会打满内存
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            try:
+                with open(full, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile, 256 * 1024)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

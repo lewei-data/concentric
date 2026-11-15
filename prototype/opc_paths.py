@@ -6,9 +6,19 @@ from datetime import timezone, timedelta
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIST = os.path.normpath(os.path.join(BASE_DIR, "..", "web", "dist"))
+# 对外发布目录：工具箱 / downloads 两个软链在里面，由 server.py 运行时下发（构建不复制）
+WEB_PUBLIC = os.path.normpath(os.path.join(BASE_DIR, "..", "web", "public"))
 WEB_MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
             ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",
             ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff"}
+# 素材/成品下发用：在页面资源表基础上补音视频与文档
+FILE_MIME = {**WEB_MIME,
+             ".md": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8",
+             ".srt": "text/plain; charset=utf-8", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+             ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf",
+             ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
+             ".mp4": "video/mp4", ".webm": "video/webm", ".ts": "text/plain; charset=utf-8",
+             ".ttf": "font/ttf", ".otf": "font/otf"}
 TZ = timezone(timedelta(hours=8))
 CLI = os.environ.get("OPC_HERMES_CLI", "/opt/sefs/hermes/run-hermes.sh")
 

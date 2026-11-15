@@ -242,3 +242,181 @@
     display: none;
   }
 }
+/* ── 工具箱标签：手工生成的成品画廊 ── */
+.tg-hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+}
+
+.tg-hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-size: 11px;
+}
+
+.tg-group {
+  margin-bottom: 26px;
+}
+
+.tg-day {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.tg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 14px;
+}
+
+.tg-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow .15s, transform .15s, border-color .15s;
+}
+
+.tg-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
+  transform: translateY(-1px);
+}
+
+.tg-card:focus-visible {
+  outline: 2px solid #bfdbfe;
+  outline-offset: 2px;
+}
+
+.tg-card--dead {
+  cursor: default;
+  opacity: .6;
+}
+
+.tg-card--dead:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #e2e8f0;
+}
+
+.tg-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+.tg-thumb img,
+.tg-thumb video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tg-kind {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .72);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.tg-note {
+  font-size: 30px;
+  color: #6366f1;
+}
+
+.tg-x {
+  font-size: 24px;
+  color: #94a3b8;
+}
+
+.tg-body {
+  padding: 9px 11px 11px;
+}
+
+.tg-prompt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  min-height: 37px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #0f172a;
+}
+
+.tg-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.tg-err {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #b91c1c;
+}
+
+.tg-empty {
+  padding: 30px 22px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  text-align: center;
+  color: #64748b;
+}
+
+.tg-empty b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.tg-empty p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+  .tg-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+}
+
+/* 个人 Obsidian：仅登录态可见，顶部给一句范围说明 */
+.mat-private-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.mat-private-hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-size: 11px;
+}
+
+.tg-empty code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-size: 11px;
+}

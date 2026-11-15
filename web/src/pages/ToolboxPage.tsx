@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { MediaViewer } from "../components/MediaViewer";
 
 type Kind = "image" | "audio" | "video";
 
@@ -102,23 +103,52 @@ function ParamField({
   );
 }
 
-function JobRow({ job }: { job: Job }) {
+/** 从成品 URL 取出所在目录（相对浏览根）。
+ *  工具箱成品现在落在个人空间：/private/<手机号>/工具箱/2026-11-15/图片/x.png
+ *  历史成品可能还是老的 /vault/素材/... 形态，两种都认。
+ */
+function matDirOf(url: string): string {
+  const p = /^\/private\/\d+\/(.*\/)[^/]*$/.exec(url || "");
+  if (p) {
+    try {
+      return decodeURIComponent(p[1]).replace(/\/$/, "");
+    } catch {
+      return "";
+    }
+  }
+  const v = /^\/vault\/素材\/(.*\/)[^/]*$/.exec(url || "");
+  return v ? v[1].replace(/\/$/, "") : "";
+}
+
+function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
   const live = job.status === "queued" || job.status === "running";
+  const ready = job.status === "done" && !!job.outputUrl;
+  const dir = ready ? matDirOf(job.outputUrl) : "";
   return (
     <li className={`tb-job tb-job--${job.status}`}>
-      <div className="tb-job-preview">
-        {job.status === "done" && job.outputUrl && job.kind === "image" && (
+      {ready && job.kind === "image" ? (
+        <button
+          type="button"
+          className="tb-job-preview tb-job-preview--btn"
+          onClick={() => onOpen(job)}
+          title="点开看大图"
+        >
           <img src={job.outputUrl} alt={job.prompt.slice(0, 40)} loading="lazy" />
-        )}
-        {job.status === "done" && job.outputUrl && job.kind === "video" && (
-          <video src={job.outputUrl} controls preload="metadata" />
-        )}
-        {job.status === "done" && job.outputUrl && job.kind === "audio" && (
-          <audio src={job.outputUrl} controls preload="metadata" />
-        )}
-        {!live && job.status !== "done" && <span className="tb-job-x">×</span>}
-        {live && <span className="tb-job-pct">{job.progress}%</span>}
-      </div>
+        </button>
+      ) : (
+        <div className="tb-job-preview">
+          {ready && job.kind === "video" && (
+            <video src={job.outputUrl} preload="metadata" muted />
+          )}
+          {ready && job.kind === "audio" && (
+            <button type="button" className="tb-job-play" onClick={() => onOpen(job)} title="播放">
+              ♪
+            </button>
+          )}
+          {!live && !ready && <span className="tb-job-x">×</span>}
+          {live && <span className="tb-job-pct">{job.progress}%</span>}
+        </div>
+      )}
       <div className="tb-job-main">
         <p className="tb-job-prompt">{job.prompt || job.note || "（无提示词）"}</p>
         <div className="tb-job-meta">
@@ -131,6 +161,25 @@ function JobRow({ job }: { job: Job }) {
           <div className="tb-bar"><i style={{ width: `${Math.max(2, job.progress)}%` }} /></div>
         )}
         {job.error && <p className="tb-job-error">{job.error}</p>}
+        {ready && (
+          <div className="tb-job-links">
+            <button type="button" className="tb-link" onClick={() => onOpen(job)}>
+              打开查看
+            </button>
+            <a className="tb-link" href={job.outputUrl} target="_blank" rel="noreferrer">
+              新窗口
+            </a>
+            {/* 整页跳转：让素材页按深链初始化 path（SPA 内跳会被切 tab 的重置逻辑覆盖） */}
+            {dir && (
+              <a
+                className="tb-link"
+                href={`/app/materials?tab=personal&path=${encodeURIComponent(dir)}`}
+              >
+                所在目录
+              </a>
+            )}
+          </div>
+        )}
       </div>
     </li>
   );
@@ -155,6 +204,7 @@ export function ToolboxPage() {
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [zoom, setZoom] = useState<Job | null>(null);
 
   const kindChans = useMemo(() => channels.filter((c) => c.kind === kind), [channels, kind]);
   const active = useMemo(
@@ -218,6 +268,8 @@ export function ToolboxPage() {
     const t = window.setTimeout(() => setToast(""), 4000);
     return () => window.clearTimeout(t);
   }, [toast]);
+
+  
 
   const submit = async () => {
     setErr("");
@@ -397,12 +449,21 @@ export function ToolboxPage() {
               <p className="muted">还没有手工任务。</p>
             ) : (
               <ul className="tb-jobs">
-                {jobs.map((j) => <JobRow key={j.id} job={j} />)}
+                {jobs.map((j) => <JobRow key={j.id} job={j} onOpen={setZoom} />)}
               </ul>
             )}
           </section>
         </div>
       )}
+
+      <MediaViewer
+        item={zoom ? {
+          url: zoom.outputUrl,
+          kind: zoom.kind,
+          title: `${zoom.channel} · ${zoom.prompt.slice(0, 50) || zoom.kind}`,
+        } : null}
+        onClose={() => setZoom(null)}
+      />
     </div>
   );
 }

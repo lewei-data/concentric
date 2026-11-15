@@ -31,6 +31,8 @@ from datetime import datetime, timedelta, timezone
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TZ = timezone(timedelta(hours=8))
+# 个人空间根：落在 <USERS_DIR>/<手机号>/ 下的成品一律走 /private 私有前缀
+USERS_DIR = os.environ.get("OPC_USERS_DIR", "/mnt/sefs/conring/users")
 
 MEDIAGEN = os.environ.get("OPC_MEDIAGEN_URL", "http://192.168.21.206:9103").rstrip("/")
 MEDIAENGINE = os.environ.get("OPC_MEDIAENGINE_URL", "http://192.168.21.206:9200").rstrip("/")
@@ -927,6 +929,24 @@ def _tts(mgr, row, params, on_progress):
     raise RuntimeError(f"TTS 未产出音频：{str(res)[:200]}")
 
 
+def _private_url(dest):
+    """成品落在 conring/users/<手机号>/ 下时给 /private/<手机号>/...，否则返回空串。
+
+    工具箱成品是本人私有产物，不能落 /vault 那条免登录通道。
+    """
+    try:
+        rel = os.path.relpath(dest, USERS_DIR)
+    except ValueError:
+        return ""
+    if os.path.isabs(rel) or rel == ".." or rel.startswith(".." + os.sep):
+        return ""
+    parts = rel.split(os.sep)
+    # 与 server.PRIVATE_SUBS 保持一致：库里文件（opc.db 等）绝不能拼出可访问的链接
+    if len(parts) < 2 or not parts[0].isdigit() or parts[1] not in ("工具箱", "obsidian"):
+        return ""
+    return "/private/" + "/".join([parts[0]] + [urllib.parse.quote(p) for p in parts[1:]])
+
+
 def _deliver(mgr, row, result):
     src = (result or {}).get("path") or ""
     if not src or not os.path.isfile(src):
@@ -956,8 +976,8 @@ def _deliver(mgr, row, result):
             os.remove(src)
         except OSError:
             pass
-    url = ""
-    if vault:
+    url = _private_url(dest)
+    if not url and vault:
         try:
             url = "/vault/" + os.path.relpath(dest, vault).replace(os.sep, "/")
         except ValueError:
