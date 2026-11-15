@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnchoredPanel } from "../components/AnchoredPanel";
 import { siteUrl } from "../lib/siteUrl";
 
 type Idea = {
@@ -106,8 +107,11 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
   const [produceErr, setProduceErr] = useState("");
   const [produceOk, setProduceOk] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 弹窗贴着「开始制作」按钮弹，而不是浮在屏幕中间
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 
-  const openProduce = (it: Idea) => {
+  const openProduce = (it: Idea, el?: HTMLElement) => {
+    setAnchorEl(el ?? null);
     setProduce(it);
     setReqs("");
     setProduceOk("");
@@ -115,6 +119,7 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
   };
   const closeProduce = () => {
     if (producing) return;
+    setAnchorEl(null);
     setProduce(null);
     setProduceOk("");
     setProduceErr("");
@@ -289,7 +294,7 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
                 <button
                   type="button"
                   className="btn btn-produce"
-                  onClick={() => openProduce(it)}
+                  onClick={(e) => openProduce(it, e.currentTarget)}
                 >
                   开始制作
                 </button>
@@ -333,14 +338,12 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
       </section>
 
       {produce && (
-        <div className="idea-dialog-backdrop" onClick={closeProduce} role="presentation">
-          <div
-            className="idea-dialog"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="开始制作"
-          >
+        <AnchoredPanel
+          anchor={anchorEl}
+          onClose={closeProduce}
+          className="idea-dialog"
+          ariaLabel="开始制作"
+        >
             {produceOk ? (
               <>
                 <h3>已进入制作流水线</h3>
@@ -381,8 +384,7 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </AnchoredPanel>
       )}
     </div>
   );

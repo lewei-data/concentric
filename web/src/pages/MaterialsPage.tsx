@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InspirationPage } from "./InspirationPage";
 import { ToolboxGallery } from "../components/ToolboxGallery";
+import { AnchoredPanel } from "../components/AnchoredPanel";
 import { siteUrl } from "../lib/siteUrl";
 
 type MatItem = {
@@ -73,6 +74,100 @@ function previewKind(name: string, ext: string): "image" | "audio" | "video" | "
   return k === "image" || k === "audio" || k === "video" ? k : "";
 }
 
+// 出不了缩略图的格式按用途分组配色，方块上用扩展名当封面，比一个通用问号好认
+const TONE_RULES: { tone: string; exts: string[] }[] = [
+  { tone: "doc", exts: ["md", "markdown", "txt", "rtf", "doc", "docx", "pdf", "pages", "odt", "epub"] },
+  { tone: "data", exts: ["json", "jsonl", "csv", "tsv", "xls", "xlsx", "yaml", "yml", "xml", "toml", "ini", "db", "sqlite"] },
+  { tone: "code", exts: ["js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "sh", "bash", "css", "scss", "html", "htm", "sql", "go", "rs", "java", "c", "cpp", "h", "vue", "lua", "php"] },
+  { tone: "pkg", exts: ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "skill", "dmg", "iso", "pkg"] },
+];
+
+function extTone(ext: string, kind: string): string {
+  const e = (ext || "").toLowerCase().replace(/^\./, "");
+  if (kind === "audio" || kind === "video") return "media";
+  for (const r of TONE_RULES) if (r.exts.includes(e)) return r.tone;
+  if (kind === "skill") return "pkg";
+  return "file";
+}
+
+/** 方块封面上写的字：能拿到扩展名就写扩展名，Skill 包写 SKILL */
+function extLabel(ext: string, kind: string): string {
+  const e = (ext || "").toLowerCase().replace(/^\./, "");
+  if (kind === "skill" && (e === "md" || e === "skill" || e === "")) return "SKILL";
+  if (!e) return "FILE";
+  return e.slice(0, 5).toUpperCase();
+}
+
+// 浏览器能自己渲染的格式：点开就是新标签页里的原生查看器，不需要页内弹窗
+const BROWSER_VIEWABLE = new Set([
+  "md", "markdown", "txt", "text", "log", "json", "jsonl", "csv", "tsv", "yaml", "yml",
+  "xml", "toml", "ini", "conf", "cfg", "env", "sql", "diff", "patch",
+  "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "sh", "bash", "zsh", "css", "scss", "less",
+  "html", "htm", "go", "rs", "java", "c", "cpp", "h", "hpp", "php", "vue", "lua", "rb",
+  "pdf", "rtf", "vtt", "srt", "ics",
+]);
+
+// 认不出来的类型：告诉用户这是什么、该怎么打开，别让人对着空白页发懵
+const TYPE_LABEL: Record<string, string> = {
+  zip: "ZIP 压缩包", rar: "RAR 压缩包", "7z": "7z 压缩包", tar: "TAR 归档", gz: "GZIP 压缩包",
+  bz2: "BZIP2 压缩包", xz: "XZ 压缩包", tgz: "TGZ 压缩包",
+  doc: "Word 文档", docx: "Word 文档", odt: "ODT 文档", rtf: "RTF 文档",
+  xls: "Excel 表格", xlsx: "Excel 表格", ods: "ODS 表格",
+  ppt: "PowerPoint 演示文稿", pptx: "PowerPoint 演示文稿", key: "Keynote 演示文稿",
+  pages: "Pages 文档", numbers: "Numbers 表格",
+  psd: "Photoshop 工程文件", ai: "Illustrator 工程文件", sketch: "Sketch 设计文件",
+  fig: "Figma 设计文件", aep: "After Effects 工程", prproj: "Premiere 工程",
+  exe: "Windows 可执行程序", msi: "Windows 安装包", dmg: "macOS 磁盘映像",
+  apk: "Android 安装包", deb: "Debian 安装包", rpm: "RPM 安装包",
+  db: "数据库文件", sqlite: "SQLite 数据库", sqlite3: "SQLite 数据库",
+  bin: "二进制数据", dat: "二进制数据", iso: "光盘映像",
+  ttf: "字体文件", otf: "字体文件", woff: "字体文件", woff2: "字体文件",
+  epub: "EPUB 电子书", mobi: "MOBI 电子书",
+};
+
+const TYPE_ADVICE: { test: (e: string) => boolean; text: string }[] = [
+  {
+    test: (e) => ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz"].includes(e),
+    text: "浏览器没法直接看压缩包。建议下载解压，把里面的单个文件再传上来，就能预览了。",
+  },
+  {
+    test: (e) => ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "pages", "numbers", "key"].includes(e),
+    text: "Office / 文稿类文件浏览器渲染不了。建议下载后用 Office、WPS 或 iWork 打开；需要在线看可以先导出成 PDF 再上传。",
+  },
+  {
+    test: (e) => ["psd", "ai", "sketch", "fig", "aep", "prproj"].includes(e),
+    text: "这是设计/剪辑工程文件，需要对应的软件才能打开。建议下载后在本机软件里处理，导出成图片或视频再上传。",
+  },
+  {
+    test: (e) => ["exe", "msi", "dmg", "apk", "deb", "rpm", "iso"].includes(e),
+    text: "安装包/磁盘映像，出于安全不建议在线打开。确实需要时下载后先确认来源再运行。",
+  },
+  {
+    test: (e) => ["db", "sqlite", "sqlite3", "bin", "dat"].includes(e),
+    text: "数据库或二进制文件，需要用专门的工具读取。建议下载后用对应客户端打开。",
+  },
+  {
+    test: (e) => ["ttf", "otf", "woff", "woff2"].includes(e),
+    text: "字体文件，双击预览依赖系统字体管理器。建议下载后安装查看。",
+  },
+  {
+    test: (e) => ["epub", "mobi"].includes(e),
+    text: "电子书格式，浏览器不支持。建议下载后用阅读软件打开，或转成 PDF。",
+  },
+];
+
+function typeLabel(ext: string): string {
+  const e = (ext || "").toLowerCase().replace(/^\./, "");
+  if (!e) return "无扩展名（无法判断类型）";
+  return `${e.toUpperCase()}　${TYPE_LABEL[e] || ""}`.trim();
+}
+
+function typeAdvice(ext: string): string {
+  const e = (ext || "").toLowerCase().replace(/^\./, "");
+  const hit = TYPE_ADVICE.find((r) => r.test(e));
+  return hit ? hit.text : "浏览器不支持这种格式的预览，建议下载到本地用对应软件打开。";
+}
+
 function humanSize(n: number): string {
   if (!n) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -116,8 +211,15 @@ export function MaterialsPage() {
   const [browse, setBrowse] = useState<BrowseData | null>(null);
   const [browsing, setBrowsing] = useState(false);
   const [kind, setKind] = useState<KindKey>("all");
+  // 预览面板贴着被点的方块/按钮弹出；anchor 记的就是那个元素
   const [preview, setPreview] = useState<
-    { url: string; kind: "image" | "audio" | "video"; name: string } | null
+    { url: string; kind: "image" | "audio" | "video"; name: string; anchor: HTMLElement | null } | null
+  >(null);
+  // 全屏观看层：媒体铺满屏幕，左上角带返回
+  const [previewFull, setPreviewFull] = useState(false);
+  // 浏览器打不开的格式：给一条说明 + 建议
+  const [notice, setNotice] = useState<
+    { name: string; ext: string; url: string; anchor: HTMLElement | null } | null
   >(null);
 
   useEffect(() => {
@@ -313,26 +415,43 @@ export function MaterialsPage() {
   }, [viewMode, shownFiles.length, limit]);
 
   const openFile = useCallback(
-    (f: BrowseFile) => {
+    (f: BrowseFile, el?: HTMLElement | null) => {
       const pv = previewKind(f.name, f.ext);
-      if (pv) setPreview({ url: fileUrl(f.name), kind: pv, name: f.name });
-      else window.open(fileUrl(f.name), "_blank", "noopener");
+      const url = fileUrl(f.name);
+      if (pv) {
+        setNotice(null);
+        setPreviewFull(false);
+        setPreview({ url, kind: pv, name: f.name, anchor: el ?? null });
+        return;
+      }
+      const e = (f.ext || "").toLowerCase().replace(/^\./, "");
+      // 文本、代码、PDF 这类浏览器自己就能渲染，照旧新标签打开，不在页内再套一层
+      if (BROWSER_VIEWABLE.has(e) || kindOf(f.name, f.ext) === "skill") {
+        window.open(url, "_blank", "noopener");
+        return;
+      }
+      // 剩下的格式：给个说明，别开出空白页
+      setPreview(null);
+      setNotice({ name: f.name, ext: e, url, anchor: el ?? null });
     },
     [fileUrl],
   );
 
-  // Esc 关预览；切目录时也顺手关掉，避免残留上一个文件
+  // 全屏观看时 Esc 先退回面板
   useEffect(() => {
-    if (!preview) return;
+    if (!previewFull) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPreview(null);
+      if (e.key === "Escape") setPreviewFull(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [preview]);
+  }, [previewFull]);
 
+  // 切目录时顺手关掉，避免残留上一个文件
   useEffect(() => {
     setPreview(null);
+    setPreviewFull(false);
+    setNotice(null);
   }, [path, effRoot]);
 
   const grouped = useMemo(() => {
@@ -532,7 +651,7 @@ export function MaterialsPage() {
                 )}
               {/* 缩略图墙：目录和文件都铺成方块，滚到底自动续下一屏 */}
               {viewMode === "grid" && (
-                <div className="mat-grid">
+                <div className="mat-tiles">
                   {browse.dirs?.map((d) => {
                     const relDir = path ? `${path}/${d.name}` : d.name;
                     return (
@@ -568,25 +687,24 @@ export function MaterialsPage() {
                         <button
                           type="button"
                           className="mat-tile-hit"
-                          onClick={() => openFile(f)}
+                          onClick={(e) => openFile(f, e.currentTarget)}
                           title={`${f.name}　${humanSize(f.size)}`}
                         >
+                          {/* 底层永远是类型封面：能出图的格式会被缩略图盖住，出不了的直接露出扩展名 */}
+                          <span className={`mat-tile-type tone-${extTone(f.ext, k)}`} aria-hidden="true">
+                            <span className="mat-tile-type-ext">{extLabel(f.ext, k)}</span>
+                          </span>
+                          {k === "video" && <span className="mat-tile-flag" aria-hidden="true">▶</span>}
+                          {k === "audio" && <span className="mat-tile-flag" aria-hidden="true">♫</span>}
                           {(k === "image" || k === "video") && (
-                            <>
-                              <span className="mat-tile-glyph" aria-hidden="true">{k === "video" ? "▶" : "▤"}</span>
-                              <img
-                                className="mat-tile-img"
-                                src={thumbUrl(f.name)}
-                                alt=""
-                                loading="lazy"
-                                decoding="async"
-                                onError={(e) => { e.currentTarget.style.display = "none"; }}
-                              />
-                            </>
-                          )}
-                          {k === "audio" && <span className="mat-tile-glyph" aria-hidden="true">♫</span>}
-                          {(k === "skill" || k === "other") && (
-                            <span className="mat-tile-glyph" aria-hidden="true">▤</span>
+                            <img
+                              className="mat-tile-img"
+                              src={thumbUrl(f.name)}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              onError={(e) => { e.currentTarget.style.display = "none"; }}
+                            />
                           )}
                           <span className="mat-tile-cap">
                             <b>{f.name}</b>
@@ -666,7 +784,7 @@ export function MaterialsPage() {
                           <button
                             type="button"
                             className="mat-view"
-                            onClick={() => setPreview({ url: href, kind: pv, name: f.name })}
+                            onClick={(e) => openFile(f, e.currentTarget)}
                             title={pv === "image" ? "在当前页查看图片" : "在当前页播放"}
                           >
                             {pv === "image" ? "查看" : "播放"}
@@ -693,28 +811,73 @@ export function MaterialsPage() {
         </section>
       )}
 
-      {/* 页内预览：图片直接看，音视频直接播，不跳走 */}
-      {preview && (
-        <div
-          className="mat-preview"
-          role="dialog"
-          aria-modal="true"
-          aria-label={preview.name}
-          onClick={() => setPreview(null)}
+      {/* 页内预览：面板贴着被点的方块/按钮弹出来，不用滚动去找 */}
+      {preview && !previewFull && (
+        <AnchoredPanel
+          anchor={preview.anchor}
+          onClose={() => setPreview(null)}
+          className="mat-pop mat-pop-media"
+          ariaLabel={preview.name}
         >
-          <div className="mat-preview-box" onClick={(e) => e.stopPropagation()}>
-            <div className="mat-preview-head">
-              <strong title={preview.name}>{preview.name}</strong>
-              <div className="mat-preview-acts">
-                <a href={preview.url} target="_blank" rel="noreferrer">新标签打开</a>
-                <button type="button" onClick={() => setPreview(null)}>关闭</button>
-              </div>
+          <div className="mat-pop-head">
+            <strong title={preview.name}>{preview.name}</strong>
+            <div className="mat-pop-acts">
+              <button type="button" onClick={() => setPreviewFull(true)}>全屏观看</button>
+              <a href={preview.url} target="_blank" rel="noreferrer">新窗口</a>
+              <button type="button" className="mat-pop-x" onClick={() => setPreview(null)} aria-label="关闭">×</button>
             </div>
+          </div>
+          <div className="mat-pop-stage">
             {preview.kind === "image" && <img src={preview.url} alt={preview.name} />}
             {preview.kind === "audio" && <audio src={preview.url} controls autoPlay />}
             {preview.kind === "video" && <video src={preview.url} controls autoPlay />}
           </div>
+        </AnchoredPanel>
+      )}
+
+      {/* 全屏观看：整个屏幕给画面，左上角随时能返回 */}
+      {preview && previewFull && (
+        <div className="mat-fullview" role="dialog" aria-modal="true" aria-label={preview.name}>
+          <div className="mat-fullview-bar">
+            <button type="button" className="mat-fullview-back" onClick={() => setPreviewFull(false)}>
+              ← 返回
+            </button>
+            <strong title={preview.name}>{preview.name}</strong>
+            <a href={preview.url} target="_blank" rel="noreferrer">新窗口</a>
+            <button type="button" className="mat-fullview-x" onClick={() => setPreview(null)} aria-label="关闭">×</button>
+          </div>
+          <div className="mat-fullview-stage">
+            {preview.kind === "image" && <img src={preview.url} alt={preview.name} />}
+            {preview.kind === "audio" && (
+              <div className="mat-fullview-audio">
+                <p>{preview.name}</p>
+                <audio src={preview.url} controls autoPlay />
+              </div>
+            )}
+            {preview.kind === "video" && <video src={preview.url} controls autoPlay />}
+          </div>
         </div>
+      )}
+
+      {/* 浏览器打不开的格式：说清是什么、怎么办 */}
+      {notice && (
+        <AnchoredPanel
+          anchor={notice.anchor}
+          onClose={() => setNotice(null)}
+          className="mat-pop mat-pop-note"
+          ariaLabel={notice.name}
+        >
+          <div className="mat-pop-head">
+            <strong title={notice.name}>{notice.name}</strong>
+            <button type="button" className="mat-pop-x" onClick={() => setNotice(null)} aria-label="关闭">×</button>
+          </div>
+          <p className="mat-note-type">类型：{typeLabel(notice.ext)}</p>
+          <p className="mat-note-tip">{typeAdvice(notice.ext)}</p>
+          <div className="mat-note-acts">
+            <a className="btn btn-ghost" href={notice.url} target="_blank" rel="noreferrer">下载 / 新窗口打开</a>
+            <button type="button" className="btn btn-ghost" onClick={() => setNotice(null)}>知道了</button>
+          </div>
+        </AnchoredPanel>
       )}
 
       {tab === "idea" && <InspirationPage embedded />}

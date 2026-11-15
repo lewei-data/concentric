@@ -201,11 +201,11 @@
   background: #0f172a;
 }
 
-/* 缩略图墙：方块铺满一行，滚动逐步续加载 */
-.mat-grid {
+/* 缩略图墙：一行最多 6 个，块尽量大；窄屏逐级降列，滚动逐步续加载 */
+.mat-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
   margin: 4px 0 20px;
 }
 
@@ -237,12 +237,58 @@
   border: 0;
 }
 
-/* 缩略图盖住上半块，文字条固定在底部 */
+/* 出不了缩略图的格式：整块当封面，写扩展名，按用途配色 */
+.mat-tile-type {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.mat-tile-type-ext {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #64748b;
+}
+
+.tone-doc { background: #eff6ff; }
+.tone-doc .mat-tile-type-ext { color: #1d4ed8; }
+
+.tone-data { background: #ecfdf5; }
+.tone-data .mat-tile-type-ext { color: #047857; }
+
+.tone-code { background: #f5f3ff; }
+.tone-code .mat-tile-type-ext { color: #6d28d9; }
+
+.tone-pkg { background: #fff7ed; }
+.tone-pkg .mat-tile-type-ext { color: #c2410c; }
+
+.tone-media { background: #f1f5f9; }
+
+.tone-file { background: #f8fafc; }
+
+/* 播放/音频标识：压在左上角，不挡删除按钮 */
+.mat-tile-flag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 2px 7px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.55);
+  border-radius: 999px;
+}
+
+/* 缩略图铺满整块，文字条浮在上面盖住底部 */
 .mat-tile-img {
   position: absolute;
-  inset: 0 0 42px;
+  inset: 0;
+  z-index: 1;
   width: 100%;
-  height: calc(100% - 42px);
+  height: 100%;
   object-fit: cover;
   background: #0f172a;
 }
@@ -262,10 +308,12 @@
 }
 
 .mat-tile-cap {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 6px 8px;
+  padding: 7px 9px;
   background: #fff;
   border-top: 1px solid #eef2f7;
 }
@@ -273,9 +321,9 @@
 .mat-tile-cap b,
 .mat-tile-cap small {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.4;
   color: #0f172a;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -290,6 +338,7 @@
   position: absolute;
   top: 6px;
   right: 6px;
+  z-index: 3; /* 压住缩略图和文字条，鼠标移到方块上就能点到 */
   width: 22px;
   height: 22px;
   padding: 0;
@@ -312,9 +361,29 @@
   height: 1px;
 }
 
-@media (max-width: 560px) {
-  .mat-grid {
-    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+/* 一行最多 6 个，屏幕窄了逐级降列，保证方块不会挤成小格 */
+@media (max-width: 1180px) {
+  .mat-tiles {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .mat-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .mat-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+@media (max-width: 540px) {
+  .mat-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 }
@@ -419,8 +488,46 @@
 
 .tg-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 14px;
+}
+
+/* 画廊头部和素材浏览共用计数行，行内不留底部外边距 */
+.mat-counts .tg-hint {
+  margin: 0;
+}
+
+/* 列表模式下打不开的条目（产物已删）压暗，但仍然可见 */
+.mat-entry:disabled {
+  color: #94a3b8;
+  cursor: default;
+  background: #fafbfc;
+}
+
+@media (max-width: 1180px) {
+  .tg-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .tg-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .tg-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+@media (max-width: 540px) {
+  .tg-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
 }
 
 .tg-card {
@@ -668,40 +775,26 @@
   border-color: #93c5fd;
 }
 
-/* 页内预览：图片直接看，音视频直接播 */
-.mat-preview {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.62);
+/* 弹窗外壳（.pop-panel）在 styles.css，这里只定义素材页的内容与尺寸 */
+
+/* 媒体预览：宽一点但不铺满，图/视频按比例缩放 */
+.mat-pop-media {
+  width: min(460px, calc(100vw - 24px));
 }
 
-.mat-preview-box {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  /* 手机大小的竖窗：个人素材多是手机拍的，宽屏大窗反而看不清人脸 */
-  width: min(400px, 100%);
-  height: min(720px, calc(100vh - 40px));
-  max-height: 100%;
-  padding: 12px 12px 14px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+.mat-pop-note {
+  width: min(380px, calc(100vw - 24px));
 }
 
-.mat-preview-head {
+.mat-pop-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.mat-preview-head strong {
+.mat-pop-head strong {
   font-size: 13px;
   font-weight: 600;
   color: #0f172a;
@@ -710,45 +803,185 @@
   white-space: nowrap;
 }
 
-.mat-preview-acts {
+.mat-pop-acts {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: none;
 }
 
-.mat-preview-acts a {
+.mat-pop-acts a {
   font-size: 12px;
   color: #1d4ed8;
   text-decoration: none;
+  white-space: nowrap;
 }
 
-.mat-preview-acts button {
-  padding: 4px 12px;
+.mat-pop-acts button {
+  padding: 3px 10px;
   font-size: 12px;
   color: #334155;
+  white-space: nowrap;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   cursor: pointer;
 }
 
-.mat-preview-acts button:hover {
+.mat-pop-acts button:hover {
   background: #f8fafc;
 }
 
-.mat-preview-box img,
-.mat-preview-box video {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+.mat-pop-x {
+  width: 24px;
+  padding: 0 !important;
+  height: 24px;
+  font-size: 15px !important;
+  line-height: 1;
+  color: #64748b !important;
+  border-radius: 50% !important;
+}
+
+.mat-pop-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
+  overflow: hidden;
   background: #0f172a;
 }
 
-.mat-preview-box audio {
+.mat-pop-stage img,
+.mat-pop-stage video {
+  display: block;
+  max-width: 100%;
+  /* 小面板里也别把图撑到看不清的位置：高度压到屏高的六成 */
+  max-height: 62vh;
+  object-fit: contain;
+}
+
+.mat-pop-stage audio {
   width: 100%;
-  margin: auto 0;
+  padding: 14px 12px;
+  background: #fff;
+}
+
+/* 未知格式说明 */
+.mat-note-type {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.mat-note-tip {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.mat-note-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 全屏观看：黑底铺满，左上角返回 */
+.mat-fullview {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  background: #0b1120;
+}
+
+.mat-fullview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.mat-fullview-bar strong {
+  flex: 1;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mat-fullview-bar a {
+  font-size: 12px;
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.mat-fullview-back {
+  padding: 5px 12px;
+  font-size: 13px;
+  color: #0f172a;
+  cursor: pointer;
+  background: #e2e8f0;
+  border: 0;
+  border-radius: 6px;
+}
+
+.mat-fullview-back:hover {
+  background: #f8fafc;
+}
+
+.mat-fullview-x {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: #cbd5e1;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+}
+
+.mat-fullview-x:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.mat-fullview-stage {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 12px;
+}
+
+.mat-fullview-stage img,
+.mat-fullview-stage video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.mat-fullview-audio {
+  width: min(560px, 100%);
+  padding: 28px 24px;
+  text-align: center;
+  color: #e2e8f0;
+  background: #111c33;
+  border-radius: 12px;
+}
+
+.mat-fullview-audio p {
+  margin: 0 0 18px;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.mat-fullview-audio audio {
+  width: 100%;
 }

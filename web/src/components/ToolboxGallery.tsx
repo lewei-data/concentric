@@ -32,6 +32,23 @@ export function ToolboxGallery() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [view, setView] = useState<ViewerItem | null>(null);
+  // 和素材浏览共用同一个偏好键：在哪儿切过，回来还是那个看法
+  const [mode, setMode] = useState<"list" | "grid">(() => {
+    try {
+      return window.localStorage.getItem("mat.view") === "list" ? "list" : "grid";
+    } catch {
+      return "grid";
+    }
+  });
+
+  const setModePersist = (v: "list" | "grid") => {
+    setMode(v);
+    try {
+      window.localStorage.setItem("mat.view", v);
+    } catch {
+      // 隐私模式下 localStorage 不可写，只影响记住偏好
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -76,16 +93,37 @@ export function ToolboxGallery() {
 
   return (
     <>
-      <p className="muted tg-hint">
-        共 {jobs.length} 条手工任务 · 成品保存在个人空间 <code>conring/users/&lt;手机号&gt;/工具箱</code>，仅本人可见
-      </p>
+      <div className="mat-counts">
+        <span className="muted tg-hint">
+          共 {jobs.length} 条手工任务 · 成品保存在个人空间 <code>conring/users/&lt;手机号&gt;/工具箱</code>，仅本人可见
+        </span>
+        <div className="mat-views" role="group" aria-label="查看方式">
+          <button
+            type="button"
+            className={mode === "list" ? "active" : ""}
+            onClick={() => setModePersist("list")}
+            title="一行一条，文案看得全"
+          >
+            列表
+          </button>
+          <button
+            type="button"
+            className={mode === "grid" ? "active" : ""}
+            onClick={() => setModePersist("grid")}
+            title="方块缩略图，一屏看很多"
+          >
+            缩略图
+          </button>
+        </div>
+      </div>
       {groups.map(([day, list]) => (
         <section key={day} className="tg-group">
           <h3 className="tg-day">
             {dayLabel(day)}
             <span className="muted">　{list.length} 条</span>
           </h3>
-          <div className="tg-grid">
+          {mode === "grid" ? (
+            <div className="tg-grid">
             {list.map((j) => {
               const done = j.status === "done" && !!j.outputUrl;
               return (
@@ -129,7 +167,33 @@ export function ToolboxGallery() {
                 </div>
               );
             })}
-          </div>
+            </div>
+          ) : (
+            <ul className="mat-list">
+              {list.map((j) => {
+                const done = j.status === "done" && !!j.outputUrl;
+                return (
+                  <li key={j.id}>
+                    <button
+                      type="button"
+                      className="mat-entry"
+                      disabled={!done}
+                      onClick={() => open(j)}
+                      title={done ? "点开查看"
+                        : j.error || (j.status === "done" ? "成品已删除" : j.status)}
+                    >
+                      <span className="mat-icon" aria-hidden="true">{done ? "·" : "×"}</span>
+                      <span className="mat-name">{j.prompt || j.note || "（无提示词）"}</span>
+                      <span className="mat-file-meta">
+                        {KIND_LABEL[j.kind] || j.kind}　{j.channel}　
+                        {String(j.createdAt || "").replace("T", " ").slice(11, 16)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       ))}
       <MediaViewer item={view} onClose={() => setView(null)} />
