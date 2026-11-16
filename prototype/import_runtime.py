@@ -12,7 +12,7 @@ import sys
 import db as DB
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 RUNTIME = os.path.join(VAULT, "动态", "runtime.json")
 
 

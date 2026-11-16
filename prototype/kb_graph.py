@@ -102,7 +102,7 @@ def _vault_files(vault):
     read_file 原文，不必自己 search_files 猜。
     """
     import time as _t
-    vault = vault or os.environ.get("OPC_VAULT") or "/opt/sefs/obsidian"
+    vault = vault or os.environ.get("OPC_VAULT") or "/mnt/sefs/conring/users/18911789286/obsidian"
     now = _t.time()
     if _vault_cache["vault"] == vault and now - _vault_cache["at"] < 60:
         return _vault_cache["index"]
@@ -154,7 +154,7 @@ def _vault_nodes(vault=None):
     CLI 读 db、内核读内存这两套口径不同步，正是"注入了过时知识"的来源之一。
     """
     import time as _t
-    vault = vault or os.environ.get("OPC_VAULT") or "/opt/sefs/obsidian"
+    vault = vault or os.environ.get("OPC_VAULT") or "/mnt/sefs/conring/users/18911789286/obsidian"
     root = os.path.join(vault, "OPC", "知识库")
     total, latest = 0, 0.0
     for base, _d, files in os.walk(root):

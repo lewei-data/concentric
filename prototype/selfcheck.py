@@ -24,7 +24,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BASE = os.environ.get("OPC_SELFCHECK_BASE", "http://127.0.0.1:8848")
 OWNER_DB = os.environ.get("OPC_OWNER_DB", "/mnt/sefs/conring/users/18911789286/opc.db")
-VAULT_KB = os.environ.get("OPC_VAULT_KB", "/opt/sefs/obsidian/OPC/知识库")
+VAULT_KB = os.environ.get("OPC_VAULT_KB", "/mnt/sefs/conring/users/18911789286/obsidian/OPC/知识库")
 SERVICE = os.environ.get("OPC_SERVICE", "opc-workbench.service")
 CHECKS = []
 

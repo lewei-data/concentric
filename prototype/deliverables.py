@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """交付物落盘：把每条内容的选题 / 文案 / 分镜剧本 / 封面 / 样片写成实体文件。
 
-全部写入 OPC_VAULT（默认 /opt/sefs/obsidian），不落临时目录：
+全部写入 OPC_VAULT（默认 /mnt/sefs/conring/users/18911789286/obsidian），不落临时目录：
   <vault>/OPC/交付物/<traceId>/00-index.md        这轮交付清单
   <vault>/OPC/交付物/<traceId>/06-log.md          过程记录（消息流水）
   <vault>/OPC/交付物/<traceId>/<pid>-<cid>/01-topic.md
@@ -21,7 +21,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 ROOT = os.path.join(VAULT, "OPC", "交付物")
 FONT_FILE = os.path.join(BASE_DIR, "assets", "fonts", "NotoSansSC-Regular.otf")
 TZ = timezone(timedelta(hours=8))

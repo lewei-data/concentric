@@ -1,6 +1,6 @@
 """共享 vault 文档 → 老板个人空间（conring/users/<手机号>/obsidian）增量镜像。
 
-背景：调研报告、知识条目、热点简报只写在共享 vault（/opt/sefs/obsidian），
+背景：调研报告、知识条目、热点简报只写在共享 vault（/mnt/sefs/conring/users/18911789286/obsidian），
 而个人空间 users/<手机号>/ 下只有素材（背景音乐/数字人/员工照片），
 导致 APP 与私有空间（/private_obsidian/<手机号>/...）看不到公司文档。
 
@@ -16,7 +16,7 @@ import shutil
 import threading
 import time
 
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 USERS_DIR = os.environ.get("OPC_USERS_DIR", "/mnt/sefs/conring/users")
 # 只镜像给老板：技术研究/知识库含管理层与事故细节，不适合广播到员工私有目录
 MIRROR_PHONES = tuple(p.strip() for p in

@@ -2,7 +2,7 @@
 """IT 系统资产台账（P1-1，2026-11-16 CEO 指令提前交付）。
 
 权威数据 = opc.db 表 it_assets（迁移见 prototype/db.py SCHEMA v4）。
-人读版 = /opt/sefs/obsidian/公司/IT系统资产台账.md，由本脚本 render 自动重写，
+人读版 = /mnt/sefs/conring/users/18911789286/obsidian/公司/IT系统资产台账.md，由本脚本 render 自动重写，
 与 ops/nodes.md 同款机制：禁止手工维护两份，防止漂移。
 
 子命令：
@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 TZ = timezone(timedelta(hours=8))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("OPC_DB_PATH", os.path.join(BASE_DIR, "opc.db"))
-VAULT_MD = os.environ.get("IT_ASSETS_MD", "/opt/sefs/obsidian/公司/IT系统资产台账.md")
+VAULT_MD = os.environ.get("IT_ASSETS_MD", "/mnt/sefs/conring/users/18911789286/obsidian/公司/IT系统资产台账.md")
 RUNBOOK = "公司/运维手册/IT系统恢复手册.md"
 SSH208 = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "boray@192.168.31.208"]
 COLS = ("id system host role public_domain reverse_proxy ports depends_on cert_path "
@@ -245,17 +245,17 @@ SEED = [
   verify_cmd="curl -fsS -m8 -o /dev/null http://192.168.21.157:8189/system_stats",
   evidence="comfyui-ops/config.json endpoints.video.start 模板；157 ps cmdline(pid2125109)；ss 8189 实测"),
  dict(id="obsidian-vault", system="知识库/制度库存储（Obsidian vault）",
-  host="sup206 192.168.21.206（路径 /opt/sefs/obsidian）",
+  host="sup206 192.168.21.206（路径 /mnt/sefs/conring/users/18911789286/obsidian）",
   role="公司制度、岗位记录、知识库条文的唯一文件底座；全员 file 工具读写域",
   public_domain="不适用", reverse_proxy="不适用",
   ports="无监听（文件资产；经 8848 工作台只读呈现）",
   depends_on="vault_export.py（公司配置/运行时动态导出写入方）、各员工 profile 写口",
   cert_path="不适用", cert_expire="不适用",
-  data_disk="/opt/sefs/obsidian 位于 /dev/nvme0n1 xfs /opt/sefs 1.8T 用 104G(6%)",
+  data_disk="/mnt/sefs/conring/users/18911789286/obsidian 位于 sefs_nodev rapids_sefs /mnt/sefs 3.5T 用 2.4T(69%)（2026-11-16 由本地旧库迁入，旧库待删）",
   log_paths="无守护日志；导出方 cron（cto-daily-report 等）经 journalctl 间接可查",
   backup_policy="每日 03:30 rsync 镜像至 /mnt/sefs/conring/backup/vault（--delete 与源 1:1，排除 .trash）；成功标记 .files_success 由巡检判新鲜",
-  verify_cmd="test -f /opt/sefs/obsidian/00-首页.md && test -w /opt/sefs/obsidian",
-  evidence="df -h /opt/sefs/obsidian → /dev/nvme0n1 6%；mount /opt/sefs xfs；ls vault 根；git remote 空输出实测"),
+  verify_cmd="test -f /mnt/sefs/conring/users/18911789286/obsidian/00-首页.md && test -w /mnt/sefs/conring/users/18911789286/obsidian",
+  evidence="df -h /mnt/sefs → sefs_nodev rapids_sefs 3.5T 用 2.4T(69%)；mount /mnt/sefs rapids_sefs；ls vault 根；test -w 实测"),
  dict(id="platform-services", system="平台组件（有 systemd 单元 / 常驻，非公司业务）",
   host="sup206（192.168.21.206 / 192.168.31.206，无公网 IP）",
   role="backlot-board 4750（OpenMontage 分镜看板，uvicorn `--host 0.0.0.0`，**首页 200 无鉴权**）；"
@@ -267,7 +267,7 @@ SEED = [
   public_domain="无（仅内网）", reverse_proxy="无（未进 nginx）",
   ports="4750/9119/9999/13300/13301/13303/13305/13307/8384/22000/445/5037（进程级认领见 ops/ports.md）",
   depends_on="systemd（backlot-board / hermes-dashboard / rpdsql-ops）；SEFS 集群自身；"
-             "syncthing 承担 vault 跨机同步（6700 条 MD 依赖它）",
+             "syncthing 曾承担 /opt/sefs/obsidian 跨机同步，2026-11-16 库迁至 /mnt/sefs/conring/users/18911789286/obsidian 后旧库仅存档",
   cert_path="不适用", cert_expire="不适用",
   data_disk="同 /mnt/sefs（备份未单独覆盖 ComfyUI 102G 权重与 OpenMontage 产物）",
   log_paths="journalctl -u backlot-board / hermes-dashboard / rpdsql-ops",

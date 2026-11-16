@@ -13,9 +13,9 @@ import os
 import re
 import sys
 
-REVIEW_DIR = "/opt/sefs/obsidian/公司/事故与复盘"
+REVIEW_DIR = "/mnt/sefs/conring/users/18911789286/obsidian/公司/事故与复盘"
 REPO = "/opt/sefs/opc-workbench"
-VAULT = "/opt/sefs/obsidian"
+VAULT = "/mnt/sefs/conring/users/18911789286/obsidian"
 
 SECTIONS = [
     ("detect", "新增检测规则"),

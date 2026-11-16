@@ -88,7 +88,7 @@ if [ "$MODE" = all ] || [ "$MODE" = files ]; then
     say "=== vault 镜像同步开始 ==="
     mkdir -p "$DEST/vault"
     if rsync -a --delete --exclude '.trash/' --exclude '.DS_Store' \
-        /opt/sefs/obsidian/ "$DEST/vault/" 2>>"$LOG"; then
+        /mnt/sefs/conring/users/18911789286/obsidian/ "$DEST/vault/" 2>>"$LOG"; then
       say "OK   vault 镜像 $(du -sh "$DEST/vault" 2>/dev/null | cut -f1)"
     else
       FAIL=1; FILES_ERR="$FILES_ERR vault"

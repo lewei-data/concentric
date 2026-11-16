@@ -4,7 +4,7 @@
 这里每一镜都落到 OpenMontage 的图形场景组件（进度条/柱状图/数据卡/引述框/标题卡），
 旁白由 MCP-TTS(CosyVoice2) 合成，音画按旁白实测时长对齐，最后过验收门。
 
-产物仍写 OPC_VAULT（默认 /opt/sefs/obsidian），不落临时目录：
+产物仍写 OPC_VAULT（默认 /mnt/sefs/conring/users/18911789286/obsidian），不落临时目录：
   <item>/05-preview.mp4              验收通过的样片
   <item>/_render/                    中间件（分段旁白、props、manifest、失败片）
 """
@@ -32,7 +32,7 @@ except Exception:  # SVG 资产库不可用时回退到原有矢量场景
     IL = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 ROOT = os.path.join(VAULT, "OPC", "交付物")
 
 REMOTION_DIR = os.environ.get("OPC_REMOTION_DIR", "/opt/sefs/OpenMontage/remotion-composer")

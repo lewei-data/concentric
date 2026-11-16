@@ -98,7 +98,7 @@ def diff(base, cur):
 
 def _boss_credentials():
     """从凭据表取老板账号（角色列含「老板」）。只读，不落盘、不打印。"""
-    path = "/opt/sefs/obsidian/公司/登录凭据.md"
+    path = "/mnt/sefs/conring/users/18911789286/obsidian/公司/登录凭据.md"
     try:
         for line in open(path, encoding="utf-8"):
             line = line.strip()

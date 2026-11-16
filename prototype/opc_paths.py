@@ -52,7 +52,7 @@ LOOPBACK = ("127.0.0.1", "::1")
 
 HOME_LEGACY = os.environ.get("OPC_HOME_LEGACY", "0") == "1"
 
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 PROJECT_FILE = os.path.join(VAULT, "公司", "项目配置.md")
 ROSTER_FILE = os.path.join(VAULT, "公司", "员工名册.md")
 

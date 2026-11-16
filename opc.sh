@@ -9,7 +9,7 @@
 #   ./opc.sh logs       # 跟踪日志
 #   ./opc.sh verify     # 端到端验收（需服务已启动）
 #   ./opc.sh reload     # 热加载 Obsidian 配置（项目配置 + 员工名册），不重启
-#   ./opc.sh vault      # 导出公司配置 + 运行时动态到 Obsidian（默认 /opt/sefs/obsidian）
+#   ./opc.sh vault      # 导出公司配置 + 运行时动态到 Obsidian（默认 /mnt/sefs/conring/users/18911789286/obsidian）
 #
 # 可用环境变量覆盖：
 #   OPC_HOST=127.0.0.1  OPC_PORT=8848  OPC_LOG_DIR=/path  OPC_PYTHON=python3

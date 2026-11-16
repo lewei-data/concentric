@@ -814,7 +814,7 @@ def normalize_answer(raw):
 SECRETARY_ID = _cfg("SECRETARY", "secretary")
 BOSS_BRIEFING_PROMPT = _cfg(
     "BOSS_BRIEFING_PROMPT",
-    "老板刚上线。主动汇报近期发生的事：只读查阅 /opt/sefs/obsidian 下的 动态/运行时快照.md、"
+    "老板刚上线。主动汇报近期发生的事：只读查阅 /mnt/sefs/conring/users/18911789286/obsidian 下的 动态/运行时快照.md、"
     "动态/事件流.md、OPC/交付物/*/06-log.md 和收件箱未读邮件，梳理各员工任务状态与最近更新时间。"
     "按「一句话结论 → 进展 → 风险与异常 → 需要老板拍板」输出，第三、四部分每项给依据，"
     "待拍板事项给选项、你的建议和不决策的后果，必须老板拍板的标【急】并置顶。"

@@ -23,7 +23,7 @@ from urllib.parse import quote
 TZ = timezone(timedelta(hours=8))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.normpath(os.path.join(BASE_DIR, ".."))
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 CACHE_TTL = 60
 _CACHE = {"at": {}, "data": {}}   # vault → 缓存（多用户隔离：每个 vault 一份）
 _CACHE_LOCK = threading.Lock()

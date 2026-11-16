@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 import sancai as SC
 import task_names as TN
 
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 ROOT = os.path.join(VAULT, "OPC", "交付物")
 URL_PREFIX = "/vault/OPC/交付物"
 TZ = timezone(timedelta(hours=8))

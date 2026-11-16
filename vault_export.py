@@ -2,7 +2,7 @@
 """把 OPC 工作台的「公司配置」与「运行时动态」导出成 Obsidian 仓库（纯 Markdown）。
 
 用法：
-    python3 vault_export.py            # 默认写入 /opt/sefs/obsidian
+    python3 vault_export.py            # 默认写入 /mnt/sefs/conring/users/18911789286/obsidian
     OPC_VAULT=/path/to/vault python3 vault_export.py
 
 配置页直接读取 server.py 里的常量，避免两处手工维护；动态页读取运行中服务的 /api/state。
@@ -20,7 +20,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "prototype"))
 import server as S  # noqa: E402  仅为读取配置常量（导入不会启动服务）
 
-VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
+VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 BASE = os.environ.get("OPC_BASE", "http://127.0.0.1:8848")
 TZ = timezone(timedelta(hours=8))
 
