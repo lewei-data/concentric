@@ -198,7 +198,7 @@ def main():
         selected = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "topic.select"
             and e.get("traceId") == trace for e in evs), 900)
-        record("CCO 知识库提炼定稿（每项目 2 条）", selected, f"{round(time.time() - t0, 2)}s")
+        record("CCO 知识库提炼定稿（议题驱动）", selected, f"{round(time.time() - t0, 2)}s")
         decided = sse.wait(lambda evs: any(
             e.get("kind") == "message" and e.get("data", {}).get("type") == "decision"
             and e.get("traceId") == trace for e in evs), 900)
@@ -213,8 +213,9 @@ def main():
         record("决议（decision）", "decision" in types)
         decision = next((m for m in msgs if m["type"] == "decision"), {})
         final = (decision.get("payload") or {}).get("final") or {}
-        record("选题定稿 6 条（每项目 2 条）",
-               all(len(final.get(p, [])) == 2 for p in ("wenren", "gou", "tongxinyuan")),
+        _tops = [t.get("title", "") for v in final.values() for t in (v or []) if isinstance(t, dict)]
+        record("选题定稿：议题唯一归属（不设总量、全局无同题）",
+               bool(_tops) and len({str(x).strip() for x in _tops}) == len(_tops),
                json.dumps({k: len(v) for k, v in final.items()}, ensure_ascii=False))
 
         # 3.5 开工审批：老板批准后才进入制作

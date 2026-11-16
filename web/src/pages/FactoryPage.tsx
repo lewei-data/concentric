@@ -55,6 +55,9 @@ interface Product {
   craftSteps: CraftStep[];
   run: { status: string; stage: string; stageIndex: number; updatedAt: string; closedAt: string };
   steps: StepView[];
+  /** 工位已开工、CCO 还没定工艺发流水号的在制任务（评估阶段占位） */
+  pendingCraft?: boolean;
+  currentStage?: string;
 }
 interface FactoryData {
   ok: boolean;
@@ -97,6 +100,7 @@ const STATUS_LABEL: Record<string, string> = {
 const RUN_LABEL: Record<string, string> = {
   running: "生产中",
   completed: "已完工",
+  blocked: "已受阻终止",
   interrupted: "已中断",
 };
 
@@ -185,11 +189,22 @@ export function FactoryPage() {
     () => (selectedNo ? products.filter((p) => p.workshopNo === selectedNo) : products),
     [products, selectedNo],
   );
-  /* 工厂生命周期：CCO 审批进厂 → 加工 → 质检审核通过出厂（流水结束，转入历史） */
-  const producingCount = products.filter((p) => !p.shippedAt).length;
-  const shippedCount = products.filter((p) => !!p.shippedAt).length;
-  const monitorProducts = shownProducts.filter((p) => !p.shippedAt);
-  const historyProducts = shownProducts.filter((p) => !!p.shippedAt);
+  /* 工厂生命周期：CCO 审批进厂 → 加工 → 流水结束转入历史。
+     判定「已结束」不能只看 shippedAt：有的单质检通过后没回填 shipped_at，
+     有的单 blocked 已终止，它们都不该继续挂在实时监控里。
+     口径：出厂 / 终态(completed、blocked、interrupted) 算结束；
+     closedAt 只在状态缺失时兜底——续跑中的 run 会保留旧 closedAt 但状态是 running，
+     不能因此把在制单踢进历史。 */
+  const isFinished = (p: Product) => {
+    const status = p.run?.status;
+    if (status === "running") return !!p.shippedAt;   // 在跑就是监控；除非已出厂（正常不会同时出现）
+    return !!p.shippedAt || !!p.run?.closedAt
+      || ["completed", "blocked", "interrupted"].includes(status || "");
+  };
+  const producingCount = products.filter((p) => !isFinished(p)).length;
+  const historyCount = products.filter(isFinished).length;
+  const monitorProducts = shownProducts.filter((p) => !isFinished(p));
+  const historyProducts = shownProducts.filter(isFinished);
   const [showHistory, setShowHistory] = useState(true);
   const selectedWorkshop = workshops.find((w) => w.no === selectedNo);
 
@@ -242,8 +257,8 @@ export function FactoryPage() {
           <p className="muted home-sub">
             全厂 13 个车间对应 OpenMontage 的 13 类工艺；每个工艺有各自的工序序列与名称
             （CCO 审批定工艺时即定格）。流水线生命周期：内容单经 CCO 审批通过发放流水号
-            （WO-YYYYMMDD-NNN）进厂，按所属工艺的工序逐站加工，质检审核通过即出厂、流水结束——
-            出厂后转入「出厂历史」，当前监控只显示在制流水线；进厂前的选题调度与出厂后的
+            （WO-YYYYMMDD-NNN）进厂，按所属工艺的工序逐站加工；流水结束（出厂 / 完工 / 受阻终止）
+            即转入下方「历史产品」，当前监控只显示在制流水线；进厂前的选题调度与出厂后的
             发布/归档由 hermes 编排，不属工厂工序。
           </p>
         </div>
@@ -252,7 +267,7 @@ export function FactoryPage() {
             <i aria-hidden="true" />实时监控
           </span>
           <span className="muted">
-            在制 {producingCount} · 已出厂 {shippedCount}
+            在制 {producingCount} · 历史 {historyCount}
           </span>
         </div>
       </div>
@@ -286,26 +301,31 @@ export function FactoryPage() {
             {selectedNo
               ? "该车间暂无在制流水线。点击下方其他车间查看，或选择「显示全部车间」。"
               : "当前无在制流水线。内容单经 CCO 审批进厂后在这里实时监控，"
-                + "质检通过出厂后转入下方「出厂历史」。"}
+                + "流水结束后转入下方「历史产品」。"}
           </div>
         ) : (
           monitorProducts.map((p) => {
             const w = workshops.find((x) => x.no === p.workshopNo);
             return (
-              <div key={p.itemId || p.traceId} className="fac-product">
+              <div key={p.itemId || p.traceId} className={`fac-product${p.pendingCraft ? " fac-product-pending" : ""}`}>
                 <div className="fac-product-head">
                   <div className="fac-product-title">
                     <b>{p.serialNo ? `${p.serialNo} · ${p.title}` : p.title}</b>
+                    {p.pendingCraft && <span className="fac-pending-tag">工艺待定 · 进厂中</span>}
                     <span className={`fac-run ${p.shippedAt ? "s-shipped" : `s-${p.run.status}`}`}>
                       {p.shippedAt ? "已出厂" : (RUN_LABEL[p.run.status] || p.run.status)}
                     </span>
                   </div>
                   <div className="fac-product-meta muted">
-                    {w ? `${w.no}号车间` : p.workshopNo} · 工艺：{p.craftName} · 出片模式：{p.renderMode || "-"}
-                    · 决策：{p.decidedBy} · {shortTime(p.decidedAt)} · trace {p.traceId}
+                    {p.pendingCraft
+                      ? `当前工位：${p.currentStage || p.run.stage || "制作评估"} · 工位已开工，CCO 定工艺后生成流水号 · trace ${p.traceId}`
+                      : `${w ? `${w.no}号车间` : p.workshopNo} · 工艺：${p.craftName} · 出片模式：${p.renderMode || "-"}
+                    · 决策：{p.decidedBy} · {shortTime(p.decidedAt)} · trace ${p.traceId}`}
                     {p.shippedAt && ` · 出厂：${shortTime(p.shippedAt)}`}
                   </div>
-                  <div className="fac-product-reason" title={p.reason}>CCO 决策依据：{p.reason}</div>
+                  <div className="fac-product-reason" title={p.reason}>
+                    {p.pendingCraft ? "进度：" : "CCO 决策依据："}{p.reason}
+                  </div>
                   <div className="fac-product-ctl">
                     <button
                       type="button"
@@ -562,12 +582,12 @@ export function FactoryPage() {
         )}
       </div>
 
-      {/* 出厂历史：质检通过即出厂，流水结束，只在这里可查 */}
+      {/* 历史：流水已结束的产品（出厂 / 完工未回填 / 受阻终止），只在这里可查 */}
       {historyProducts.length > 0 && (
         <div className="fac-monitors">
           <div className="fac-section-head">
             <h2>
-              出厂历史
+              历史产品
               <span className="fac-section-tag">{historyProducts.length} 件</span>
             </h2>
             <div className="fac-section-ops">
@@ -590,7 +610,7 @@ export function FactoryPage() {
                       <th>名称</th>
                       <th>车间 / 工艺</th>
                       <th>进厂</th>
-                      <th>出厂</th>
+                      <th>出厂 / 结束</th>
                       <th>trace</th>
                     </tr>
                   </thead>
@@ -607,7 +627,11 @@ export function FactoryPage() {
                           {p.workshopNo ? `${p.workshopNo}号车间 · ${p.craftName}` : "-"}
                         </td>
                         <td className="nowrap">{shortTime(p.decidedAt)}</td>
-                        <td className="nowrap">{shortTime(p.shippedAt)}</td>
+                        <td className="nowrap">
+                          {p.shippedAt
+                            ? shortTime(p.shippedAt)
+                            : `${RUN_LABEL[p.run?.status] || p.run?.status || "已结束"} · ${shortTime(p.run?.closedAt)}`}
+                        </td>
                         <td className="nowrap mono">{p.traceId}</td>
                       </tr>
                     ))}

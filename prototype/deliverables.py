@@ -84,7 +84,7 @@ def export_meeting(trace, data):
     os.makedirs(os.path.join(MAIL_DIR, _slug(trace)), exist_ok=True)
     title = str(data.get("title") or "每日选题会")
     final = data.get("final") or {}
-    lines = [str(data.get("minutes") or "").strip(), "", "## 定稿清单（每项目 2 条）", ""]
+    lines = [str(data.get("minutes") or "").strip(), "", "## 定稿清单（一议题一项目一产品）", ""]
     for pid, topics in final.items():
         for t in topics:
             lines.append(f"- {pid} · {t.get('title')}")

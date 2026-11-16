@@ -14,6 +14,7 @@ import threading
 import time
 
 import company_config as CC
+import task_names as TN
 from deps import *  # noqa: F401,F403 —— OMR / DL / DBX 等基础设施单例
 from opc_paths import *  # noqa: F401,F403 —— VAULT / OWNER_DATA_DIR
 from utils import iso_now, uid, _num, _step_view
@@ -45,7 +46,11 @@ TOOLBOX_SUB = {"image": "图片", "video": "视频", "audio": "语音"}
 def factory_view(kn):
     """制片工厂聚合：13 类车间 + 各车间产品（工艺决策 + 工位过程 + 运行态）。
 
-    只展示 CCO 审批通过（product_crafts 有记录、带流水号 serial_no）的内容单；
+    产品分两类：
+    1. 正式产品：CCO 审批通过、已发流水号（product_crafts 有记录），带完整工艺轴；
+    2. 待定工艺占位：工位已开工（assessment 起）但 CCO 还没定工艺发流水号的内容单——
+       审批通过后到评估报告跑完之间有十几分钟空窗，工位消息已经「开工」却看不到产品，
+       这里用第 N 号中文名占位显示，评估完成落库后自动被正式产品取代。
     工艺轴只取工厂段（进厂 assessment → 出厂 review），前段选题/开工审批与
     后段发布/归档/汇报在 hermes 调度，不属于工厂工序。
     """
@@ -66,8 +71,10 @@ def factory_view(kn):
         steps_by_trace = {}
         for s in kn.db.workshop_steps():
             steps_by_trace.setdefault(s.get("trace_id"), []).append(s)
+        craft_traces = set()   # 已进厂（有流水号）的 trace，占位产品要排除
         for row in kn.db.product_crafts(120):
             tid = row.get("trace_id") or ""
+            craft_traces.add(tid)
             run = runs.get(tid) or {}
             # 工艺步骤序列：CCO 审批时快照（steps 列），老数据回退到工艺定义现值
             try:
@@ -101,6 +108,52 @@ def factory_view(kn):
                         "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
                 "steps": [v for v in steps_by_stage.values()
                           if v.get("stage_id") in axis_ids],
+            })
+
+        # 待定工艺占位：工位已开工（工厂段有 running 步骤）但还没 CCO 定工艺发流水号的在制任务。
+        # 让「工位显示开工却看不到产品」的空窗期也在工厂页可见；评估落库后这条自动消失。
+        # 判据用「工位步骤 running」而不是 run.status：内核重启会把未跑完的 run 标成 interrupted，
+        # 但工位是否真在动以 workshop_steps 为准（用户看到的就是这个）。
+        for tid, run in runs.items():
+            if tid in craft_traces:
+                continue
+            factory_steps = [s for s in steps_by_trace.get(tid, [])
+                             if s.get("stage_id") in axis_ids
+                             and s.get("status") == "running"]
+            if not factory_steps:
+                continue
+            cur = factory_steps[0]
+            stage_id = cur.get("stage_id") or ""
+            stage_name = next((s["name"] for s in stage_axis if s["id"] == stage_id), stage_id)
+            started = cur.get("started_at") or run.get("started_at") or ""
+            # 占位工艺轴：已走过的工厂段工位按库内状态点亮，未到的 pending，方便看出进展
+            done_ids = {s.get("stage_id") for s in steps_by_trace.get(tid, [])
+                        if s.get("status") in ("done", "stopped", "failed")}
+            pending_steps = [{
+                "id": s["id"], "name": s["name"], "omStage": s.get("omStage", ""),
+                "opcStage": s["id"],
+                "status": "running" if s["id"] == stage_id
+                          else "done" if s["id"] in done_ids else "pending",
+                "startedAt": started if s["id"] == stage_id else "",
+                "finishedAt": "",
+            } for s in stage_axis]
+            products.append({
+                "itemId": "", "traceId": tid,
+                "serialNo": "", "title": TN.label(tid, kn.db),
+                "projectId": "", "workshopNo": "", "craftId": "",
+                "craftName": "工艺待定", "product": "",
+                "renderMode": "", "reason": "CCO 正在评估工艺，流水线评估完成后自动进厂并生成流水号",
+                "decidedBy": "待 CCO 定工艺",
+                "decidedAt": started,
+                "shippedAt": "",
+                "craftSteps": pending_steps,
+                "run": {"status": run.get("status"), "stage": run.get("stage"),
+                        "stageIndex": run.get("stage_index"),
+                        "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
+                "steps": [v for v in steps_by_trace.get(tid, [])
+                          if v.get("stage_id") in axis_ids],
+                "pendingCraft": True,
+                "currentStage": stage_name,
             })
     return {"ok": True, "workshops": workshops, "stages": stage_axis, "products": products}
 

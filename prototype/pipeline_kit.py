@@ -20,18 +20,35 @@ def _deg(kn, aid, what):
     return kn.fallback(aid, what)
 
 
+def _topic_key(title):
+    """跨项目判重键：只留中文/字母/数字，去掉书名号与标点，避免同一议题换标点被当成两条。"""
+    return re.sub(r"[^0-9a-zA-Z\u4e00-\u9fff]", "", str(title or "")).lower()
+
+
 def _coerce_cco_topics(kn, data, kb):
-    """CCO 知识库选题卡：每项目恰好 2 条（共 6 条）；缺项用知识条目兜底，绝不从热点编造。"""
+    """CCO 知识库选题卡：议题驱动、不设总量，每条选题唯一归属一个项目组。
+
+    制度（2026-11-17 老板修订）：一个议题只匹配一个具体项目、产出一个最终产品，
+    不再把一个方向拆给三家各做一份。因此这里：
+    - 按 CCO 产出的 projectId 分桶，删除「每项目补满 2 条」的知识条目兜底（凑数源头）；
+    - 全局按标题去重，同一议题（含近重复标题）只保留第一次出现的项目归属；
+    - 某项目当天 0 条合法，不强行回填。
+    """
     raw = (data or {}).get("final") or (data or {}).get("topics") or []
     out = {pid: [] for pid in kn.PIDS}
+    seen = set()
     if isinstance(raw, list):
         for t in raw:
             if not isinstance(t, dict):
                 continue
             pid = str(t.get("projectId") or "")
             title = str(t.get("title") or t.get("angle") or "").strip()
-            if pid not in out or not title or len(out[pid]) >= 2:
+            if pid not in out or not title:
                 continue
+            key = _topic_key(title)
+            if not key or key in seen:      # 同一议题唯一归属：重复的直接丢弃，不给第二个项目
+                continue
+            seen.add(key)
             out[pid].append({"projectId": pid, "title": title[:60],
                              "angle": str(t.get("angle") or title)[:80],
                              "form": str(t.get("form") or "内化提炼")[:16],
@@ -39,21 +56,6 @@ def _coerce_cco_topics(kn, data, kb):
                              "reason": str(t.get("reason") or "")[:140],
                              "knowledgeRefs": [str(x)[:60] for x in
                                                (t.get("knowledgeRefs") or [])][:3]})
-    for pid in kn.PIDS:
-        while len(out[pid]) < 2:
-            used = {t["title"] for pid2 in kn.PIDS for t in out[pid2]}
-            cand = [e for e in kb["entries"]
-                    if e.get("projectId") in (pid, "", "all") and e["title"] not in used]
-            cand = cand or [e for e in kb["entries"] if e["title"] not in used]
-            if not cand:
-                break
-            e = cand[0]
-            out[pid].append({"projectId": pid, "title": e["title"][:60],
-                             "angle": e.get("summary") or e["title"], "form": "内化提炼",
-                             "durationSec": 45,
-                             "reason": f"知识库条目兜底（{e.get('at') or '—'}）",
-                             "knowledgeRefs": [e["title"]]})
-        out[pid] = out[pid][:2]
     return out
 
 

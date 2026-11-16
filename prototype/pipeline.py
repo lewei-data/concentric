@@ -255,9 +255,11 @@ def _stage_timeout(kn, c):
 
 
 def _stage_topic_meeting(kn, c):
-    """1. 每日选题（知识库内化）：CCO 从知识库归档认知中提炼 6 条最佳选题（每项目 2 条）直出定稿。
+    """1. 每日选题（知识库内化）：CCO 从知识库归档认知中提炼若干最佳选题，直出定稿。
 
-    不再按热点给三个项目分别匹配选题，也不再发起选题评审会：CCO 决策即定稿，直接进入汇报与建单。
+    制度（2026-11-17 老板修订）：一个议题只匹配一个具体项目、产出一个最终产品，
+    不再把一个方向拆给三家各做一份。不设选题总量，某项目当天 0 条合法。
+    不发起选题评审会：CCO 决策即定稿，直接进入汇报与建单。
     """
     kn.guard_budget(c.trace)
     kb = kn._kb_brief()
@@ -267,14 +269,15 @@ def _stage_topic_meeting(kn, c):
     participants = c.participants = ["cco", "kb_manager"]
     agenda = [f"知识来源：{hint or '知识库内化'}",
               f"知识条目 {kb['count']} 条（分类 {len(kb['categories'])} 个）",
-              "CCO 提炼最佳选题：每项目 2 条，共 6 条", "不设评审会：CCO 决策即定稿"]
+              "CCO 提炼最佳选题：议题驱动、不设总量，每个议题只归一个项目", "不设评审会：CCO 决策即定稿"]
     kn.meeting_begin(c.trace, "每日选题会", participants, agenda)
     kn.set_scene("MEETING", c.trace, title="每日选题会", participants=participants, agenda=agenda)
     for aid in participants:
         kn.set_agent(aid, "meeting", "选题会")
         kn.send("delegation", "cco", aid, c.trace, {"task": "参会：知识库内化选题"}, priority=1)
     kn.meeting_say("cco", f"今天不从热点找题，直接从知识库 {kb['count']} 条内化认知里提炼："
-                            "每个项目 2 条，共 6 条；我定了就进制作，不再开评审会。", "opening", c.trace)
+                            "有几个合格议题就定几条，每条只归一个项目组、只出一个产品；"
+                            "我定了就进制作，不再开评审会。", "opening", c.trace)
 
     ctx = {"知识库": {"条目总数": kb["count"], "分类分布": kb["categories"],
                     "项目分布": kb["projects"], "近期条目": kb["entries"]},
@@ -296,14 +299,18 @@ def _stage_topic_meeting(kn, c):
     data, meta = kn.call_agent(
         "cco",
         "你是 CCO。从给定知识库条目中提炼今日最佳选题：优先近 30 天、可复用结论扎实、"
-        "与项目调性一致且具备制作可行性的认知；每个项目恰好 2 条（共 6 条）。"
+        "与项目调性一致且具备制作可行性的认知。数量按议题质量决定，不设固定条数、不为每个项目凑数。"
+        "硬性制度（2026-11-17 老板修订）：一个议题只匹配一个具体项目、只产出一个最终产品——"
+        "同一个认知/方向不得拆成多条分给三个项目，也不得给同一议题填多个 projectId；"
+        "每条选题的 projectId 必须唯一指向最匹配的那一个项目组，宁可某项目当天 0 条。"
         "要求：1) 不得直接照抄条目标题，要提炼成可拍选题；2) 必须引用具体知识条目（knowledgeRefs）；"
-        "3) 不引用热点榜单、不编造数字；4) 同一项目的两条之间要有差异化；"
-        "5) 给了「采集灵感（优先采用）」时，先把这些灵感按项目落成选题（它们来自自动采集的最新素材，"
-        "老板要求优先采用），不足 6 条再用知识库条目补足，并在 reason 里注明「采集灵感」。",
+        "3) 不引用热点榜单、不编造数字；4) 选题之间必须主题各异，禁止同一方向换措辞重复出现；"
+        "5) 给了「采集灵感（优先采用）」时，优先把这些灵感落成选题（它们来自自动采集的最新素材，"
+        "老板要求优先采用），每条灵感只归一个项目，并在 reason 里注明「采集灵感」。",
         json.dumps(ctx, ensure_ascii=False),
-        "额外 JSON 字段：final(数组，恰好 6 条，每条 {projectId,title,angle,form,durationSec,reason,knowledgeRefs})；"
-        "excluded(数组，0-6 条，未采用的认知 {title, projectId, reason})；minutes(会议纪要 Markdown ≤800 字)。",
+        "额外 JSON 字段：final(数组，条数由议题数决定，每条 {projectId,title,angle,form,durationSec,reason,knowledgeRefs}，"
+        "所有 title 必须主题各异、每个议题只出现一次)；"
+        "excluded(数组，未采用的认知 {title, projectId, reason})；minutes(会议纪要 Markdown ≤800 字)。",
         "summary, evidence, confidence, tools, final, excluded, minutes")
     data = data or kn._deg("cco", "知识库选题")
     c.final = kn._coerce_cco_topics(data, kb)
@@ -328,7 +335,7 @@ def _stage_topic_meeting(kn, c):
     minutes = str(data.get("minutes") or "").strip() or (
         f"# 每日选题会（知识库内化）\n\n- 知识来源：{hint or '知识库'}（{kb['count']} 条）\n"
         "- 参会：" + "、".join(display(participants)) + "\n"
-        f"- 结论：CCO 提炼定稿 {total} 条（每项目 2 条），不发起评审会\n\n## 定稿\n"
+        f"- 结论：CCO 提炼定稿 {total} 条（议题驱动，每个议题唯一归属一个项目组），不发起评审会\n\n## 定稿\n"
         + "\n".join(f"- {kn.projects[pid]['name']}《{t['title']}》："
                     f"{t.get('reason') or t.get('angle') or ''}"
                     for pid in kn.PIDS for t in c.final[pid]) + "\n")
@@ -344,7 +351,7 @@ def _stage_topic_meeting(kn, c):
         except Exception as e:
             print(f"[pipeline] 会议纪要落盘失败：{type(e).__name__}: {e}", flush=True)
     kn.send("decision", "cco", "all", c.trace,
-              {"text": f"知识库内化定稿 {total} 条（每项目 2 条）",
+              {"text": f"知识库内化定稿 {total} 条（议题驱动，每个议题唯一归属一个项目组）",
                "final": c.final, "minutes": minutes,
                "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
                "mailUrl": (c.meeting_doc or {}).get("mail", ""),
@@ -354,7 +361,7 @@ def _stage_topic_meeting(kn, c):
                "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
                "mailUrl": (c.meeting_doc or {}).get("mail", ""),
                "recipients": recipients, "cc": cc}, priority=1)
-    c.conclusion = (f"知识库内化定稿 {total} 条（每项目 2 条，知识条目 {kb['count']} 条，无评审）：" +
+    c.conclusion = (f"知识库内化定稿 {total} 条（议题唯一归属，知识条目 {kb['count']} 条，无评审）：" +
                     "；".join(f"{kn.projects[pid]['name']}《{t['title']}》"
                              for pid in kn.PIDS for t in c.final[pid]))
     kn.meeting_say("cco", "结论：" + c.conclusion + "。纪要已归档，直接进制作前的开工审批。",
@@ -381,7 +388,7 @@ def _stage_boss_report(kn, c):
         f"老板：",
         "",
         f"今日选题已完成（{src}）。",
-        f"知识库 {c.pool_size} 条内化认知 → CCO 提炼定稿 {total} 条（每项目 2 条），"
+        f"知识库 {c.pool_size} 条内化认知 → CCO 提炼定稿 {total} 条（议题驱动，每个议题唯一归属一个项目组），"
         "不经评审会，CCO 决策即定稿。",
         "",
         "## 定稿清单",
@@ -415,8 +422,8 @@ def _stage_boss_report(kn, c):
 
 
 def _stage_create_items(kn, c):
-    """4. 建 6 条内容（每项目 2 条）"""
-    # 4. 建 6 条内容（每项目 2 条）
+    """4. 按定稿逐议题建内容单（一议题一内容单一产品，不设每项目配额）"""
+    # 按定稿逐议题建内容单；id 由 trace+项目+序号+标题决定，续跑复用
     # 内容单 id 由 trace+项目+序号+标题 决定：阶段中途被打断、续跑重建时复用同一条，
     # 既有内容不会变成孤儿，发布回执（release_ledger 按 item_id 判重）也不会失效。
     c.items = {}
@@ -488,7 +495,8 @@ def _stage_assessment(kn, c):
     # 5. PM 组织本项目组出《制作评估报告》：把分镜补充完善（逐镜 画面/台词/时长/素材），
     #    并按并行原则拆任务——视频制作耗时较长，逐镜子任务先行开工，文案岗同步领取成稿与补素材指令。
     jobs = {}
-    for pid, pm in c.pms:
+    active_pms = [(pid, pm) for pid, pm in c.pms if (c.final.get(pid) or [])]
+    for pid, pm in active_pms:
         boss_reqs = "；".join(
             f"《{t.get('title')}》{t['bossBrief']}" for t in (c.final.get(pid) or [])
             if t.get("bossBrief"))
@@ -506,7 +514,7 @@ def _stage_assessment(kn, c):
             "assetGaps(数组，每条 {item, why})。",
             "summary, evidence, confidence, tools, assessment, assetGaps")
     gap_jobs = {}
-    for pid, pm in c.pms:
+    for pid, pm in active_pms:
         data, meta = jobs[pid].result()
         data = data or kn._deg(pm, "制作评估报告")
         pid_items = [i for i in c.items.values() if i["projectId"] == pid]
@@ -1023,7 +1031,7 @@ def _stage_report(kn, c):
     daily_data = daily_data or kn._deg("ceo", "CEO 日报")
     report = {"id": uid("rp"), "traceId": c.trace, "kind": "daily", "title": "CEO 日报",
               "conclusion": daily_data.get("summary", ""), "evidence": daily_data.get("evidence", []),
-              "decisions": [{"text": "定稿 6 条（每项目 2 条）并发布", "owner": "ceo",
+              "decisions": [{"text": f"定稿 {sum(len(v) for v in c.final.values())} 条（议题唯一归属）并发布", "owner": "ceo",
                              "risk": "mid", "approved": True}],
               "engine": daily_meta["engine"], "createdAt": iso_now()}
     with kn.lock:

@@ -4180,6 +4180,25 @@ a:hover {
 .fac-run.s-shipped { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .fac-run.s-interrupted, .fac-run.s-stopped { background: #fff7e8; color: #b47207; border-color: #f0d9a6; }
 .fac-run.s-failed { background: #fdf0ef; color: var(--danger); border-color: #f3c9c5; }
+/* 工位已开工但 CCO 还没定工艺的占位产品：虚线框提示「进厂中」 */
+.fac-product-pending {
+  margin: 10px 0;
+  padding: 14px 16px 8px;
+  border: 1px dashed #a9c9f7;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.fac-product-pending .fac-product-head { margin-bottom: 8px; }
+.fac-pending-tag {
+  display: inline-flex;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #eef5ff;
+  border: 1px solid #a9c9f7;
+}
 .fac-btn { font-size: 12px; padding: 4px 12px; }
 
 /* 横向工艺轴 */

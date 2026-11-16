@@ -23,7 +23,7 @@ stages:
     kind: produce
     item_stage: topic
     om_stage: research
-    description: CCO 从现有知识库的归档认知中提炼最佳选题（每项目 2 条，共 6 条）直出定稿；不再按热点分别匹配三项目，不再发起评审会
+    description: CCO 从知识库归档认知中提炼最佳选题，议题驱动不设总量，每个议题唯一归属一个项目组、只出一个最终产品；某项目当天 0 条合法；不按热点拆给三家、不发起评审会
 
   - id: boss_report
     name: 选题结果汇报
