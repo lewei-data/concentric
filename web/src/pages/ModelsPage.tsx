@@ -15,6 +15,9 @@ type LlmModel = {
   isDefault: boolean;
   contextLength: number;
   maxOutputTokens: number;
+  maxConcurrency: number;
+  queueWaitMs: number;
+  cooldownUntil?: number;
   totalTokens: number;
   usedTokens: number;
   note: string;
@@ -57,6 +60,8 @@ type FormState = {
   priority: string;
   contextLength: string;
   maxOutputTokens: string;
+  maxConcurrency: string;
+  queueWaitMs: string;
   totalTokens: string;
   note: string;
   status: string;
@@ -76,6 +81,7 @@ const EMPTY_FORM: FormState = {
   id: "", name: "", alias: "", url: "", apiKey: "",
   protocol: "openai-chat", provider: "custom", priority: "100",
   contextLength: "131072", maxOutputTokens: "16384", totalTokens: "0",
+  maxConcurrency: "2", queueWaitMs: "30000",
   note: "", status: "enabled", isDefault: false,
 };
 
@@ -127,6 +133,8 @@ function toForm(m: LlmModel): FormState {
     priority: String(m.priority ?? 100),
     contextLength: String(m.contextLength ?? 0),
     maxOutputTokens: String(m.maxOutputTokens ?? 0),
+    maxConcurrency: String(m.maxConcurrency ?? 2),
+    queueWaitMs: String(m.queueWaitMs ?? 30000),
     totalTokens: String(m.totalTokens ?? 0),
     note: m.note || "", status: m.status || "enabled", isDefault: !!m.isDefault,
   };
@@ -144,6 +152,8 @@ function toPayload(f: FormState) {
     priority: Number(f.priority) || 100,
     contextLength: Number(f.contextLength) || 0,
     maxOutputTokens: Number(f.maxOutputTokens) || 0,
+    maxConcurrency: Number(f.maxConcurrency) || 0,
+    queueWaitMs: Number(f.queueWaitMs) || 0,
     totalTokens: Number(f.totalTokens) || 0,
     note: f.note.trim(),
     status: f.status,
@@ -294,6 +304,7 @@ export function ModelsPage() {
                     <th>状态</th>
                     <th>端点 URL</th>
                     <th>上下文 / 输出</th>
+                    <th>并发上限</th>
                     <th>额度（已用 / 总）</th>
                     <th>时段</th>
                     <th>操作</th>
@@ -319,6 +330,10 @@ export function ModelsPage() {
                         <td className="mono models-url" title={m.url}>{m.url || "—"}</td>
                         <td className="mono nowrap">
                           {fmtTokens(m.contextLength)} / {fmtTokens(m.maxOutputTokens)}
+                        </td>
+                        <td className="mono nowrap" title={`排队等待 ${m.queueWaitMs}ms；冷却至 ${m.cooldownUntil ? new Date(m.cooldownUntil * 1000).toLocaleTimeString() : "无"}`}>
+                          {m.maxConcurrency === 0 ? "不限" : m.maxConcurrency}
+                          {m.cooldownUntil && m.cooldownUntil > Date.now() / 1000 ? " · 冷却中" : ""}
                         </td>
                         <td className="nowrap">
                           {m.totalTokens > 0
@@ -522,6 +537,16 @@ export function ModelsPage() {
                 <span>优先级（越小越先，故障转移顺序）</span>
                 <input className="input" type="number" min={1} value={editing.priority}
                        onChange={(e) => setEditing({ ...editing, priority: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>最大并发（0=不限；超出则排队或换通道）</span>
+                <input className="input" type="number" min={0} value={editing.maxConcurrency}
+                       onChange={(e) => setEditing({ ...editing, maxConcurrency: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>排队等待（毫秒，超时换通道）</span>
+                <input className="input" type="number" min={0} step={1000} value={editing.queueWaitMs}
+                       onChange={(e) => setEditing({ ...editing, queueWaitMs: e.target.value })} />
               </label>
               <label className="field">
                 <span>总额度（0 = 不限额）</span>

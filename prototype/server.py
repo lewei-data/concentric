@@ -3278,7 +3278,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "通道不存在"}, 404)
                 fields = {k: model[k] for k in (
                     "name", "url", "protocol", "alias", "provider", "apiKey", "note",
-                    "totalTokens", "priority", "contextLength", "maxOutputTokens")
+                    "totalTokens", "priority", "contextLength", "maxOutputTokens",
+                    "maxConcurrency", "queueWaitMs")
                     if k in model}
                 status = str(model.get("status") or "")
                 if status not in ("", "enabled", "disabled", "exhausted"):

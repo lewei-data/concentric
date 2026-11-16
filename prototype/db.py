@@ -436,6 +436,10 @@ CREATE TABLE IF NOT EXISTS llm_models (
   is_default    INTEGER NOT NULL DEFAULT 0,
   context_length     INTEGER NOT NULL DEFAULT 0,
   max_output_tokens   INTEGER NOT NULL DEFAULT 0,
+  -- 并发闸门：每通道最大并发数（0=不限）；排队等待毫秒；429 熔断截止时间（Unix 秒）
+  max_concurrency    INTEGER NOT NULL DEFAULT 2,
+  queue_wait_ms      INTEGER NOT NULL DEFAULT 30000,
+  cooldown_until     REAL NOT NULL DEFAULT 0,
   note          TEXT,
   updated_at    TEXT,
   updated_by    TEXT
@@ -606,7 +610,10 @@ class Store:
                                  ("api_key", "TEXT NOT NULL DEFAULT ''"),
                                  ("is_default", "INTEGER NOT NULL DEFAULT 0"),
                                  ("context_length", "INTEGER NOT NULL DEFAULT 0"),
-                                 ("max_output_tokens", "INTEGER NOT NULL DEFAULT 0")):
+                                 ("max_output_tokens", "INTEGER NOT NULL DEFAULT 0"),
+                                 ("max_concurrency", "INTEGER NOT NULL DEFAULT 2"),
+                                 ("queue_wait_ms", "INTEGER NOT NULL DEFAULT 30000"),
+                                 ("cooldown_until", "REAL NOT NULL DEFAULT 0")):
                     if col not in cols:
                         self._conn.execute(f"ALTER TABLE llm_models ADD COLUMN {col} {ddl}")
                 # 既有登记行补默认值（只补未设置过的，不覆盖 CTO 手工调整）
@@ -1499,7 +1506,15 @@ class Store:
     def _llm_unavailable(m):
         status = str(m.get("status") or "enabled")
         total, used = _int(m.get("total_tokens")), _int(m.get("used_tokens"))
-        return status in ("disabled", "exhausted") or (total > 0 and used >= total)
+        if status in ("disabled", "exhausted") or (total > 0 and used >= total):
+            return True
+        # 429/限流熔断：冷却期内的通道在 llm_pick 里自动跳过（到期自动恢复）
+        try:
+            if float(m.get("cooldown_until") or 0) > time.time():
+                return True
+        except (TypeError, ValueError):
+            pass
+        return False
 
     def _llm_schedule_model_id(self):
         """根据当前时段查 llm_schedule，返回匹配的 model_id（无匹配/表空/异常返回空串）。
@@ -1592,6 +1607,27 @@ class Store:
             except sqlite3.Error as e:
                 _log(f"llm_consume 失败：{e}")
 
+    def llm_cooldown(self, model_id, seconds, reason=""):
+        """429/限流熔断：把通道冷却到 now+seconds；llm_pick 会自动跳过，到期自动恢复。
+        seconds<=0 表示立即解除冷却。"""
+        try:
+            until = max(0.0, float(seconds or 0))
+        except (TypeError, ValueError):
+            return False
+        until = (time.time() + until) if until > 0 else 0.0
+        with self._lock:
+            try:
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE llm_models SET cooldown_until=?, updated_at=?, updated_by='system' WHERE id=?",
+                        (until, now_iso(), model_id))
+                if until:
+                    _log(f"llm_models：{model_id} 限流熔断 {int(until - time.time())}s（{reason[:60]}）")
+                return True
+            except sqlite3.Error as e:
+                _log(f"llm_cooldown 失败：{e}")
+                return False
+
     def llm_set_status(self, model_id, status, by=""):
         """手动改开关状态：enabled / disabled / exhausted（CTO 或系统）。"""
         if status not in ("enabled", "disabled", "exhausted"):
@@ -1617,6 +1653,7 @@ class Store:
         ("totalTokens", "total_tokens"), ("priority", "priority"),
         ("contextLength", "context_length"),
         ("maxOutputTokens", "max_output_tokens"),
+        ("maxConcurrency", "max_concurrency"), ("queueWaitMs", "queue_wait_ms"),
     )
 
     def llm_update(self, model_id, fields, by=""):
