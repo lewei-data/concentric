@@ -929,6 +929,7 @@ export function MaterialsPage() {
           onClose={() => setPreview(null)}
           className="mat-pop mat-pop-media"
           ariaLabel={preview.name}
+          anchorLabel={preview.name}
         >
           <div className="mat-pop-head">
             <strong title={preview.name}>{preview.name}</strong>
@@ -976,6 +977,7 @@ export function MaterialsPage() {
           onClose={() => setNotice(null)}
           className="mat-pop mat-pop-note"
           ariaLabel={notice.name}
+          anchorLabel={notice.name}
         >
           <div className="mat-pop-head">
             <strong title={notice.name}>{notice.name}</strong>

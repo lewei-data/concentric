@@ -871,16 +871,24 @@ _LANES = {name: threading.BoundedSemaphore(max(1, n)) for name, n in LANE_LIMITS
 _CANCEL = set()
 _MANAGERS = {}
 _MANAGERS_LOCK = threading.Lock()
+# 本进程正在被线程跟踪的作业：看门狗只对「不在集合里的 running」动手，避免重复挂轮询
+_ACTIVE_JOBS = set()
+_ACTIVE_LOCK = threading.Lock()
+WATCHDOG_SEC = float(os.environ.get("OPC_MEDIA_WATCHDOG_SEC", "120"))
 
 
 def manager(path):
     path = os.path.abspath(path)
     with _MANAGERS_LOCK:
+        fresh = path not in _MANAGERS
         mgr = _MANAGERS.get(path)
         if mgr is None:
             mgr = Manager(path)
             _MANAGERS[path] = mgr
-        return mgr
+    if fresh:
+        # 进程重启后线程池里没有旧作业的轮询线程了：立刻对账一次
+        _POOL.submit(_recover_orphans, mgr)
+    return mgr
 
 
 class Canceled(Exception):
@@ -902,6 +910,16 @@ def _progress(mgr, job_id, pct, last):
 
 
 def _run_job(mgr, job_id):
+    with _ACTIVE_LOCK:
+        _ACTIVE_JOBS.add(job_id)
+    try:
+        _run_job_inner(mgr, job_id)
+    finally:
+        with _ACTIVE_LOCK:
+            _ACTIVE_JOBS.discard(job_id)
+
+
+def _run_job_inner(mgr, job_id):
     row = mgr.get(job_id)
     if not row or row.get("status") != "queued":
         return
@@ -953,6 +971,234 @@ def _run_job(mgr, job_id):
                  error=f"{type(e).__name__}: {e}")
         _CANCEL.discard(job_id)
         mgr._emit(job_id)
+
+
+# ---- 重启恢复 / 看门狗：进程重启后线程池蒸发，但远端（media-gen / ComfyUI）仍在跑 ----
+_MEDIAGEN_CHANNELS = ("sd15", "wan21", "minimax_h3")
+_COMFY_CHANNELS = ("comfyui", "comfyui_video")
+
+
+def _remote_kind(channel):
+    return "mediagen" if channel in _MEDIAGEN_CHANNELS else (
+        "comfy" if channel in _COMFY_CHANNELS else "")
+
+
+def _recover_one(mgr, row):
+    """对一条孤儿作业：回查远端真实状态，成功则取回，失败则落错；仍在跑则重挂轮询。
+
+    不重新提交远端作业（会重复生成）：只拿 row 里已保存的 remote_id 回查。
+    """
+    jid = row["id"]
+    rid = str(row.get("remote_id") or "").strip()
+    kind = _remote_kind(row.get("channel") or "")
+    if row.get("status") == "queued":
+        # 还没开始提交（重启时排在队列里）：重新走正常提交流程，幂等安全
+        _log(f"恢复重投 queued 作业 {jid}")
+        _POOL.submit(_run_job, mgr, jid)
+        return
+    if not rid or not kind:
+        # running 但无作业号：提交阶段就重启了，无法回查，明确失败让老板重试，
+        # 绝不重新提交（远端可能已经排了队，重提会变成两次生成）
+        mgr._set(jid, status="failed", finished_at=now_iso(), error="服务重启，远端作业号丢失，请重新提交")
+        mgr._emit(jid)
+        return
+    with _ACTIVE_LOCK:
+        if jid in _ACTIVE_JOBS:
+            return
+        _ACTIVE_JOBS.add(jid)
+    try:
+        if kind == "mediagen":
+            _recover_mediagen(mgr, row, rid)
+        else:
+            _recover_comfy(mgr, row, rid)
+    except Exception as e:  # noqa: BLE001 - 对账失败只记日志，作业保持 running 等下轮
+        _log(f"恢复对账 {jid} 异常：{type(e).__name__}: {e}")
+    finally:
+        with _ACTIVE_LOCK:
+            _ACTIVE_JOBS.discard(jid)
+
+
+def _recover_mediagen(mgr, row, rid):
+    jid = row["id"]
+    v = _http_json(f"{MEDIAGEN}/v1/jobs/{rid}", timeout=15)
+    st = str(v.get("status") or "")
+    if st == "succeeded":
+        dur = round(params_sec(v), 2) if row.get("kind") == "video" else 0
+        path = v.get("output_path") or ""
+        if not (path and os.path.isfile(path)):
+            url = v.get("output_url") or ""
+            if not url:
+                raise RuntimeError("media-gen 作业成功但没有产物路径")
+            path = os.path.join(BASE_DIR, ".cache", "media",
+                                f"{jid}{os.path.splitext(url)[1] or '.bin'}")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(_http(MEDIAGEN + url, timeout=120))
+        dest, url = _deliver(mgr, row, {"path": path})
+        mgr._set(jid, status="done", progress=100, output_path=dest, output_url=url,
+                 duration_sec=dur or row.get("duration_sec") or 0,
+                 finished_at=now_iso(), error="", note=(row.get("note") or "") + " · 重启后自动取回")
+        mgr._emit(jid)
+        _log(f"恢复取回成功 {jid} → {dest}")
+    elif st in ("failed", "interrupted"):
+        mgr._set(jid, status="failed", finished_at=now_iso(),
+                 error=v.get("error") or f"远端作业{st}")
+        mgr._emit(jid)
+    elif st in ("running", "queued"):
+        _reattach(mgr, jid)
+
+
+def _recover_comfy(mgr, row, rid):
+    jid = row["id"]
+    import asset_fill
+    is_video = row.get("channel") == "comfyui_video"
+    url = asset_fill._comfy_video_url() if is_video else asset_fill._comfy_image_url()
+    hist = _http_json(f"{url}/history/{rid}", timeout=20)
+    entry = hist.get(rid) or {}
+    if entry.get("status", {}).get("status_str") == "error":
+        mgr._set(jid, status="failed", finished_at=now_iso(), error="ComfyUI 作业执行失败（重启对账）")
+        mgr._emit(jid)
+        return
+    node = "9" if is_video else "7"
+    outs = (entry.get("outputs") or {}).get(node) or {}
+    files = outs.get("images") or outs.get("gifs") or []
+    if not files:
+        _reattach(mgr, jid)  # 远端还在跑，重新挂轮询
+        return
+    f = files[0]
+    q = urllib.parse.urlencode({"filename": f["filename"], "subfolder": f.get("subfolder", ""),
+                                "type": f.get("type", "output")})
+    blob = _http(f"{url}/view?{q}", timeout=300)
+    src = os.path.join(BASE_DIR, ".cache", "media", f"{jid}.webm" if is_video else f"{jid}.png")
+    os.makedirs(os.path.dirname(src), exist_ok=True)
+    with open(src, "wb") as fp:
+        fp.write(blob)
+    result = {"path": _to_mp4(src) if is_video else src, "remote_id": rid}
+    if is_video:
+        result["duration"] = row.get("duration_sec") or 0
+    dest, out_url = _deliver(mgr, row, result)
+    mgr._set(jid, status="done", progress=100, output_path=dest, output_url=out_url,
+             duration_sec=result.get("duration") or 0, finished_at=now_iso(), error="",
+             note=(row.get("note") or "") + " · 重启后自动取回")
+    mgr._emit(jid)
+    _log(f"恢复取回成功 {jid} → {dest}")
+
+
+def _reattach(mgr, jid):
+    """远端仍在跑：重挂一条「只轮询、不重新提交」的作业线程。"""
+    jid = str(jid)
+    with _ACTIVE_LOCK:
+        if jid in _ACTIVE_JOBS:
+            return
+        _ACTIVE_JOBS.add(jid)
+
+    def done():
+        with _ACTIVE_LOCK:
+            _ACTIVE_JOBS.discard(jid)
+
+    _POOL.submit(_reattach_inner, mgr, jid, done)
+
+
+def _reattach_inner(mgr, jid, done):
+    try:
+        row = mgr.get(jid)
+        if not row or row.get("status") not in ("running", "queued"):
+            return
+        params = json.loads(row.get("params") or "{}")
+        last = [int(row.get("progress") or 0)]
+
+        def on_progress(pct):
+            last[0] = _progress(mgr, jid, pct, last[0])
+
+        if row.get("channel") == "wan21":
+            result = _poll_mediagen(mgr, row, {"id": row["remote_id"]}, on_progress)
+        elif row.get("channel") in _COMFY_CHANNELS:
+            # ComfyUI 重挂：用历史记录等待，不重新 POST /prompt
+            result = _wait_comfy(mgr, row, on_progress)
+        else:
+            raise RuntimeError(f"渠道 {row.get('channel')} 不支持重挂轮询")
+        dest, url = _deliver(mgr, row, result)
+        mgr._set(jid, status="done", progress=100, output_path=dest, output_url=url,
+                 duration_sec=result.get("duration") or row.get("duration_sec") or 0,
+                 finished_at=now_iso(), error="", note=(row.get("note") or "") + " · 重挂后取回")
+        _CANCEL.discard(jid)
+        mgr._emit(jid)
+        _log(f"重挂取回成功 {jid} → {dest}")
+    except Exception as e:  # noqa: BLE001
+        mgr._set(jid, status="failed", finished_at=now_iso(),
+                 error=f"重挂轮询失败：{type(e).__name__}: {e}")
+        _CANCEL.discard(jid)
+        mgr._emit(jid)
+    finally:
+        done()
+
+
+def _wait_comfy(mgr, row, on_progress):
+    """只轮询 /history/{pid} 等产物，不重新提交；供重启重挂使用。"""
+    import asset_fill
+    jid = row["id"]
+    is_video = row.get("channel") == "comfyui_video"
+    url = asset_fill._comfy_video_url() if is_video else asset_fill._comfy_image_url()
+    node = "9" if is_video else "7"
+    t0 = time.time()
+    deadline = t0 + float(os.environ.get("OPC_COMFY_VIDEO_TIMEOUT" if is_video
+                                         else "OPC_COMFY_TIMEOUT", "5400"))
+    while time.time() < deadline:
+        _canceling(jid)
+        entry = (_http_json(f"{url}/history/{row['remote_id']}", timeout=20)
+                 .get(row["remote_id"]) or {})
+        if entry.get("status", {}).get("status_str") == "error":
+            raise RuntimeError("ComfyUI 作业执行失败（重挂轮询）")
+        outs = (entry.get("outputs") or {}).get(node) or {}
+        files = outs.get("images") or outs.get("gifs") or []
+        if files:
+            f = files[0]
+            q = urllib.parse.urlencode({"filename": f["filename"], "subfolder": f.get("subfolder", ""),
+                                        "type": f.get("type", "output")})
+            blob = _http(f"{url}/view?{q}", timeout=300)
+            src = os.path.join(BASE_DIR, ".cache", "media",
+                               f"{jid}.webm" if is_video else f"{jid}.png")
+            os.makedirs(os.path.dirname(src), exist_ok=True)
+            with open(src, "wb") as fp:
+                fp.write(blob)
+            out = {"path": _to_mp4(src) if is_video else src, "remote_id": row["remote_id"]}
+            if is_video:
+                out["duration"] = row.get("duration_sec") or 0
+            return out
+        on_progress(10 + int(min(80, (time.time() - t0) / 180.0 * 80)))
+        time.sleep(3)
+    raise TimeoutError("重挂轮询超时（ComfyUI）")
+
+
+def _recover_orphans(mgr):
+    """扫描所有 running/queued 且本进程无人跟踪的作业，逐个回查远端。"""
+    try:
+        conn = mgr._conn()
+        try:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT * FROM jobs WHERE status IN ('running','queued') ORDER BY created_at ASC")]
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        _log(f"恢复扫描失败：{e}")
+        return
+    stale = [r for r in rows if not str(r.get("started_at") or "").strip()]
+    for row in rows:
+        _recover_one(mgr, row)
+    if stale:
+        _log(f"恢复扫描：{len(rows)} 条在跑，其中 {len(stale)} 条无启动时间")
+
+
+def _watchdog_loop():
+    while True:
+        time.sleep(max(30.0, WATCHDOG_SEC))
+        try:
+            with _MANAGERS_LOCK:
+                managers = list(_MANAGERS.values())
+            for mgr in managers:
+                _recover_orphans(mgr)
+        except Exception as e:  # noqa: BLE001 - 看门狗自己不能崩
+            _log(f"看门狗异常：{type(e).__name__}: {e}")
 
 
 # ---- 渠道适配器：返回 {"path": 本地成品路径, "duration": 秒, "remote_id": ...}
@@ -1076,6 +1322,7 @@ def _comfy_image(mgr, row, params, on_progress):
     pid = resp.get("prompt_id")
     if not pid:
         raise RuntimeError(f"ComfyUI 拒绝作业：{resp}")
+    mgr._set(row["id"], remote_id=pid)
     on_progress(15)
     t0 = time.time()
     deadline = t0 + float(os.environ.get("OPC_COMFY_TIMEOUT", "900"))
@@ -1167,6 +1414,7 @@ def _comfy_video(mgr, row, params, on_progress):
     pid = resp.get("prompt_id")
     if not pid:
         raise RuntimeError(f"ComfyUI 拒绝作业：{resp.get('node_errors') or resp}")
+    mgr._set(row["id"], remote_id=pid)
     t0 = time.time()
     deadline = t0 + float(os.environ.get("OPC_COMFY_VIDEO_TIMEOUT", "5400"))
     # ComfyUI 不给 HTTP 进度，按「帧数×步数」估个耗时给出粗粒度进度
@@ -1211,7 +1459,7 @@ def _mediagen_image(mgr, row, params, on_progress):
             "steps": int(params.get("steps") or 20), "cfg": float(params.get("cfg") or 6.0),
             "seed": _seed_of(params), "backend": "sd15", "wait": False}
     ack = _http_json(MEDIAGEN + "/v1/image/jobs", timeout=20, data=body)
-    return _poll_mediagen(row, ack, on_progress)
+    return _poll_mediagen(mgr, row, ack, on_progress)
 
 
 def _mediagen_video(mgr, row, params, on_progress):
@@ -1222,15 +1470,18 @@ def _mediagen_video(mgr, row, params, on_progress):
             "fps": int(params.get("fps") or 16), "seed": _seed_of(params),
             "backend": row["channel"], "wait": False}
     ack = _http_json(MEDIAGEN + "/v1/video/jobs", timeout=20, data=body)
-    return _poll_mediagen(row, ack, on_progress)
+    return _poll_mediagen(mgr, row, ack, on_progress)
 
 
-def _poll_mediagen(row, ack, on_progress):
+def _poll_mediagen(mgr, row, ack, on_progress):
     jid = ack.get("id") or ack.get("job_id")
     if not jid:
         raise RuntimeError(f"media-gen 拒绝作业：{ack}")
+    # 立刻落远端作业号：进程重启后靠它回查 media-gen 取回成品，不能再等成功时才写
+    if mgr is not None:
+        mgr._set(row["id"], remote_id=jid)
     on_progress(10)
-    deadline = time.time() + float(os.environ.get("OPC_MEDIAGEN_TIMEOUT", "5400"))
+    deadline = time.time() + float(os.environ.get("OPC_MEDIAGEN_TIMEOUT", "14400"))
     while time.time() < deadline:
         _canceling(row["id"])
         v = _http_json(f"{MEDIAGEN}/v1/jobs/{jid}", timeout=15)
@@ -1897,3 +2148,8 @@ def summary(jobs):
             rec[st] += 1
         rec["progress"] = max(rec["progress"], int(j.get("progress") or 0))
     return out
+
+
+# 模块加载即启动看门狗（daemon，进程退出自动回收）：
+# 服务一启动就兜底扫描，不必等第一次访问媒体接口才懒加载。
+threading.Thread(target=_watchdog_loop, name="media-watchdog", daemon=True).start()

@@ -158,7 +158,7 @@ function matDirOf(url: string): string {
   return v ? v[1].replace(/\/$/, "") : "";
 }
 
-function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
+function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job, el: HTMLElement | null) => void }) {
   const live = job.status === "queued" || job.status === "running";
   const ready = job.status === "done" && !!job.outputUrl;
   const dir = ready ? matDirOf(job.outputUrl) : "";
@@ -168,7 +168,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
         <button
           type="button"
           className="tb-job-preview tb-job-preview--btn"
-          onClick={() => onOpen(job)}
+          onClick={(e) => onOpen(job, e.currentTarget)}
           title="点开看大图"
         >
           <img src={siteUrl(job.outputUrl)} alt={job.prompt.slice(0, 40)} loading="lazy" />
@@ -179,7 +179,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
             <video src={siteUrl(job.outputUrl)} preload="metadata" muted />
           )}
           {ready && job.kind === "audio" && (
-            <button type="button" className="tb-job-play" onClick={() => onOpen(job)} title="播放">
+            <button type="button" className="tb-job-play" onClick={(e) => onOpen(job, e.currentTarget)} title="播放">
               ♪
             </button>
           )}
@@ -204,7 +204,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: (j: Job) => void }) {
         )}
         {ready && (
           <div className="tb-job-links">
-            <button type="button" className="tb-link" onClick={() => onOpen(job)}>
+            <button type="button" className="tb-link" onClick={(e) => onOpen(job, e.currentTarget)}>
               打开查看
             </button>
             <a className="tb-link" href={siteUrl(job.outputUrl)} target="_blank" rel="noreferrer">
@@ -249,6 +249,11 @@ export function ToolboxPage() {
   const [toast, setToast] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [zoom, setZoom] = useState<Job | null>(null);
+  const [zoomAnchor, setZoomAnchor] = useState<HTMLElement | null>(null);
+  const openZoom = (j: Job, el: HTMLElement | null) => {
+    setZoom(j);
+    setZoomAnchor(el);
+  };
 
   // 音色克隆（口播语音面板）
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
@@ -1039,7 +1044,7 @@ export function ToolboxPage() {
               <p className="muted">还没有手工任务。</p>
             ) : (
               <ul className="tb-jobs">
-                {jobs.map((j) => <JobRow key={j.id} job={j} onOpen={setZoom} />)}
+                {jobs.map((j) => <JobRow key={j.id} job={j} onOpen={openZoom} />)}
               </ul>
             )}
           </section>
@@ -1052,7 +1057,8 @@ export function ToolboxPage() {
           kind: zoom.kind,
           title: `${zoom.channel} · ${zoom.prompt.slice(0, 50) || zoom.kind}`,
         } : null}
-        onClose={() => setZoom(null)}
+        anchor={zoomAnchor}
+        onClose={() => { setZoom(null); setZoomAnchor(null); }}
       />
     </div>
   );

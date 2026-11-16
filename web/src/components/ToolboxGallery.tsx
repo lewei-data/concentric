@@ -32,6 +32,8 @@ export function ToolboxGallery() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [view, setView] = useState<ViewerItem | null>(null);
+  // 被点的那张缩略图：弹窗贴着它弹，可拖动，关闭时清掉
+  const [viewAnchor, setViewAnchor] = useState<HTMLElement | null>(null);
   // 缩略图 404 说明文件已被删掉：立刻按“成品已删除”显示，不必等后端对账
   const [broken, setBroken] = useState<Record<string, true>>({});
   // 和素材浏览共用同一个偏好键：在哪儿切过，回来还是那个看法
@@ -106,10 +108,11 @@ export function ToolboxGallery() {
     );
   }
 
-  const open = (j: ToolboxJob) => {
+  const open = (j: ToolboxJob, el?: HTMLElement | null) => {
     if (j.status !== "done" || !j.outputUrl || broken[j.id]) return;
     // 传裸路径：MediaViewer 自己补服务根前缀，这里再拼一次会变成 /workbench/workbench/...
     setView({ url: j.outputUrl, kind: j.kind, title: j.prompt || j.note || "" });
+    setViewAnchor(el ?? null);
   };
 
   return (
@@ -156,12 +159,12 @@ export function ToolboxGallery() {
                   title={done ? "点开查看"
                     : broken[j.id] ? "成品文件已不在服务器上（可能已被删除）"
                       : j.error || (j.status === "done" ? "成品已删除" : j.status)}
-                  onClick={() => open(j)}
+                  onClick={(e) => open(j, e.currentTarget)}
                   onKeyDown={(e) => {
                     if (!done) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      open(j);
+                      open(j, e.currentTarget);
                     }
                   }}
                 >
@@ -210,7 +213,7 @@ export function ToolboxGallery() {
                       type="button"
                       className="mat-entry"
                       disabled={!done}
-                      onClick={() => open(j)}
+                      onClick={(e) => open(j, e.currentTarget)}
                       title={done ? "点开查看"
                         : broken[j.id] ? "成品文件已不在服务器上（可能已被删除）"
                       : j.error || (j.status === "done" ? "成品已删除" : j.status)}
@@ -229,7 +232,11 @@ export function ToolboxGallery() {
           )}
         </section>
       ))}
-      <MediaViewer item={view} onClose={() => setView(null)} />
+      <MediaViewer
+        item={view}
+        anchor={viewAnchor}
+        onClose={() => { setView(null); setViewAnchor(null); }}
+      />
     </>
   );
 }

@@ -4553,35 +4553,73 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
 .btn-produce:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 锚定面板：贴在触发元素旁边弹的小窗，位置由 AnchoredPanel 计算 */
+/* 层级高于桌面小秘书及其出场特效（3000）：预览弹出时不被浮窗盖住 */
 .pop-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 3100;
   background: rgba(15, 23, 42, 0.08);
 }
 .pop-panel {
   position: fixed;
-  z-index: 81;
-  padding: 12px 14px 14px;
+  z-index: 3101;
+  box-sizing: border-box;
+  padding: 8px 12px 12px;
+  overflow: auto;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
   animation: pop-in 0.14s ease-out;
 }
+.pop-panel.is-dragging {
+  box-shadow: 0 22px 56px rgba(15, 23, 42, 0.34);
+  animation: none;
+}
 @keyframes pop-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
-/* 手机上没有“贴着按钮”的余地，退回居中，别挤在角落 */
+/* 顶部拖动条：按住可把面板拖到任意位置；松手后仍随锚点滚动，可一键复位 */
+.pop-drag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin-bottom: 8px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.pop-panel.is-dragging .pop-drag { cursor: grabbing; }
+.pop-drag-grip { font-size: 15px; line-height: 1; color: #94a3b8; }
+.pop-drag-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop-drag-reset {
+  flex: none;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #475569;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+}
+.pop-drag-reset:hover { background: #eef2f7; }
+/* 窄屏仍走同一套择位+夹取：面板完整落在视口内，不再强制居中 */
 @media (max-width: 560px) {
-  .pop-panel {
-    top: 50% !important;
-    left: 50% !important;
-    max-width: calc(100vw - 24px);
-    transform: translate(-50%, -50%);
-    animation: none;
-  }
+  .pop-panel { animation: none; }
+  .pop-drag-label { max-width: 45vw; }
 }
 
 /* 位置和外观由通用锚定面板（.pop-panel）提供，这里只管内容区的尺寸 */

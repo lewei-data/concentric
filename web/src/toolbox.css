@@ -750,24 +750,17 @@
   text-decoration: underline;
 }
 
-/* ── 全屏查看层 ── */
-.tb-zoom {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(15, 23, 42, .84);
+/* ── 成品查看层：贴着被点媒体弹、可拖动，尺寸始终收在视口内 ── */
+.tb-zoom-panel {
+  width: min(860px, calc(100vw - 24px));
+  padding: 8px 10px 10px;
 }
 
 .tb-zoom-inner {
   display: flex;
   flex-direction: column;
-  max-width: min(1200px, 96vw);
-  max-height: 92vh;
-  border-radius: 12px;
+  max-height: calc(100vh - 100px);
+  border-radius: 10px;
   overflow: hidden;
   background: #0b1220;
   box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
@@ -814,7 +807,7 @@
 .tb-zoom-video {
   display: block;
   max-width: 100%;
-  max-height: calc(92vh - 46px);
+  max-height: calc(100vh - 156px);
   object-fit: contain;
   background: #000;
 }

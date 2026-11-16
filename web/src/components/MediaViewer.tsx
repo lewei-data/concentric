@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { siteUrl } from "../lib/siteUrl";
+import { AnchoredPanel } from "./AnchoredPanel";
 
 export type ViewerItem = {
   /** 站内裸路径（如 /private/...），服务根前缀由本组件补，调用方别自己拼 */
@@ -8,28 +8,29 @@ export type ViewerItem = {
   title?: string;
 };
 
-/** 成品查看层：图片按原比例、视频/语音带播放器。Esc 或点遮罩关闭。 */
-export function MediaViewer({ item, onClose }: { item: ViewerItem | null; onClose: () => void }) {
-  useEffect(() => {
-    if (!item) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [item, onClose]);
+type Props = {
+  item: ViewerItem | null;
+  /** 被点的缩略图/按钮：弹窗贴着它出现并可拖动；不传则居中 */
+  anchor?: HTMLElement | null;
+  onClose: () => void;
+};
 
+/** 成品查看层：贴着被点媒体弹出、可拖动、始终留在视口内。Esc 或点遮罩关闭。 */
+export function MediaViewer({ item, anchor, onClose }: Props) {
   if (!item) return null;
 
   // 公网挂在 /workbench 下，裸 /private/... 会落到主站被拦成 401，这里统一补前缀
   const url = siteUrl(item.url);
 
   return (
-    <div className="tb-zoom" role="dialog" aria-modal="true" aria-label="查看成品" onClick={onClose}>
-      <div className="tb-zoom-inner" onClick={(e) => e.stopPropagation()}>
+    <AnchoredPanel
+      anchor={anchor ?? null}
+      onClose={onClose}
+      className="tb-zoom-panel"
+      ariaLabel="查看成品"
+      anchorLabel={item.title || item.kind}
+    >
+      <div className="tb-zoom-inner">
         <div className="tb-zoom-bar">
           <span className="tb-zoom-title">{item.title || item.kind}</span>
           <a className="tb-link" href={url} target="_blank" rel="noreferrer">新窗口</a>
@@ -48,6 +49,6 @@ export function MediaViewer({ item, onClose }: { item: ViewerItem | null; onClos
           </div>
         )}
       </div>
-    </div>
+    </AnchoredPanel>
   );
 }

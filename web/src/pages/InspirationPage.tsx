@@ -346,6 +346,7 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
           onClose={closeProduce}
           className="idea-dialog"
           ariaLabel="开始制作"
+          anchorLabel="开始制作"
         >
             {produceOk ? (
               <>
