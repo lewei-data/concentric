@@ -1447,6 +1447,10 @@ class Handler(BaseHTTPRequestHandler):
         """解析浏览根，返回 (root, err)。private 的根由会话手机号决定，不接受参数指定别人的目录。"""
         if root_name == "published":
             return os.path.realpath(MATERIALS_ROOT), ""
+        if root_name == "factory":
+            # 「工厂专区」= OpenMontage 制作工作区（过程性素材：图/视频/音频/分镜），只读浏览
+            return os.path.realpath(os.environ.get(
+                "OPC_OM_ROOT", "/opt/sefs/OpenMontage/projects")), ""
         if root_name == "downloads":
             # 其它渠道落到 conring/downloads 的文件，经 public/downloads 软链统一浏览
             return os.path.realpath(os.path.join(WEB_PUBLIC, "downloads")), ""
@@ -1769,7 +1773,24 @@ class Handler(BaseHTTPRequestHandler):
         return {"ok": True, "ideas": rows}
 
     def _material(self, rel):
-        """素材库只读发布：/materials/... → MATERIALS_ROOT/...（限定目录、无隐藏目录）。"""
+        """素材库只读发布：/materials/... → MATERIALS_ROOT/...（限定目录、无隐藏目录）。
+
+        om/ 前缀透传：/materials/om/<slug>/<rel> → OpenMontage projects/<slug>/<rel>，
+        「工厂专区」入口（素材页卡片预览用）；OM 是内部制作工作区，比静态发布严一档——要求登录。
+        """
+        if rel.startswith("om/"):
+            if not self._session_user():
+                return self._json({"error": "not found"}, 404)
+            om_root = os.path.realpath(os.environ.get(
+                "OPC_OM_ROOT", "/opt/sefs/OpenMontage/projects"))
+            full = os.path.realpath(os.path.join(om_root, rel[len("om/"):]))
+            if not full.startswith(om_root + os.sep) or not os.path.isfile(full):
+                return self._json({"error": "not found"}, 404)
+            if any(p.startswith(".") for p in os.path.relpath(full, om_root).split(os.sep)):
+                return self._json({"error": "not found"}, 404)
+            ext = os.path.splitext(full)[1].lower()
+            ctype = FILE_MIME.get(ext) or "application/octet-stream"
+            return self._serve_media(full, ctype)
         root = os.path.realpath(MATERIALS_ROOT)
         full = os.path.realpath(os.path.join(root, rel))
         if not full.startswith(root + os.sep) or not os.path.isfile(full):

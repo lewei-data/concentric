@@ -104,6 +104,41 @@
   color: #94a3b8;
 }
 
+.mat-grade {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.mat-grade-优质 {
+  color: #166534;
+  background: #dcfce7;
+}
+.mat-grade-可用 {
+  color: #1e40af;
+  background: #dbeafe;
+}
+.mat-grade-待观察 {
+  color: #92400e;
+  background: #fef3c7;
+}
+.mat-grade-淘汰候选 {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.mat-sort {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  margin-left: auto;
+  cursor: pointer;
+}
+
 .mat-open {
   font-size: 12px;
   padding: 2px 8px;

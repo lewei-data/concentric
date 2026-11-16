@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { InspirationPage } from "./InspirationPage";
 import { CollectTasks } from "./CollectTasks";
 import { ToolboxGallery } from "../components/ToolboxGallery";
@@ -16,6 +17,9 @@ type MatItem = {
   meta: string;
   /** 三才：素材默认属「地」，后端已按标注/关键词推断 */
   sancai?: string;
+  /** 五行五维评分（prototype/asset_score.py --apply 写入） */
+  score?: number;
+  grade?: string;
 };
 
 type BrowseDir = { name: string };
@@ -42,9 +46,19 @@ const TABS = [
   { key: "collect", label: "自动采集" },
   { key: "personal", label: "个人 Obsidian" },
   { key: "idea", label: "创意灵感" },
+  { key: "factory", label: "工厂专区" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
-type RootKey = "vault" | "published" | "downloads" | "private" | "collect";
+type RootKey = "vault" | "published" | "downloads" | "private" | "collect" | "factory";
+
+/** 评分档位（prototype/asset_score.py 五行五维模型），筛选条与卡片徽章共用一套色。 */
+const GRADE_DEFS = [
+  { key: "优质", color: "#16a34a" },
+  { key: "可用", color: "#2563eb" },
+  { key: "待观察", color: "#d97706" },
+  { key: "淘汰候选", color: "#dc2626" },
+] as const;
+type SortKey = "default" | "score-desc" | "score-asc";
 
 // 「共享资料」按用途分标签：素材库里绝大部分是这几类，其它一律归"其它"
 type KindKey = "all" | "video" | "audio" | "image" | "skill" | "other";
@@ -250,7 +264,7 @@ export function MaterialsPage() {
     const t = q.get("tab");
     return {
       tab: (TABS.some((x) => x.key === t) ? t : "index") as TabKey,
-      root: (["published", "downloads", "private"].includes(q.get("root") || "")
+      root: (["published", "downloads", "private", "factory"].includes(q.get("root") || "")
         ? q.get("root") : "vault") as RootKey,
       path: (q.get("path") || "").replace(/^\/+/, ""),
     };
@@ -262,6 +276,9 @@ export function MaterialsPage() {
   const [items, setItems] = useState<MatItem[]>([]);
   // 三才：与「分类」分组正交的第二维，空串=全部
   const [activeSancai, setActiveSancai] = useState("");
+  // 评分：五行五维档位筛选 + 排序（前端过滤，切换不重新拉清单）
+  const [activeGrade, setActiveGrade] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("default");
   const [updated, setUpdated] = useState("");
   const [indexErr, setIndexErr] = useState("");
 
@@ -310,10 +327,12 @@ export function MaterialsPage() {
 
   // 「个人 Obsidian」「自动采集」都是当前登录账号自己的目录，根由服务端按会话决定，
   // 前端不传手机号（也没法传），切换根按钮在这两个 tab 下不生效。
-  const effRoot: RootKey = tab === "personal" ? "private" : tab === "collect" ? "collect" : root;
+  const effRoot: RootKey =
+    tab === "personal" ? "private" : tab === "collect" ? "collect"
+    : tab === "factory" ? "factory" : root;
 
   useEffect(() => {
-    if (tab === "browse" || tab === "personal" || tab === "collect") void loadBrowse(effRoot, path);
+    if (tab === "browse" || tab === "personal" || tab === "collect" || tab === "factory") void loadBrowse(effRoot, path);
   }, [tab, effRoot, path, loadBrowse]);
 
   // 目录监听：在服务器上直接增删改文件（同步盘、scp、命令行 rm）时页面自己跟上。
@@ -429,6 +448,7 @@ export function MaterialsPage() {
     const segs = path.split("/").filter(Boolean);
     const tail = [...segs, name].map(encodeURIComponent).join("/");
     if (effRoot === "published") return siteUrl(`/materials/${tail}`);
+    if (effRoot === "factory") return siteUrl(`/materials/om/${tail}`);
     if (effRoot === "downloads") return siteUrl(`/downloads/${tail}`);
     if (effRoot === "collect") return siteUrl(`/private/${browse?.phone ?? ""}/downloads/${tail}`);
     if (effRoot === "private") return siteUrl(`/private/${browse?.phone ?? ""}/${tail}`);
@@ -520,9 +540,24 @@ export function MaterialsPage() {
   }, [path, effRoot]);
 
   // 三才：素材默认属「地」，这里按才位做单维过滤（前端过滤，切换不重新拉清单）
-  const filteredItems = useMemo(() => (activeSancai
-    ? items.filter((it) => (it.sancai || sancaiOf(it, "material")) === activeSancai)
-    : items), [items, activeSancai]);
+  // 评分：档位筛选 + 排序与三才正交叠加；未评分的排最后
+  const gradeCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const it of items) {
+      if (it.grade) m[it.grade] = (m[it.grade] || 0) + 1;
+    }
+    return m;
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    let arr = activeSancai
+      ? items.filter((it) => (it.sancai || sancaiOf(it, "material")) === activeSancai)
+      : items.slice();
+    if (activeGrade) arr = arr.filter((it) => it.grade === activeGrade);
+    if (sortBy === "score-desc") arr.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+    else if (sortBy === "score-asc") arr.sort((a, b) => (a.score ?? 1e9) - (b.score ?? 1e9));
+    return arr;
+  }, [items, activeSancai, activeGrade, sortBy]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, MatItem[]>();
@@ -570,6 +605,36 @@ export function MaterialsPage() {
             value={activeSancai}
             onChange={(next) => setActiveSancai(next)}
           />
+          <div className="sancai-row" role="group" aria-label="评分筛选与排序">
+            <span className="sancai-lead">评分</span>
+            {GRADE_DEFS.map((g) => {
+              const active = activeGrade === g.key;
+              return (
+                <button
+                  key={g.key}
+                  type="button"
+                  className={`sancai-chip${active ? " is-active" : ""}`}
+                  style={{ "--sc": g.color } as CSSProperties}
+                  aria-pressed={active}
+                  title={`五行五维评分档位 ${g.key}（再点一次取消）`}
+                  onClick={() => setActiveGrade(active ? "" : g.key)}
+                >
+                  <b>{g.key}</b>
+                  <i>{gradeCounts[g.key] ?? 0}</i>
+                </button>
+              );
+            })}
+            <select
+              className="mat-sort"
+              value={sortBy}
+              aria-label="按评分排序"
+              onChange={(e) => setSortBy(e.target.value as SortKey)}
+            >
+              <option value="default">默认排序</option>
+              <option value="score-desc">评分 高→低</option>
+              <option value="score-asc">评分 低→高</option>
+            </select>
+          </div>
           {indexErr && <div className="error-banner">{indexErr}</div>}
           {!indexErr && items.length === 0 && (
             <p className="muted">清单为空。素材实际存放在 vault 的「素材」目录，切到「共享资料」查看。</p>
@@ -586,6 +651,14 @@ export function MaterialsPage() {
                     <h4>
                       {it.title}
                       <SancaiBadge sancai={it.sancai || sancaiOf(it, "material")} />
+                      {it.grade && (
+                        <span
+                          className={`mat-grade mat-grade-${it.grade}`}
+                          title={`五行五维评分 ${it.score}：≥75优质 / 50-74可用 / 30-49待观察 / <30淘汰候选`}
+                        >
+                          {it.grade} {it.score}
+                        </span>
+                      )}
                     </h4>
                     {it.desc && <p className="mat-desc">{it.desc}</p>}
                     <div className="mat-card-foot">
@@ -610,7 +683,7 @@ export function MaterialsPage() {
         </section>
       )}
 
-      {(tab === "browse" || tab === "personal" || tab === "collect") && (
+      {(tab === "browse" || tab === "personal" || tab === "collect" || tab === "factory") && (
         <section className="mat-section">
           {tab === "personal" && (
             <p className="muted mat-private-hint">
@@ -639,6 +712,10 @@ export function MaterialsPage() {
                 </>
               ) : tab === "personal" ? (
                 <span className="mat-root active">个人 Obsidian</span>
+              ) : tab === "factory" ? (
+                <span className="mat-root active" title="OpenMontage 制作过程素材（图/视频/音频/分镜），只读浏览">
+                  工厂专区 · OpenMontage
+                </span>
               ) : (
                 <>
                   <button

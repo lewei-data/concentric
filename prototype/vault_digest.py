@@ -56,6 +56,11 @@ ASSET_SCOPE = {
 PER_DIR_FULL = 40          # 超过此数的目录改为按子目录聚合
 DIGEST_CHARS = 220
 AGGR_MEMBER_CAP = 20       # 聚合条目 members 最多列出的文件数
+OM_ROOT = os.environ.get("OPC_OM_ROOT", "/opt/sefs/OpenMontage")
+OM_PROJECT_TAGS = (        # OM 项目 → 中文项目标签（按 slug 前缀）
+    (("tian-gou", "dog-park", "gou-"), "狗大人"),
+    (("wenren-",), "文人莫克"),
+)
 
 # 屏蔽：与 server.py::_vault 同口径 + 模板/隐藏
 def blocked(rel: str) -> bool:
@@ -150,6 +155,78 @@ def _file_group(name: str) -> str:
     return base.split("-")[0][:14]
 
 
+def _om_project_tag(slug: str) -> str:
+    for prefixes, tag in OM_PROJECT_TAGS:
+        if slug.startswith(prefixes):
+            return tag
+    return ""
+
+
+def collect_om():
+    """OpenMontage 制作产物登记：每项目两条——素材产物（地）与方案资产（人）。
+
+    素材（图/视频/音频）与分镜脚本（STORYBOARD/script.json/scene_plan.json）都是
+    可复用资产：条目记产物统计、代表文件与绝对路径，agent 召回后按路径直接取用。
+    """
+    import json as _json
+    root = Path(OM_ROOT) / "projects"
+    if not root.is_dir():
+        return []
+    out = []
+    for pj in sorted(root.glob("*/project.json")):
+        slug = pj.parent.name
+        try:
+            meta = _json.loads(pj.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+        ptag = _om_project_tag(slug) or str(meta.get("title") or slug)[:10]
+        files = [p for p in pj.parent.rglob("*") if p.is_file()
+                 and "history" not in p.parts]
+        imgs = [p for p in files if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        vids = [p for p in files if p.suffix.lower() in (".mp4", ".mov", ".webm")]
+        auds = [p for p in files if p.suffix.lower() in (".wav", ".mp3", ".m4a", ".flac")]
+        plans = [p for p in files if p.name in ("STORYBOARD.md", "script.json",
+                                                "scene_plan.json", "research_brief.json",
+                                                "proposal_packet.json") or "STORYBOARD" in p.name]
+        rel = lambda p: str(p)                      # noqa: E731 OM 在 vault 外，保留绝对路径
+        mt = max((p.stat().st_mtime for p in files), default=0)
+        # ① 素材产物（地）
+        if imgs or vids or auds:
+            dist = {"图": len(imgs), "视频": len(vids), "音频": len(auds)}
+            reprs = [rel(p) for p in (imgs[:3] + vids[:2] + auds[:2])]
+            members = [rel(p) for p in (imgs[:8] + vids[:6] + auds[:6])]
+            out.append({
+                "id": "kb_vault_" + hashlib.sha1(f"om/{slug}/assets".encode()).hexdigest()[:10],
+                "title": f"OM素材·{ptag}/{slug}（图{len(imgs)} 视频{len(vids)} 音频{len(auds)}）"[:90],
+                "path": str(pj.parent) + "/",
+                "category": "analysis", "sancai": "di",
+                "summary": f"OpenMontage 项目 {slug}（{meta.get('title') or slug}）的制作产物登记，"
+                           f"可复用：{json.dumps(dist, ensure_ascii=False)}；代表文件：{'、'.join(reprs)}；"
+                           "复用方式：agent 按路径直接取用（跨项目复用图/音频时复制到新项目 assets/）",
+                "sections": [], "mtime": mt,
+                "tags": ["vault内化", "OpenMontage素材", "可复用"] + ([ptag] if ptag else []),
+                "count": len(imgs) + len(vids) + len(auds), "members": members,
+            })
+        # ② 方案资产（人）：分镜/脚本/提案——同类选题可直接复用改写
+        if plans:
+            members = [rel(p) for p in plans[:AGGR_MEMBER_CAP]]
+            out.append({
+                "id": "kb_vault_" + hashlib.sha1(f"om/{slug}/plans".encode()).hexdigest()[:10],
+                "title": f"OM方案·{ptag}/{slug}（分镜/脚本/提案 {len(plans)} 件）"[:90],
+                "path": str(pj.parent) + "/artifacts/",
+                "category": "analysis", "sancai": "ren",
+                "summary": f"OpenMontage 项目 {slug} 的创作方案资产，可复用："
+                           f"STORYBOARD 分镜、script.json 台词脚本、scene_plan 画面规格、"
+                           f"research_brief/proposal_packet 调研与提案；代表文件："
+                           f"{ '、'.join(rel(p) for p in plans[:5]) }；"
+                           "同类选题可整段复用或改写（含逐镜时长/台词/画面规格）",
+                "sections": [], "mtime": mt,
+                "tags": ["vault内化", "OM方案", "分镜脚本", "可复用"] + ([ptag] if ptag else []),
+                "count": len(plans), "members": members,
+            })
+    return out
+
+
 def collect():
     """返回 (逐篇条目列表, 聚合条目列表)。大目录按子目录/文件类型聚合。"""
     singles, aggrs = [], []
@@ -220,7 +297,7 @@ def collect():
                 "tags": ["vault内化", top.split(os.sep)[-1], "聚合索引"],
                 "count": len(rows), "members": members,
             })
-    return singles, aggrs
+    return singles, aggrs + collect_om()
 
 
 def write_entry(k, dry=False):
