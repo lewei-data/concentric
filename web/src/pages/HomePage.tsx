@@ -27,6 +27,8 @@ type WorkFacets = {
   total: number;
   byStatus: Record<string, number>;
   byProject: Record<string, number>;
+  /** 看板 KPI 的全量计数，与 ?metric= 下钻同口径（老服务可能没有，前端有回退） */
+  byMetric?: Record<string, number>;
   withFinal: number;
   withReview: number;
 };
@@ -315,15 +317,17 @@ export function HomePage() {
   // 指标统一用工厂口径（与制片工厂/作品档案一致的生命周期）：
   // 进厂=CCO 审批发流水号 → 生产中 → 质检审核通过出厂
   const metrics = useMemo(() => {
+    // 优先用后端 byMetric（全量、与下钻同一套判断）；老服务没这个字段时退回原有前端算法
+    const bm = facets?.byMetric;
     const totalWorks = facets?.total ?? items.length;
-    const doing = byStatus["生产中"] ?? 0;
-    const shipped = byStatus["已出厂"] ?? 0;
+    const doing = bm?.doing ?? byStatus["生产中"] ?? 0;
+    const shipped = bm?.shipped ?? byStatus["已出厂"] ?? 0;
     const completed = byStatus["已完工"] ?? 0;
-    const interrupted = byStatus["已中断"] ?? 0;
-    const doneToday = items.filter(
+    const interrupted = bm?.interrupted ?? byStatus["已中断"] ?? 0;
+    const doneToday = bm?.today ?? items.filter(
       (w) => (w.shippedAt || "").slice(0, 10) === today,
     ).length;
-    const failing = items.filter(
+    const failing = bm?.failing ?? items.filter(
       (w) => w.statusKey === "interrupted"
         || w.reviewPass === false
         || (w.statusKey === "doing" && w.completeness < 50 && daysSince(w.updatedAt) >= 7),
@@ -401,11 +405,12 @@ export function HomePage() {
   };
 
   // 创作漏斗与工厂生命周期对齐：创意池 → CCO 审批进厂 → 生产中 → 已出厂
+  // 每一段也可点，落到对应的素材/作品清单，避免只剩一个孤零零的数字
   const funnel = useMemo(() => [
-    { key: "idea", label: "创意池", value: ins?.counts?.total ?? 0, hint: "热点 / 视频 / 蒸馏" },
-    { key: "entered", label: "审批进厂", value: facets?.total ?? 0, hint: "CCO 发流水号" },
-    { key: "doing", label: "生产中", value: metrics.doing, hint: "在制流水线" },
-    { key: "shipped", label: "已出厂", value: metrics.shipped, hint: "质检通过" },
+    { key: "idea", label: "创意池", value: ins?.counts?.total ?? 0, hint: "热点 / 视频 / 蒸馏", to: "/materials?tab=idea" },
+    { key: "entered", label: "审批进厂", value: facets?.total ?? 0, hint: "CCO 发流水号", to: "/works" },
+    { key: "doing", label: "生产中", value: metrics.doing, hint: "在制流水线", to: "/works?metric=doing" },
+    { key: "shipped", label: "已出厂", value: metrics.shipped, hint: "质检通过", to: "/works?metric=shipped&view=grid" },
   ], [ins, facets, metrics.doing, metrics.shipped]);
 
   const people = useMemo(() => {
@@ -481,13 +486,15 @@ export function HomePage() {
     }
   };
 
+  // 每个数字都带下钻地址：口径由后端 metric 复用同一套判断，点进去看到的清单就是这里统计出的那批作品。
+  // 成片类（总数/当天出厂/已出厂）默认走缩略图，其余默认列表，用户仍可在作品档案页自由切换。
   const kpis = [
-    { key: "total", label: "作品总数", value: metrics.totalWorks, hint: `${facets?.withFinal ?? 0} 件已成片`, tone: "" },
-    { key: "done", label: "当天出厂", value: metrics.doneToday, hint: "今天质检通过", tone: "ok" },
-    { key: "doing", label: "生产中", value: metrics.doing, hint: "在制流水线", tone: "" },
-    { key: "shipped", label: "已出厂", value: metrics.shipped, hint: "质检通过", tone: "ok" },
-    { key: "interrupted", label: "已中断", value: metrics.interrupted, hint: "待续跑/处理", tone: "warn" },
-    { key: "failing", label: "受阻 / 滞销", value: metrics.failing, hint: "中断/未过审/停滞", tone: "danger" },
+    { key: "total", label: "作品总数", value: metrics.totalWorks, hint: `${facets?.withFinal ?? 0} 件已成片`, tone: "", to: "/works?view=grid" },
+    { key: "done", label: "当天出厂", value: metrics.doneToday, hint: "今天质检通过", tone: "ok", to: "/works?metric=today&view=grid" },
+    { key: "doing", label: "生产中", value: metrics.doing, hint: "在制流水线", tone: "", to: "/works?metric=doing" },
+    { key: "shipped", label: "已出厂", value: metrics.shipped, hint: "质检通过", tone: "ok", to: "/works?metric=shipped&view=grid" },
+    { key: "interrupted", label: "已中断", value: metrics.interrupted, hint: "待续跑/处理", tone: "warn", to: "/works?metric=interrupted" },
+    { key: "failing", label: "受阻 / 滞销", value: metrics.failing, hint: "中断/未过审/停滞", tone: "danger", to: "/works?metric=failing" },
   ];
 
   return (
@@ -536,14 +543,19 @@ export function HomePage() {
         </section>
       )}
 
-      {/* 1. 运营指标 */}
+      {/* 1. 运营指标：每个数字都是入口，点开看对应作品清单（列表/缩略图可切换） */}
       <div className="ceo-kpis">
         {kpis.map((k) => (
-          <div key={k.key} className={`ceo-kpi${k.tone ? ` ceo-kpi-${k.tone}` : ""}`}>
+          <Link
+            key={k.key}
+            to={k.to}
+            className={`ceo-kpi ceo-kpi-link${k.tone ? ` ceo-kpi-${k.tone}` : ""}`}
+            title={`查看「${k.label}」的 ${k.value} 件作品明细`}
+          >
             <span className="ceo-kpi-label">{k.label}</span>
             <b className="ceo-kpi-value">{k.value}</b>
             <span className="ceo-kpi-hint">{k.hint}</span>
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -622,12 +634,12 @@ export function HomePage() {
         </div>
         <div className="ceo-funnel">
           {funnel.map((s, i) => (
-            <div key={s.key} className="ceo-stage">
+            <Link key={s.key} to={s.to} className="ceo-stage" title={`查看「${s.label}」明细`}>
               <span className="ceo-stage-label">{s.label}</span>
               <b className="ceo-stage-value">{s.value}</b>
               {s.hint && <span className="ceo-stage-hint">{s.hint}</span>}
               {i < funnel.length - 1 && <span className="ceo-stage-arrow" aria-hidden="true">›</span>}
-            </div>
+            </Link>
           ))}
         </div>
 

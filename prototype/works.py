@@ -423,14 +423,55 @@ def _facets(items):
         by_project[it["projectName"]] = by_project.get(it["projectName"], 0) + 1
         key = it.get("sancai") or SC.work_stage_of(it.get("stage"))
         by_sancai[key] = by_sancai.get(key, 0) + 1
+    # 看板 KPI 的统一计数口径：与 ?metric= 下钻共用 _match_metric，
+    # 保证「点数字看到的条数」永远等于「数字本身」（不受 100 条分页截断影响）
+    by_metric = {
+        key: sum(1 for it in items if _match_metric(key, it))
+        for key in ("total", "today", "doing", "shipped", "interrupted", "failing")
+    }
     return {
         "total": len(items),
         "byStatus": by_status,
         "byProject": by_project,
         "bySancai": by_sancai,
+        "byMetric": by_metric,
         "withFinal": sum(1 for it in items if it["hasFinal"]),
         "withReview": sum(1 for it in items if it["reviewNote"]),
     }
+
+
+def _days_since(value):
+    """与前端 daysSince 同口径：按 +08:00 本地时区算自然日差。"""
+    if not value:
+        return 0
+    try:
+        dt = datetime.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return 0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=TZ)
+    return (datetime.now(TZ) - dt).days
+
+
+def _match_metric(metric, it):
+    """看板指标下钻口径：与总览页 KPI 完全同一套判断，点数字看到的清单就是那个数。"""
+    if metric == "today":
+        return str(it.get("shippedAt") or "")[:10] == datetime.now(TZ).date().isoformat()
+    if metric == "doing":
+        return it.get("status") == "生产中"
+    if metric == "shipped":
+        return it.get("status") == "已出厂"
+    if metric == "interrupted":
+        return it.get("status") == "已中断"
+    if metric == "failing":
+        return bool(
+            it.get("statusKey") == "interrupted"
+            or it.get("reviewPass") is False
+            or (it.get("statusKey") == "doing"
+                and (it.get("completeness") or 0) < 50
+                and _days_since(it.get("updatedAt")) >= 7)
+        )
+    return True
 
 
 def page(query_params, approvals=None, factory=None, step_status=None, db=None):
@@ -453,6 +494,7 @@ def page(query_params, approvals=None, factory=None, step_status=None, db=None):
     status = one("status")
     sancai = one("sancai").lower()
     sort = one("sort", "updated")
+    metric = one("metric")
 
     items = scan(approvals, factory, step_status)
     # 三才：作品默认属「人」；有 stage 的按阶段映射，显式标注优先
@@ -474,6 +516,8 @@ def page(query_params, approvals=None, factory=None, step_status=None, db=None):
         items = [it for it in items if it.get("status") == status]
     if sancai:
         items = [it for it in items if it.get("sancai") == sancai]
+    if metric:
+        items = [it for it in items if _match_metric(metric, it)]
     if sort == "name":
         items.sort(key=lambda it: str(it.get("title") or ""))
     elif sort == "created":

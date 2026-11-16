@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useList, useOne } from "@refinedev/core";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Work } from "../types";
 import { SancaiBadge, SancaiChips } from "../components/SancaiBadge";
 import { workStageSancai } from "../sancai";
+import { siteUrl } from "../lib/siteUrl";
 
 // 档案正文是 Markdown，按需加载渲染器，避免拖大首屏
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
@@ -256,14 +257,54 @@ function WorkDetailPage({ id }: { id: string }) {
 }
 
 /* ---------- 列表页 ---------- */
+type ViewMode = "list" | "grid";
+// 与总览看板 KPI 一一对应；metric 的具体判断在后端 works.py::_match_metric
+const METRIC_LABELS: Record<string, string> = {
+  total: "作品总数",
+  today: "当天出厂",
+  doing: "生产中",
+  shipped: "已出厂",
+  interrupted: "已中断",
+  failing: "受阻 / 滞销",
+};
+
+const coverOf = (w: Work) => w.files?.find((f) => f.key === "cover" && f.exists);
+const videoOf = (w: Work) =>
+  w.files?.find((f) => f.key === "final" && f.exists)
+  || w.files?.find((f) => f.key === "preview" && f.exists);
+
 function WorksListPage() {
   const navigate = useNavigate();
-  const [input, setInput] = useState("");
-  const [q, setQ] = useState("");
-  const [project, setProject] = useState("");
-  const [status, setStatus] = useState("");
-  const [sancai, setSancai] = useState("");
-  const [sort, setSort] = useState("updated");
+  // 支持总览看板深链：/works?metric=failing&view=grid
+  // 首次挂载读一次 URL，后续用户改筛选不再回写地址（与素材页的深链口径一致）
+  const boot = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paramView = params.get("view");
+    let saved: ViewMode = "list";
+    try {
+      saved = window.localStorage.getItem("works.view") === "grid" ? "grid" : "list";
+    } catch {
+      /* 隐私模式忽略 */
+    }
+    return {
+      q: params.get("q") || "",
+      project: params.get("project") || "",
+      status: params.get("status") || "",
+      sancai: params.get("sancai") || "",
+      sort: params.get("sort") || "updated",
+      metric: params.get("metric") || "",
+      view: (paramView === "grid" || paramView === "list" ? paramView : saved) as ViewMode,
+    };
+  }, []);
+
+  const [input, setInput] = useState(boot.q);
+  const [q, setQ] = useState(boot.q);
+  const [project, setProject] = useState(boot.project);
+  const [status, setStatus] = useState(boot.status);
+  const [sancai, setSancai] = useState(boot.sancai);
+  const [sort, setSort] = useState(boot.sort);
+  const [metric, setMetric] = useState(boot.metric);
+  const [view, setView] = useState<ViewMode>(boot.view);
   const [page, setPage] = useState(1);
 
   const filters: { field: string; operator: "eq"; value: string }[] = [];
@@ -271,6 +312,7 @@ function WorksListPage() {
   if (project) filters.push({ field: "project", operator: "eq", value: project });
   if (status) filters.push({ field: "status", operator: "eq", value: status });
   if (sancai) filters.push({ field: "sancai", operator: "eq", value: sancai });
+  if (metric) filters.push({ field: "metric", operator: "eq", value: metric });
   if (sort !== "updated") filters.push({ field: "sort", operator: "eq", value: sort });
 
   const list = useList<Work>({
@@ -285,6 +327,14 @@ function WorksListPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const resetPage = () => setPage(1);
+  const switchView = (next: ViewMode) => {
+    setView(next);
+    try {
+      window.localStorage.setItem("works.view", next);
+    } catch {
+      /* 隐私模式只影响记住偏好 */
+    }
+  };
 
   return (
     <section className="page">
@@ -313,6 +363,22 @@ function WorksListPage() {
           <button type="submit" className="btn">搜索</button>
         </form>
       </div>
+
+      {metric && (
+        <div className="works-drill">
+          <span>
+            来自总览看板下钻：<b>{METRIC_LABELS[metric] || metric}</b>
+            <span className="muted">　·　共 {total} 件，口径与看板数字一致</span>
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => { setMetric(""); resetPage(); }}
+          >
+            退出下钻，看全部
+          </button>
+        </div>
+      )}
 
       <div className="works-toolbar">
         <div className="chip-group">
@@ -371,6 +437,27 @@ function WorksListPage() {
             </button>
           ))}
         </div>
+        <div className="works-viewbar">
+          <span className="muted">查看</span>
+          <div className="works-views" role="group" aria-label="查看方式">
+            <button
+              type="button"
+              className={view === "list" ? "active" : ""}
+              onClick={() => switchView("list")}
+              title="一行一个，信息看得全"
+            >
+              列表
+            </button>
+            <button
+              type="button"
+              className={view === "grid" ? "active" : ""}
+              onClick={() => switchView("grid")}
+              title="封面缩略图，一屏看很多"
+            >
+              缩略图
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="panel-grid">
@@ -381,6 +468,45 @@ function WorksListPage() {
             <p className="error">加载失败</p>
           ) : items.length === 0 ? (
             <p className="muted">暂无作品</p>
+          ) : view === "grid" ? (
+            <div className="works-cards">
+              {items.map((item) => {
+                const cover = coverOf(item);
+                return (
+                  <article
+                    key={item.id}
+                    className="work-card"
+                    onClick={() => navigate(`/works/${encodeURIComponent(item.id)}`)}
+                    title={`${item.title} · 点击查看档案`}
+                  >
+                    <div className="work-card-media">
+                      <span className="work-card-ph">{(item.code || "作品").slice(0, 12)}</span>
+                      {cover && (
+                        <img
+                          src={siteUrl(cover.url)}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => { e.currentTarget.style.display = "none"; }}
+                        />
+                      )}
+                      {videoOf(item) && <span className="work-card-play" aria-hidden="true">▶</span>}
+                      <span className={`work-card-status status-${item.statusKey}`}>{item.status}</span>
+                    </div>
+                    <div className="work-card-body">
+                      <b className="work-card-title" title={item.title}>{item.title}</b>
+                      <div className="work-card-sub">
+                        {item.serialNo ? `${item.serialNo} · ` : ""}{item.projectName}
+                      </div>
+                      <div className="work-card-foot">
+                        <span>{item.completeness}%</span>
+                        <span>{shortTime(item.updatedAt)}</span>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           ) : (
             <div className="table-wrap">
               <table className="table works-table">

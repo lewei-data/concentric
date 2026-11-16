@@ -5863,3 +5863,179 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   .kb-dim-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kb-dim-axis { flex-basis: 44px; font-size: 12px; }
 }
+
+/* ===== 总览看板数字下钻 + 作品档案缩略图视图 ===== */
+/* KPI 卡片整体可点，右上角箭头提示这是入口 */
+.ceo-kpi-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ceo-kpi-link::after {
+  content: "↗";
+  position: absolute;
+  top: 9px;
+  right: 12px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.5;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.ceo-kpi-link:hover::after {
+  opacity: 1;
+  transform: translate(1px, -1px);
+}
+a.ceo-stage {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+a.ceo-stage:hover { border-color: var(--accent); }
+
+/* 看完板数字点进来的下钻提示：明确当前是哪一个口径的明细 */
+.works-drill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.06);
+  font-size: 13px;
+}
+.works-drill b { color: #1d4ed8; }
+
+/* 列表 / 缩略图切换，手感与素材页一致 */
+.works-viewbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 12px;
+}
+.works-views {
+  display: inline-flex;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #d8dee9;
+  border-radius: 6px;
+}
+.works-views button {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+.works-views button + button { border-left: 1px solid #e2e8f0; }
+.works-views button.active {
+  color: #fff;
+  background: #0f172a;
+}
+
+/* 缩略图墙：封面卡片，点卡片进档案 */
+.works-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin: 4px 0 20px;
+}
+.work-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: transform 0.24s var(--ease), box-shadow 0.24s var(--ease), border-color 0.2s;
+}
+.work-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-2);
+}
+.work-card-media {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  max-height: 240px;
+  overflow: hidden;
+  background: #0f172a;
+}
+.work-card-ph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  color: #94a3b8;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.work-card-media img {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.work-card-play {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.6);
+  font-size: 11px;
+}
+.work-card-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 5px 8px;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(15, 23, 42, 0.82));
+  font-size: 11px;
+}
+.work-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+}
+.work-card-title {
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-card-sub,
+.work-card-foot {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-card-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+@media (max-width: 1180px) { .works-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 980px) { .works-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .works-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

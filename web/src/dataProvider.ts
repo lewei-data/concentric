@@ -30,8 +30,9 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-// 后端列表接口支持 q / project / stage / status / sort / category / tag / sancai，这里按字段名透传
-const LIST_FIELDS = ["q", "project", "stage", "status", "sort", "category", "tag", "sancai"];
+// 后端列表接口支持 q / project / stage / status / sort / category / tag / sancai，
+// metric 为总览看板数字下钻口径（today/doing/shipped/interrupted/failing），这里按字段名透传
+const LIST_FIELDS = ["q", "project", "stage", "status", "sort", "category", "tag", "sancai", "metric"];
 
 function extractFilters(filters: unknown): Record<string, string> {
   const out: Record<string, string> = {};
