@@ -22,5 +22,11 @@
   "iso": "2026-11-16T07:02:46+08:00",
   "level": "critical",
   "source": "cto-drill-fail2"
+ },
+ "6b2d92f149bb5323": {
+  "at": 1794828354.0250895,
+  "iso": "2026-11-16T19:25:54+08:00",
+  "level": "warning",
+  "source": "runbook-huge_log_file"
  }
 }

@@ -18,7 +18,7 @@ FILE = os.environ.get("OPC_PIPELINE_FILE", DEFAULT_FILE)
 # 执行器已实现的阶段 id；定义里出现未知 id 视为配置错误（防止拼写错误静默跳过）
 KNOWN_STAGES = (
     "topic_meeting", "boss_report", "create_items",
-    "production_approval", "assessment", "copy", "sample", "render",
+    "production_approval", "assessment", "copy", "sample", "sample_reel", "render",
     "sample_review", "final", "review", "publish_approval", "release",
     "archive", "report",
 )
@@ -44,6 +44,7 @@ DEFAULT_STAGES = [
     _stage("assessment", "制作评估", "produce", "topic", "proposal"),
     _stage("copy", "文案成稿", "produce", "copy", "script"),
     _stage("sample", "样片方案", "produce", "sample", "scene_plan"),
+    _stage("sample_reel", "简化小样（关键帧×对白×BGM）", "produce", "sample", "sample_reel"),
     _stage("render", "真实出片", "gate", "sample", "assets"),
     _stage("sample_review", "样片三方评审", "gate", "sample", "edit"),
     _stage("final", "定版", "produce", "final", "compose"),

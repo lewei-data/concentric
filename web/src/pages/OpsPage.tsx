@@ -228,6 +228,8 @@ type OpsData = {
   ok: boolean;
   generatedAt?: string;
   error?: string;
+  /** 子探针降级明细：有值时说明某几个分区没取到数，页面其余部分照常可用 */
+  degraded?: { section: string; error: string }[];
   service?: {
     ok: boolean; version: string; engine: string; scene: string;
     serverTime: string; serverStartedAt: string; uptimeSec: number;
@@ -274,7 +276,22 @@ async function getOps(): Promise<OpsData> {
     window.location.assign("/app/login");
     throw new Error("登录已过期");
   }
-  if (!res.ok) throw new Error(`运维数据读取失败（HTTP ${res.status}）`);
+  if (!res.ok) {
+    // 服务端 500 时会把真实原因和 traceId 放进 body，别丢掉——否则只剩一个状态码没法排查
+    let detail = "";
+    let tid = "";
+    try {
+      const body = (await res.json()) as { error?: string; traceId?: string };
+      detail = body?.error ? String(body.error) : "";
+      tid = body?.traceId ? String(body.traceId) : "";
+    } catch {
+      /* 非 JSON（例如代理返回的 HTML 错误页），保持空 */
+    }
+    const tail = [detail, tid && `traceId=${tid}`].filter(Boolean).join(" · ");
+    throw new Error(
+      `运维数据读取失败（HTTP ${res.status}）${tail ? `：${tail}` : ""}`,
+    );
+  }
   return (await res.json()) as OpsData;
 }
 
@@ -557,6 +574,13 @@ export function OpsPage() {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      {!!data?.degraded?.length && (
+        <div className="ops-feedback bad" role="status">
+          {`部分数据源降级（页面其余功能正常）：${data.degraded
+            .map((d) => `${d.section}—${d.error}`)
+            .join("；")}`}
+        </div>
+      )}
       {feedback && (
         <div className={feedback.ok ? "ops-feedback ok" : "ops-feedback bad"}>{feedback.text}</div>
       )}

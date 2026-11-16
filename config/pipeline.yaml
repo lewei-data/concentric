@@ -65,6 +65,13 @@ stages:
     om_stage: scene_plan
     description: PM 在 CCO 初稿分镜方向上细化逐镜剧本/封面/配音/TTS 方案（scene_plan.json）；与补素材并行；CCO 审批后进入制片
 
+  - id: sample_reel
+    name: 简化小样
+    kind: produce
+    item_stage: sample
+    om_stage: sample_reel
+    description: PM 牵头，配音（本机 TTS）与制作（关键帧/ffmpeg）协同，把音乐、对白与关键画面帧对齐成 720×1280 小样（05-sample-reel.mp4）；不做复杂视频，成片仍走 render；失败只记 degraded 不阻断
+
   - id: render
     name: 真实出片
     kind: gate

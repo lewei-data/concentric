@@ -15,6 +15,8 @@ import os
 import sqlite3
 import threading
 import time
+
+import obs
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError
@@ -675,7 +677,29 @@ def _render_view(pipeline):
 
 def build(state, health, force_probe=False, runs=None, llm=None):
     """返回 /api/ops 的响应体；state 为 Kernel.snapshot()，runs 为流水线运行记录，
-    llm 为大模型注册表视图（server._llm_view()）。"""
+    llm 为大模型注册表视图（server._llm_view()）。
+
+    健壮性：整函数 try/except 兜底，任何异常都返回 200 + degraded 列表，
+    不让运维监控页因为数据源/后处理异常而整页 500。
+    """
+    try:
+        return _build_inner(state, health, force_probe, runs, llm)
+    except Exception as e:
+        # 最外层兜底：连 _build_inner 的降级逻辑都炸了，返回空结构 + 错误
+        obs.log_event("ops_monitor.build.fatal", e, level="error")
+        return {
+            "ok": True,
+            "generatedAt": _now(),
+            "degraded": [{"section": "build", "error": f"{type(e).__name__}: {e}"}],
+            "service": {"ok": False, "error": "运维聚合模块异常"},
+            "stats": {}, "runs": [], "pipeline": {}, "video": {},
+            "openmontage": {}, "comfy": {}, "nodes": {}, "llm": {},
+            "alerts": [], "actions": {}, "notes": [],
+        }
+
+
+def _build_inner(state, health, force_probe=False, runs=None, llm=None):
+    """build() 的实际逻辑，异常由外层 build() 兜底。"""
     state = state or {}
     runs = runs or []
     break_runs = [r for r in runs if r.get("status") in ("interrupted", "timeout")]
@@ -687,12 +711,29 @@ def build(state, health, force_probe=False, runs=None, llm=None):
     usage = cost.get("usage") or {}
     aborted = cost.get("aborted") or {}
 
-    services = _services(force_probe)
-    node_view = _nodes_view(force_probe)
-    local_jobs, jobs_file_ok = _local_jobs()
-    render_items = _render_view(pipeline)
-    om_view = _openmontage(force_probe)
-    comfy_view = _comfy(force_probe)
+    # 每个子探针独立兜底：运维页是「看问题」的地方，不能因为某一个数据源
+    # 出异常就整页 500（一个探针炸掉 → 该分区降级 + degraded 列表，其余照常展示）。
+    degraded = []
+
+    def safe(name, fn, default):
+        try:
+            return fn()
+        except Exception as e:                      # noqa: BLE001 —— 故意兜住全部
+            obs.log_event(f"ops_monitor.{name}", e, level="error")
+            degraded.append({"section": name,
+                             "error": f"{type(e).__name__}: {e}"})
+            return default
+
+    services = safe("services", lambda: _services(force_probe), [])
+    node_view = safe("nodes", lambda: _nodes_view(force_probe),
+                     {"available": False, "error": "节点台账读取失败（见 degraded）",
+                      "summary": {}, "nodes": [], "history": [], "stale": False})
+    local_jobs, jobs_file_ok = safe("localJobs", _local_jobs, ([], False))
+    render_items = safe("render", lambda: _render_view(pipeline), [])
+    om_view = safe("openmontage", lambda: _openmontage(force_probe),
+                   {"root": OM_ROOT, "channel": "cli", "cli": {"available": False},
+                    "backlot": {"online": False, "projects": []}})
+    comfy_view = safe("comfy", lambda: _comfy(force_probe), {"nodes": []})
     stage_counts = Counter(str(it.get("stage") or "unknown") for it in pipeline)
     blocked = [it for it in pipeline if it.get("blockedBy")]
     blocked_by = Counter(str(it.get("blockedBy") or "unknown") for it in blocked)
@@ -882,6 +923,8 @@ def build(state, health, force_probe=False, runs=None, llm=None):
     data = {
         "ok": True,
         "generatedAt": _now(),
+        # 有降级时非空：前端据此提示「某几个分区没取到数」，而不是整页报错
+        "degraded": degraded,
         "service": {
             "ok": bool((health or {}).get("ok", True)),
             "version": (health or {}).get("version") or "3.0",

@@ -1,0 +1,219 @@
+{
+ "components/AnchoredPanel.tsx": {
+  "empty": false,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 84
+ },
+ "components/AssetLinksPanel.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 178
+ },
+ "components/AssistantWidget.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 682
+ },
+ "components/FactoryShots.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 679
+ },
+ "components/KbDimensions.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 168
+ },
+ "components/Layout.tsx": {
+  "empty": false,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 179
+ },
+ "components/MarkdownBody.tsx": {
+  "empty": false,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 11
+ },
+ "components/MediaViewer.tsx": {
+  "empty": false,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 53
+ },
+ "components/QuestionsPanel.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 200
+ },
+ "components/SancaiBadge.tsx": {
+  "empty": false,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 63
+ },
+ "components/ToolboxGallery.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 235
+ },
+ "components/WuxingLogo.tsx": {
+  "empty": false,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 215
+ },
+ "pages/AccountPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 576
+ },
+ "pages/CollectTasks.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 484
+ },
+ "pages/DecisionPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 274
+ },
+ "pages/FactoryPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 674
+ },
+ "pages/GraphPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 885
+ },
+ "pages/HomePage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 888
+ },
+ "pages/HotspotsPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 320
+ },
+ "pages/InspirationPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": true,
+  "dir_label": false,
+  "lines": 394
+ },
+ "pages/KnowledgePage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 508
+ },
+ "pages/LoginPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 275
+ },
+ "pages/MaterialsPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 1003
+ },
+ "pages/MessagesPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 504
+ },
+ "pages/ModelsPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": true,
+  "dir_label": false,
+  "lines": 567
+ },
+ "pages/OpsPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 1306
+ },
+ "pages/OrgPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 554
+ },
+ "pages/ReflectionPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 193
+ },
+ "pages/ScenePage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": false,
+  "lines": 536
+ },
+ "pages/ToolboxPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 1059
+ },
+ "pages/WorksPage.tsx": {
+  "empty": true,
+  "truncate": false,
+  "modal_foot": false,
+  "dir_label": true,
+  "lines": 462
+ }
+}

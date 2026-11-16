@@ -502,6 +502,7 @@ def _stage_assessment(kn, c):
             "额外 JSON 字段：assessment({items:[{title,durationSec,tts:{voice,style},"
             "copyBrief,storyboardNotes,"
             "storyboardShots:[{no,画面,台词,秒,素材}],videoTasks:[{shot,task}]}], summary})；"
+            "硬性要求：每镜必须写全 台词 与 秒（简化小样要按这两项对齐配音与关键帧，缺一即返工）。"
             "assetGaps(数组，每条 {item, why})。",
             "summary, evidence, confidence, tools, assessment, assetGaps")
     gap_jobs = {}
@@ -616,7 +617,8 @@ def _stage_sample(kn, c):
             f"细化分镜：{json.dumps(plan.get('storyboardShots') or [], ensure_ascii=False)}；"
             f"分镜要点：{plan.get('storyboardNotes', '')}",
             "额外 JSON 字段：shots(数字), storyboard(4-6 镜，每镜 画面/台词，可加 插图:1-2 个中文物件名，"
-            "如 相纸/药水盘/放大镜，≤220字), cover(≤20字), sample(样片说明≤80字)。",
+            "如 相纸/药水盘/放大镜，≤220字), cover(≤20字), sample(样片说明≤80字)；"
+            "每镜务必写清台词与时长（简化小样按镜对齐对白与关键帧）。",
             "summary, evidence, confidence, tools, shots, storyboard, cover, sample")
         kn.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
                   {"task": f"按评估报告出《{item['title']}》样片"}, project=pid)
@@ -636,6 +638,46 @@ def _stage_sample(kn, c):
                   {"result": data, "itemId": iid, "engine": meta["engine"],
                    "latencyMs": meta.get("latencyMs", 0)}, project=pid)
         kn.items_emit(c.trace, item)
+
+
+def _stage_sample_reel(kn, c):
+    """7.5 简化小样：用本机 TTS × 关键帧 × BGM 对齐出一版可听可看的样片。
+
+    不做复杂视频（成片仍走 render）；PM 牵头，配音（TTS 文本/音色）与制作
+    （关键帧/合成）岗位协同。失败不阻断，记 degraded 由评审阶段兜底。
+    """
+    import sample_reel as SR
+    ok, total, failed = 0, 0, []
+    for iid, item in c.items.items():
+        pid = item["projectId"]
+        total += 1
+        kn.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
+                {"task": f"为《{item['title']}》产简化小样：关键帧×对白×BGM 对齐"},
+                project=pid)
+        try:
+            res = SR.build(item, pid, files=item.get("files") or None)
+        except Exception as e:            # noqa: BLE001
+            res = {"ok": False, "reason": f"{type(e).__name__}: {e}"}
+        if res.get("ok"):
+            ok += 1
+            item["sampleReel"] = {k: res.get(k) for k in
+                                  ("ok", "video", "videoUrl", "duration", "shots",
+                                   "bgm", "engine", "builtAt")}
+            item["sampleNote"] = item.get("sampleNote") or f"简化小样 {res.get('duration')}s"
+        else:
+            item.setdefault("degraded", []).append("sampleReel")
+            item["sampleReel"] = {"ok": False,
+                                  "reason": str(res.get("reason") or "未知原因")[:160]}
+            failed.append(f"{item.get('title')}：{item['sampleReel']['reason']}")
+        kn.send("result", f"vd_{pid}", f"pm_{pid}", c.trace,
+                {"itemId": iid, "ok": bool(res.get("ok")),
+                 "sampleUrl": item["sampleReel"].get("videoUrl", ""),
+                 "reason": str(res.get("reason") or "")[:120]}, project=pid)
+        kn.items_emit(c.trace, item)
+    if failed:
+        kn.send("escalation", "vd_all", "cto", c.trace,
+                {"text": f"简化小样 {len(failed)}/{total} 条未产出：" + "；".join(failed[:3])},
+                priority=1)
 
 
 def _stage_sample_review(kn, c):

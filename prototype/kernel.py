@@ -1256,6 +1256,10 @@ class Kernel:
         return pipeline._stage_sample(self, c)
 
 
+    def _stage_sample_reel(self, c):
+        return pipeline._stage_sample_reel(self, c)
+
+
     def _stage_render(self, c):
         return factory._stage_render(self, c)
 

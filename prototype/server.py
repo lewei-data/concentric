@@ -27,6 +27,7 @@ import io
 import shutil
 import zipfile
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -116,10 +117,65 @@ INLINE_MIME = re.compile(r"^(image/|video/|audio/|text/|application/pdf|applicat
                          r"|application/vnd\.apple\.mpegurl)")
 
 from utils import iso_now, uid, _to_int, _hotkey, _step_view, _iso_shift, _num
+
+# ---------------- 崩溃留痕：HTTP 500 / 后台线程异常一律落盘 ----------------
+# 主服务经常被手工启动（stdout 是 socket 而不是 logs/server.log），
+# 异常现场不落盘的话，运维页报 500 之后完全无法复盘。
+CRASH_LOG = os.path.normpath(os.path.join(BASE_DIR, "..", "logs", "server-crash.log"))
+_CRASH_LOCK = threading.Lock()
+
+
+def log_crash(where, exc=None):
+    """写一份异常现场到 logs/server-crash.log，返回 8 位 traceId（同时进 obs 失败点）。"""
+    import traceback as _tb
+    tid = uuid.uuid4().hex[:8]
+    try:
+        os.makedirs(os.path.dirname(CRASH_LOG), exist_ok=True)
+        with _CRASH_LOCK, open(CRASH_LOG, "a", encoding="utf-8") as f:
+            f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} traceId={tid} "
+                    f"where={where} pid={os.getpid()} =====\n")
+            if exc is not None:
+                f.write("".join(_tb.format_exception(type(exc), exc, exc.__traceback__)))
+            else:
+                f.write("".join(_tb.format_stack()[-8:]))
+    except OSError:
+        pass
+    try:
+        obs.log_event(where, exc, level="error", traceId=tid)
+    except Exception:                       # noqa: BLE001 —— 留痕本身不能再抛
+        pass
+    return tid
+
+
+def _thread_excepthook(args):
+    """后台线程炸了也要留证据（默认只会往 stderr 打一行，socket 启动时等于丢失）。"""
+    if args.exc_value is None:
+        return
+    try:
+        name = args.thread.name if args.thread else "?"
+    except Exception:                       # noqa: BLE001
+        name = "?"
+    log_crash(f"thread:{name}", args.exc_value)
+
+
+threading.excepthook = _thread_excepthook
+
+
+class OpcHTTPServer(ThreadingHTTPServer):
+    """HTTP 层兜底：任何没被 handler 捕获的异常都落盘，返回体保持 500 但可追溯。"""
+
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        addr = client_address[0] if isinstance(client_address, tuple) else str(client_address)
+        log_crash(f"http:{addr}", exc)
+        super().handle_error(request, client_address)
 from agent_defaults import DEFAULT_AGENT_SPEC, AGENTS_REQUIRED
 import company_config as CC
 import users as USERS
 import org as ORG
+import obs
 import llm_registry as LREG
 import mail as MAILM
 from hermes_adapter import HERMES
@@ -1000,7 +1056,10 @@ class Handler(BaseHTTPRequestHandler):
                 payload["pool"] = pool_stats()                    # C1：内核池规模
                 return self._json(payload)
             except Exception as e:
-                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+                # 500 必须留证据：traceback 落盘 + 失败点进 obs，前端只给了状态码查不出原因
+                tid = log_crash("api.ops", e)
+                return self._json({"ok": False, "traceId": tid,
+                                   "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/events":
             return self._sse()
         # ---------- 制片工厂（车间监控：工艺决策 + 工位过程） ----------
@@ -1859,7 +1918,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         # 登录凭据与隐藏目录不对外发布
         rel_parts = os.path.relpath(full, root).split(os.sep)
-        if full == os.path.realpath(CRED_FILE) or any(p.startswith(".") for p in rel_parts):
+        rel_str = "/".join(rel_parts)
+        # 台账 / 凭据 / 运维手册一律不发布：含账号、端口、凭据位置与恢复步骤，
+        # 等于给攻击者一张地图（2026-11-16 加）。正常交付物走 素材/ 与 项目 目录，不受影响。
+        if (full == os.path.realpath(CRED_FILE)
+                or any(p.startswith(".") for p in rel_parts)
+                or "运维手册" in rel_str
+                or re.search(r"(台账|凭据|拓扑)\.md$", rel_str)):
             return self._json({"error": "not found"}, 404)
         return self._serve_media(full)
 
@@ -3414,7 +3479,7 @@ def main():
     if args.host not in LOOPBACK and args.host != "localhost" and not AUTH_USER:
         print("警告：绑定到非回环地址且未设置 OPC_BASIC_USER / OPC_BASIC_PASS，局域网内任何人可访问与审批")
     USERS.session_load_all()   # 会话已落库，重启后老 cookie 依然有效
-    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    srv = OpcHTTPServer((args.host, args.port), Handler)
     srv.daemon_threads = True
     auth = f"auth=Basic({AUTH_USER})" if AUTH_USER else "auth=off"
     print(f"OPC Workbench (Hermes kernel) on http://{args.host}:{args.port}  mode={MODE} model={MODEL}  {auth}")

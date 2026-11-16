@@ -60,6 +60,8 @@ STAGE_ARTIFACTS = {
     "assessment": [("08-assessment.md", "制作评估", "md")],
     "copy": [("02-copy.md", "文案成稿", "md")],
     "sample": [("03-storyboard.md", "分镜剧本", "md")],
+    "sample_reel": [("05-sample-reel.mp4", "简化小样", "video"),
+                    ("08-sample-reel.json", "小样清单", "md")],
     "render": [("05-preview.mp4", "预览样片", "video")],
     "sample_review": [("05-preview.mp4", "预览样片", "video")],
     "final": [("05-final.mp4", "最终成片", "video"), ("04-cover.png", "封面图", "image")],

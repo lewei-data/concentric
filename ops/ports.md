@@ -1,7 +1,7 @@
 # 端口与常驻进程总表（sup206）
 
 > 生成方式：`sudo -n ss -tlnp` 全量对账 + `/proc/<pid>/cwd` 认领 + `ps -o lstart` 取启动时间。
-> 最后核对：2026-11-16（第二轮对账 42 个监听端口，修正 443 误登记、补录 37603）。刷新命令见文末。
+> 最后核对：2026-11-16 19:55（重启网关回收 37603 孤儿；新增「动态端口」段，排除 hermes 随机回环口）。刷新命令见文末。
 > 三套台账的分工：本表管**端口与进程认领**；`ops/nodes.db` 管**探活**；`prototype/opc.db#it_assets` 管**资产事实**（19 列）。
 
 ## 准入规则（2026-11-16 起）
@@ -15,7 +15,7 @@
 
 | 端口 | 进程 | 单元/来源 | 用途 | 对外 |
 |---|---|---|---|---|
-| 8848 | python3 prototype/server.py | `opc-workbench.service` | 工作台 Web/API | 0.0.0.0（反代 443） |
+| 8848 | python3 prototype/server.py | `opc-workbench.service` | 工作台 Web/API | 0.0.0.0（**公网走 208 反代 `/workbench/` → 8848**；根路径 `/` 与 `/api/` 归 sefs-mcp 8765，别用根路径测工作台） |
 | 8642 | hermes | `hermes-gateway-*` | LLM 网关 | 待核 |
 | 9100 | python | `mcp-mail` | 邮件 MCP | 127.0.0.1 |
 | 9101 | python | TTS MCP | 语音合成 MCP | 127.0.0.1 |
@@ -49,7 +49,7 @@
 | 端口 | 进程 | 单元 | 用途 | 风险 |
 |---|---|---|---|---|
 | 4750 | uvicorn backlot.server:app | `backlot-board.service` | OpenMontage 分镜看板 | **`--host 0.0.0.0` 对外监听**，无鉴权 |
-| 9119 | hermes（MainPID 2149775，11-09 起） | `hermes-dashboard.service` | hermes 管理面板 | **`--host 0.0.0.0`**，有 /login；**另有孤儿子进程占 37603**（见 G 段） |
+| 9119 | hermes（MainPID 2149775，11-09 起） | `hermes-dashboard.service` | hermes 管理面板 | **`--host 0.0.0.0`**，有 /login；37603 孤儿已于 11-16 19:43 随网关重启回收（见 G 段） |
 | 9999 | rapids-manager（root，96 天） | `rpdsql-ops.service` | SEFS/RapidDB 集群管理 | root 常驻，管理面 |
 
 ## D. SEFS / RapidDB 集群组件（存储底座，台账只写了 13301）
@@ -86,18 +86,25 @@
 | 8854 | 1636058 | 11-14 05:18 | `prototype/` | 同上 | 已杀 |
 | 8855 | 1736164 | 11-14 06:54 | `prototype/` | `/tmp/opc-sec*` | 已杀 |
 | 8899 | 151796 | 11-13 08:10 | `prototype/` | — | 已杀 |
-| 37603 | 1015221 | 11-13 20:07 | `/opt/sefs/hermes` | — | **未清理，待 owner 确认** |
+| ~~37603~~ | 1015221 | 11-13 20:07 | `/opt/sefs/hermes` | — | 已随 19:43 网关重启消失（未手工 kill） |
 
 判定依据（三条同时成立才敢动手）：① 监听 `127.0.0.1` 非 `0.0.0.0`；② `/proc/<pid>/fd` 指向 `/tmp/opc-*` 隔离库，**不连生产库**；③ `ss -tn` 活动连接 0 条。
 
-### 37603 详情（2026-11-16 发现，未处置）
+### 37603 详情（2026-11-16 发现，当日随重启消失）
 
 - 进程：hermes 启动器 + `dashboard`，页面 `<title>Hermes Agent - Dashboard</title>`，返回 200。
-- `HERMES_SUPERVISED_CHILD=1`，但 `ppid=1`、**不在 `hermes-dashboard.service` 的 CGroup 内**（该单元 CGroup 只有 MainPID 2149775）。
-- 出生 11-13 20:07:17，比 MainPID（11-09 05:01:14）晚 4 天 → 运行期被拉起后脱管的子进程，至今 2 天 22 小时。
-- 三条孤儿证据：0 活动连接、`/login` 页面不含 `37603`、MainPID 无连接指向它。
-- **未杀的理由**：它是 hermes 自有组件而非冒烟残留，杀它等于动 hermes 运行时；且它占着 37603，若 dashboard 下次要起内层 UI 会绑定失败——两种情况都得 owner 定。
-- 处置建议：`sudo -n kill 1015221` 后观察 9119 与 hermes 各单元是否正常；若 dashboard 仍在，说明确为孤儿。
+- `HERMES_SUPERVISED_CHILD=1`，但 `ppid=1`、不在 `hermes-dashboard.service` 的 CGroup 内（该单元 CGroup 只有 MainPID 2149775）。
+- 出生 11-13 20:07:17，比 MainPID（11-09 05:01:14）晚 4 天 → 运行期被拉起后脱管的子进程。
+- **结局（2026-11-16 19:43）**：为部署 multiplex 密钥补丁重启 `hermes-gateway-8987483c.service`（MainPID 1015221 → 1351653），该孤儿随之消失，`ss -tln` 已无 37603，**未手工 kill 任何进程**。
+- 结论：它是网关运行时派生的内层 UI，生命周期跟随网关主进程，重启即回收，不是独立常驻服务。再遇同类端口，先判断「是否随网关重启消失」，别急着 kill。
+
+## 动态端口（不参与漂移比对）
+
+内核分配的临时端口，**每次进程重启都会变**。登记死值只会制造假漂移，所以按「地址 + 段」声明，巡检（opsctl `ports`）会从实际 LISTEN 集合里剔除。
+
+| 地址:段 | 归属 | 说明 |
+|---|---|---|
+| `127.0.0.1:32768-60999` | hermes 网关 `gateway/run_api.py` `start_gateway_api(port=0)` | 每次启动由内核分配一个回环端口（11-16 观测到 44597），只绑 `127.0.0.1`，无业务语义、不对公网开放 |
 
 ## 端口段规划（建议，避免再撞）
 
@@ -115,6 +122,7 @@
 
 | 时间 | 对象 | 动作 | 证据 |
 |---|---|---|---|
+| 2026-11-16 19:43 | pid 1015221（37603） | 随 `hermes-gateway` 重启自然回收，未 kill | 重启前 37603 LISTEN；重启后 `ss` 无 37603；网关 8642 `/health` 200、scheduler 已加载 |
 | 2026-11-16 19:00 | pid 1617166/1626677/1636058/1736164/151796（8852-8855/8899） | `kill`，端口回收 | 清理前 5 端口 200 响应、0 连接、fd 指向 /tmp 隔离库；清理后 `ss` 无 8852/8853/8854/8855/8899 |
 
 ## 刷新本表
