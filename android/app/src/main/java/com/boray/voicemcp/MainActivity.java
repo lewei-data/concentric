@@ -28,7 +28,6 @@ import android.view.ViewGroup;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -94,8 +93,6 @@ public class MainActivity extends Activity {
     private View btnCall;
     private TextView tvCallBtn;
     private TextView tvCallNotice;
-    private View connectRing;
-    private ObjectAnimator connectAnim;
     private CallTone tone;
     private boolean ringing = false;
     /** 刚点下通话的时刻：服务是异步启动的，这段时间内 isActive() 还是 false，不能据此停拨号音 */
@@ -120,7 +117,6 @@ public class MainActivity extends Activity {
     private static final int REQ_CALL = 991;
     private static final int REQ_TALK = 992;
     private CompoundButton cbListen;
-    private ProgressBar progressRing;
     private LinearLayout llAttachments;
     private ObjectAnimator pulseAnimator;
 
@@ -151,6 +147,10 @@ public class MainActivity extends Activity {
     private View btnAsrVoice;
     private View btnAsrRedo;
     private VoiceLevelView levelTalk;
+    /** 按钮「上面」那块：状态文字 + 实时电平（按住时手指会盖住按钮下沿，提示只能往上放） */
+    private View llTalkTop;
+    /** 通话处于「点了但还没接通」的起始时刻：超时自动收掉，避免进度环一直转 */
+    private long connectingSince = 0L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -182,7 +182,6 @@ public class MainActivity extends Activity {
         btnCall = findViewById(R.id.btnCall);
         tvCallBtn = findViewById(R.id.tvCallBtn);
         tvCallNotice = findViewById(R.id.tvCallNotice);
-        connectRing = findViewById(R.id.connectRing);
         sessionPanel = findViewById(R.id.sessionPanel);
         sessionTeaser = findViewById(R.id.sessionTeaser);
         tvHomeSub = findViewById(R.id.tvHomeSub);
@@ -209,6 +208,7 @@ public class MainActivity extends Activity {
         btnAsrVoice = findViewById(R.id.btnAsrVoice);
         btnAsrRedo = findViewById(R.id.btnAsrRedo);
         levelTalk = findViewById(R.id.levelTalk);
+        llTalkTop = findViewById(R.id.llTalkTop);
         if (levelTalk != null) levelTalk.setBarColor(getResources().getColor(R.color.primary, getTheme()));
         if (btnAsrText != null) btnAsrText.setOnClickListener(v -> sendAsr(false));
         if (btnAsrVoice != null) btnAsrVoice.setOnClickListener(v -> sendAsr(true));
@@ -221,7 +221,6 @@ public class MainActivity extends Activity {
         heroCompactHeight = Math.round(84 * d);
         if (levelView != null) levelView.setBarColor(getResources().getColor(R.color.primary, getTheme()));
         cbListen = findViewById(R.id.cbListen);
-        progressRing = findViewById(R.id.progressRing);
         llAttachments = findViewById(R.id.llAttachments);
 
         tone = new CallTone(this);
@@ -380,7 +379,7 @@ public class MainActivity extends Activity {
         isVisible = false;
         tone.stop();                 // 页面不可见就别在后台响拨号音
         tone.restoreVolumeIfBoosted();
-        startConnectAnim(false);
+        resetCallButtonLook();
         callTick.removeCallbacks(callTickRunnable);
         if (talkState == TALK_RECORDING) endTalk(true);   // 切走就丢掉这段录音，别一直占麦克风
     }
@@ -425,7 +424,7 @@ public class MainActivity extends Activity {
     /** 汇报人换了，提示文案与转写里的称呼一起换（不再写死「小秘书」） */
     private void applyReporterLabels() {
         String name = reporterName();
-        if (tvCallHint != null && !VoiceCallService.isConnected()) {
+        if (tvCallHint != null && !VoiceCallService.isActive()) {
             tvCallHint.setText("按住说话，松开就发给 " + name);
         }
         bindSession();
@@ -483,6 +482,20 @@ public class MainActivity extends Activity {
             }
         }
         boolean connecting = active && !connected;
+        // 点了通话却迟迟接不通（WS 没起来）：20 秒后自动收掉，避免一直停在「正在接通…」
+        if (connecting) {
+            if (connectingSince == 0L) connectingSince = System.currentTimeMillis();
+            if (System.currentTimeMillis() - connectingSince > 20000L) {
+                connectingSince = 0L;
+                connecting = false;
+                ringing = false;
+                tone.stop();
+                VoiceCallService.stop(this);
+                toast("连接超时，稍后再试（或直接用按住说话）");
+            }
+        } else {
+            connectingSince = 0L;
+        }
 
         // 接通的那一下：停拨号音、放接通提示音、闪一条「已接通」
         if (connected && !wasConnected) {
@@ -508,14 +521,16 @@ public class MainActivity extends Activity {
             }
         }
 
-        // 接通中不显示任何提示文字，只留动画；接通后收成一条
-        setGone(tvCallHint, active);
+        // 接通中不转圈：只留一行静态文字（「正在接通…」），接通后整块收成一条
+        setGone(tvCallHint, connected);
         setGone(tvCallBtn, active);
         setGone(micGlow, connected);
         setGone(btnCall, connected);
-        setGone(connectRing, !connecting);
         setGone(llCallBar, !connected);
-        startConnectAnim(connecting);
+        if (tvCallHint != null && connecting
+                && !"正在接通…（再按一次取消）".contentEquals(tvCallHint.getText())) {
+            tvCallHint.setText("正在接通…（再按一次取消）");
+        }
 
         if (levelView != null) {
             if (connected) {
@@ -572,20 +587,14 @@ public class MainActivity extends Activity {
         callTick.postDelayed(noticeHide, ms);
     }
 
-    /** 接通中：大圆钮呼吸，配合旋转的进度环表示「正在连接」 */
-    private void startConnectAnim(boolean on) {
+    /** 按钮回到「不透明、不缩放」的静止状态（任何动画残留都在这里清掉） */
+    private void resetCallButtonLook() {
         if (btnCall == null) return;
-        if (on) {
-            if (connectAnim == null) {
-                connectAnim = ObjectAnimator.ofFloat(btnCall, "alpha", 0.45f, 1f);
-                connectAnim.setDuration(620);
-                connectAnim.setRepeatMode(ValueAnimator.REVERSE);
-                connectAnim.setRepeatCount(ValueAnimator.INFINITE);
-            }
-            if (!connectAnim.isStarted()) connectAnim.start();
-        } else {
-            if (connectAnim != null && connectAnim.isStarted()) connectAnim.cancel();
-            btnCall.setAlpha(1f);
+        btnCall.animate().cancel();
+        btnCall.setAlpha(1f);
+        if (btnCall.getScaleX() != 1f || btnCall.getScaleY() != 1f) {
+            btnCall.setScaleX(1f);
+            btnCall.setScaleY(1f);
         }
     }
 
@@ -603,7 +612,12 @@ public class MainActivity extends Activity {
                 talkDownY = e.getRawY();
                 talkCancelBySlide = false;
                 if (VoiceCallService.isActive()) {
-                    toast("正在实时通话中，先挂断再说");
+                    if (VoiceCallService.isConnected()) {
+                        toast("正在实时通话中，先挂断再说");
+                    } else {
+                        // 点了通话但一直没接通（进度环一直转）：再按一下就等于取消这次通话
+                        toggleCall();
+                    }
                     return true;
                 }
                 if (talkState == TALK_WAITING) {
@@ -612,6 +626,7 @@ public class MainActivity extends Activity {
                 } else if (talkState != TALK_IDLE) {
                     return true;   // 识别中 / 发送中：忽略这次触摸
                 }
+                shrinkTalkButton();
                 beginTalk();
                 return true;
             case MotionEvent.ACTION_MOVE:
@@ -625,12 +640,14 @@ public class MainActivity extends Activity {
                 }
                 return true;
             case MotionEvent.ACTION_UP:
+                resetTalkButtonScale();
                 if (talkState == TALK_RECORDING) {
                     endTalk(talkCancelBySlide);
                     v.performClick();
                 }
                 return true;
             case MotionEvent.ACTION_CANCEL:
+                resetTalkButtonScale();
                 if (talkState == TALK_RECORDING) endTalk(true);
                 return true;
             default:
@@ -638,10 +655,25 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 按下：整个圆钮缩一点（不碰光晕，光晕由 startPulse 单独呼吸） */
+    private void shrinkTalkButton() {
+        if (btnCall == null) return;
+        btnCall.animate().cancel();
+        btnCall.animate().scaleX(0.86f).scaleY(0.86f).setDuration(90).start();
+    }
+
+    private void resetTalkButtonScale() {
+        if (btnCall == null) return;
+        if (btnCall.getScaleX() == 1f && btnCall.getScaleY() == 1f) return;
+        btnCall.animate().cancel();
+        btnCall.animate().scaleX(1f).scaleY(1f).setDuration(110).start();
+    }
+
     private void beginTalk() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_TALK);
             toast("语音需要麦克风权限，请允许后再按住说话");
+            resetTalkButtonScale();
             return;
         }
         if (talkAsr != null) clearTalkPanel();
@@ -651,6 +683,7 @@ public class MainActivity extends Activity {
             rec.start(target);
         } catch (Exception ex) {
             toast("无法开始录音：" + ex.getMessage());
+            resetTalkButtonScale();
             return;
         }
         talkRecorder = rec;
@@ -822,12 +855,14 @@ public class MainActivity extends Activity {
             // 实时通话优先：这几个控件由 renderCallUi / llCallBar 接管
             setGone(llAsr, true);
             setGone(levelTalk, true);
+            setGone(llTalkTop, true);
+            resetTalkButtonScale();
             return;
         }
         boolean panel = talkState == TALK_PANEL;
         boolean recording = talkState == TALK_RECORDING;
         boolean waiting = talkState == TALK_WAITING;
-        // 识别中 / 发送中：整块收起来只留一行状态；等回复时仍可按住说下一句
+        // 识别中 / 发送中：整块收起来只留状态；等回复时仍可按住说下一句
         boolean busy = talkState == TALK_ASR || talkState == TALK_SENDING;
 
         setGone(llAsr, !panel);
@@ -838,11 +873,14 @@ public class MainActivity extends Activity {
         setGone(micGlow, panel || busy);
         setGone(tvCallBtn, panel || busy);
         setGone(tvCallHint, panel || busy || recording || waiting);
+        // 状态文字 + 电平统一放在按钮上方那一条，按钮下面一律不放东西
+        setGone(llTalkTop, panel || (!recording && !busy && !waiting));
         setGone(tvRecordHint, panel);
         setGone(levelTalk, !recording);
-        setGone(progressRing, talkState == TALK_ASR || talkState == TALK_SENDING);
+        if (!recording && pulseAnimator != null) stopPulse();   // 不录音就一定不留呼吸动画
         if (btnCall != null) btnCall.setSelected(recording);
         if (levelTalk != null) levelTalk.setActive(recording);
+        if (!recording && btnCall != null) resetTalkButtonScale();
         if (panel || tvRecordHint == null) return;
 
         String hint;
@@ -1029,7 +1067,7 @@ public class MainActivity extends Activity {
         ScreenOn.keep(this, false);
         tone.stop();
         tone.restoreVolumeIfBoosted();
-        startConnectAnim(false);
+        resetCallButtonLook();
         stopPulse();
         talkTick.removeCallbacks(talkTickRunnable);
         replyGen++;                     // 让还在跑的回复轮询立刻失效
@@ -1180,7 +1218,6 @@ public class MainActivity extends Activity {
 
         busy = true;
         btnRecord.setEnabled(false);
-        progressRing.setVisibility(View.VISIBLE);
         tvRecordHint.setText("发送中…");
         setStatus(VoiceOutbox.pendingCount(this) > 1
                 ? "已入库，正在发送（另有 " + (VoiceOutbox.pendingCount(this) - 1) + " 条待发）"
@@ -1202,7 +1239,6 @@ public class MainActivity extends Activity {
             ui.post(() -> {
                 busy = false;
                 btnRecord.setEnabled(true);
-                progressRing.setVisibility(View.GONE);
                 tvRecordHint.setText("点击说话");
                 showResult(result);
             });

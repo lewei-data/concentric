@@ -1,0 +1,508 @@
+# Hermes dispatch · APP 下行可靠投递（outbox + seq/ack + 重连补发 + HTTP 补拉 + 通道令牌）
+# 基线：dispatch/realtime_ws.py 11-12 11:02 / dispatchd.py 11-11 21:52（HEAD b200f5bc60）
+# 应用：cd /opt/sefs/hermes/dispatch && patch -p1 < 本文件
+# 回滚：patch -p1 -R < 本文件
+# 令牌：默认兼容模式（只记录不拒绝）；APP 确认用 /submit 返回的 realtime_url 后，
+#       加 Environment=DISPATCH_REQUIRE_TOKEN=1 重启即强制。
+# 校验：python3 ops/patches/verify-hermes-dispatch.py
+--- a/realtime_ws.py
++++ b/realtime_ws.py
+@@ -46,6 +46,19 @@
+ except ImportError:                                          # Phase 1 兜底：无 ws 库也能跑
+     websockets = None
+ 
++try:                                                         # 下行可靠投递（同目录模块）
++    from outbox import MAX_REPLAY as _OUTBOX_MAX_REPLAY
++    from outbox import RELIABLE_KINDS as _RELIABLE_KINDS
++except ImportError:                                          # 兜底：outbox.py 未部署时退化为旧行为
++    _RELIABLE_KINDS = frozenset({"reply", "reply_end", "error", "transcript"})
++    _OUTBOX_MAX_REPLAY = 50
++
++# 通道令牌校验：默认只记录不拒绝（兼容尚未升级的 APP —— 老客户端可能自己拼
++# channel_id、不带 token，一上来就强制会直接断掉现网通话）。
++# APP 侧确认使用 /submit 返回的 realtime_url（已带 token）后，翻转开关即可强制：
++#   在 dispatchd.service 里加 Environment=DISPATCH_REQUIRE_TOKEN=1 并重启。
++REQUIRE_TOKEN = os.environ.get("DISPATCH_REQUIRE_TOKEN", "0") != "0"
++
+ WS_HOST = os.environ.get("DISPATCH_WS_HOST", "0.0.0.0")
+ WS_PORT = int(os.environ.get("DISPATCH_WS_PORT", "9121"))
+ ASR_URL = os.environ.get("DISPATCH_ASR_URL", "http://127.0.0.1:9102/mcp")   # mcp-asr 桥
+@@ -570,6 +583,33 @@
+ _SESSIONS = {}
+ _REG_LOCK = threading.Lock()
+ 
++# 下行可靠投递：dispatchd 启动时注入（同进程共享 sqlite 连接）
++_OUTBOX = None
++
++
++def set_outbox(ob):
++    """注入 outbox 实例；未注入时 send() 退化为原来的纯内存投递。"""
++    global _OUTBOX
++    _OUTBOX = ob
++
++
++def _split_path_query(raw):
++    """把 /channel/ch_x?token=abc 拆成 (path, query dict)。"""
++    if "?" in raw:
++        p, q = raw.split("?", 1)
++        return p, dict(kv.split("=", 1) for kv in q.split("&") if "=" in kv)
++    return raw, {}
++
++
++def _token_ok(channel_id, token):
++    """令牌校验：无 outbox / 老通道无 token 记录 → 放行；有新 token 则必须匹配。"""
++    if not REQUIRE_TOKEN or _OUTBOX is None:
++        return True
++    want = _OUTBOX.channel_token(channel_id)
++    if not want:
++        return True
++    return str(token or "") == str(want)
++
+ 
+ def register(channel_id, sess, alias=None):
+     with _REG_LOCK:
+@@ -758,8 +798,41 @@
+                 continue      # 只丢这一帧；直接 return 会让整条连接之后再也发不出声音
+ 
+     def send(self, obj):
++        """下行帧统一出口。
++
++        关键帧（reply/reply_end/error/transcript）先写 outbox 再发：
++        APP 断线时帧留在库里，重连按 last_seq 补发、也可用 HTTP /messages 补拉。
++        其余帧（hello_ok/pong/barge_in）仍只走内存队列，不落库。
++        """
++        kind = str(obj.get("type") or "")
++        if _OUTBOX is not None and kind in _RELIABLE_KINDS:
++            cid = self.task.get("channel_id")
++            seq, body = _OUTBOX.append(cid, self.task.get("task_id"),
++                                       obj.get("turn"), kind, obj)
++            if seq:
++                obj = body
+         return self._post(("text", json.dumps(obj, ensure_ascii=False)))
+ 
++    def replay(self, frames):
++        """重连补发：直接下发库里的 payload（不再二次 append，否则 seq 会漂）。"""
++        n = 0
++        sent = []
++        for fr in frames or []:
++            payload = fr.get("payload") or {}
++            payload = dict(payload, replay=True)
++            if self._post(("text", json.dumps(payload, ensure_ascii=False))):
++                n += 1
++                sent.append(fr.get("seq"))
++        if n and _OUTBOX is not None:
++            _OUTBOX.touch(self.task.get("channel_id"), sent)
++        return n
++
++    def ack(self, seqs):
++        """客户端回执：标记已送达，避免每次重连重复补发。"""
++        if _OUTBOX is not None:
++            return _OUTBOX.ack(self.task.get("channel_id"), seqs)
++        return 0
++
+     def send_bytes(self, data):
+         return self._post(("bytes", data))
+ 
+@@ -1386,9 +1459,10 @@
+ # ---------------------------------------------------------------- WS 服务
+ async def _handler(ws):
+     try:
+-        path = ws.request.path                               # websockets >= 14
++        raw_path = ws.request.path                           # websockets >= 14
+     except AttributeError:
+-        path = getattr(ws, "path", "")
++        raw_path = getattr(ws, "path", "")
++    path, query = _split_path_query(raw_path or "")
+     channel_id = path.rstrip("/").rsplit("/", 1)[-1]
+     with _REG_LOCK:
+         sess = _SESSIONS.get(channel_id)
+@@ -1397,6 +1471,23 @@
+     if sess is None:
+         await ws.close(code=4404, reason="channel 不存在或已结束")
+         return
++    # 令牌校验（?token= 或 X-Channel-Token 头）；老通道无 token 记录时放行
++    tok = query.get("token") or ""
++    if not tok:
++        try:
++            tok = ws.request.headers.get("X-Channel-Token") or ""
++        except Exception:                                    # noqa: BLE001
++            tok = ""
++    cid0 = sess.task.get("channel_id") or channel_id
++    if not _token_ok(cid0, tok):
++        log("通道 %s 令牌校验失败，拒绝连接" % cid0)
++        await ws.close(code=4403, reason="token 不匹配")
++        return
++    if not REQUIRE_TOKEN and _OUTBOX is not None:
++        want = _OUTBOX.channel_token(cid0)
++        if want and tok != want:
++            log("通道 %s 未携带正确令牌（兼容模式放行；APP 升级后开启"
++                " DISPATCH_REQUIRE_TOKEN=1 即强制）" % cid0)
+     sess._bind(ws)
+     try:
+         async for msg in ws:
+@@ -1410,10 +1501,31 @@
+                 continue
+             t = obj.get("type")
+             if t == "hello":
++                cid = sess.task.get("channel_id") or channel_id
++                last_seq = int(obj.get("last_seq") or 0)
++                server_seq = _OUTBOX.max_seq(cid) if _OUTBOX is not None else 0
+                 sess.send({"type": "hello_ok",
+-                           "channel_id": sess.task.get("channel_id") or channel_id,
++                           "channel_id": cid,
+                            "task_id": sess.task["task_id"],
+-                           "profile": sess.task.get("profile")})
++                           "profile": sess.task.get("profile"),
++                           "server_seq": server_seq,
++                           "last_seq": last_seq})
++                # 断线期间产生的回复在这里补发；客户端按 seq 去重
++                if _OUTBOX is not None:
++                    frames = _OUTBOX.pending(cid, last_seq, _OUTBOX_MAX_REPLAY)
++                    if frames:
++                        log("通道 %s 重连补发 %d 条（since_seq=%s server_seq=%s）"
++                            % (cid, len(frames), last_seq, server_seq))
++                        _record("db_event", sess.task["task_id"], "replay",
++                                "重连补发 %d 条 since_seq=%s" % (len(frames), last_seq))
++                        sess.replay(frames)
++            elif t == "ack":
++                seqs = obj.get("seqs")
++                if not isinstance(seqs, list):
++                    seqs = [obj.get("seq")]
++                n = sess.ack(seqs)
++                if n:
++                    log("通道 %s 回执 %d 条：%s" % (channel_id, n, seqs[:10]))
+             elif t == "audio_start":
+                 pass                                         # 预留：上行格式协商
+             elif t == "audio_end":
+--- a/dispatchd.py
++++ b/dispatchd.py
+@@ -18,6 +18,7 @@
+ import os
+ import queue
+ import re
++import secrets
+ import signal
+ import sqlite3
+ import subprocess
+@@ -38,6 +39,7 @@
+ except Exception:  # noqa: BLE001 - 客户端不可用不应阻断调度中心启动
+     _GW = None
+ HERMES_EXEC_MODE = (os.environ.get("HERMES_EXEC_MODE") or "auto").strip().lower()
++import outbox                                               # noqa: E402  (下行可靠投递)
+ import realtime_ws                                          # noqa: E402  (P0 双向实时通道)
+ 
+ DISPATCH_DIR = os.path.dirname(os.path.abspath(__file__))
+@@ -157,6 +159,8 @@
+ # ---------------------------------------------------------------- 台账（SQLite WAL）
+ _db_lock = threading.Lock()
+ _db = None
++# 下行可靠投递（outbox）：db_init 后创建，realtime_ws 共享同一连接
++OUTBOX = None
+ 
+ SCHEMA = """
+ CREATE TABLE IF NOT EXISTS tasks (
+@@ -240,6 +244,24 @@
+                     " FROM profile_sessions")
+         _db.execute("DROP TABLE profile_sessions")
+     _db.commit()
++    # 下行可靠投递：建 outbox 表 + channels.token 列，并注入 realtime_ws
++    global OUTBOX
++    OUTBOX = outbox.Outbox(_db, _db_lock)
++    OUTBOX.init()
++    stat = OUTBOX.gc()
++    realtime_ws.set_outbox(OUTBOX)
++    # 启动恢复：上轮异常退出残留的 running/spawning 任务标为 failed，
++    # 否则 /tasks 里永远显示"在跑"，巡检会误判服务活着。
++    try:
++        n = _db.execute("UPDATE tasks SET status='failed', ended_at=?,"
++                        " error=COALESCE(error, '进程重启，任务中断')"
++                        " WHERE status IN ('running','spawning')",
++                        (time.time(),)).rowcount
++        if n:
++            log("启动恢复：%d 个残留 running 任务标记为 failed" % n)
++    except Exception as e:                               # noqa: BLE001
++        log("启动恢复失败：%s" % e)
++    log("outbox 就绪：gc=%s channels.token 已就绪" % stat)
+ 
+ 
+ def db_exec(sql, params=(), fetch=None):
+@@ -892,6 +914,7 @@
+                 "lanes": LANE_COUNT,
+                 "lane_aliases": LANE_ALIASES,
+                 "sessions": sessions,
++                "outbox": OUTBOX.stats() if OUTBOX is not None else {},
+                 "db": DB_PATH, "now": time.time()})
+         if base.startswith("/task/"):
+             tid = base[len("/task/"):].strip("/")
+@@ -916,6 +939,25 @@
+                                         [c[0] for c in _db.execute(
+                                             "SELECT * FROM tasks LIMIT 1").description],
+                                         r))) for r in rows]})
++        if base == "/messages":
++            # APP 冷启动/无 WS 时补拉未送达消息（断线期间产生的回复都在 outbox 里）
++            params = dict(p.split("=", 1) for p in qs.split("&") if "=" in p)
++            cid = (params.get("channel_id") or "").strip()
++            if not cid:
++                return self._json(400, {"error": "channel_id 必填"})
++            if OUTBOX is None:
++                return self._json(503, {"error": "outbox 未就绪"})
++            want = OUTBOX.channel_token(cid)
++            tok = params.get("token") or self.headers.get("X-Channel-Token") or ""
++            if want and tok != want:
++                return self._json(403, {"error": "token 不匹配"})
++            since = int(params.get("since_seq") or 0)
++            limit = min(int(params.get("limit") or 50), 200)
++            rows = OUTBOX.pending(cid, since, limit)
++            return self._json(200, {"channel_id": cid,
++                                    "server_seq": OUTBOX.max_seq(cid),
++                                    "since_seq": since, "count": len(rows),
++                                    "messages": rows})
+         return self._json(404, {"error": "unknown path"})
+ 
+     def do_POST(self):
+@@ -974,19 +1016,26 @@
+                         "channel_kind": live.task.get("channel_kind") or "ws",
+                         "next": "已复用进行中的实时会话 %s，沿用原 channel_id"
+                                 % live.task["task_id"]}
++                tok = OUTBOX.channel_token(cid) if OUTBOX is not None else ""
++                if tok:
++                    resp["channel_token"] = tok
+                 if resp["channel_kind"] == "ws":
+-                    resp["realtime_url"] = realtime_ws.WS_URL_PUBLIC.replace(
+-                        "<channel_id>", cid)
++                    url = realtime_ws.WS_URL_PUBLIC.replace("<channel_id>", cid)
++                    if tok:
++                        url += ("&" if "?" in url else "?") + "token=" + tok
++                    resp["realtime_url"] = url
+                 return self._json(200, resp)
+ 
+         if lane == "realtime":
+             channel_id = new_id("ch")
+             channel_kind = ("hls" if body.get("live_session")
+                             else ("ws" if body.get("channel") == "ws" else "passthrough"))
+-            db_exec("INSERT INTO channels(channel_id, task_id, kind, ref, status, created_at)"
+-                    " VALUES(?,?,?,?,?,?)",
++            # 通道令牌：客户端连 WS / 拉 /messages 时带上，防止内网被人猜到 channel_id 接管会话
++            channel_token = secrets.token_urlsafe(18)
++            db_exec("INSERT INTO channels(channel_id, task_id, kind, ref, status,"
++                    " created_at, token) VALUES(?,?,?,?,?,?,?)",
+                     (channel_id, task_id, channel_kind,
+-                     body.get("live_session") or "", "pending", now))
++                     body.get("live_session") or "", "pending", now, channel_token))
+         else:
+             channel_kind = None
+ 
+@@ -1026,10 +1075,16 @@
+         if channel_id:
+             resp["channel_id"] = channel_id
+             resp["channel_kind"] = channel_kind
++            tok = OUTBOX.channel_token(channel_id) if OUTBOX is not None else ""
++            if tok:
++                resp["channel_token"] = tok
+             if channel_kind == "ws":
+                 # WS_URL_PUBLIC 是模板（含 <channel_id> 占位），必须替换成真实通道号，
+                 # 否则客户端拿到的是字面量字符串，连不上。
+-                resp["realtime_url"] = realtime_ws.WS_URL_PUBLIC.replace("<channel_id>", channel_id)
++                url = realtime_ws.WS_URL_PUBLIC.replace("<channel_id>", channel_id)
++                if tok:                          # 令牌放 query，老客户端忽略也不会报错
++                    url += ("&" if "?" in url else "?") + "token=" + tok
++                resp["realtime_url"] = url
+         return self._json(200, resp)
+ 
+ 
+--- /dev/null
++++ b/outbox.py
+@@ -0,0 +1,192 @@
++"""APP 下行消息可靠投递（outbox）+ 通道令牌。
++
++问题背景：原实现下行帧只进 asyncio.Queue，APP 断线时 `if ws is None: continue`
++直接丢弃，无持久化、无补发；进程重启则全丢。老板离线期间的回复永远收不到。
++
++本模块提供：
++  1. outbox 表：下行关键帧先落库再发送，per-channel 单调 seq；
++  2. pending()：按 since_seq 取未投递帧，供 WS 重连补发与 HTTP 补拉；
++  3. ack()：客户端回执后标记 acked，避免无限重发；
++  4. gc()：清理过期记录，防止库膨胀；
++  5. 通道令牌：channels.token，WS/HTTP 校验用（渐进启用）。
++
++设计约束：
++  - 复用 dispatchd 的 sqlite 连接与锁（sqlite3 连接跨线程不安全）；
++  - 只存文本关键帧（reply/reply_end/error/transcript），音频帧不入库；
++  - 任何异常都不能影响主流程：调用方一律 try/except 兜住。
++"""
++import json
++import os
++import time
++import uuid
++
++# 需要可靠投递的帧类型：这些是老板"必须看到/听到"的内容。
++RELIABLE_KINDS = frozenset({"reply", "reply_end", "error", "transcript"})
++
++MAX_REPLAY = int(os.environ.get("DISPATCH_OUTBOX_REPLAY_MAX", "50"))
++# 补发上限只作用于"一次重连最多补多少条"，超出的仍留在库里等下次 HTTP 补拉。
++KEEP_ACKED_DAYS = int(os.environ.get("DISPATCH_OUTBOX_KEEP_DAYS", "7"))
++KEEP_PENDING_DAYS = int(os.environ.get("DISPATCH_OUTBOX_PENDING_DAYS", "30"))
++
++DDL = """
++CREATE TABLE IF NOT EXISTS outbox (
++  channel_id TEXT NOT NULL,
++  seq        INTEGER NOT NULL,          -- per-channel 单调递增，从 1 开始
++  msg_id     TEXT NOT NULL,
++  task_id    TEXT,
++  turn_no    INTEGER,
++  kind       TEXT,                      -- reply / reply_end / error / transcript
++  payload    TEXT NOT NULL,             -- 完整下行帧 JSON（含 seq）
++  status     TEXT NOT NULL DEFAULT 'pending',   -- pending / acked
++  attempts   INTEGER DEFAULT 0,         -- 已尝试投递次数（重连补发累计）
++  created_at REAL,
++  acked_at   REAL,
++  PRIMARY KEY (channel_id, seq)
++);
++CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status, created_at);
++"""
++
++
++class Outbox:
++    def __init__(self, db, lock):
++        self._db = db
++        self._lock = lock
++
++    # ---------------------------------------------------------------- 初始化
++    def init(self):
++        with self._lock:
++            self._db.executescript(DDL)
++            cols = [r[1] for r in self._db.execute("PRAGMA table_info(channels)")]
++            if "token" not in cols:
++                self._db.execute("ALTER TABLE channels ADD COLUMN token TEXT")
++            self._db.commit()
++
++    # ---------------------------------------------------------------- 写入
++    def append(self, channel_id, task_id, turn_no, kind, payload):
++        """落库并分配 seq，返回 (seq, body)。失败返回 (0, payload)。"""
++        if not channel_id:
++            return 0, payload
++        try:
++            with self._lock:
++                row = self._db.execute(
++                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM outbox WHERE channel_id=?",
++                    (channel_id,)).fetchone()
++                seq = int(row[0] or 1)
++                body = dict(payload)
++                body["seq"] = seq
++                self._db.execute(
++                    "INSERT INTO outbox(channel_id, seq, msg_id, task_id, turn_no,"
++                    " kind, payload, status, attempts, created_at)"
++                    " VALUES(?,?,?,?,?,?,?,?,?,?)",
++                    (channel_id, seq, uuid.uuid4().hex[:16], task_id, turn_no,
++                     kind, json.dumps(body, ensure_ascii=False), "pending", 0,
++                     time.time()))
++                self._db.commit()
++                return seq, body
++        except Exception:                                    # noqa: BLE001
++            return 0, payload
++
++    # ---------------------------------------------------------------- 读取
++    def max_seq(self, channel_id):
++        try:
++            with self._lock:
++                row = self._db.execute(
++                    "SELECT COALESCE(MAX(seq), 0) FROM outbox WHERE channel_id=?",
++                    (channel_id,)).fetchone()
++            return int(row[0] or 0)
++        except Exception:                                    # noqa: BLE001
++            return 0
++
++    def pending(self, channel_id, since_seq=0, limit=MAX_REPLAY, include_acked=False):
++        """取 seq > since_seq 的帧（默认只取未 ack 的），按 seq 升序。"""
++        sql = ("SELECT seq, kind, payload, status, created_at FROM outbox"
++               " WHERE channel_id=? AND seq>?")
++        if not include_acked:
++            sql += " AND status='pending'"
++        sql += " ORDER BY seq LIMIT ?"
++        try:
++            with self._lock:
++                rows = self._db.execute(sql, (channel_id, int(since_seq or 0),
++                                              int(limit))).fetchall()
++            return [{"seq": r[0], "kind": r[1], "payload": json.loads(r[2]),
++                     "status": r[3], "created_at": r[4]} for r in rows]
++        except Exception:                                    # noqa: BLE001
++            return []
++
++    # ---------------------------------------------------------------- 回执
++    def ack(self, channel_id, seqs):
++        seqs = [int(s) for s in (seqs or []) if str(s).isdigit()]
++        if not channel_id or not seqs:
++            return 0
++        marks = ",".join("?" * len(seqs))
++        try:
++            with self._lock:
++                cur = self._db.execute(
++                    "UPDATE outbox SET status='acked', acked_at=?"
++                    " WHERE channel_id=? AND seq IN (%s) AND status!='acked'" % marks,
++                    (time.time(), channel_id, *seqs))
++                self._db.commit()
++                return cur.rowcount or 0
++        except Exception:                                    # noqa: BLE001
++            return 0
++
++    def touch(self, channel_id, seqs):
++        """重连补发计数：attempts+1，便于观察客户端到底有没有收到。"""
++        seqs = [int(s) for s in (seqs or []) if str(s).isdigit()]
++        if not channel_id or not seqs:
++            return
++        marks = ",".join("?" * len(seqs))
++        try:
++            with self._lock:
++                self._db.execute(
++                    "UPDATE outbox SET attempts=attempts+1"
++                    " WHERE channel_id=? AND seq IN (%s)" % marks,
++                    (channel_id, *seqs))
++                self._db.commit()
++        except Exception:                                    # noqa: BLE001
++            pass
++
++    # ---------------------------------------------------------------- 清理
++    def gc(self):
++        now = time.time()
++        try:
++            with self._lock:
++                a = self._db.execute(
++                    "DELETE FROM outbox WHERE status='acked' AND acked_at < ?",
++                    (now - KEEP_ACKED_DAYS * 86400,)).rowcount
++                b = self._db.execute(
++                    "DELETE FROM outbox WHERE status='pending' AND created_at < ?",
++                    (now - KEEP_PENDING_DAYS * 86400,)).rowcount
++                self._db.commit()
++            return {"acked_removed": a or 0, "pending_removed": b or 0}
++        except Exception:                                    # noqa: BLE001
++            return {"acked_removed": 0, "pending_removed": 0}
++
++    # ---------------------------------------------------------------- 鉴权
++    def channel_token(self, channel_id):
++        try:
++            with self._lock:
++                row = self._db.execute(
++                    "SELECT token FROM channels WHERE channel_id=?",
++                    (channel_id,)).fetchone()
++            return (row[0] if row else "") or ""
++        except Exception:                                    # noqa: BLE001
++            return ""
++
++    def set_channel_token(self, channel_id, token):
++        try:
++            with self._lock:
++                self._db.execute("UPDATE channels SET token=? WHERE channel_id=?",
++                                 (token, channel_id))
++                self._db.commit()
++        except Exception:                                    # noqa: BLE001
++            pass
++
++    def stats(self):
++        try:
++            with self._lock:
++                rows = self._db.execute(
++                    "SELECT status, COUNT(*) FROM outbox GROUP BY status").fetchall()
++            return {r[0]: r[1] for r in rows}
++        except Exception:                                    # noqa: BLE001
++            return {}
+\ 文件末尾没有换行符

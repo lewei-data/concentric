@@ -8,21 +8,51 @@ import java.util.Properties
 // 版本号：唯一来源。APK 文件名、dist 交付物、README 都引用这里的值。
 // 升级版本只改这两行即可，无需改动任何脚本或 CI。
 // ---------------------------------------------------------------------------
-def appVersionName = "0.13.0"
-def appVersionCode = 44
+def appVersionName = "0.13.3"
+def appVersionCode = 47
 def apkPrefix = "voice-mcp-v${appVersionName}-b${appVersionCode}"
 
-// release 签名（供内部自测安装）：
-//  1) 若工程根存在 keystore.properties，用其中的正式证书；
-//  2) 否则回退到 Android 默认 debug 证书，保证 release 也是「已签名、可安装」的 APK。
-// keystore.properties 不入库，格式见 keystore.properties.example。
+// ---------------------------------------------------------------------------
+// release 签名：证书固定为工程内 signing/conring-release.jks，且 debug/release
+// 共用同一张证书——所有 APK 的签名永远一致，覆盖安装不会再出现「签名冲突」。
+// 缺证书 / 证书被换，构建直接失败（不会悄悄回退到 ~/.android/debug.keystore，
+// 那个文件是自动生成的，一旦重建签名就变了，用户必须卸载重装）。
+// 真要换证书：删掉下面的 EXPECTED_CERT_SHA256 校验值，或加 -PallowCertChange=true。
+// ---------------------------------------------------------------------------
 def keystorePropsFile = rootProject.file("keystore.properties")
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) {
     keystorePropsFile.withInputStream { keystoreProps.load(it) }
 }
-def hasReleaseKeystore = keystoreProps.getProperty("storeFile") != null
-def fallbackKeystore = new File(System.getProperty("user.home"), ".android/debug.keystore")
+
+// 固化好的证书指纹（SHA-256）——这张证书签出来的包可以直接覆盖安装
+def EXPECTED_CERT_SHA256 = "c8db44ed7dda400053f06b84c5db5f4e1d86965158c283f93e60b5727de85bae"
+def allowCertChange = project.hasProperty("allowCertChange")
+
+def releaseStore = keystoreProps.getProperty("storeFile") == null
+        ? null : rootProject.file(keystoreProps.getProperty("storeFile"))
+if (releaseStore == null || !releaseStore.exists()) {
+    throw new GradleException("""找不到签名证书：${releaseStore}
+请恢复 android/keystore.properties（格式见 keystore.properties.example）与 signing/conring-release.jks。
+不允许回退 debug 证书——那会让每次构建的签名都可能不同。""")
+}
+
+def actualCertSha256 = {
+    def ks = java.security.KeyStore.getInstance(
+            releaseStore, keystoreProps.getProperty("storePassword").toCharArray())
+    def cert = ks.getCertificate(keystoreProps.getProperty("keyAlias"))
+    if (cert == null) throw new GradleException("证书里没有别名 ${keystoreProps.getProperty("keyAlias")}")
+    def digest = java.security.MessageDigest.getInstance("SHA-256").digest(cert.getEncoded())
+    return digest.collect { String.format("%02x", it) }.join()
+}()
+
+if (actualCertSha256 != EXPECTED_CERT_SHA256 && !allowCertChange) {
+    throw new GradleException("""签名证书被换过了，已阻断出包：
+  期望 SHA-256 ${EXPECTED_CERT_SHA256}
+  实际 SHA-256 ${actualCertSha256}
+这样装到手机上会签名冲突。确实要换证书就加 -PallowCertChange=true，并同步更新 build.gradle 里的 EXPECTED_CERT_SHA256。""")
+}
+println "SIGNING PINNED OK: ${actualCertSha256}"
 
 android {
     namespace 'com.boray.voicemcp'
@@ -40,24 +70,20 @@ android {
     }
 
     signingConfigs {
+        // 唯一证书：signing/conring-release.jks（指纹已在上面校验过）
         release {
-            if (hasReleaseKeystore) {
-                storeFile rootProject.file(keystoreProps.getProperty("storeFile"))
-                storePassword keystoreProps.getProperty("storePassword")
-                keyAlias keystoreProps.getProperty("keyAlias")
-                keyPassword keystoreProps.getProperty("keyPassword")
-            } else {
-                storeFile fallbackKeystore
-                storePassword "android"
-                keyAlias "androiddebugkey"
-                keyPassword "android"
-            }
+            storeFile releaseStore
+            storePassword keystoreProps.getProperty("storePassword")
+            keyAlias keystoreProps.getProperty("keyAlias")
+            keyPassword keystoreProps.getProperty("keyPassword")
         }
     }
 
     buildTypes {
         debug {
-            // debug 与 release 共用同一 applicationId，便于直接覆盖安装对比
+            // debug 与 release 共用同一 applicationId + 同一张证书，
+            // 任意一个包都能覆盖安装另一个，不会出现「签名冲突」
+            signingConfig signingConfigs.release
         }
         release {
             minifyEnabled false
@@ -111,6 +137,7 @@ tasks.register('collectApks') {
         File dist = new File(rootProject.projectDir, 'dist')
         dist.mkdirs()
         int copied = 0
+        List<String> builtNames = []
         ['debug', 'release'].each { type ->
             File dir = new File(buildDir, "outputs/apk/${type}")
             dir.listFiles()?.findAll { it.isFile() && it.name.endsWith('.apk') }?.each { apk ->
@@ -119,13 +146,31 @@ tasks.register('collectApks') {
                     into dist
                 }
                 println "  APK -> dist/${apk.name} (${apk.length()} bytes)"
+                builtNames << apk.name
                 copied++
             }
         }
         if (copied != 2) {
             throw new GradleException("Expected 2 APKs in dist/, got ${copied}")
         }
+
+        // 每次构建都把本次产物镜像一份到外部目录（默认 /mnt/sefs/conring/tmp），
+        // 可用 -PapkMirrorDir=/xxx 覆盖；挂载点不可用时只告警，不阻断出包。
+        String mirrorPath = (project.findProperty('apkMirrorDir') ?: '/mnt/sefs/conring/tmp').toString()
+        File mirrorDir = new File(mirrorPath)
+        if (mirrorDir.isDirectory() || mirrorDir.mkdirs()) {
+            builtNames.each { name ->
+                File src = new File(dist, name)
+                copy {
+                    from src
+                    into mirrorDir
+                }
+                println "  MIRROR -> ${mirrorDir.absolutePath}/${name}"
+            }
+        } else {
+            println "  WARN: 镜像目录不可用，已跳过：${mirrorDir.absolutePath}"
+        }
         println "DONE: ${copied} APKs, release signing = " +
-                (hasReleaseKeystore ? "keystore.properties" : "Android debug keystore (self-test only)")
+                "signing/conring-release.jks (固定证书 ${actualCertSha256.substring(0, 16)}…)"
     }
 }

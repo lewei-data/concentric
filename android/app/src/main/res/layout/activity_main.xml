@@ -299,6 +299,39 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
 
+            <!-- 录音时的状态 + 电平：一定要放在按钮「上面」。
+                 按住时手指会盖住按钮下半部分，提示放下面等于看不见。 -->
+            <LinearLayout
+                android:id="@+id/llTalkTop"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|center_horizontal"
+                android:layout_marginTop="8dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvRecordHint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:text="按住说话 · 松开发送"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <com.boray.voicemcp.VoiceLevelView
+                    android:id="@+id/levelTalk"
+                    android:layout_width="128dp"
+                    android:layout_height="18dp"
+                    android:layout_marginTop="4dp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
             <View
                 android:id="@+id/micGlow"
                 android:layout_width="190dp"
@@ -404,46 +437,8 @@
                 </FrameLayout>
             </LinearLayout>
 
-            <!-- 接通中：绕着大圆钮转一圈，代替「正在接通 xxx」这类文字 -->
-            <ProgressBar
-                android:id="@+id/connectRing"
-                android:layout_width="176dp"
-                android:layout_height="176dp"
-                android:layout_gravity="center"
-                android:clickable="false"
-                android:indeterminate="true"
-                android:indeterminateTint="@color/primary"
-                android:visibility="gone" />
-
-            <ProgressBar
-                android:id="@+id/progressRing"
-                android:layout_width="176dp"
-                android:layout_height="176dp"
-                android:layout_gravity="center"
-                android:clickable="false"
-                android:indeterminate="true"
-                android:indeterminateTint="@color/primary"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/tvRecordHint"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom|center_horizontal"
-                android:layout_marginBottom="18dp"
-                android:text="按住说话 · 松开发送"
-                android:textColor="@color/text_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <!-- 录音时的实时电平（松手即消失） -->
-            <com.boray.voicemcp.VoiceLevelView
-                android:id="@+id/levelTalk"
-                android:layout_width="132dp"
-                android:layout_height="22dp"
-                android:layout_gravity="bottom|center_horizontal"
-                android:layout_marginBottom="52dp"
-                android:visibility="gone" />
+            <!-- 这里刻意不放任何 indeterminate 进度环：
+                 大圆钮区域在默认状态下必须完全静止（要进度就用上面的文字说） -->
 
             <!-- 识别完成：先给老板看一眼文字，再决定发文字还是发语音 -->
             <LinearLayout
@@ -490,7 +485,7 @@
                         android:id="@+id/btnAsrRedo"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/bg_pill"
+                        android:background="@drawable/bg_pill_outline"
                         android:clickable="true"
                         android:focusable="true"
                         android:paddingLeft="16dp"
@@ -507,7 +502,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:background="@drawable/bg_pill"
+                        android:background="@drawable/bg_pill_outline"
                         android:clickable="true"
                         android:focusable="true"
                         android:paddingLeft="16dp"
