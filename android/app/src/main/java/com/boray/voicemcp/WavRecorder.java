@@ -24,10 +24,13 @@ public final class WavRecorder {
     private volatile boolean running;
     private long pcmBytes;
     private File outFile;
+    /** 当前音量（0~1，带快升慢落平滑），供「按住说话」的电平条使用 */
+    private volatile float level;
 
     public void start(File target) throws IOException {
         outFile = target;
         pcmBytes = 0;
+        level = 0f;
         int minBuffer = AudioRecord.getMinBufferSize(
                 SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         int bufferSize = Math.max(minBuffer, SAMPLE_RATE / 5 * 2);
@@ -55,6 +58,7 @@ public final class WavRecorder {
                     try {
                         raf.write(buf, 0, n);
                         pcmBytes += n;
+                        updateLevel(buf, n);
                     } catch (IOException e) {
                         break;
                     }
@@ -101,6 +105,22 @@ public final class WavRecorder {
 
     public long recordedBytes() {
         return pcmBytes;
+    }
+
+    /** 当前音量 0~1（边录边算峰值，UI 每 80ms 读一次做电平条） */
+    public float level() {
+        return level;
+    }
+
+    private void updateLevel(byte[] buf, int n) {
+        int peak = 0;
+        for (int i = 0; i + 1 < n; i += 2) {
+            int s = (short) ((buf[i] & 0xFF) | (buf[i + 1] << 8));
+            int a = s < 0 ? -s : s;
+            if (a > peak) peak = a;
+        }
+        float want = Math.min(1f, peak / 32768f * 2.4f);
+        level = level * 0.55f + want * 0.45f;
     }
 
     private static void writeHeader(RandomAccessFile f, long dataLength) throws IOException {

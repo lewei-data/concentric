@@ -118,10 +118,39 @@ public class MainActivity extends Activity {
     private int heroBigHeight;
     private int heroCompactHeight;
     private static final int REQ_CALL = 991;
+    private static final int REQ_TALK = 992;
     private CompoundButton cbListen;
     private ProgressBar progressRing;
     private LinearLayout llAttachments;
     private ObjectAnimator pulseAnimator;
+
+    /* ===== 语音模式（飞书式按住说话 → ASR → 发文字 / 发语音） ===== */
+    private static final int TALK_IDLE = 0;        // 空闲：大圆钮「按住说话」
+    private static final int TALK_RECORDING = 1;   // 按住录音中
+    private static final int TALK_ASR = 2;         // 松手后正在识别
+    private static final int TALK_PANEL = 3;       // 识别完成，等老板选发文字 / 发语音
+    private static final int TALK_SENDING = 4;     // 正在发给小秘书
+    private static final int TALK_WAITING = 5;     // 已入库，等小秘书回复
+
+    private int talkState = TALK_IDLE;
+    private WavRecorder talkRecorder;
+    private File talkWav;
+    private long talkStartAt;
+    private float talkDownY;
+    private boolean talkCancelBySlide;
+    private ChatApi.Asr talkAsr;
+    /** 一条语音消息 = 一段会话：首条消息时建，之后都追加进去 */
+    private String chatSessionId = "";
+    /** 每发一条消息 +1；旧轮询线程靠它自动退出，避免串话 */
+    private int replyGen = 0;
+
+    private LinearLayout llAsr;
+    private TextView tvAsrLabel;
+    private TextView tvAsrText;
+    private View btnAsrText;
+    private View btnAsrVoice;
+    private View btnAsrRedo;
+    private VoiceLevelView levelTalk;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -173,6 +202,20 @@ public class MainActivity extends Activity {
         tvCallTimer = findViewById(R.id.tvCallTimer);
         btnHangup = findViewById(R.id.btnHangup);
         levelView = findViewById(R.id.levelView);
+        llAsr = findViewById(R.id.llAsr);
+        tvAsrLabel = findViewById(R.id.tvAsrLabel);
+        tvAsrText = findViewById(R.id.tvAsrText);
+        btnAsrText = findViewById(R.id.btnAsrText);
+        btnAsrVoice = findViewById(R.id.btnAsrVoice);
+        btnAsrRedo = findViewById(R.id.btnAsrRedo);
+        levelTalk = findViewById(R.id.levelTalk);
+        if (levelTalk != null) levelTalk.setBarColor(getResources().getColor(R.color.primary, getTheme()));
+        if (btnAsrText != null) btnAsrText.setOnClickListener(v -> sendAsr(false));
+        if (btnAsrVoice != null) btnAsrVoice.setOnClickListener(v -> sendAsr(true));
+        if (btnAsrRedo != null) btnAsrRedo.setOnClickListener(v -> {
+            clearTalkPanel();
+            toast("请重新按住说话");
+        });
         float d = getResources().getDisplayMetrics().density;
         heroBigHeight = Math.round(264 * d);
         heroCompactHeight = Math.round(84 * d);
@@ -224,15 +267,15 @@ public class MainActivity extends Activity {
         // 待办事项：需要老板拍板的事，可审批
         btnTodo.setOnClickListener(v -> startActivity(new Intent(this, TodoActivity.class)));
         btnSettings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
-        // 实时语音通话：点一下接通（图标变红），再点挂断
+        // 实时语音通话：顶部图标点一下接通（图标变红），再点挂断
         btnVoiceCall.setOnClickListener(v -> toggleCall());
         if (btnHangup != null) {
             btnHangup.setOnClickListener(v -> toggleCall());   // 通话条上的挂断键，与首页图标同一套逻辑
             applyPressEffect(btnHangup);
         }
+        // 首页大圆钮 = 语音模式：按住说话，松手自动 ASR（参考飞书）
         if (btnCall != null) {
-            btnCall.setOnClickListener(v -> toggleCall());
-            applyPressEffect(btnCall);
+            btnCall.setOnTouchListener((v, e) -> onTalkTouch(v, e));
         }
         findViewById(R.id.cardEmployee).setOnClickListener(v ->
                 startActivity(new Intent(this, EmployeeListActivity.class)));
@@ -294,6 +337,7 @@ public class MainActivity extends Activity {
         refreshListenState();
         restoreLastResult();
         bindSession();          // 会话面板：按当前汇报人 + 当天加载历史
+        renderTalk();           // 语音模式的按钮/提示按当前状态摆好
     }
 
     /**
@@ -338,6 +382,7 @@ public class MainActivity extends Activity {
         tone.restoreVolumeIfBoosted();
         startConnectAnim(false);
         callTick.removeCallbacks(callTickRunnable);
+        if (talkState == TALK_RECORDING) endTalk(true);   // 切走就丢掉这段录音，别一直占麦克风
     }
 
     // ------------------------------------------------------------------ 实时语音通话
@@ -381,7 +426,7 @@ public class MainActivity extends Activity {
     private void applyReporterLabels() {
         String name = reporterName();
         if (tvCallHint != null && !VoiceCallService.isConnected()) {
-            tvCallHint.setText("点击通话，和 " + name + " 实时对话");
+            tvCallHint.setText("按住说话，松开就发给 " + name);
         }
         bindSession();
     }
@@ -501,7 +546,6 @@ public class MainActivity extends Activity {
             sessionPanel.setCallStatus(dur, liveLevel);
         }
 
-        if (tvCallBtn != null) tvCallBtn.setText("通话");
         if (btnCall != null) {
             btnCall.setBackgroundResource(connected ? R.drawable.bg_call_end : R.drawable.bg_mic);
         }
@@ -514,6 +558,8 @@ public class MainActivity extends Activity {
         } else if (!connected) {
             wasExpandedForCall = false;
         }
+        // 未通话时整块是语音模式：把按住说话的按钮/提示按当前状态摆好
+        renderTalk();
     }
 
     /** 顶部瞬时提示（已接通 / 连接失败），到时自动隐藏 */
@@ -541,6 +587,331 @@ public class MainActivity extends Activity {
             if (connectAnim != null && connectAnim.isStarted()) connectAnim.cancel();
             btnCall.setAlpha(1f);
         }
+    }
+
+    // ------------------------------------------------------------------ 语音模式（按住说话）
+
+    /**
+     * 大圆钮的触摸：按下开始录音，上滑取消，松手 → ASR → 让老板选「发文字 / 发语音」。
+     *
+     * <p>与小秘书的交互从此走统一消息通道（{@link ChatApi}，线程 app:secretary），
+     * 和 Web 桌面精灵是同一条流水线：同一个小秘书、同一份会话记录、同一套 TTS 回复。
+     */
+    private boolean onTalkTouch(View v, MotionEvent e) {
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                talkDownY = e.getRawY();
+                talkCancelBySlide = false;
+                if (VoiceCallService.isActive()) {
+                    toast("正在实时通话中，先挂断再说");
+                    return true;
+                }
+                if (talkState == TALK_WAITING) {
+                    // 上一句还在等回复：允许接着说下一句，旧的轮询线程作废（服务端线程里仍然留着那条回复）
+                    replyGen++;
+                } else if (talkState != TALK_IDLE) {
+                    return true;   // 识别中 / 发送中：忽略这次触摸
+                }
+                beginTalk();
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                if (talkState == TALK_RECORDING) {
+                    float threshold = 72 * getResources().getDisplayMetrics().density;
+                    boolean cancel = talkDownY - e.getRawY() > threshold;
+                    if (cancel != talkCancelBySlide) {
+                        talkCancelBySlide = cancel;
+                        renderTalk();
+                    }
+                }
+                return true;
+            case MotionEvent.ACTION_UP:
+                if (talkState == TALK_RECORDING) {
+                    endTalk(talkCancelBySlide);
+                    v.performClick();
+                }
+                return true;
+            case MotionEvent.ACTION_CANCEL:
+                if (talkState == TALK_RECORDING) endTalk(true);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void beginTalk() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_TALK);
+            toast("语音需要麦克风权限，请允许后再按住说话");
+            return;
+        }
+        if (talkAsr != null) clearTalkPanel();
+        File target = new File(getCacheDir(), "talk_" + System.currentTimeMillis() + ".wav");
+        WavRecorder rec = new WavRecorder();
+        try {
+            rec.start(target);
+        } catch (Exception ex) {
+            toast("无法开始录音：" + ex.getMessage());
+            return;
+        }
+        talkRecorder = rec;
+        talkWav = target;
+        talkStartAt = System.currentTimeMillis();
+        talkState = TALK_RECORDING;
+        player.stop();                 // 说话时先把正在播的回复停掉，别互相盖住
+        startPulse();
+        renderTalk();
+        talkTick.removeCallbacks(talkTickRunnable);
+        talkTick.post(talkTickRunnable);
+    }
+
+    /** 松手：停录 → 交给服务端 ASR（只识别，不建线程、不触发回复） */
+    private void endTalk(boolean cancel) {
+        talkTick.removeCallbacks(talkTickRunnable);
+        stopPulse();
+        File wav = talkRecorder == null ? null : talkRecorder.stop();
+        talkRecorder = null;
+        long heldMs = System.currentTimeMillis() - talkStartAt;
+        if (levelTalk != null) {
+            levelTalk.setActive(false);
+            levelTalk.setVisibility(View.GONE);
+        }
+        if (cancel) {
+            toast("已取消");
+            talkState = TALK_IDLE;
+            renderTalk();
+            return;
+        }
+        if (wav == null || wav.length() < 2000 || heldMs < 400) {
+            toast("按住多说一会再松手");
+            talkWav = null;
+            talkState = TALK_IDLE;
+            renderTalk();
+            return;
+        }
+        talkWav = wav;
+        talkState = TALK_ASR;
+        renderTalk();
+        setStatus("正在识别语音…");
+        final File file = wav;
+        executor.execute(() -> {
+            ChatApi.Asr r = ChatApi.transcribe(this, file);
+            ui.post(() -> {
+                if (isFinishing()) return;
+                if (!r.ok) {
+                    talkState = TALK_IDLE;
+                    renderTalk();
+                    setStatus("识别失败：" + r.error);
+                    toast(r.error);
+                    return;
+                }
+                talkAsr = r;
+                talkState = TALK_PANEL;
+                renderTalk();
+                setStatus("已识别，确认后发送");
+            });
+        });
+    }
+
+    /** 「发送文字」asVoice=false；「发语音」asVoice=true（音频原样上传，只做一次 ASR） */
+    private void sendAsr(boolean asVoice) {
+        if (talkState != TALK_PANEL || talkAsr == null) return;
+        final String text = talkAsr.transcript;
+        final File wav = talkWav;
+        talkState = TALK_SENDING;
+        renderTalk();
+        setStatus(asVoice ? "正在发送语音…" : "正在发送文字…");
+        executor.execute(() -> {
+            // 先记基线：之后的轮询只看比它新的消息，避免把历史回复当成本次回复
+            long baseline = ChatApi.latestId(this);
+            ChatApi.Sent sent = asVoice
+                    ? ChatApi.sendVoice(this, wav, text)
+                    : ChatApi.sendText(this, text);
+            ui.post(() -> {
+                if (isFinishing()) return;
+                if (!sent.ok) {
+                    talkState = TALK_PANEL;
+                    renderTalk();
+                    setStatus("发送失败：" + sent.error);
+                    toast("发送失败：" + sent.error);
+                    return;
+                }
+                appendSession(SessionStore.ROLE_USER, SessionStore.KIND_VOICE,
+                        asVoice ? "（语音）" + text : text);
+                clearTalkPanel();
+                talkState = TALK_WAITING;
+                renderTalk();
+                setStatus(asVoice ? "语音已发出，等小秘书回复…" : "文字已发出，等小秘书回复…");
+                replyGen++;
+                awaitReply(baseline, replyGen);
+            });
+        });
+    }
+
+    /** 后台轮询小秘书回复（正式回复带 meta.ack 的都是「收到」回执，跳过） */
+    private void awaitReply(long baseline, int gen) {
+        new Thread(() -> {
+            long deadline = System.currentTimeMillis() + 120 * 1000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (isFinishing() || gen != replyGen) return;
+                List<ChatApi.Msg> rows = ChatApi.messages(this, baseline);
+                ChatApi.Msg hit = null;
+                for (ChatApi.Msg m : rows) {
+                    if (m.outbound && !m.ack && m.content != null && !m.content.trim().isEmpty()) {
+                        hit = m;
+                    }
+                }
+                if (hit != null) {
+                    final ChatApi.Msg got = hit;
+                    ui.post(() -> deliverReply(got, gen));
+                    return;
+                }
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            ui.post(() -> {
+                if (gen != replyGen || isFinishing()) return;
+                talkState = TALK_IDLE;
+                renderTalk();
+                setStatus("小秘书还没回复，稍后可在会话记录里查看");
+            });
+        }, "reply-poll").start();
+    }
+
+    /** 回复到达：结果卡 + 会话面板 + 语音播报（TTS 音频需要带 Cookie 下载后再播） */
+    private void deliverReply(ChatApi.Msg m, int gen) {
+        if (gen != replyGen || isFinishing()) return;
+        talkState = TALK_IDLE;
+        renderTalk();
+        setStatus("小秘书已回复");
+        tvResult.setAlpha(0f);
+        tvResult.setText(m.content);
+        tvResult.animate().alpha(1f).setDuration(240).start();
+        appendSession(SessionStore.ROLE_AGENT, SessionStore.KIND_DETAIL, m.content);
+        boolean speak = cfg.autoPlay && cfg.voiceEnabled;
+        if (!speak) return;
+        if (m.audio == null || m.audio.isEmpty()) {
+            player.speak(m.content);
+            return;
+        }
+        new Thread(() -> {
+            File dir = new File(getCacheDir(), "chat");
+            if (!dir.isDirectory() && !dir.mkdirs()) dir = getCacheDir();
+            File wav = ChatApi.download(this, m.audio, dir);
+            final String path = wav == null ? "" : wav.getAbsolutePath();
+            ui.post(() -> {
+                if (isFinishing()) return;
+                if (!path.isEmpty()) {
+                    player.playFile(path, ok -> {
+                        if (!ok) player.speak(m.content);
+                    });
+                } else {
+                    player.speak(m.content);
+                }
+            });
+        }, "reply-audio").start();
+    }
+
+    /** 识别结果面板的显示/隐藏 + 大圆钮、提示文案的状态机 */
+    private void renderTalk() {
+        if (isFinishing()) return;
+        if (VoiceCallService.isActive()) {
+            // 实时通话优先：这几个控件由 renderCallUi / llCallBar 接管
+            setGone(llAsr, true);
+            setGone(levelTalk, true);
+            return;
+        }
+        boolean panel = talkState == TALK_PANEL;
+        boolean recording = talkState == TALK_RECORDING;
+        boolean waiting = talkState == TALK_WAITING;
+        // 识别中 / 发送中：整块收起来只留一行状态；等回复时仍可按住说下一句
+        boolean busy = talkState == TALK_ASR || talkState == TALK_SENDING;
+
+        setGone(llAsr, !panel);
+        if (panel && talkAsr != null && tvAsrText != null) {
+            tvAsrText.setText(talkAsr.transcript);
+        }
+        setGone(btnCall, panel || busy);
+        setGone(micGlow, panel || busy);
+        setGone(tvCallBtn, panel || busy);
+        setGone(tvCallHint, panel || busy || recording || waiting);
+        setGone(tvRecordHint, panel);
+        setGone(levelTalk, !recording);
+        setGone(progressRing, talkState == TALK_ASR || talkState == TALK_SENDING);
+        if (btnCall != null) btnCall.setSelected(recording);
+        if (levelTalk != null) levelTalk.setActive(recording);
+        if (panel || tvRecordHint == null) return;
+
+        String hint;
+        switch (talkState) {
+            case TALK_RECORDING:
+                long sec = Math.max(0, (System.currentTimeMillis() - talkStartAt) / 1000);
+                hint = (talkCancelBySlide ? "松开取消" : "松开发送 · 上滑取消")
+                        + " · " + sec + "s";
+                break;
+            case TALK_ASR:
+                hint = "正在识别…";
+                break;
+            case TALK_SENDING:
+                hint = "正在发给小秘书…";
+                break;
+            case TALK_WAITING:
+                hint = "已发送，等小秘书回复 · 也可以接着说";
+                break;
+            default:
+                hint = "按住说话 · 松开发送";
+        }
+        tvRecordHint.setText(hint);
+        if (talkState == TALK_IDLE && tvCallHint != null) {
+            tvCallHint.setText("按住说话，松开就发给 " + reporterName());
+        }
+    }
+
+    /** 录音电平 + 计时（只在录音时跑，80ms 一次） */
+    private final Handler talkTick = new Handler(Looper.getMainLooper());
+    private final Runnable talkTickRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (talkState != TALK_RECORDING) return;
+            if (levelTalk != null && talkRecorder != null) {
+                levelTalk.setLevel(talkRecorder.level());
+            }
+            long sec = (System.currentTimeMillis() - talkStartAt) / 1000;
+            if (tvRecordHint != null) {
+                tvRecordHint.setText((talkCancelBySlide ? "松开取消" : "松开发送 · 上滑取消")
+                        + " · " + sec + "s");
+            }
+            if (sec >= 60) {          // WavRecorder 上限 60 秒，自动收尾
+                endTalk(false);
+                return;
+            }
+            talkTick.postDelayed(this, 80);
+        }
+    };
+
+    private void clearTalkPanel() {
+        talkAsr = null;
+        talkWav = null;
+        if (talkState == TALK_PANEL) talkState = TALK_IDLE;
+        setGone(llAsr, true);
+        if (tvAsrText != null) tvAsrText.setText("");
+        if (talkState == TALK_IDLE) renderTalk();
+    }
+
+    /** 把这条消息也写进本机会话面板（按人 + 天长期保存，和通话记录同一份） */
+    private void appendSession(int role, int kind, String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        Employee e = EmployeeStore.current(this, EmployeeStore.load(this));
+        String id = e == null ? Briefing.SECRETARY_ID : e.id;
+        String name = e == null || e.name == null || e.name.isEmpty() ? "小秘书" : e.name;
+        SessionStore db = SessionStore.get(this);
+        if (chatSessionId.isEmpty()) {
+            chatSessionId = db.begin(id, name, "chat", System.currentTimeMillis());
+        }
+        db.add(chatSessionId, id, name, role, kind, text, "[]", System.currentTimeMillis());
     }
 
     // ------------------------------------------------------------------ 通话图标
@@ -660,6 +1031,12 @@ public class MainActivity extends Activity {
         tone.restoreVolumeIfBoosted();
         startConnectAnim(false);
         stopPulse();
+        talkTick.removeCallbacks(talkTickRunnable);
+        replyGen++;                     // 让还在跑的回复轮询立刻失效
+        if (talkRecorder != null) {
+            talkRecorder.stop();
+            talkRecorder = null;
+        }
         if (recording && recorder != null) recorder.stop();
         player.release();
         executor.shutdownNow();
@@ -728,6 +1105,11 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_TALK) {
+            boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+            toast(granted ? "已授权，按住说话试试" : "没有麦克风权限，无法发语音");
+            return;
+        }
         if (requestCode == REQ_CALL) {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
                 toggleCall();

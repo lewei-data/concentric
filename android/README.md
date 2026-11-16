@@ -11,6 +11,17 @@
 
 本轮修复：首页名称统一为「同心圆」、默认汇报员改为 CEO、档案页试听改为真实音频驱动口型、汇报画面大屏与小窗统一使用同一位员工的服务端真人素材（详见第 18 节）。
 
+## 0.13.0（2026-11-16）本轮改动
+
+| 项 | 说明 |
+| --- | --- |
+| **桌面名称** | 带 `MAIN/LAUNCHER` 的 `LoginActivity` 之前写了 `android:label="@string/login_title"`，会把启动器/多任务里的应用名覆盖成「登录」。现改回 `@string/app_name`，`aapt dump badging` 已核对 `application-label:'同心圆'` 与 `launchable-activity label='同心圆'`。 |
+| **语音模式** | 首页大圆钮由「点击通话」改成飞书式**按住说话**：按住录音（实时电平 + 秒数，上滑取消），松手自动走服务端 ASR；识别结果先展示，老板可选「发送文字」「发语音」或「重录」。等回复期间可以接着说下一句。 |
+| **处理机制统一** | APP 的语音/文字消息与 Web 桌面精灵走**同一套流水线**：`chat_messages` 落库（线程 `app:secretary`，与 Web 的 `web:secretary` 同源同结构）、同一个小秘书 agent、同一套 TTS 语音、同一个 SSE `chat.message`。服务端新增 `POST /api/asr`（只识别、不建线程）与 `/api/chat/voice?text=`（带已识别文本，整条链路只做一次 ASR）；`/api/chat/*` 增加 `source=app`。实时通话（dispatch WS）保留在顶部通话图标，语音模式与它互不干扰。 |
+
+新增源码：`ChatApi.java`（识别 / 发文字 / 发语音 / 拉回复 / 带 Cookie 下载回复音频）。
+
+
 应用名为「同心圆」，默认端点为正式域名；云端 CI 见第 5 节，界面见第 11 节，数字员工见第 12 节，安全区与图标见第 13 节，异步任务 / 监听 / 历史见第 14 节，v2.1.0 适配见第 15 节，素材修复见第 16 节，**双版本出包规则见第 17 节**，**本轮核查见第 18 节**。
 
 工程目录：`E:\src2026\voice-mcp-android`，标准 Android Gradle 工程，Java + 纯 Android framework，**零第三方依赖**（无 AndroidX / OkHttp / Kotlin）。

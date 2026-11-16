@@ -2301,7 +2301,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self._owner_only():
             return
         k = self._kernel()
-        if not k.db:
+        # /api/asr 只做识别、不落库，过程库没启用也能用
+        if not k.db and path != "/api/asr":
             return self._json({"ok": False, "enabled": False, "error": "过程库未启用"}, 503)
         try:
             blob = self._raw_body()
@@ -2355,9 +2356,10 @@ class Handler(BaseHTTPRequestHandler):
             tid = self._chat_put_inbound(k.db, modality="file", content=f"发来文件：{name}",
                                          content_kind="file",
                                          meta={"file": f"/chat-files/{fname}", "name": name,
-                                               "size": len(blob)})
+                                               "size": len(blob)}, source=source)
             self._chat_reply_async(k, tid, f"老板发来了一个文件：{name}（{len(blob)} 字节）",
-                                   note="文件已存到你的工作区 chat 目录，可先确认能否读取并给老板反馈")
+                                   note="文件已存到你的工作区 chat 目录，可先确认能否读取并给老板反馈",
+                                   source=source)
             return self._json({"ok": True, "threadId": tid, "file": fname})
         except Exception as e:
             return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
@@ -2711,7 +2713,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
             return self._json({"ok": True, **res})
         # 二进制直传路由（不走 JSON 解析，body 是原始音频/文件）
-        if path in ("/api/chat/voice", "/api/chat/upload"):
+        # /api/asr：APP 语音模式的「只识别」；/api/chat/voice：语音消息；/api/chat/upload：文件
+        if path in ("/api/asr", "/api/chat/voice", "/api/chat/upload"):
             return self._chat_binary_post(path)
         # 图生视频首帧：无损直传（先于 _body() 拦截，否则 body 会被当 JSON 预读成空）
         if path == "/api/toolbox/frame":
@@ -2926,7 +2929,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self._owner_only():
                 return
             return self._json(asset_audit.trigger(self._kernel()))
-        # ---------- 消息中心 · 桌面精灵（小秘书对话） ----------
+        # ---------- 消息中心 · 桌面精灵（小秘书对话，Web / APP 共用） ----------
         if path in ("/api/chat/send", "/api/chat/voice", "/api/chat/upload"):
             if not self._owner_only():
                 return
@@ -2937,9 +2940,13 @@ class Handler(BaseHTTPRequestHandler):
                     text = str(body.get("text") or "").strip()
                     if not text:
                         return self._json({"ok": False, "error": "消息内容不能为空"}, 400)
+                    source = self._chat_source(
+                        parse_qs(urlparse(self.path).query))
+                    if str(body.get("source") or "").strip().lower() in self._CHAT_SOURCE_TITLES:
+                        source = str(body["source"]).strip().lower()
                     tid = self._chat_put_inbound(
-                        self._kernel().db, modality="text", content=text)
-                    self._chat_reply_async(self._kernel(), tid, text)
+                        self._kernel().db, modality="text", content=text, source=source)
+                    self._chat_reply_async(self._kernel(), tid, text, source=source)
                     return self._json({"ok": True, "threadId": tid})
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
