@@ -310,7 +310,7 @@ def _build(folder, trace, sub, approvals=None, factory=None, step_status=None):
     render = data.get("render") or {}
     render_check = data.get("renderCheck") or {}
 
-    return {
+    rec = {
         "id": _work_id(trace, sub),
         "code": _code(trace, pid, data.get("id") or sub.split("-")[-1]),
         "title": title,

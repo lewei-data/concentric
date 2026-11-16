@@ -22,6 +22,7 @@ ENABLED = os.environ.get("OPC_DB", "1") == "1"
 TZ = timezone(timedelta(hours=8))
 FLUSH_MS = 200
 FLUSH_ROWS = 200
+RETRY_MAX = 5000        # 批量写累计失败超过这个条数才丢弃，防止坏数据无限重试
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -289,6 +290,20 @@ CREATE TABLE IF NOT EXISTS release_ledger (
 CREATE INDEX IF NOT EXISTS idx_release_ledger_trace ON release_ledger(trace_id);
 
 
+CREATE TABLE IF NOT EXISTS directives (
+  id           TEXT PRIMARY KEY,
+  trace_id     TEXT,
+  text         TEXT,          -- 老板原话（不改写）
+  source       TEXT,          -- chat / hotspot / idea / stage
+  scope        TEXT,          -- global / project / trace
+  project_id   TEXT,
+  confirmed_by TEXT,          -- 确认人
+  created_at   TEXT,
+  raw          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_directives_trace ON directives(trace_id, created_at);
+
+
 CREATE TABLE IF NOT EXISTS stats_daily (
   day                  TEXT PRIMARY KEY,
   traces               INTEGER,
@@ -501,6 +516,21 @@ def ts_to_iso(value):
         return ""
 
 
+def _directive_from_row(row):
+    """directives 行 → 接口用的驼峰结构。"""
+    return {
+        "id": row.get("id"),
+        "traceId": row.get("trace_id") or "",
+        "text": row.get("text") or "",
+        "source": row.get("source") or "",
+        "scope": row.get("scope") or "",
+        "projectId": row.get("project_id") or "",
+        "confirmedBy": row.get("confirmed_by") or "",
+        "createdAt": row.get("created_at") or "",
+        "raw": row.get("raw") or "",
+    }
+
+
 def jdump(value):
     try:
         return json.dumps(value, ensure_ascii=False)
@@ -521,6 +551,7 @@ class Store:
         self._batch = []
         self._cv = threading.Condition()
         self._stop = False
+        self._retry = 0          # 批量写失败累计条数，超限才丢弃，防无限重试
         self._conn = sqlite3.connect(path, check_same_thread=False, timeout=5)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
@@ -701,21 +732,47 @@ class Store:
                 self._batch = []
                 stop = self._stop
             if batch:
-                self._write(batch)
+                try:
+                    self._write(batch)
+                except Exception as e:
+                    # 写线程绝不能死：一旦退出，此后所有 put() 只入队不落库，进程内静默丢数据
+                    _log(f"批量写线程异常（{len(batch)} 条重新入队）：{type(e).__name__}: {e}")
+                    self._requeue(batch)
             if stop and not batch:
                 return
 
+    def _requeue(self, batch):
+        """失败批放回队首（保持写入顺序）；累计超限才丢弃，避免一条坏数据卡死全库。"""
+        with self._cv:
+            self._retry += len(batch)
+            if self._retry > RETRY_MAX:
+                _log(f"批量写累计失败超过 {RETRY_MAX} 条，丢弃最旧一批（{len(batch)} 条）：请检查磁盘/权限")
+                self._retry = 0
+                return
+            self._batch = batch + self._batch
+
     def _write(self, batch):
+        """整批一个事务：单条坏语句跳过，事务级失败退避重试一次后抛出。
+
+        旧实现把事务失败也吞成一行日志，整批就此丢失（`database is locked` 时很常见），
+        调用方完全不知道有数据没落库。
+        """
         with self._lock:
-            try:
-                with self._conn:
-                    for sql, params in batch:
-                        try:
-                            self._conn.execute(sql, params)
-                        except sqlite3.Error as e:
-                            _log(f"写入失败 {sql[:60]}：{e}")
-            except sqlite3.Error as e:
-                _log(f"批量事务失败（{len(batch)} 条）：{e}")
+            for attempt in (1, 2):
+                try:
+                    with self._conn:
+                        for sql, params in batch:
+                            try:
+                                self._conn.execute(sql, params)
+                            except sqlite3.Error as e:
+                                _log(f"写入失败（跳过该条）{sql[:60]}：{e}")
+                    self._retry = 0
+                    return
+                except sqlite3.Error as e:
+                    if attempt == 2:
+                        raise
+                    _log(f"批量事务失败（{len(batch)} 条），0.2s 后重试：{e}")
+                    time.sleep(0.2)
 
     def put(self, sql, params=()):
         try:
@@ -727,12 +784,16 @@ class Store:
             _log(f"入队失败：{type(e).__name__}: {e}")
 
     def flush(self):
-        """同步刷盘，供摄取水位线/验收使用。"""
+        """同步刷盘，供摄取水位线/验收使用。失败不丢批，放回队列等下一轮。"""
         with self._cv:
             batch = self._batch
             self._batch = []
         if batch:
-            self._write(batch)
+            try:
+                self._write(batch)
+            except Exception as e:
+                _log(f"同步刷盘失败（{len(batch)} 条重新入队）：{type(e).__name__}: {e}")
+                self._requeue(batch)
 
     def close(self):
         with self._cv:
@@ -868,6 +929,11 @@ class Store:
             _log(f"upsert_hotspot 失败：{type(e).__name__}: {e}")
 
     def upsert_knowledge(self, k):
+        # id 为空绝不能入库：knowledge 的 TEXT PRIMARY KEY 在 SQLite 里允许 NULL，
+        # 于是历史脏行变成 id=NULL 的幽灵条目，既删不掉（=? 匹配不到 NULL）又会回灌内存
+        if not str(k.get("id") or "").strip():
+            _log(f"跳过无 id 的知识条目：{str(k.get('title') or '')[:40]}")
+            return
         try:
             self.put("""INSERT INTO knowledge(id,title,path,tags,updated_at,raw,
                         category,sancai,summary,project_id,trace_id,body)
@@ -888,6 +954,40 @@ class Store:
                       k.get("body")))
         except Exception as e:
             _log(f"upsert_knowledge 失败：{type(e).__name__}: {e}")
+
+    def prune_knowledge(self, keep_ids):
+        """以 vault 为准清掉 db 里已不存在的知识条目（连边一起删）。
+
+        只 upsert 不删会让被移走/改名的条目变成"死节点"，随后被 _knowledge_all()
+        回灌内存并参与图谱召回。这里只入队，跟随同一批写顺序落盘。
+        """
+        keep = {str(i) for i in keep_ids if i}
+        if not keep:
+            return 0                      # 没读到任何 id 时绝不清库，避免误删全表
+        try:
+            conn = self.read_conn()
+            try:
+                dead, dirty = [], False
+                for (rid,) in conn.execute("SELECT id FROM knowledge"):
+                    if rid is None or str(rid).strip() == "":
+                        dirty = True          # 历史 NULL 主键脏行，不能用 ? 匹配，单独按 IS NULL 删
+                    elif str(rid) not in keep:
+                        dead.append(str(rid))
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            _log(f"prune_knowledge 读取失败：{type(e).__name__}: {e}")
+            return 0
+        if dirty:
+            self.put("DELETE FROM knowledge_relations WHERE src IS NULL OR dst IS NULL")
+            self.put("DELETE FROM knowledge WHERE id IS NULL")
+        for i in dead:
+            self.put("DELETE FROM knowledge_relations WHERE src=? OR dst=?", (i, i))
+            self.put("DELETE FROM knowledge WHERE id=?", (i,))
+        if dead or dirty:
+            _log(f"知识库差集清理 {len(dead)} 条 + NULL 脏行"
+                 f"{'已清' if dirty else '无'}（vault 为准）：{dead[:3]}")
+        return len(dead)
 
     def replace_relations(self, rows, origin="heuristic"):
         """全量替换某一个来源的关系边（启发式重算用），不触碰 ai/manual 边。"""

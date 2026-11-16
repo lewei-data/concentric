@@ -11,6 +11,7 @@
 样片是「按分镜自动生成的预览片」（animatic），不是实拍素材，片头与页脚都写明。
 依赖：Pillow（必需，画封面与分镜帧）、ffmpeg（可选，来自 imageio-ffmpeg 或系统 PATH）。
 """
+import hashlib
 import json
 import os
 import re
@@ -44,6 +45,17 @@ def now():
 
 def _slug(s):
     return re.sub(r"[^a-zA-Z0-9_.-]", "", str(s)) or "x"
+
+
+def _id_slug(s):
+    """条目 id 专用 slug：中文名会被 _slug 剥光（只剩日期），同一天多份报告必然撞 id。
+
+    撞 id 的直接后果是后写覆盖先写，库里少条目，所以剥空时补内容指纹。
+    """
+    base = _slug(s)
+    if not re.sub(r"[0-9_.\-]", "", base):        # 只剩数字/日期 → 一定撞
+        base = base.rstrip("_.-") + "-" + hashlib.md5(str(s).encode()).hexdigest()[:6]
+    return base
 
 
 def plan(trace, pid, cid):
@@ -528,7 +540,7 @@ def load_knowledge(limit=40):
             summary = title[:120]
         out.append({
             "id": fm.get("kb_id") or ((("rep_" if kind == "research" else "kb_")
-                                      + _slug(os.path.splitext(os.path.basename(path))[0]))),
+                                      + _id_slug(os.path.splitext(os.path.basename(path))[0]))),
             "projectId": pid,
             "title": title,
             "body": full_text,

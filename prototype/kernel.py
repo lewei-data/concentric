@@ -340,13 +340,16 @@ class Kernel:
         self.messages, self.events = [], 0
         self.hotspots, self.contents, self.reports, self.approvals, self.knowledge = [], [], [], [], []
         self._hotspot_scan_at = 0.0        # 热点目录重扫节流（秒级时间戳）
-        self._kb_stamp = self.DL.knowledge_stamp() if (self.is_owner and self.DL) else (0, 0.0)   # 知识库目录指纹
+        # 知识库目录指纹：初值必须是空，否则后台 sync 首轮就判"没变化"直接早退，
+        # 导致 db 永远停在上次快照（实测 db 74 条 vs vault 90 条就是这么来的）
+        self._kb_stamp = (0, 0.0)
         try:
             self._cfg_stamp = (os.path.getmtime(PROJECT_FILE), os.path.getmtime(ROSTER_FILE))
         except OSError:
             self._cfg_stamp = None         # 项目配置/名册 mtime 指纹
         self.collection = None             # 苏寒最近一次原始榜采集状态（只展示，不当业务热点）
         self.subscribers, self.approval_events, self.traces = [], {}, {}
+        self.directives = []       # C4：老板指令（原文 + 来源 + 生效范围），落库为真源
         self.stats = {"approvalSeconds": [], "published": 0, "blockedPublish": 0, "traces": 0}
         # 成本护栏：按 trace 聚合 token/花费，阈值/异常由 CTO 处置
         self.token_usage = {}
@@ -499,8 +502,8 @@ class Kernel:
             if row.get("status") == "running":
                 try:
                     self.db.pipeline_run_end(trace, "interrupted")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_event("_mark_interrupted_runs.pipeline_run_end", e, level="error", trace=trace)
                 with self.lock:
                     if self.traces.get(trace, {}).get("status") == "running":
                         self.traces[trace]["status"] = "interrupted"
@@ -536,9 +539,7 @@ class Kernel:
         """按过程库里的断点阶段续跑（至少一次：重启时该阶段会重跑一次）。"""
         if not self.db:
             raise RuntimeError("过程库未启用（OPC_DB=0），无法续跑")
-        if self.active_trace and self.active_trace != trace:
-            raise RuntimeError(f"已有任务在跑（{self.active_trace}），稍后再续跑")
-        row = self.db.pipeline_run(trace)
+        row = self.db.pipeline_run(trace)          # 先查库（锁外），再做锁内抢占
         if not row:
             raise RuntimeError("过程库里没有这条 trace 的运行记录")
         if row.get("status") == "completed":
@@ -548,7 +549,14 @@ class Kernel:
         hotspot = json.loads(row.get("hotspot") or "null") or self.last_hotspot \
             or {"title": "断点续跑", "tags": []}
         state = json.loads(row.get("state") or "{}")
+        # 占位与检查必须原子：锁外"先查 active_trace 再起线程"时，两个并发续跑都能通过检查，
+        # 同一 trace 被两条流水线同时推进（TOCTOU），表现为阶段错乱/重复交付
         with self.lock:
+            if self.active_trace:
+                if self.active_trace == trace:
+                    raise RuntimeError(f"该任务正在运行（{trace}），无需重复续跑")
+                raise RuntimeError(f"已有任务在跑（{self.active_trace}），稍后再续跑")
+            self.active_trace = trace
             tr = self.traces.setdefault(trace, {"traceId": trace, "createdAt": iso_now(),
                                                "hotspot": hotspot})
             tr["status"] = "running"
@@ -556,8 +564,14 @@ class Kernel:
             tr["resumedAt"] = iso_now()
         self.send("status", "ceo", "owner", trace,
                   {"text": f"按断点续跑：从阶段 {row.get('stage')} 恢复"}, priority=2)
-        threading.Thread(target=self.run_pipeline, args=(trace, hotspot),
-                         kwargs={"start": row.get("stage"), "state": state}, daemon=True).start()
+        try:
+            threading.Thread(target=self.run_pipeline, args=(trace, hotspot),
+                             kwargs={"start": row.get("stage"), "state": state}, daemon=True).start()
+        except Exception:
+            with self.lock:            # 线程没起来必须归还占位，否则这条 trace 永远续不了
+                if self.active_trace == trace:
+                    self.active_trace = ""
+            raise
         return {"traceId": trace, "from": row.get("stage"), "auto": auto}
 
     def _restore_history(self):
@@ -647,10 +661,22 @@ class Kernel:
                               "approvalSeconds": self.stats["approvalSeconds"][-100:]},
                 }
             os.makedirs(os.path.dirname(self.journal_file), exist_ok=True)
-            tmp = self.journal_file + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False)
-            os.replace(tmp, self.journal_file)
+            # 固定 ".tmp" 名在并发保存时会互相截断（两次 json.dump 交织 → 半个 JSON 被 replace 上正式文件）：
+            # 进程内串行 + 每次唯一临时名，写坏只影响临时文件，正式文件永远是一份完整快照
+            with _SAVE_LOCK:
+                tmp = f"{self.journal_file}.{os.getpid()}.{threading.get_ident()}.tmp"
+                try:
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(payload, f, ensure_ascii=False)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp, self.journal_file)
+                finally:
+                    if os.path.exists(tmp):
+                        try:
+                            os.remove(tmp)
+                        except OSError as e:
+                            log_event("save_runtime.cleanup_tmp", e, level="debug", quiet=True, path=tmp)
         except Exception as e:
             print(f"[runtime] 保存运行时日志失败：{type(e).__name__}: {e}", flush=True)
 
@@ -758,7 +784,8 @@ class Kernel:
                 try:
                     q.put_nowait(env)
                 except queue.QueueFull:
-                    pass
+                    # 订阅端消费太慢会丢事件；静默丢弃会让前端"少一条消息"且无从排查
+                    log_event("emit.subscriber_queue_full", None, level="warn", kind=kind, trace=trace)
         if self.db:
             self.db.append_event(kind, trace, data, at=env["at"])
             if kind == "report" and isinstance(data, dict):
@@ -1181,6 +1208,47 @@ class Kernel:
                 "score": score, "scoreBasis": basis,
                 "source": f"{status.get('file') or '热点采集'} · {status.get('time') or '?'} 档"}
 
+    def create_directive(self, text, source="chat", scope="global", trace="",
+                         project="", extra=None):
+        """C4：老板每次下指令落一条不可变记录（原文不改写），流水线只引用 directive_id。
+
+        md→db 的顺序由本方法保证：先落库再回指 trace；写库失败记 error 但不阻断业务流程
+        （指令留痕是审计能力，不能因为库抖一下就让老板的指令丢失执行）。
+        """
+        text = str(text or "").strip()
+        if not text:
+            return ""
+        d = {"id": f"dir_{uid()[:12]}", "traceId": trace or "", "text": text[:4000],
+             "source": source, "scope": scope, "projectId": project or "",
+             "confirmedBy": str(getattr(self, "owner_name", "") or "owner"),
+             "createdAt": iso_now(),
+             "raw": json.dumps(extra or {}, ensure_ascii=False)}
+        with self.lock:
+            self.directives.insert(0, d)
+            del self.directives[200:]
+        if self.db:
+            try:
+                self.db.upsert_directive(d)
+            except Exception as e:
+                log_event("create_directive.persist", e, level="error", id=d["id"])
+        return d["id"]
+
+    def directives_view(self, limit=100, trace=""):
+        """指令列表：优先内存（最新 200 条），带 trace 过滤时回落到过程库。"""
+        limit = max(1, min(500, int(limit or 100)))
+        if trace:
+            with self.lock:
+                hit = [d for d in self.directives if d.get("traceId") == trace]
+            if hit:
+                return hit[:limit]
+        if self.db:
+            try:
+                return self.db.directives(limit=limit, trace=trace)
+            except Exception as e:
+                log_event("directives_view.db", e, level="warn", trace=trace)
+        with self.lock:
+            return list(self.directives[:limit])
+
     def inject_hotspot(self, title=None, tags=None, score=None, force=False):
         """发起每日选题。
 
@@ -1286,11 +1354,25 @@ class Kernel:
                    "score": score, "fit": {}, "at": iso_now(),
                    "ideaId": str(idea.get("id") or ""), "requirements": requirements}
         with self.lock:
+            # 同上：并发灵感开工时锁内再核一次，避免两条流水线同时起跑
+            running = [t for t, d in self.traces.items()
+                       if d.get("status") == "running" and t != trace]
+            if running:
+                raise BusyError(running[-1])
             self.hotspots.append(hotspot)
             self.last_hotspot = hotspot
             self.stats["traces"] += 1
             self.traces[trace] = {"traceId": trace, "hotspot": hotspot, "startedAt": iso_now(),
                                   "status": "running", "engine": MODE, "source": "idea"}
+        # C4：灵感 + 老板要求完整留痕（原文拼接，不改写）
+        did = self.create_directive(
+            f"{title}\n{requirements}".strip() if requirements else title,
+            source="idea", scope="trace", trace=trace, project=pid,
+            extra={"ideaId": str(idea.get("id") or ""), "projectId": pid,
+                   "requirements": requirements})
+        if did:
+            with self.lock:
+                self.traces.setdefault(trace, {})["directiveId"] = did
         self._persist_trace(trace)
         self.emit("hotspot", trace, hotspot)
         # 内容单与 _stage_create_items 同构；老板特定要求随单流转（PM 细化 / CCO 审批可见）
@@ -1392,8 +1474,8 @@ class Kernel:
                 try:
                     self.meeting_end(trace, "会议中断：编排异常，未形成结论。")
                     self.set_scene("WORK", trace, title="会议中断")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_event("run_pipeline.meeting_close", e, level="error", trace=trace)
             # 兜底收口：无论从哪条分支提前返回，都不能把 trace 永远留在 running，否则巡检会一直拒派
             with self.lock:
                 t = self.traces.get(trace)
@@ -3672,27 +3754,32 @@ class Kernel:
         with self.lock:
             appr = next((a for a in self.approvals if a["id"] == approval_id), None)
         if not appr and self.db:
-            appr = self._approval_from_db(approval_id)   # 重启后内存里没有，从过程库补
+            appr = self._approval_from_db(approval_id)   # 重启后内存里没有，从过程库补（锁外查库）
         if not appr:
             return None
-        if appr["status"] != "pending":
-            # 超时挂起的单允许老板迟到补批：补批后从断点续跑，不用整轮重来
-            if not (appr["status"] == "timeout" and decision == "approve"):
-                return appr
-        appr["status"] = "approved" if decision == "approve" else "rejected"
-        appr["decidedAt"] = iso_now()
-        appr["decidedBy"] = decided_by or appr.get("approver", "")
-        try:
-            created = datetime.fromisoformat(appr["createdAt"])
-            decided = datetime.fromisoformat(appr["decidedAt"])
-            self.stats["approvalSeconds"].append(round((decided - created).total_seconds(), 1))
-        except Exception:
-            pass
-        if decision != "approve" and appr.get("action") == "publish.execute":
-            self.stats["blockedPublish"] += 1
-        with self.lock:      # 从库补出来的单此前不在内存里，补进去让续跑逻辑能看到最新状态
-            if not any(a["id"] == appr["id"] for a in self.approvals):
+        # 查找→判状态→写状态必须一次锁内完成：锁外“先判后写”时，两个并发请求会同时看到
+        # pending，同一张单被批两次、续跑被触发两次（TOCTOU）
+        with self.lock:
+            cur = next((a for a in self.approvals if a["id"] == appr["id"]), None)
+            if cur is None:      # 从库补出来的单此前不在内存里，补进去让续跑逻辑能看到最新状态
                 self.approvals.append(appr)
+                cur = appr
+            if cur.get("status") != "pending":
+                # 超时挂起的单允许老板迟到补批：补批后从断点续跑，不用整轮重来
+                if not (cur.get("status") == "timeout" and decision == "approve"):
+                    return cur
+            cur["status"] = "approved" if decision == "approve" else "rejected"
+            cur["decidedAt"] = iso_now()
+            cur["decidedBy"] = decided_by or cur.get("approver", "")
+            try:
+                created = datetime.fromisoformat(cur["createdAt"])
+                decided = datetime.fromisoformat(cur["decidedAt"])
+                self.stats["approvalSeconds"].append(round((decided - created).total_seconds(), 1))
+            except Exception as e:
+                log_event("decide_approval.duration", e, level="debug", quiet=True, approvalId=approval_id)
+            if decision != "approve" and cur.get("action") == "publish.execute":
+                self.stats["blockedPublish"] += 1
+            appr = cur
         self.emit("approval", appr["traceId"], appr)
         ev = self.approval_events.get(approval_id)
         if ev:
@@ -3826,7 +3913,8 @@ class Kernel:
         stamp = self.DL.knowledge_stamp()
         if stamp == self._kb_stamp:
             return
-        items = self.DL.load_knowledge(limit=200)
+        # 上限必须远大于当前条目数：limit 截断会让差集清理把"没读到的条目"当死节点删掉
+        items = self.DL.load_knowledge(limit=5000)
         if not items:
             return
         fresh = [self._kb_norm(k) for k in items]
@@ -3834,12 +3922,17 @@ class Kernel:
             before = len(self.knowledge)
             self.knowledge = fresh
         self._kb_stamp = stamp
-        if len(fresh) != before:
-            # 同步到 SQLite（带完整字段）
-            if self.db:
-                for k in fresh:
-                    self.db.upsert_knowledge(k)
-            self.emit("knowledge", "", {"stage": "vault-sync", "count": len(fresh)})
+        # 同步到 SQLite：upsert 全量 + 差集删除（只 upsert 会把移走的条目留成死节点）
+        if self.db:
+            for k in fresh:
+                self.db.upsert_knowledge(k)
+            if len(fresh) >= max(1, before // 2):   # 读盘异常导致条目骤减时只写不删
+                try:
+                    self.db.prune_knowledge([k.get("id") for k in fresh])
+                except Exception as e:
+                    print(f"[kb] 差集清理失败：{type(e).__name__}: {e}", flush=True)
+            if len(fresh) != before:
+                self.emit("knowledge", "", {"stage": "vault-sync", "count": len(fresh)})
         try:
             self.rebuild_relations()      # 条目正文/标签变了，边要跟着重建
         except Exception as e:
@@ -4056,8 +4149,8 @@ class Kernel:
                     "FROM knowledge WHERE id=?", (kid,))
                 if row:
                     return _kb_from_row(row)
-            except Exception:
-                pass
+            except Exception as e:
+                log_event("knowledge_detail.db", e, level="warn", kid=kid)
         return None
 
     def hotspot_detail(self, hid):
@@ -4281,10 +4374,18 @@ class Kernel:
 
 KERNELS = {}
 KERNELS_LOCK = threading.Lock()
+KERNELS_AT = {}                   # 用户内核最近访问时间，供池上限逐出用
+KERNEL_POOL_MAX = max(1, int(os.environ.get("OPC_KERNEL_POOL", "8") or 8))
+_SAVE_LOCK = threading.Lock()     # runtime 快照串行写
 
 def _kernel_for(data_dir):
-    """取/建某用户工作区的内核；owner 目录的内核在 boot 时即创建。"""
+    """取/建某用户工作区的内核；owner 目录的内核在 boot 时即创建。
+
+    池有上限：每个内核自带 Store 写线程 + 审批巡检线程 + 全量 vault 缓存，
+    只增不减时用户越多内存/线程越涨（旧实现 KERNELS 从不逐出）。
+    """
     data_dir = os.path.abspath(data_dir or OWNER_DATA_DIR)
+    evicted, k = [], None
     with KERNELS_LOCK:
         k = KERNELS.get(data_dir)
         if k is None:
@@ -4294,7 +4395,26 @@ def _kernel_for(data_dir):
                 print(f"[kernel] 用户内核创建失败 {data_dir}：{type(e).__name__}: {e}", flush=True)
                 raise
             KERNELS[data_dir] = k
-        return k
+            # 超上限就逐出最久未访问、且当前没在跑任务的非 owner 内核
+            if len(KERNELS) > KERNEL_POOL_MAX:
+                idle = sorted(((KERNELS_AT.get(d, 0.0), d) for d in KERNELS
+                               if d != OWNER_DATA_DIR and not KERNELS[d].active_trace),
+                              key=lambda x: x[0])
+                for _, d in idle[:len(KERNELS) - KERNEL_POOL_MAX]:
+                    evicted.append((d, KERNELS.pop(d, None)))
+                    KERNELS_AT.pop(d, None)
+        KERNELS_AT[data_dir] = time.time()
+    # 停线程/关连接放锁外，避免阻塞其它用户的请求
+    for d, old in evicted:
+        try:
+            if old:
+                old.stop()
+            if DBX:
+                DBX.drop_store(os.path.join(d, "opc.db"))
+            print(f"[kernel] 内核池超上限（{KERNEL_POOL_MAX}），逐出空闲内核 {d}", flush=True)
+        except Exception as e:
+            print(f"[kernel] 逐出内核异常（忽略）{d}：{type(e).__name__}: {e}", flush=True)
+    return k
 
 def _kernel_reset(data_dir):
     """数据导入后重置内核：停后台线程、丢 Store 缓存，下次访问按新数据重建。"""

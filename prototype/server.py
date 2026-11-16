@@ -393,6 +393,8 @@ def _dir_sig(path, keep=None):
 class Handler(BaseHTTPRequestHandler):
     server_version = "OPCWorkbench/3.0-hermes"
     protocol_version = "HTTP/1.1"
+    # 单请求体上限：旧实现按 Content-Length 无限 read，超大 body 会把单线程内存打爆
+    MAX_BODY = 32 * 1024 * 1024
 
     def log_message(self, fmt, *args):
         if os.environ.get("OPC_QUIET") != "1":
@@ -411,8 +413,17 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _body(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        if not length:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            # 坏长度头：旧实现直接抛 ValueError 穿透到 socketserver，客户端收不到任何响应
+            self.close_connection = True
+            return {}
+        if length <= 0:
+            return {}
+        if length > self.MAX_BODY:
+            # 超限不读；关连接避免残余字节污染 keep-alive 的下一个请求
+            self.close_connection = True
             return {}
         try:
             return json.loads(self.rfile.read(length) or b"{}")
@@ -910,6 +921,13 @@ class Handler(BaseHTTPRequestHandler):
             # 提问前的图谱简报：与内核注入同一套打分，前端可先看命中了什么
             q = (parse_qs(urlparse(self.path).query).get("q") or [""])[0]
             return self._json({"ok": True, "q": q, "brief": self._kernel().kb_brief(q)})
+        if path == "/api/directives":
+            # C4：老板指令台账（原文/来源/生效范围/确认人），按 trace 可回指到具体交付
+            qs = parse_qs(urlparse(self.path).query)
+            limit = (qs.get("limit") or ["100"])[0]
+            trace = (qs.get("trace") or [""])[0]
+            return self._json({"ok": True,
+                               "directives": self._kernel().directives_view(limit=limit, trace=trace)})
         if path == "/api/sancai":
             # 双维口径：8 显性（5 行 + 3 才）/ 7 隐性（生克乘侮…）+ 各对象的三才分布
             return self._json(self._sancai_overview())
@@ -974,9 +992,11 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 health = {"ok": True, "version": "3.0", "engine": MODE,
                           "hermes": HERMES.stats(), "time": iso_now()}
-                return self._json(ops_monitor.build(self._kernel().snapshot(), health,
-                                                    runs=self._kernel().pipeline_runs_view(),
-                                                    llm=LREG._llm_view()))
+                payload = ops_monitor.build(self._kernel().snapshot(), health,
+                                            runs=self._kernel().pipeline_runs_view(),
+                                            llm=LREG._llm_view())
+                payload["failTop"] = obs.recent_top(60, 10)   # C3：近 1 小时失败点 Top10
+                return self._json(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/events":
@@ -1826,6 +1846,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _vault(self, rel):
         """交付物只读发布：/vault/... → 当前用户 vault/...，支持 Range（视频拖动进度条要用）。"""
+        # 未登录不给任何 vault 内容：/api/* 已有会话校验，静态资源同样必须校验，
+        # 否则组织编制/会议纪要/交付物可被同网段任意人直接下载（404 不暴露存在性）
+        if not self._session_user():
+            return self._json({"error": "not found"}, 404)
         vault_root = self._kernel().vault_dir
         root = os.path.realpath(vault_root)
         full = os.path.realpath(os.path.join(vault_root, rel))
@@ -2599,22 +2623,26 @@ class Handler(BaseHTTPRequestHandler):
                 "traceId": trace_id, "stageId": stage_id}
 
     def _trace(self, trace):
-        with self._kernel().lock:
-            msgs = [m for m in self._kernel().messages if m.get("traceId") == trace]
-            contents = [c for c in self._kernel().contents if c.get("traceId") == trace]
-            meta = dict(self._kernel().traces.get(trace) or {})
-            if trace not in self._kernel().traces and not msgs and not contents:
-                if self._kernel().db:
-                    return self._trace_from_db(trace)
-                return None
-            out = {"traceId": trace, "meta": meta,
-                   "messages": msgs, "contents": contents,
-                   "approvals": [a for a in self._kernel().approvals if a.get("traceId") == trace],
-                   "reports": [r for r in self._kernel().reports if r.get("traceId") == trace],
-                   "knowledge": [k for k in self._kernel().knowledge if k.get("traceId") == trace],
-                   "messageCount": len(msgs)}
+        ker = self._kernel()
+        with ker.lock:
+            msgs = [m for m in ker.messages if m.get("traceId") == trace]
+            contents = [c for c in ker.contents if c.get("traceId") == trace]
+            meta = dict(ker.traces.get(trace) or {})
+            known = trace in ker.traces or bool(msgs) or bool(contents)
+            out = None
+            if known:
+                out = {"traceId": trace, "meta": meta,
+                       "messages": msgs, "contents": contents,
+                       "approvals": [a for a in ker.approvals if a.get("traceId") == trace],
+                       "reports": [r for r in ker.reports if r.get("traceId") == trace],
+                       "knowledge": [k for k in ker.knowledge if k.get("traceId") == trace],
+                       "messageCount": len(msgs)}
+        # 查库必须在锁外：_trace_from_db 要新开连接读 SQLite，持锁查库时 emit() 抢不到锁，
+        # 一次慢查询就能让所有 SSE 推送集体卡住（表现为前端"实时流停了"）
+        if out is None:
+            return self._trace_from_db(trace) if ker.db else None
         # 内存里没有这条 trace 的元数据（重启后）或事件：从过程库补齐
-        if self._kernel().db:
+        if ker.db:
             db_meta, events = self._db_trace_parts(trace)
             if not out["meta"] and db_meta:
                 out["meta"] = db_meta
@@ -2688,10 +2716,15 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ValueError):
             pass
         finally:
-            with self._kernel().lock:
-                if q in self._kernel().subscribers:
-                    self._kernel().subscribers.remove(q)
-            self.wfile.write(b"0\r\n\r\n")
+            try:
+                with self._kernel().lock:
+                    if q in self._kernel().subscribers:
+                        self._kernel().subscribers.remove(q)
+            finally:
+                try:
+                    self.wfile.write(b"0\r\n\r\n")   # 客户端先断时这里必抛 BrokenPipe
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
 
     def do_POST(self):
         self._strip_proxy_prefix()
