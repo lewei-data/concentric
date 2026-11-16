@@ -137,7 +137,7 @@ def _shots_login(base_url):
     with sync_playwright() as pw:
         b = pw.chromium.launch(executable_path=chrome, args=["--no-sandbox", "--disable-gpu"])
         pg = b.new_page(viewport={"width": 1440, "height": 900})
-        pg.goto(base_url + "/app/login", wait_until="networkidle", timeout=30000)
+        pg.goto(base_url + "/app/login", wait_until="domcontentloaded", timeout=25000)
         pg.fill("input[autocomplete=username]", user)
         pg.fill("input[type=password]", pwd)
         pg.click("button[type=submit]")
@@ -150,8 +150,9 @@ def _shots_login(base_url):
             return 1
         for name, path in pages:
             try:
-                pg.goto(base_url + path, wait_until="networkidle", timeout=30000)
-                pg.wait_for_timeout(1200)
+                # 工作台有 SSE 长连接，networkidle 永不达成，只能等 DOM 就绪再固定延时
+                pg.goto(base_url + path, wait_until="domcontentloaded", timeout=25000)
+                pg.wait_for_timeout(2500)
                 out = os.path.join(SHOT_DIR, name + ".png")
                 pg.screenshot(path=out)
                 size = os.path.getsize(out) if os.path.exists(out) else 0

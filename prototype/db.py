@@ -501,6 +501,17 @@ CREATE TABLE IF NOT EXISTS collect_ideas (
   score      REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT ''
 );
+
+-- ---------- 任务中文名（老板 2026-11-16：给人看的文本不要裸 trace 号） ----------
+-- trace_id → 稳定序号（第 007 号）+ 作品标题摘要；序号一经分配永不改变
+CREATE TABLE IF NOT EXISTS task_names (
+  trace_id   TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
+  title      TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_names_seq ON task_names(seq);
 """
 
 
@@ -954,6 +965,60 @@ class Store:
                       k.get("body")))
         except Exception as e:
             _log(f"upsert_knowledge 失败：{type(e).__name__}: {e}")
+
+    # ---------- 任务中文名（第 N 号） ----------
+    @staticmethod
+    def _clean_task_title(title):
+        t = re.sub(r"\s+", " ", str(title or "")).strip().strip("《》")
+        return t[:24]
+
+    def task_name_assign(self, trace, title=""):
+        """给 trace 分配稳定中文序号，返回 {"seq": int, "title": str}。
+
+        序号取 MAX(seq)+1、永不回收，所以同一 trace 永远是同一个号；title 可后补
+        （选题定稿晚于建单时补写）。失败返回 {}，调用方自行兜底。
+        """
+        trace = str(trace or "").strip()
+        if not trace:
+            return {}
+        title = self._clean_task_title(title)
+        now = now_iso()
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT seq,title FROM task_names WHERE trace_id=?", (trace,)).fetchone()
+                if row:
+                    seq = int(row["seq"])
+                    old_title = row["title"] or ""
+                    if title and title != old_title:
+                        self._conn.execute(
+                            "UPDATE task_names SET title=?,updated_at=? WHERE trace_id=?",
+                            (title, now, trace))
+                        self._conn.commit()
+                        return {"seq": seq, "title": title}
+                    return {"seq": seq, "title": old_title or title}
+                seq = int(self._conn.execute(
+                    "SELECT COALESCE(MAX(seq),0)+1 FROM task_names").fetchone()[0])
+                self._conn.execute(
+                    "INSERT INTO task_names(trace_id,seq,title,created_at,updated_at)"
+                    " VALUES(?,?,?,?,?)", (trace, seq, title, now, now))
+                self._conn.commit()
+                return {"seq": seq, "title": title}
+        except Exception as e:
+            _log(f"task_name_assign 失败：{type(e).__name__}: {e}")
+            return {}
+
+    def task_names_all(self):
+        """全部 trace → {trace: {"seq","title"}}（列表页与语音清洗共用）。"""
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT trace_id,seq,title FROM task_names ORDER BY seq").fetchall()
+            return {r["trace_id"]: {"seq": int(r["seq"]), "title": r["title"] or ""}
+                    for r in rows}
+        except Exception as e:
+            _log(f"task_names_all 失败：{type(e).__name__}: {e}")
+            return {}
 
     # ---------- C4 老板指令版本化 ----------
     def upsert_directive(self, d):

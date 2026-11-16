@@ -15,6 +15,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import sancai as SC
+import task_names as TN
 
 VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
 ROOT = os.path.join(VAULT, "OPC", "交付物")
@@ -136,7 +137,7 @@ def _folder_for(trace, pid, item_id):
     return None, ""
 
 
-def _factory_record(trace, f, fv):
+def _factory_record(trace, f, fv, db=None):
     """有工厂记录但尚未落盘交付目录的作品：以工厂字段为准的占位档案。"""
     status, status_key = fv["factoryStatus"], fv["factoryStatusKey"]
     body = {k: v for k, v in fv.items() if k not in ("factoryStatus", "factoryStatusKey")}
@@ -148,6 +149,7 @@ def _factory_record(trace, f, fv):
         "projectId": f.get("projectId") or "",
         "projectName": _project(f.get("projectId")),
         "traceId": trace,
+        "taskName": TN.label(trace, db, f.get("title") or ""),
         "contentId": f.get("itemId") or "",
         "stage": "factory",
         "sancai": SC.work_stage_of("factory"),
@@ -247,7 +249,7 @@ def _approvals_for(trace, approvals):
     return out
 
 
-def _build(folder, trace, sub, approvals=None, factory=None, step_status=None):
+def _build(folder, trace, sub, approvals=None, factory=None, step_status=None, db=None):
     data_path = os.path.join(folder, "07-data.json")
     data = {}
     if os.path.isfile(data_path):
@@ -319,6 +321,7 @@ def _build(folder, trace, sub, approvals=None, factory=None, step_status=None):
         "projectId": pid,
         "projectName": _project(pid),
         "traceId": trace,
+        "taskName": TN.label(trace, db, title),
         "contentId": data.get("id") or sub.split("-")[-1],
         "stage": stage,
         "sancai": SC.work_stage_of(stage),
@@ -381,7 +384,7 @@ def _iter_folders():
             yield folder, trace, sub
 
 
-def scan(approvals=None, factory=None, step_status=None):
+def scan(approvals=None, factory=None, step_status=None, db=None):
     """扫描作品，按出厂/更新时间倒序返回。
 
     工厂过程库启用时以工厂为准：只列 product_crafts 有流水号的作品，
@@ -396,9 +399,9 @@ def scan(approvals=None, factory=None, step_status=None):
             folder, sub = _folder_for(trace, f.get("projectId"), item_id)
             try:
                 if folder:
-                    items.append(_build(folder, trace, sub, approvals, f, step_status))
+                    items.append(_build(folder, trace, sub, approvals, f, step_status, db))
                 else:
-                    items.append(_factory_record(trace, f, fv))
+                    items.append(_factory_record(trace, f, fv, db))
             except Exception:
                 continue
         items.sort(key=lambda x: str(x.get("shippedAt") or x.get("updatedAt") or ""),
@@ -406,7 +409,7 @@ def scan(approvals=None, factory=None, step_status=None):
         return items
     for folder, trace, sub in _iter_folders():
         try:
-            items.append(_build(folder, trace, sub, approvals))
+            items.append(_build(folder, trace, sub, approvals, db=db))
         except Exception:
             continue
     items.sort(key=lambda x: str(x.get("updatedAt") or ""), reverse=True)
@@ -430,7 +433,7 @@ def _facets(items):
     }
 
 
-def page(query_params, approvals=None, factory=None, step_status=None):
+def page(query_params, approvals=None, factory=None, step_status=None, db=None):
     """GET /api/works：分页 + 关键词 + 项目 / 阶段 / 状态过滤。"""
     def one(key, default=""):
         vals = query_params.get(key) or [default]
@@ -483,7 +486,7 @@ def page(query_params, approvals=None, factory=None, step_status=None):
             "items": rows, "facets": facets}
 
 
-def detail(work_id, approvals=None, factory=None, step_status=None):
+def detail(work_id, approvals=None, factory=None, step_status=None, db=None):
     """GET /api/works/<id>：档案主记录 + markdown 原文，供作品档案详情页展示。"""
     if factory is not None:
         for (trace, item_id), f in factory.items():
@@ -493,8 +496,8 @@ def detail(work_id, approvals=None, factory=None, step_status=None):
             if _work_id(trace, sub or item_id) != work_id:
                 continue
             if not folder:
-                return _factory_record(trace, f, fv)
-            rec = _build(folder, trace, sub, approvals, f, step_status)
+                return _factory_record(trace, f, fv, db)
+            rec = _build(folder, trace, sub, approvals, f, step_status, db)
             docs = {}
             for key, name, label in STEPS:
                 if not name.endswith(".md"):
@@ -508,7 +511,7 @@ def detail(work_id, approvals=None, factory=None, step_status=None):
     for folder, trace, sub in _iter_folders():
         if _work_id(trace, sub) != work_id:
             continue
-        rec = _build(folder, trace, sub, approvals)
+        rec = _build(folder, trace, sub, approvals, db=db)
         docs = {}
         for key, name, label in STEPS:
             if not name.endswith(".md"):

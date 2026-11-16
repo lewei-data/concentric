@@ -36,6 +36,15 @@ import mail as MAILM
 import message_feeds as FEED
 import pipeline_defs as PIPE
 import sancai as SC
+
+
+def _assign_task_name(trace, title="", db=None):
+    """建单即分配中文任务号（第 012 号 · 《标题》）；失败只打一行，绝不挡开工。"""
+    try:
+        import task_names as TN
+        TN.assign(trace, title, db)
+    except Exception as e:            # noqa: BLE001
+        print(f"[task] 编号分配失败：{type(e).__name__}: {e}", flush=True)
 from hermes_adapter import HERMES
 from obs import log_event       # C3：失败可见，替代静默 pass
 from events import EventBus     # C1：事件总线独立成模块
@@ -812,6 +821,7 @@ class Kernel:
             tags = re.split(r"[/、,，]", tags)
         tags = [str(t).strip() for t in (tags or []) if str(t).strip()] or ["知识内化"]
         trace = uid("tr")
+        _assign_task_name(trace, title, self.db)   # 建单即得中文编号：第 012 号 · 《标题》
         hotspot = {"id": uid("hs"), "traceId": trace, "title": title, "source": source,
                    "tags": tags, "score": score, "fit": {}, "at": iso_now(), "kind": kind}
         if basis:
@@ -860,6 +870,7 @@ class Kernel:
         requirements = str(requirements or "").strip()
         pid = self._idea_project(idea, project)
         trace = uid("tr")
+        _assign_task_name(trace, title, self.db)   # 建单即得中文编号
         tags = [str(t).strip() for t in (idea.get("tags") or []) if str(t).strip()]
         try:
             score = float(idea.get("score"))

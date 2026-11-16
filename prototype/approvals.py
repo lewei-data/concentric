@@ -17,6 +17,7 @@ import capacity
 from obs import log_event
 from opc_paths import *  # noqa: F401,F403 —— APPROVAL_TIMEOUT / TZ
 from utils import iso_now, uid
+import task_names as TN
 
 
 AUTO_RESUME_MAX_TRIES = 3
@@ -207,9 +208,11 @@ def _ceo_proxy_decide(kn, approval_id):
 def _notify_proxy(kn, appr, decision, reason, conf, meta):
     """代批结果必须让老板与小秘书同时知道（系统消息 + ceo 邮箱抄送小秘书）。"""
     verdict = "放行" if decision == "approve" else "驳回"
-    text = (f"CEO 代批（老板超时未处理）：{verdict} {appr.get('title') or appr.get('action')}"
-            f"｜理由：{reason or '—'}｜置信度 {conf:.2f}｜审批号 {appr.get('id')}")
     trace = appr.get("traceId", "")
+    task_name = TN.label(trace, kn.db) if trace else ""
+    text = (f"CEO 代批（老板超时未处理）：{verdict} {appr.get('title') or appr.get('action')}"
+            f"｜任务 {task_name or '—'}｜理由：{reason or '—'}｜置信度 {conf:.2f}"
+            f"｜审批号 {appr.get('id')}")
     kn.send("escalation", "ceo", "owner", trace,
             {"text": text, "approvalId": appr.get("id"), "decision": decision,
              "ceoProxy": True, "decidedBy": PROXY_ACTOR}, priority=2)
@@ -217,7 +220,7 @@ def _notify_proxy(kn, appr, decision, reason, conf, meta):
             {"text": text + "（请记入待办并转达相关项目组）", "approvalId": appr.get("id"),
              "decision": decision}, priority=1)
     subject = f"[OPC CEO 代批] {verdict} · {appr.get('action')} · {appr.get('id')}"
-    body = (f"{text}\n\n## 单据\n- 审批号：{appr.get('id')}\n- trace：{trace}\n"
+    body = (f"{text}\n\n## 单据\n- 审批号：{appr.get('id')}\n- 任务：{task_name or '—'}\n"
             f"- 动作：{appr.get('action')}（风险 {appr.get('risk')}）\n"
             f"- 条目：{len(appr.get('items') or [])} 条\n- 创建：{appr.get('createdAt')}\n"
             f"- 代批：{PROXY_ACTOR} · {appr.get('ceoAt')}\n\n"
@@ -270,8 +273,18 @@ def _sweep_approvals(kn):
         ev = kn.approval_events.get(a["id"])
         if ev:
             ev.set()
+        limit = a.get("timeoutSec") or APPROVAL_TIMEOUT
+        mins = max(1, int(round(limit / 60)))
+        title = a.get("title") or a.get("action") or "审批单"
         kn.send("escalation", "ceo", "owner", a.get("traceId", ""),
-                  {"text": f"审批超时挂起：{a.get('title') or a.get('action')}"}, priority=2)
+                  {"text": f"审批超时挂起：{title}"}, priority=2)
+        # 老板口径（2026-11-16）：审批统一 10 分钟，超时后由小秘书负责协调推进。
+        # 每单只进一次 expired（status 一变 timeout 就不再是 pending），不会随 15s 巡检刷屏。
+        kn.send("note", "system", "secretary", a.get("traceId", ""),
+                  {"text": f"审批超时 {mins} 分钟：{title}，请协调推进"
+                           f"（审批号 {a.get('id')}，动作 {a.get('action')}）",
+                   "approvalId": a.get("id"), "action": a.get("action"),
+                   "timeoutSec": limit, "kind": "approval_timeout"}, priority=1)
 
 
     try:

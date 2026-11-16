@@ -11,6 +11,7 @@
 按来源筛选；``emit('chat.message')`` 让已打开的消息中心与小秘书面板即时刷新。
 """
 from utils import iso_now, uid
+import task_names as TN
 
 # 来源 → (默认会话标题, 参与者)
 SOURCE_TITLES = {
@@ -33,6 +34,21 @@ FINISH_LABEL = {
 STEP_LABEL = {"done": "完成", "stopped": "提前收工", "failed": "失败", "running": "开工"}
 
 TASK_SOURCE_LABEL = {"idea": "创意灵感", "hotspot": "热点采集"}
+
+
+def _task(db, trace, title=""):
+    """给人看的任务名：「第 012 号 · 《作品标题》等 6 篇」（老板 2026-11-16：不露裸 trace）。"""
+    if not trace:
+        return title or ""
+    try:
+        return TN.label(trace, db, title)
+    except Exception:            # noqa: BLE001
+        return title or trace
+
+
+def _thread_title(db, trace, title=""):
+    """线程标题用紧凑写法：第 012 号 《作品标题》等 6 篇。"""
+    return _task(db, trace, title).replace(" · 《", " 《")
 
 
 def hermes_thread(trace):
@@ -77,13 +93,13 @@ def _post(db, emit, source, tid, title, sender_name, content, kind, trace="", me
 def hermes_start(db, emit, trace, title, origin="", stage="", items=0):
     """任务启动：热点/灵感、入口阶段、在制内容单数。"""
     origin = TASK_SOURCE_LABEL.get(origin, origin or "手动触发")
-    body = f"【任务启动】《{title or trace}》\n来源：{origin}"
+    body = f"【任务启动】{_task(db, trace, title)}\n来源：{origin}"
     if stage:
         body += f"\n入口阶段：{stage}"
     if items:
         body += f"\n在制内容单：{items} 条"
-    body += f"\nTrace：{trace}"
-    return _post(db, emit, "hermes", hermes_thread(trace), f"Hermes · {title or trace}",
+    body += f"\n任务：{_task(db, trace, title)}"
+    return _post(db, emit, "hermes", hermes_thread(trace), f"Hermes · {_thread_title(db, trace, title)}",
                  "Hermes", body, "task", trace,
                  {"phase": "start", "stage": stage, "origin": origin})
 
@@ -91,8 +107,8 @@ def hermes_start(db, emit, trace, title, origin="", stage="", items=0):
 def hermes_node(db, emit, trace, title, stage_name, status="done", items=0):
     """执行过程关键节点：阶段收口（成功/提前收工/失败）与在制数量。"""
     body = (f"【关键节点】{stage_name or '阶段'} → {STEP_LABEL.get(status, status)}"
-            f"\n在制内容单：{items} 条\nTrace：{trace}")
-    return _post(db, emit, "hermes", hermes_thread(trace), f"Hermes · {title or trace}",
+            f"\n在制内容单：{items} 条\n任务：{_task(db, trace, title)}")
+    return _post(db, emit, "hermes", hermes_thread(trace), f"Hermes · {_thread_title(db, trace, title)}",
                  "Hermes", body, "stage", trace,
                  {"phase": "stage", "stage": stage_name, "status": status, "items": items})
 
@@ -104,8 +120,8 @@ def hermes_finish(db, emit, trace, title, status, items=0, done=0, files=0, seco
             f"\n产出内容单：{items} 条（已发布/归档 {done} 条，成片文件 {files} 个）")
     if seconds:
         body += f"\n总耗时：{int(seconds)} 秒"
-    body += f"\nTrace：{trace}"
-    return _post(db, emit, "hermes", hermes_thread(trace), f"Hermes · {title or trace}",
+    body += f"\n任务：{_task(db, trace, title)}"
+    return _post(db, emit, "hermes", hermes_thread(trace), f"Hermes · {_thread_title(db, trace, title)}",
                  "Hermes", body, "result", trace,
                  {"phase": "finish", "status": status, "items": items,
                   "done": done, "files": files, "seconds": int(seconds or 0)})
@@ -124,8 +140,8 @@ def factory_step(db, emit, trace, title, stage_name, status, products=()):
         if steps:
             head += f" 工序：{ '、'.join(steps) }"
         lines.append(head)
-    lines.append(f"Trace：{trace}")
-    return _post(db, emit, "factory", factory_thread(trace), f"制片工厂 · {title or trace}",
+    lines.append(f"任务：{_task(db, trace, title)}")
+    return _post(db, emit, "factory", factory_thread(trace), f"制片工厂 · {_thread_title(db, trace, title)}",
                  "制片工厂", "\n".join(lines), "workshop", trace,
                  {"stage": stage_name, "status": status, "products": len(products)})
 
@@ -156,7 +172,7 @@ def llm_call(db, emit, trace, agent_id, agent_name, meta, task=""):
     if task:
         body += f"\n任务：{task}"
     if trace:
-        body += f"\nTrace：{trace}"
+        body += f"\n任务：{_task(db, trace)}"
     return _post(db, emit, "llm", LLM_THREAD, SOURCE_TITLES["llm"][0],
                  agent_name or agent_id or "大模型", body, "llm", trace,
                  {"engine": engine, "model": model, "tokens": tokens,

@@ -103,8 +103,8 @@ function WorkDetailPage({ id }: { id: string }) {
                 <dd>{shortTime(work.updatedAt)}</dd>
                 <dt>完整度</dt>
                 <dd>{work.completeness}% · 素材 {work.assetCount} 个</dd>
-                <dt>Trace</dt>
-                <dd className="mono">{work.traceId}</dd>
+                <dt>任务</dt>
+                <dd>{work.taskName || work.traceId}</dd>
                 <dt>内容 ID</dt>
                 <dd className="mono">{work.contentId}</dd>
               </dl>

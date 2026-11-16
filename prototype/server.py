@@ -168,6 +168,11 @@ class OpcHTTPServer(ThreadingHTTPServer):
 
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
+        # 客户端主动断开（刷新、关标签、SSE 取消订阅、浏览器被关闭）在写 socket 时
+        # 以 BrokenPipe/ConnectionReset 冒到这里。这是正常事件不是服务故障，
+        # 记成 [error] 会污染告警并让 selfcheck 的「近 30 分钟错误」误报。
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
         addr = client_address[0] if isinstance(client_address, tuple) else str(client_address)
         log_crash(f"http:{addr}", exc)
         super().handle_error(request, client_address)
@@ -1004,7 +1009,8 @@ class Handler(BaseHTTPRequestHandler):
             idx = self._kernel()._factory_works_index()
             factory, step_status = idx if idx else (None, None)
             return self._json(WK.page(parse_qs(urlparse(self.path).query), approvals,
-                                      factory=factory, step_status=step_status))
+                                      factory=factory, step_status=step_status,
+                                      db=self._kernel().db))
         if path.startswith("/api/works/"):
             if WK is None:
                 return self._json({"ok": False, "error": "作品档案模块未加载"}, 500)
@@ -1013,7 +1019,8 @@ class Handler(BaseHTTPRequestHandler):
             idx = self._kernel()._factory_works_index()
             factory, step_status = idx if idx else (None, None)
             rec = WK.detail(path[len("/api/works/"):], approvals,
-                            factory=factory, step_status=step_status)
+                            factory=factory, step_status=step_status,
+                            db=self._kernel().db)
             return self._json(rec) if rec else self._json({"error": "work not found"}, 404)
         if path == "/api/hotspots":
             return self._json(self._kernel().hotspot_page(urlparse(self.path).query))
@@ -1428,7 +1435,7 @@ class Handler(BaseHTTPRequestHandler):
                     approvals = list(ker.approvals)
                 idx = ker._factory_works_index()
                 factory, step_status = idx if idx else (None, None)
-                tally("work", WK.scan(approvals, factory, step_status), "work")
+                tally("work", WK.scan(approvals, factory, step_status, self._kernel().db), "work")
             except Exception as e:
                 sources["work"] = {"error": f"{type(e).__name__}: {e}"}
         stages = [{"key": st.id, "label": st.name, "sancai": SC.stage_of(st.id)}
@@ -2314,9 +2321,15 @@ class Handler(BaseHTTPRequestHandler):
                                {"id": "secretary", "name": "小秘书"}], now, now)
         audio = ""
         err = ""
+        spoken = str(text)                     # 语音/正文统一用中文任务名，不念裸 trace
+        try:
+            import task_names as TN
+            spoken = TN.speech(text, db)
+        except Exception:                      # noqa: BLE001
+            pass
         try:
             wav = voice_bridge.tts_synthesize(
-                str(text)[:300], os.path.join(
+                spoken[:300], os.path.join(
                     self._chat_dir(), f"{datetime.now(TZ).strftime('%Y%m%d-%H%M%S')}-alert.wav"))
             if wav:
                 audio = f"/chat-files/{os.path.basename(wav)}"
@@ -2324,7 +2337,7 @@ class Handler(BaseHTTPRequestHandler):
             err = f"{type(e).__name__}: {e}"
             print(f"[notify] TTS 失败：{err}", flush=True)
         secret = k.agents.get("secretary", {}).get("name", "小秘书")
-        body = f"【{level.upper()}】{text}"
+        body = f"【{level.upper()}】{spoken}"
         db.chat_insert({"thread_id": tid, "source": "web",
                         "modality": "voice" if audio else "text",
                         "direction": "outbound", "sender_id": "secretary",

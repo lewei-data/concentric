@@ -39,6 +39,19 @@ def _row(r, key, default=None):
         return default
 
 
+# hermes 内部注入的消息（后台进程完成、工具结果、系统提醒）不是对话内容，
+# 老板要的是「正式汇总」，这些中间过程不进口述记录（老板 2026-11-16）。
+_NOISE_PREFIXES = (
+    "[important:", "[internal notification", "[system", "<system-reminder>",
+    "background process", "[background", "tool result",
+)
+
+
+def _is_internal_noise(text):
+    head = str(text or "").strip().lower()[:40]
+    return any(head.startswith(p) for p in _NOISE_PREFIXES)
+
+
 def _modality_of(text):
     return "voice" if VOICE_MARK in str(text or "").lower() else "text"
 
@@ -100,6 +113,9 @@ def pull_feishu(store, on_event=None, full=False):
                     created = DB.ts_to_iso(r["timestamp"]) or DB.now_iso()
                     is_user = r["role"] == "user"
                     content = r["content"] or ""
+                    if _is_internal_noise(content):
+                        last_id = mid          # 噪音：推进游标但不入库
+                        continue
                     title = r["session_title"] or "飞书会话"
                     store.chat_upsert_thread(
                         thread_id, "feishu", title,

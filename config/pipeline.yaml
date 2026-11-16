@@ -40,7 +40,7 @@ stages:
     name: 开工审批
     kind: approval
     approval_action: production.start
-    timeout_sec: null
+    timeout_sec: 600
     on_reject: stop
     description: 老板批准后才进入制作（成本/素材/合规摘要）；标注「老板直接发起」的任务等同已审批，免走本步
 
@@ -106,7 +106,7 @@ stages:
     kind: approval
     item_stage: approved
     approval_action: publish.execute
-    timeout_sec: null
+    timeout_sec: 600
     on_reject: stop
     description: 仅放行审核通过的内容
 

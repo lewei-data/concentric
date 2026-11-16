@@ -355,7 +355,7 @@ export function InspirationPage({ embedded = false }: { embedded?: boolean } = {
                   OpenMontage 出片 → 终审。
                 </p>
                 <p className="idea-trace">
-                  流水号 trace：<code>{produceOk}</code>
+                  已派单，任务在制片工厂排产中（任务名见「作品」列表）
                 </p>
                 <div className="idea-dialog-actions">
                   <a className="btn btn-ghost" href="/app/factory">查看制片工厂 →</a>

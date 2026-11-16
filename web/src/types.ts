@@ -140,6 +140,8 @@ export type Work = {
   projectId: string;
   projectName: string;
   traceId: string;
+  /** 中文任务名：第 012 号 · 《作品标题》等 6 篇 */
+  taskName?: string;
   contentId: string;
   stage: string;
   /** 三才：作品默认属「人」 */

@@ -810,11 +810,12 @@ def _build_inner(state, health, force_probe=False, runs=None, llm=None):
             "action": "排查 om_render / TTS / Remotion，返工后重新出片",
         })
     # OpenMontage 渲染渠道：CLI 通道不可用意味着所有样片/成片渲染必然失败
-    if om_view["cli"].get("available") is False:
+    om_cli = om_view.get("cli") or {}
+    if om_cli.get("available") is False:
         alerts.append({
             "id": "om-cli-unavailable", "level": "critical",
             "title": "OpenMontage 出片通道不可用",
-            "detail": f"{om_view['cli'].get('reason')}（{om_view['cli'].get('composerDir')}）",
+            "detail": f"{om_cli.get('reason')}（{om_cli.get('composerDir')}）",
             "source": "OpenMontage CLI 探测", "at": om_view.get("checkedAt") or "",
             "action": "安装 npx 与 remotion-composer 依赖（npm install），确认渲染入口存在",
         })
@@ -951,9 +952,9 @@ def _build_inner(state, health, force_probe=False, runs=None, llm=None):
             "mediaJobs": len(local_jobs),
             "mediaJobsFailed": len(failed_jobs),
             "mediaJobsStuck": len(stuck_jobs),
-            "omChannelOk": 1 if om_view["cli"].get("available") else 0,
-            "omBacklotOnline": 1 if om_view["backlot"].get("online") else 0,
-            "omBacklotProjects": len(om_view["backlot"].get("projects") or []),
+            "omChannelOk": 1 if (om_view.get("cli") or {}).get("available") else 0,
+            "omBacklotOnline": 1 if (om_view.get("backlot") or {}).get("online") else 0,
+            "omBacklotProjects": len((om_view.get("backlot") or {}).get("projects") or []),
             "comfyOnline": sum(1 for n in comfy_view.get("nodes") or [] if n.get("online")),
             "nodesTotal": (node_view.get("summary") or {}).get("nodes", 0),
             "nodesFailed": (node_view.get("summary") or {}).get("failed", 0),
