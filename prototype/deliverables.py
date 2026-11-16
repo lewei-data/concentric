@@ -546,6 +546,10 @@ def load_knowledge(limit=40):
             "body": full_text,
             "summary": summary,
             "tags": tags[:8],
+            # md frontmatter 是 category/sancai 的真源（如 vault 内化条目）：
+            # 不带出来会被 _kb_norm 推断成默认值，覆盖掉条目应属的五行/三才归位
+            "category": (fm.get("category") or "").strip(),
+            "sancai": (fm.get("sancai") or "").strip(),
             "sourceTrace": fm.get("trace") or (os.path.relpath(path, VAULT) if kind == "research" else ""),
             "at": fm.get("archived") or fm.get("date") or (_date_from_name(path) if kind == "research" else ""),
             "source": os.path.relpath(path, VAULT),

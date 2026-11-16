@@ -1256,10 +1256,23 @@ class Kernel:
         self.items_emit(trace, item)
         n_gen = len([g for g in item["materials"]["generated"] if g.get("path")])
         n_voice = len([v for v in item["materials"]["voice"] if v.get("audioPath")])
+        # 素材投料：进工厂（render/成片段）前把补素材产出入 OpenMontage 项目库（kb_materials_sky 规约）
+        try:
+            import asset_feed
+            fed = asset_feed.feed(item, trace)
+            item["materials"]["feed"] = {"slug": fed.get("slug"), "dest": fed.get("dest"),
+                                         "copied": fed.get("copied", []),
+                                         "reason": fed.get("reason", "")}
+            self.items_emit(trace, item)
+            print(f"[materials] {item['id']} 已投料 OpenMontage："
+                  f"{fed.get('slug') or '_inbox'} ← {len(fed.get('copied', []))} 张", flush=True)
+        except Exception as e:          # noqa: BLE001 投料失败不阻断补素材链路
+            print(f"[materials] {item['id']} OpenMontage 投料失败：{e}", flush=True)
         self.send("result", f"cw_{pid}", f"pm_{pid}", trace,
                   {"itemId": item["id"], "补素材结论":
                    f"素材库命中 {len(item['materials']['library'])}，"
-                   f"ComfyUI 补齐 {n_gen}/{len(missing[:3])}，TTS 音频 {n_voice} 段"},
+                   f"ComfyUI 补齐 {n_gen}/{len(missing[:3])}，TTS 音频 {n_voice} 段，"
+                   f"已投料 OpenMontage({(item['materials'].get('feed') or {}).get('slug') or '_inbox'})"},
                   project=pid)
 
 

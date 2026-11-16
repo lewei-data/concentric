@@ -574,12 +574,15 @@ def _stage_copy(kn, c):
     for iid, item in c.items.items():
         pid = item["projectId"]
         plan = item.get("plan") or {}
+        duration = int(plan.get("durationSec", 45) or 45)
+        copy_max = max(80, int(duration * 3.2))  # 口播约 3.2 字/秒，45s≈144 字；下限 80
         jobs[iid] = HERMES.pool.submit(
             kn.call_agent, f"cw_{pid}",
-            f"为《{item['title']}》写一段成稿文案（≤80字），符合本项目人设，禁止串用其他项目风格。",
-            f"项目：{kn.projects[pid]['name']}；风格：{kn.tone[pid]}；时长：{plan.get('durationSec', 45)}s；"
+            f"为《{item['title']}》写一段成稿文案（约{copy_max}字，可上下浮动20%，务必写足、不要压缩成短句），"
+            f"符合本项目人设，禁止串用其他项目风格。",
+            f"项目：{kn.projects[pid]['name']}；风格：{kn.tone[pid]}；时长：{duration}s；"
             f"文案要求：{plan.get('copyBrief', '')}",
-            "额外 JSON 字段：copy(成稿文案≤80字)。",
+            f"额外 JSON 字段：copy(成稿文案约{copy_max}字，按{duration}s口播写足，禁止过短)。",
             "summary, evidence, confidence, tools, copy")
         kn.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
                   {"task": f"按评估报告写《{item['title']}》成稿；收到补素材指令：先查素材库，"
@@ -860,8 +863,11 @@ def _stage_review(kn, c):
         for iid in failed:
             item = c.items[iid]
             pid = item["projectId"]
+            duration = int((item.get("plan") or {}).get("durationSec", 45) or 45)
+            copy_max = max(80, int(duration * 3.2))
             rework[iid] = HERMES.pool.submit(
-                kn.call_agent, f"cw_{pid}", f"按审核意见重写《{item['title']}》文案（≤80字）。",
+                kn.call_agent, f"cw_{pid}",
+                f"按审核意见重写《{item['title']}》文案（约{copy_max}字，按{duration}s口播写足，不要压缩）。",
                 f"项目：{kn.projects[pid]['name']}；风格：{kn.tone[pid]}",
                 f"审核驳回理由：{item['reviewNote']}。必须修正这些问题且保持本项目人设。",
                 "summary, evidence, confidence, tools, copy")

@@ -68,12 +68,16 @@ def _coerce_plan(kn, data, topic, idx):
     tts = src.get("tts") if isinstance(src.get("tts"), dict) else {}
     shots = []
     for s in (src.get("storyboardShots") or [])[:8]:
-        if isinstance(s, dict) and (s.get("画面") or s.get("scene")):
+        if isinstance(s, dict):
+            # 缺「画面」的镜头不再静默丢弃：保留并标记，让下游/前端可见返工需求
+            incomplete = not (s.get("画面") or s.get("scene"))
             shots.append({"no": _to_int(s.get("no"), len(shots) + 1),
-                          "画面": str(s.get("画面") or s.get("scene"))[:120],
+                          "画面": str(s.get("画面") or s.get("scene") or
+                                      "（画面描述缺失，待返工补充）")[:120],
                           "台词": str(s.get("台词") or s.get("line") or "")[:120],
                           "秒": _to_int(s.get("秒") or s.get("sec"), 6),
-                          "素材": str(s.get("素材") or s.get("asset") or "")[:60]})
+                          "素材": str(s.get("素材") or s.get("asset") or "")[:60],
+                          "_incomplete": incomplete})
     vtasks = [{"shot": str(t.get("shot") or i + 1),
                "task": str(t.get("task") or "")[:120]}
               for i, t in list(enumerate(src.get("videoTasks") or []))[:12]

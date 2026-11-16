@@ -140,20 +140,34 @@ def gen_image(prompt, out_path, width=768, height=768, timeout=GEN_TIMEOUT):
 
 
 def search_library(materials_file, keywords, limit=5):
-    """素材库检索：keywords 与 title/desc/category/meta 做包含匹配，按命中数排序。"""
+    """素材库检索：keywords 与 title/desc/category 做语义包含匹配，按命中数排序。
+
+    仅用 title/desc/category 参与匹配（meta 含版本号/数字易误命中），
+    且关键词须为非纯数字的实词，避免「00」命中「2000 节点」这类噪音。
+    """
+    import re as _re
     with open(materials_file, encoding="utf-8") as f:
         data = json.load(f)
     items = data.get("items") if isinstance(data, dict) else None
     if not isinstance(items, list):
         return []
-    kws = [str(k).strip().lower() for k in keywords
-           if len(str(k).strip()) >= 2]
+    kws = []
+    for k in keywords:
+        k = str(k).strip().lower()
+        if len(k) < 2 or k.isdigit():       # 过滤纯数字/单字噪音
+            continue
+        if not _re.search(r"[\u4e00-\u9fffA-Za-z]", k):  # 须含中文或字母实词
+            continue
+        kws.append(k)
+    if not kws:
+        return []
     scored = []
     for it in items:
         if not isinstance(it, dict) or not it.get("url"):
             continue
+        # meta 不参与匹配：体积/版本号/节点数等元数据会造成误命中
         hay = " ".join(str(it.get(k) or "") for k in
-                       ("title", "desc", "category", "meta")).lower()
+                       ("title", "desc", "category")).lower()
         hits = sorted({k for k in kws if k in hay}, key=len, reverse=True)
         if hits:
             scored.append({"id": str(it.get("id") or ""),
