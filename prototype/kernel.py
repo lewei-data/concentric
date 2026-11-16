@@ -1,7 +1,19 @@
-"""流水线内核：PipelineContext / Kernel（16 阶段编排）/ 多工作区内核注册表。
+"""流水线内核：PipelineContext / Kernel（阶段编排）/ 业务方法入口。
 
 不反向依赖 server：基础设施单例来自 deps，公司配置来自 company_config，
 模型调用统一走 hermes_adapter（HERMES）；HTTP 路由与会话留在 server.Handler。
+
+C1 拆分后各模块边界：
+- events.py    事件总线（SSE 广播 + 关键事件落库）
+- pool.py      按工作区取/建 Kernel 的池与 LRU 逐出
+- kb_views.py  知识库分类/分页/详情/图谱边/提示词召回
+- factory.py   工厂/渲染：分镜工作台、素材作业、出片验收门、工具箱
+- approvals.py 审批门与断点续跑：巡检/决策/重启恢复/自动续跑/CEO 巡检
+- ops.py       运营支撑：会议记录、Obsidian 热同步、知识归档、交付导出
+- pipeline_kit.py 流水线无状态辅助：归一化、评审映射、审批摘要、技术门、车间事件
+- pipeline.py   流水线编排与阶段：PipelineContext、run_pipeline、15 个 _stage_*
+本文件保留审批、工厂、工具箱与入口编排；上述能力以薄委托方式暴露，
+调用方（server/agent/eval）无需感知实现位置。
 """
 import hashlib
 import json
@@ -25,11 +37,17 @@ import message_feeds as FEED
 import pipeline_defs as PIPE
 import sancai as SC
 from hermes_adapter import HERMES
-try:
-    import media_jobs as MEDIA
-except Exception as _e:  # 素材作业模块缺失不应拖垮整个内核
-    MEDIA = None
-    print(f"[boot] media_jobs 导入失败：{type(_e).__name__}: {_e}", flush=True)
+from obs import log_event       # C3：失败可见，替代静默 pass
+from events import EventBus     # C1：事件总线独立成模块
+import kb_views                # C1：知识库视图/图谱边独立成模块
+import factory                  # C1：工厂/渲染独立成模块
+import approvals                # C1：审批门/断点续跑独立成模块
+import ops                      # C1：会议/vault 同步/知识归档/交付导出独立成模块
+import pipeline_kit             # C1：流水线无状态辅助（归一/评审映射/技术门/车间事件）
+import pipeline                 # C1：流水线编排与 15 个阶段独立成模块
+from pipeline import BudgetAbort, PipelineContext, _PIPELINE_STOP  # re-export：旧调用点保持不变
+from kb_views import (KB_CATEGORIES, KB_CATEGORY_MAP, KB_INJECT_ON, KB_INJECT_LIMIT,
+                      KB_INJECT_CHARS, _infer_category, _rel_key, _core_title, _kb_from_row)
 try:
     import vault_mirror as DOCMIRROR   # 共享 vault 文档 → 老板个人空间（内部 300 秒节流）
 except Exception as _e:
@@ -37,8 +55,6 @@ except Exception as _e:
     print(f"[boot] vault_mirror 导入失败：{type(_e).__name__}: {_e}", flush=True)
 
 
-class BudgetAbort(Exception):
-    """CTO 判定成本/额度超限，在阶段边界终止本轮任务。"""
 
 class BusyError(Exception):
     """已有一轮选题会未收口：拒绝并发注入，避免两条流水线互相覆盖。"""
@@ -47,226 +63,22 @@ class BusyError(Exception):
         super().__init__(f"上一轮选题会仍在进行（{trace}），请等它结束或先处理待审批")
         self.traceId = trace
 
-_PIPELINE_STOP = object()
-
-# ---------- 知识库 5 大分类定义（五行体系） ----------
-KB_CATEGORIES = [
-    {"key": "analysis", "label": "分析调研", "element": "土", "icon": "⛰️",
-     "slogan": "厚基、存真、稳态",
-     "description": "做厚事实底座，保障素材可信度与完整性；作为全体系的「土壤」，保持相对稳定",
-     "color": "#b45309",
-     "tags": [
-         {"key": "copywriting", "label": "文案分析"}, {"key": "short-video", "label": "短视频分析"},
-         {"key": "market", "label": "市场调研"}, {"key": "competitor", "label": "竞品分析"},
-         {"key": "trend", "label": "趋势洞察"},
-         {"key": "mgmt-research", "label": "管理层调研"},
-     ]},
-    {"key": "graph", "label": "知识图谱", "element": "水", "icon": "🌊",
-     "slogan": "通联、溯源、无滞",
-     "description": "核心价值在「连通」而非「堆节点」，建设实体间的关联链路与因果传导路径",
-     "color": "#1e40af",
-     "tags": [
-         {"key": "data-source", "label": "数据源关联"}, {"key": "concept", "label": "概念图谱"},
-         {"key": "workflow", "label": "流程图谱"}, {"key": "domain", "label": "领域模型"},
-         {"key": "mgmt-benchmark", "label": "管理层对标"},
-     ]},
-    {"key": "skill", "label": "技能", "element": "金", "icon": "⚔️",
-     "slogan": "精专、规整、耐用",
-     "description": "像铸造器物一样打磨每个 Skill，边界清晰、输入输出明确、异常处理完备",
-     "color": "#a16207",
-     "tags": [
-         {"key": "hermes", "label": "Hermes 工具"}, {"key": "OpenMontage", "label": "OpenMontage 工艺"},
-         {"key": "profile", "label": "Profile 软技能"}, {"key": "pipeline", "label": "流水线"},
-         {"key": "ops", "label": "运维"}, {"key": "自定义", "label": "自定义"},
-         {"key": "mgmt-audit", "label": "管理层盘点"}, {"key": "mgmt-retire", "label": "淘汰标记"},
-     ]},
-    {"key": "decision", "label": "决策模型", "element": "火", "icon": "🔥",
-     "slogan": "明断、守序、不妄",
-     "description": "清晰的判断逻辑与优先级秩序，规则明确、边界清晰；顶层范式不轻易变动",
-     "color": "#dc2626",
-     "tags": [
-         {"key": "domain-model", "label": "领域模型"}, {"key": "strategy", "label": "战略决策"},
-         {"key": "risk", "label": "风险评估"}, {"key": "principle", "label": "原则框架"},
-         {"key": "heuristic", "label": "经验法则"},
-         {"key": "mgmt-insight", "label": "战略洞察"},
-     ]},
-    {"key": "reflection", "label": "反馈迭代", "element": "木", "icon": "🌿",
-     "slogan": "循序、日新、有度",
-     "description": "遵循生长规律，小步持续优化；控制迭代节奏与灰度范围，避免拔苗助长",
-     "color": "#059669",
-     "tags": [
-         {"key": "retrospective", "label": "复盘总结"}, {"key": "optimization", "label": "优化方案"},
-         {"key": "lesson", "label": "经验教训"}, {"key": "feedback", "label": "用户反馈"},
-         {"key": "iteration", "label": "迭代记录"},
-         {"key": "mgmt-evolve", "label": "技能进化"},
-     ]},
-]
-
-KB_CATEGORY_MAP = {c["key"]: c for c in KB_CATEGORIES}
-
-def _infer_category(item):
-    """根据已有 tags / projectId 推断旧条目的分类，未命中默认归入知识图谱。"""
-    tags_lower = " ".join(str(t) for t in (item.get("tags") or [])).lower()
-    title_lower = str(item.get("title") or "").lower()
-    combined = tags_lower + " " + title_lower
-    # 管理层学习标签优先级最高（精确匹配，避免被通用关键词抢先）
-    if "mgmt-evolve" in combined or "技能进化" in combined:
-        return "reflection"
-    if "mgmt-insight" in combined or "战略洞察" in combined:
-        return "decision"
-    if "mgmt-benchmark" in combined or "管理层对标" in combined:
-        return "graph"
-    if "mgmt-research" in combined or "管理层调研" in combined:
-        return "analysis"
-    if "mgmt-audit" in combined or "mgmt-retire" in combined or "管理层盘点" in combined or "淘汰标记" in combined:
-        return "skill"
-    # 调研/研究报告统一进「分析调研」，否则标题里没有"调研"二字的技术报告会落到知识图谱
-    if "研究报告" in combined or "技术研究" in combined:
-        return "analysis"
-    # 通用关键词（注意：「技能进化」已在上面精确匹配，此处「技能」不会误判）
-    if any(k in combined for k in ("技能", "skill", "方法", "sop")):
-        return "skill"
-    if any(k in combined for k in ("分析", "调研", "拆解", "短视频", "文案")):
-        return "analysis"
-    if any(k in combined for k in ("决策", "判断", "原则", "模型", "框架")):
-        return "decision"
-    if any(k in combined for k in ("反思", "复盘", "优化", "迭代", "反馈", "教训")):
-        return "reflection"
-    return "graph"
 
 
-# ---------- 知识图谱关系边（启发式建边，规则与前端 GraphPage.buildGraph 一致） ----------
-KB_INJECT_ON = (os.environ.get("OPC_KB_INJECT", "1") or "1").strip().lower() \
-    not in ("0", "false", "no", "off")
-KB_INJECT_LIMIT = _to_int(os.environ.get("OPC_KB_INJECT_N"), 5) or 5
+
+
+
 # 注入块字符预算：知识图谱再有用也不能把提示词撑爆，超预算按相关度截断
-KB_INJECT_CHARS = _to_int(os.environ.get("OPC_KB_INJECT_CHARS"), 900) or 900
 
 
-def _rel_key(a, b):
-    """无序边键：同一对条目无论方向只存一条。"""
-    x, y = (a, b) if a < b else (b, a)
-    return f"{x}|{y}"
 
 
-def _core_title(title):
-    """去掉副标题与括注，得到用于「正文引用」匹配的标题核心。"""
-    s = str(title or "")
-    s = re.sub(r"[（(].*$", "", s)
-    s = re.sub(r"\s*[—–]\s*.*$", "", s)
-    return re.sub(r"\s+", "", s)
 
 
-def _bigrams(text):
-    """字符 bigram 集合：中文无需分词即可做粗粒度相关性打分。"""
-    s = re.sub(r"[\s\W_]+", "", str(text or "")).lower()
-    return {s[i:i + 2] for i in range(len(s) - 1)}
 
 
-def _kb_from_row(row):
-    """SQLite knowledge 行归一化。
-
-    历史写库只落了 raw（拆分列全空），且混入过无 id/title 的阶段事件行：
-    以 raw 为准补齐摘要 / 正文 / 标签 / 时间，非知识条目直接丢弃。
-    """
-    r = dict(row)
-    try:
-        raw = json.loads(r.get("raw") or "{}")
-    except Exception:
-        raw = {}
-    if not isinstance(raw, dict):
-        raw = {}
-    kid = str(r.get("id") or raw.get("id") or "").strip()
-    title = str(r.get("title") or raw.get("title") or "").strip()
-    if not kid or not title:
-        return None
-    try:
-        tags = json.loads(r.get("tags")) if r.get("tags") else []
-    except Exception:
-        tags = []
-    if not tags:
-        tags = raw.get("tags") or []
-    if not isinstance(tags, list):
-        tags = [tags]
-    tags = [str(t).strip() for t in tags if str(t).strip()][:12]
-    body = str(r.get("body") or raw.get("body") or "")
-    summary = str(r.get("summary") or raw.get("summary") or "").strip()
-    if not summary:
-        summary = body[:120] or title[:80]
-    category = str(r.get("category") or raw.get("category") or "").strip() \
-        or _infer_category({"title": title, "tags": tags})
-    sancai = SC.norm(r.get("sancai") or raw.get("sancai")) or SC.infer(
-        {"title": title, "summary": summary, "category": category, "tags": tags})
-    return {
-        "id": kid,
-        "title": title,
-        "summary": summary,
-        "category": category,
-        "sancai": sancai,
-        "projectId": r.get("project_id") or raw.get("projectId") or "",
-        "traceId": r.get("trace_id") or raw.get("traceId") or raw.get("sourceTrace") or "",
-        "tags": tags,
-        # 早期归档把「落笔说明」写进了 at，用它排序会把条目挤到最前，改回 ISO 时间戳
-        "at": str(raw.get("at") or "") if re.match(r"^\d{4}-\d{2}-\d{2}", str(raw.get("at") or ""))
-               else str(r.get("updated_at") or raw.get("at") or ""),
-        "body": body or summary,
-    }
 
 
-class PipelineContext:
-    """流水线阶段之间的共享状态（字段即阶段契约，不承载业务逻辑）。
-
-    容器字段一律原地修改，避免阶段间出现“改了副本但没写回”的隐性 bug；
-    需要提前收口的阶段返回 _PIPELINE_STOP，由 runner 决定停止后续阶段。
-    """
-
-    def __init__(self, kernel, trace, hotspot):
-        self.kernel = kernel
-        self.trace = trace
-        self.hotspot = hotspot
-        self.stage = None                 # 当前阶段定义（pipeline_defs.Stage）
-        self.pms = [("wenren", "pm_wenren"), ("gou", "pm_gou"),
-                    ("tongxinyuan", "pm_tongxinyuan")]
-        self.items = {}                   # itemId -> 内容单
-        self.selected = {}                # pid -> 选题
-        self.final = {}                   # pid -> 定稿列表
-        self.eliminated = []              # CCO 未入选记录
-        self.pool_size = 0
-        self.meeting_doc = {}             # 选题会纪要（归档 + 汇报）
-        self.participants = []            # 选题会参会人（两场会议共用）
-        self.conclusion = ""              # 评审会结论正文
-        self.render_blocked = set()       # 真实出片失败的 itemId
-        self.sample_blocked = set()       # 样片评审未过的 itemId
-        self.review_ids = []              # 待终审 itemId
-        self.passed_items = {}            # 终审通过 itemId -> 结论
-        self.review_history = []
-        self.pending = []                 # 已挂起的发布审批
-        self.pub_ctx = ""                 # 发布结论（归档/汇报引用）
-
-    # 断点续跑用的快照字段：只放阶段间真正需要的状态，set 序列化成 list
-    # pms 可被快照覆盖：创意灵感发起的单项目流水线只带本项目 PM（缺省仍为三项目）
-    STATE_FIELDS = ("pms", "selected", "final", "eliminated", "pool_size", "meeting_doc",
-                    "participants", "conclusion", "review_ids", "passed_items",
-                    "review_history", "pending", "pub_ctx")
-
-    def to_state(self):
-        """阶段边界快照：进程重启后据此恢复上下文（至少一次语义，重跑当前阶段）。"""
-        out = {k: getattr(self, k) for k in self.STATE_FIELDS}
-        out["items"] = self.items
-        out["render_blocked"] = sorted(self.render_blocked)
-        out["sample_blocked"] = sorted(self.sample_blocked)
-        return out
-
-    def load_state(self, state):
-        """把快照写回上下文；缺失字段保留默认值，避免旧数据缺列直接报错。"""
-        for k in self.STATE_FIELDS:
-            if k in state:
-                setattr(self, k, state[k])
-        if isinstance(state.get("items"), dict):
-            self.items = state["items"]
-        self.render_blocked = set(state.get("render_blocked") or [])
-        self.sample_blocked = set(state.get("sample_blocked") or [])
-        return self
 
 class Kernel:
     def __init__(self, data_dir=""):
@@ -337,7 +149,7 @@ class Kernel:
                 self.meeting_records = self.DL.load_meeting_records()
             except Exception as e:
                 print(f"[boot] 读取会议历史失败：{type(e).__name__}: {e}", flush=True)
-        self.messages, self.events = [], 0
+        self.messages = []
         self.hotspots, self.contents, self.reports, self.approvals, self.knowledge = [], [], [], [], []
         self._hotspot_scan_at = 0.0        # 热点目录重扫节流（秒级时间戳）
         # 知识库目录指纹：初值必须是空，否则后台 sync 首轮就判"没变化"直接早退，
@@ -348,7 +160,8 @@ class Kernel:
         except OSError:
             self._cfg_stamp = None         # 项目配置/名册 mtime 指纹
         self.collection = None             # 苏寒最近一次原始榜采集状态（只展示，不当业务热点）
-        self.subscribers, self.approval_events, self.traces = [], {}, {}
+        self.bus = EventBus()      # 事件总线（独立锁，订阅端慢不阻塞流水线）
+        self.approval_events, self.traces = {}, {}
         self.directives = []       # C4：老板指令（原文 + 来源 + 生效范围），落库为真源
         self.stats = {"approvalSeconds": [], "published": 0, "blockedPublish": 0, "traces": 0}
         # 成本护栏：按 trace 聚合 token/花费，阈值/异常由 CTO 处置
@@ -401,7 +214,7 @@ class Kernel:
         threading.Thread(target=self._background_sync, daemon=True).start()
         # 审批超时巡检：进程内等待由 ev.wait 兜底，这里补上「重启后无人等待」的遗留 pending 单
         self._sweep_stop = threading.Event()
-        threading.Thread(target=self._approval_sweeper, daemon=True).start()
+        threading.Thread(target=approvals._approval_sweeper, args=(self,), daemon=True).start()
         self._restore_pending_approvals()
         self._mark_interrupted_runs()
 
@@ -415,164 +228,27 @@ class Kernel:
             print(f"[kernel] 停止异常：{type(e).__name__}: {e}", flush=True)
 
     def _approval_sweeper(self):
-        """每 15 秒巡检一次 pending 审批，超时自动挂起并唤醒等待方。"""
-        while not self._sweep_stop.wait(15):
-            try:
-                self._sweep_approvals()
-            except Exception as e:
-                print(f"[approval] 超时巡检异常：{type(e).__name__}: {e}", flush=True)
+        return approvals._approval_sweeper(self)
 
     def _sweep_approvals(self):
-        now = datetime.now(TZ)
-        expired = []
-        with self.lock:
-            for a in self.approvals:
-                if a.get("status") != "pending":
-                    continue
-                try:
-                    created = datetime.fromisoformat(a.get("createdAt") or "")
-                except (TypeError, ValueError):
-                    continue
-                limit = a.get("timeoutSec") or APPROVAL_TIMEOUT
-                if (now - created).total_seconds() < limit:
-                    continue
-                a["status"] = "timeout"
-                a["decidedAt"] = iso_now()
-                a["timeoutReason"] = f"等待老板审批超过 {limit}s，已按挂起处理（巡检）"
-                expired.append(a)
-        for a in expired:
-            self.emit("approval", a.get("traceId", ""), a)
-            ev = self.approval_events.get(a["id"])
-            if ev:
-                ev.set()
-            self.send("escalation", "ceo", "owner", a.get("traceId", ""),
-                      {"text": f"审批超时挂起：{a.get('title') or a.get('action')}"}, priority=2)
+        return approvals._sweep_approvals(self)
 
     def _restore_pending_approvals(self):
-        """重启后把库里仍 pending 的审批单拉回内存，老板打开工作台就能看到待办。"""
-        if not self.db:
-            return
-        try:
-            rows = self.db.approvals_pending()
-        except Exception as e:
-            print(f"[boot] 读取待审批失败：{type(e).__name__}: {e}", flush=True)
-            return
-        known = {a.get("id") for a in self.approvals}
-        added = 0
-        for row in rows:
-            try:
-                raw = json.loads(row.get("raw") or "{}")
-            except ValueError:
-                raw = {}
-            raw.setdefault("id", row.get("id"))
-            raw.setdefault("traceId", row.get("trace_id"))
-            raw.setdefault("action", row.get("action"))
-            raw.setdefault("status", "pending")
-            raw.setdefault("createdAt", row.get("created_at"))
-            if raw["id"] in known:
-                continue
-            if not raw.get("timeoutSec"):
-                raw["timeoutSec"] = APPROVAL_TIMEOUT
-            self.approvals.append(raw)
-            added += 1
-        if added:
-            print(f"[boot] 从过程库恢复 {added} 条待审批单", flush=True)
+        return approvals._restore_pending_approvals(self)
 
-    AUTO_RESUME_MAX_TRIES = 3
+    AUTO_RESUME_MAX_TRIES = approvals.AUTO_RESUME_MAX_TRIES   # 真源在 approvals.py
 
     def _mark_interrupted_runs(self):
-        """启动时把上次进程留下的 running 标成 interrupted；按需串行自动续跑。
-
-        续跑候选同时包含 running（上次进程直接挂掉）与 interrupted（已标记但当时
-        没续成，比如多条断点抢不到执行位）：只要还有断点阶段、且续跑次数未超上限，
-        这次重启就再试一次。续跑必须串行——内核同一时刻只允许一条 trace 运行。
-        """
-        if not self.db:
-            return
-        try:
-            rows = self.db.pipeline_runs_resumable(self.AUTO_RESUME_MAX_TRIES)
-        except Exception as e:
-            print(f"[boot] 读取运行态失败：{type(e).__name__}: {e}", flush=True)
-            return
-        pending = []
-        for row in rows:
-            trace = row.get("trace_id")
-            if not trace:
-                continue
-            if row.get("status") == "running":
-                try:
-                    self.db.pipeline_run_end(trace, "interrupted")
-                except Exception as e:
-                    log_event("_mark_interrupted_runs.pipeline_run_end", e, level="error", trace=trace)
-                with self.lock:
-                    if self.traces.get(trace, {}).get("status") == "running":
-                        self.traces[trace]["status"] = "interrupted"
-                        self.traces[trace]["closedAt"] = iso_now()
-                print(f"[boot] 上次未跑完：{trace} 停在阶段 {row.get('stage')}（已标记 interrupted）",
-                      flush=True)
-            pending.append(trace)
-        if pending and os.environ.get("OPC_RESUME_AUTO", "0") == "1":
-            threading.Thread(target=self._auto_resume_loop, args=(pending,), daemon=True).start()
+        return approvals._mark_interrupted_runs(self)
 
     def _auto_resume_loop(self, traces):
-        """按顺序逐条续跑：一条收口后再拉下一条，避免 active_trace 互斥导致静默失败。"""
-        for trace in traces:
-            try:
-                self.db.pipeline_resume_try(trace)
-                info = self.resume_pipeline(trace, auto=True)
-                print(f"[boot] 自动续跑 {trace}：从阶段 {info.get('from')} 恢复", flush=True)
-            except Exception as e:
-                print(f"[boot] 自动续跑失败 {trace}：{type(e).__name__}: {e}", flush=True)
-                continue
-            self._wait_run_done(trace)
-        print(f"[boot] 自动续跑队列处理完毕（{len(traces)} 条）", flush=True)
+        return approvals._auto_resume_loop(self, traces)
 
     def _wait_run_done(self, trace, poll=2.0):
-        """等这条 trace 收口再处理下一条（先等线程起来，再等它退出）。"""
-        deadline = time.time() + 30
-        while time.time() < deadline and self.active_trace != trace:
-            time.sleep(poll)
-        while self.active_trace == trace:
-            time.sleep(poll)
+        return approvals._wait_run_done(self, trace, poll)
 
     def resume_pipeline(self, trace, auto=False):
-        """按过程库里的断点阶段续跑（至少一次：重启时该阶段会重跑一次）。"""
-        if not self.db:
-            raise RuntimeError("过程库未启用（OPC_DB=0），无法续跑")
-        row = self.db.pipeline_run(trace)          # 先查库（锁外），再做锁内抢占
-        if not row:
-            raise RuntimeError("过程库里没有这条 trace 的运行记录")
-        if row.get("status") == "completed":
-            raise RuntimeError("该 trace 已完成，无需续跑")
-        if not row.get("stage"):
-            raise RuntimeError("该 trace 还没有阶段断点，无法续跑")
-        hotspot = json.loads(row.get("hotspot") or "null") or self.last_hotspot \
-            or {"title": "断点续跑", "tags": []}
-        state = json.loads(row.get("state") or "{}")
-        # 占位与检查必须原子：锁外"先查 active_trace 再起线程"时，两个并发续跑都能通过检查，
-        # 同一 trace 被两条流水线同时推进（TOCTOU），表现为阶段错乱/重复交付
-        with self.lock:
-            if self.active_trace:
-                if self.active_trace == trace:
-                    raise RuntimeError(f"该任务正在运行（{trace}），无需重复续跑")
-                raise RuntimeError(f"已有任务在跑（{self.active_trace}），稍后再续跑")
-            self.active_trace = trace
-            tr = self.traces.setdefault(trace, {"traceId": trace, "createdAt": iso_now(),
-                                               "hotspot": hotspot})
-            tr["status"] = "running"
-            tr.pop("closedAt", None)
-            tr["resumedAt"] = iso_now()
-        self.send("status", "ceo", "owner", trace,
-                  {"text": f"按断点续跑：从阶段 {row.get('stage')} 恢复"}, priority=2)
-        try:
-            threading.Thread(target=self.run_pipeline, args=(trace, hotspot),
-                             kwargs={"start": row.get("stage"), "state": state}, daemon=True).start()
-        except Exception:
-            with self.lock:            # 线程没起来必须归还占位，否则这条 trace 永远续不了
-                if self.active_trace == trace:
-                    self.active_trace = ""
-            raise
-        return {"traceId": trace, "from": row.get("stage"), "auto": auto}
+        return approvals.resume_pipeline(self, trace, auto)
 
     def _restore_history(self):
         """重启后恢复历史：交付物读磁盘，报告/审批/热点/知识/消息读运行时日志。"""
@@ -777,30 +453,16 @@ class Kernel:
 
     # ---------- 总线 ----------
     def emit(self, kind, trace, data):
-        env = {"kind": kind, "traceId": trace, "at": iso_now(), "data": data}
-        with self.lock:
-            self.events += 1
-            for q in list(self.subscribers):
-                try:
-                    q.put_nowait(env)
-                except queue.QueueFull:
-                    # 订阅端消费太慢会丢事件；静默丢弃会让前端"少一条消息"且无从排查
-                    log_event("emit.subscriber_queue_full", None, level="warn", kind=kind, trace=trace)
-        if self.db:
-            self.db.append_event(kind, trace, data, at=env["at"])
-            if kind == "report" and isinstance(data, dict):
-                self.db.upsert_report(data)
-            elif kind == "approval" and isinstance(data, dict):
-                self.db.upsert_approval(data)
-            elif kind == "hotspot" and isinstance(data, dict):
-                self.db.upsert_hotspot(data)
-            elif kind == "knowledge" and isinstance(data, dict):
-                self.db.upsert_knowledge(data)
-            elif kind == "pipeline" and isinstance(data, dict) and data.get("id"):
-                self.db.upsert_content(data)
-        elif kind in ("hotspot", "report", "approval", "knowledge"):
-            self.save_runtime()     # 旧路径：低频关键事件落盘，重启后可恢复
-        return env
+        return self.bus.emit(kind, trace, data, db=self.db, on_key=self.save_runtime)
+
+    @property
+    def subscribers(self):
+        """只读视图：SSE 路由应从 bus.subscribe/unsubscribe 进出。"""
+        return self.bus.subscribers
+
+    @property
+    def events(self):
+        return self.bus.count
 
     def send(self, mtype, sender, recipient, trace, payload=None, project=None, priority=1):
         msg = {"id": uid("msg"), "traceId": trace, "type": mtype, "sender": sender,
@@ -838,98 +500,19 @@ class Kernel:
 
     # ---------- 会议记录（3D 会议室 + Obsidian 归档） ----------
     def meeting_begin(self, trace, title, participants, agenda=None):
-        rec = {"id": uid("mt"), "traceId": trace, "title": title, "status": "live",
-               "participants": [], "agenda": list(agenda or []), "speeches": [],
-               "startedAt": iso_now(), "endedAt": "", "conclusion": "",
-               "transcriptUrl": "", "minutesUrl": ""}
-        with self.lock:
-            for aid in participants:
-                a = self.agents.get(aid)
-                if a:
-                    rec["participants"].append({"id": aid, "name": a["name"],
-                                                "role": a["role"], "projectId": a["projectId"]})
-            self.meeting_log = rec
-            self.meeting.update({"active": True, "title": title,
-                                 "participants": list(participants),
-                                 "agenda": list(agenda or []), "startedAt": rec["startedAt"]})
-        if self.db:
-            self.db.upsert_meeting(rec)
-        self.emit("meeting.start", trace, rec)
-        return rec
+        return ops.meeting_begin(self, trace, title, participants, agenda)
 
-    def meeting_say(self, aid, text, kind="speech", trace=""):
-        text = str(text or "").strip()
-        if not text:
-            return None
-        a = self.agents.get(aid, {})
-        with self.lock:
-            rec = self.meeting_log
-            if rec.get("status") != "live":
-                return None
-            item = {"id": uid("sp"), "speakerId": aid, "speaker": a.get("name", aid),
-                    "role": a.get("role", ""), "projectId": a.get("projectId", "all"),
-                    "kind": kind, "text": text[:1200], "at": iso_now()}
-            rec["speeches"].append(item)
-        if self.db:
-            self.db.add_speech(rec.get("id"), len(rec["speeches"]), item)
-        self.emit("meeting.speech", trace or rec.get("traceId", ""), item)
-        return item
+    def meeting_say(self, aid, text, kind='speech', trace=''):
+        return ops.meeting_say(self, aid, text, kind, trace)
 
-    def meeting_end(self, trace, conclusion="", minutes_url=""):
-        with self.lock:
-            rec = self.meeting_log
-            if rec.get("status") != "live":
-                return None
-            rec["status"] = "ended"
-            rec["endedAt"] = iso_now()
-            rec["conclusion"] = str(conclusion or "").strip()
-            if minutes_url:
-                rec["minutesUrl"] = minutes_url
-            self.meeting["active"] = False
-            out = json.loads(json.dumps(rec, ensure_ascii=False))
-            self.meeting_records.insert(0, out)
-            self.meeting_records = self.meeting_records[:40]
-        if self.DL:
-            try:
-                urls = self.DL.save_meeting_record(out)
-                out.update({k: v for k, v in urls.items() if v})
-                with self.lock:
-                    for r in self.meeting_records:
-                        if r.get("id") == out["id"]:
-                            r.update({k: v for k, v in urls.items() if v})
-            except Exception as e:
-                print(f"[meeting] 会议记录落盘失败：{type(e).__name__}: {e}", flush=True)
-        if self.db:
-            self.db.upsert_meeting(out)
-        self.emit("meeting.end", trace, out)
-        return out
+    def meeting_end(self, trace, conclusion='', minutes_url=''):
+        return ops.meeting_end(self, trace, conclusion, minutes_url)
 
     def meeting_payload(self):
-        with self.lock:
-            current = json.loads(json.dumps(self.meeting_log, ensure_ascii=False))
-            history = []
-            for r in self.meeting_records:
-                history.append({"id": r.get("id"), "traceId": r.get("traceId"),
-                                "title": r.get("title"), "status": r.get("status"),
-                                "startedAt": r.get("startedAt"), "endedAt": r.get("endedAt"),
-                                "participants": r.get("participants") or [],
-                                "agenda": r.get("agenda") or [],
-                                "speechCount": len(r.get("speeches") or []),
-                                "conclusion": r.get("conclusion") or "",
-                                "transcriptUrl": r.get("transcriptUrl") or "",
-                                "minutesUrl": r.get("minutesUrl") or "",
-                                "legacy": bool(r.get("legacy"))})
-        return {"ok": True, "active": bool(self.meeting.get("active")),
-                "current": current, "last": history[0] if history else None,
-                "history": history}
+        return ops.meeting_payload(self)
 
     def meeting_detail(self, mid):
-        mid = str(mid or "")
-        with self.lock:
-            for r in self.meeting_records:
-                if mid in (r.get("id"), r.get("traceId")):
-                    return json.loads(json.dumps(r, ensure_ascii=False))
-        return None
+        return ops.meeting_detail(self, mid)
 
     # ---------- 调用模型 ----------
     def call_agent(self, aid, task, context="", extra="", schema=None, kb=None):
@@ -1079,94 +662,17 @@ class Kernel:
                 "confidence": 0.2, "tools": []}
 
     def _patrol_note(self, result, facts):
-        """巡检结论：让 CEO 基于真实状态写一段结论并推回事件流（异步，不阻塞巡检接口）"""
-        try:
-            data, meta = self.call_agent(
-                "ceo",
-                "写一段本次两小时巡检结论：当前进度、是否有员工空转、下一动作。只用给定事实，不许编造数字。",
-                facts, "", "summary(≤120字，直接向老板说), evidence(2-4条，引用给定事实), actions(1-3条), confidence(0到1)")
-            if not data:
-                return
-            data.setdefault("summary", "")
-            self.send("result", "ceo", "owner", result.get("traceId", ""),
-                      {"result": data, "engine": meta["engine"], "latencyMs": meta["latencyMs"],
-                       "patrol": result.get("action")}, priority=1)
-        except Exception as exc:
-            self.send("escalation", "ceo", "owner", "", {"text": f"巡检结论生成失败：{exc}"}, priority=1)
+        return approvals._patrol_note(self, result, facts)
 
     def _patrol_facts(self):
-        """在动作发生之后才采集事实，避免模型拿到过期状态"""
-        with self.lock:
-            running = [t for t, d in self.traces.items() if d.get("status") == "running"]
-            pending = [a for a in self.approvals if a.get("status") == "pending"]
-            idle = [a["id"] for a in self.agents.values() if a.get("status") == "idle"]
-            working = [a["id"] for a in self.agents.values() if a.get("status") == "working"]
-            kpi = "；".join(f"{self.projects[k]['name']}={self.projects[k]['kpi']}" for k in self.projects)
-            return (f"场景={self.scene}；在岗={working or '无'}；空闲={len(idle)}人；"
-                    f"运行中trace={running[-1] if running else '无'}；待审批={len(pending)}；"
-                    f"累计trace={self.stats.get('traces', 0)}；消息数={self.events}；项目KPI：{kpi}")
+        return approvals._patrol_facts(self)
 
     # ---------- 业务入口 ----------
     def _sweep_stale(self):
-        """兜底收口：超过 45 分钟仍 running、且没有待审批的 trace 视为超时，不再占用派单。"""
-        now = datetime.now(TZ)
-        with self.lock:
-            pending_tr = {a["traceId"] for a in self.approvals if a.get("status") == "pending"}
-            for d in self.traces.values():
-                if d.get("status") != "running" or d.get("traceId") in pending_tr:
-                    continue
-                try:
-                    age = (now - datetime.fromisoformat(d["startedAt"])).total_seconds()
-                except Exception:
-                    continue
-                if age > 2700:
-                    d["status"] = "timeout"
-                    d["closedAt"] = iso_now()
+        return approvals._sweep_stale(self)
 
     def patrol(self):
-        """CEO 每两小时巡检：看进度 / 找空闲员工 / 无事可做就派新任务"""
-        self._sweep_stale()
-        with self.lock:
-            running = [t for t, d in self.traces.items() if d.get("status") == "running"]
-            pending = [a for a in self.approvals if a.get("status") == "pending"]
-            idle = [a["id"] for a in self.agents.values() if a.get("status") == "idle"]
-        # 审批门优先：流水线会阻塞在审批上（trace 仍显示 running），此时该催的是老板而不是“继续等”
-        if pending:
-            ap = pending[0]
-            note = (f"巡检：{len(pending)} 个审批待老板拍板（{ap['id']} / {ap.get('action')}），"
-                    "AI 不得自行开工或发布，已停止派单")
-            self.send("escalation", "ceo", "owner", "", {"text": note, "approvalId": ap["id"]}, priority=2)
-            result = {"action": "await-approval", "approvalId": ap["id"], "idle": idle}
-            facts = self._patrol_facts() + f"；本次动作=停止派单，等待老板审批 {ap['id']}"
-            threading.Thread(target=self._patrol_note, args=(result, facts), daemon=True).start()
-            return result
-        if running:
-            note = f"巡检：trace {running[-1]} 仍在运行，本轮不派单；{len(idle)} 人空闲待命"
-            self.send("heartbeat", "ceo", "owner", running[-1], {"text": note, "idle": len(idle)}, priority=0)
-            result = {"action": "busy", "traceId": running[-1], "idle": idle, "pendingApprovals": len(pending)}
-            facts = self._patrol_facts() + "；本次动作=不派单（已有 trace 在跑）"
-            threading.Thread(target=self._patrol_note, args=(result, facts), daemon=True).start()
-            return result
-        hs = self.last_hotspot or {}
-        if hs.get("title"):
-            title = hs["title"] + "（二轮深挖）"
-            tags, score = hs.get("tags") or ["综合"], min(0.95, (hs.get("score") or 0.8) + 0.02)
-        else:
-            title, tags, score = None, None, None
-        trace, hotspot = self.inject_hotspot(title, tags, score, force=True)
-        title = hotspot["title"]
-        assign = {"scout": "复核热点与素材包", "pm_wenren": "出文人莫克选题卡", "pm_gou": "出狗大人选题卡",
-                  "pm_tongxinyuan": "出同心圆选题卡", "cw_wenren": "写稿", "cw_gou": "写稿",
-                  "cw_tongxinyuan": "写产品文案", "vd_wenren": "出片", "vd_gou": "出片",
-                  "vd_tongxinyuan": "出演示视频", "reviewer": "跨项目串味审核",
-                  "release_ops": "备发布与监控", "kb_manager": "归档", "cto": "技术周报", "ceo": "日报"}
-        self.send("delegation", "ceo", "all", trace,
-                  {"task": f"全员复工：{title}（空闲 {len(idle)} 人已按岗位分派）", "assignments": assign}, priority=1)
-        result = {"action": "dispatched", "traceId": trace, "hotspot": title, "idle": idle}
-        facts = (self._patrol_facts()
-                 + f"；本次动作=已派单「{title}」并下发全员分工，员工正在进入在岗（上表的在岗/空闲为空闲态排查前的值）")
-        threading.Thread(target=self._patrol_note, args=(result, facts), daemon=True).start()
-        return result
+        return approvals.patrol(self)
 
     def _hotspot_from_collection(self):
         """按最新一档原始采集榜生成热点；没有采集数据时返回 None。
@@ -1218,7 +724,7 @@ class Kernel:
         text = str(text or "").strip()
         if not text:
             return ""
-        d = {"id": f"dir_{uid()[:12]}", "traceId": trace or "", "text": text[:4000],
+        d = {"id": uid("dir"), "traceId": trace or "", "text": text[:4000],
              "source": source, "scope": scope, "projectId": project or "",
              "confirmedBy": str(getattr(self, "owner_name", "") or "owner"),
              "createdAt": iso_now(),
@@ -1427,87 +933,13 @@ class Kernel:
         return "tongxinyuan"
 
     def run_pipeline(self, trace, hotspot, start=None, state=None):
-        self.active_trace = trace
-        t0 = time.time()
-        with self.lock:
-            origin = str((self.traces.get(trace) or {}).get("source") or "")
-        try:
-            FEED.hermes_start(self.db, self.emit, trace, self._trace_title(trace), origin,
-                              start or "", len((state or {}).get("items") or {}))
-        except Exception as e:
-            print(f"[msgfeed] hermes 启动记录失败：{type(e).__name__}: {e}", flush=True)
-        if self.db:
-            try:
-                if start:
-                    self.db.pipeline_run_stage(trace, start, 0, state or {})
-                else:
-                    self.db.pipeline_run_start(trace, hotspot)
-            except Exception as e:
-                print(f"[pipeline] 运行态入库失败（不影响执行）：{type(e).__name__}: {e}", flush=True)
-        try:
-            self._pipeline(trace, hotspot, start=start, state=state)
-        except BudgetAbort as exc:
-            # CTO 已判定超阈值并通知老板：这里只负责按“停止”收口
-            with self.lock:
-                self.traces[trace]["status"] = "aborted"
-                self.traces[trace]["closedAt"] = iso_now()
-                self.traces[trace]["abortReason"] = str(exc)
-                for item in self.contents:
-                    if item.get("traceId") == trace and item.get("stage") not in (
-                            "published", "archived"):
-                        item["stage"] = "blocked"
-                        item["blockedBy"] = "cost-gate"
-            self._persist_trace(trace)
-            self.send("escalation", "cto", "owner", trace,
-                      {"text": f"任务已在阶段边界停止：{exc}", "aborted": True}, priority=2)
-        except Exception as exc:
-            self.send("escalation", "ceo", "owner", trace, {"text": f"编排异常：{exc}"}, priority=2)
-            with self.lock:
-                self.traces[trace]["status"] = "error"
-                self.traces[trace]["closedAt"] = iso_now()
-            self._persist_trace(trace)
-        finally:
-            if self.active_trace == trace:
-                self.active_trace = ""
-            # 编排异常时也要收口会议，避免 3D 会议室一直停留在“开会中”
-            if self.meeting_log.get("traceId") == trace and self.meeting_log.get("status") == "live":
-                try:
-                    self.meeting_end(trace, "会议中断：编排异常，未形成结论。")
-                    self.set_scene("WORK", trace, title="会议中断")
-                except Exception as e:
-                    log_event("run_pipeline.meeting_close", e, level="error", trace=trace)
-            # 兜底收口：无论从哪条分支提前返回，都不能把 trace 永远留在 running，否则巡检会一直拒派
-            with self.lock:
-                t = self.traces.get(trace)
-                if t and t.get("status") == "running":
-                    t["status"] = "incomplete"
-                    t["closedAt"] = iso_now()
-            self._persist_trace(trace)
-            self.export_trace_docs(trace)   # 收口之后再落盘，交付文档才能记录到最终状态
-            self.save_runtime()             # 本轮报告/消息/知识入库，重启后可恢复
-            if self.db:
-                try:
-                    final = (self.traces.get(trace) or {}).get("status") or "incomplete"
-                    self.db.pipeline_run_end(trace, final)
-                except Exception as e:
-                    print(f"[pipeline] 运行态收口失败：{type(e).__name__}: {e}", flush=True)
-            # 结束后的成果：最终状态 / 产出条数 / 成片文件 / 总耗时（消息中心 hermes 源）
-            try:
-                with self.lock:
-                    items = [dict(c) for c in self.contents if c.get("traceId") == trace]
-                    final = str((self.traces.get(trace) or {}).get("status") or "incomplete")
-                done = [c for c in items if c.get("stage") in ("published", "archived")]
-                files = sum(len(c.get("assets") or []) for c in done)
-                FEED.hermes_finish(self.db, self.emit, trace, self._trace_title(trace),
-                                   final, len(items), len(done), files, time.time() - t0)
-            except Exception as e:
-                print(f"[msgfeed] hermes 成果记录失败：{type(e).__name__}: {e}", flush=True)
+        return pipeline.run_pipeline(self, trace, hotspot, start, state)
 
     # ---------- 选题流程护栏 ----------
     PIDS = ("wenren", "gou", "tongxinyuan")
 
     def _deg(self, aid, what):
-        return self.fallback(aid, what)
+        return pipeline_kit._deg(self, aid, what)
 
     def _kb_brief(self, limit=40):
         """选题上下文：知识库近期条目 + 分类/项目分布（CCO 内化提炼的唯一素材来源）。"""
@@ -1531,322 +963,38 @@ class Kernel:
         return {"count": len(entries), "categories": cats, "projects": projs, "entries": picked}
 
     def _coerce_cco_topics(self, data, kb):
-        """CCO 知识库选题卡：每项目恰好 2 条（共 6 条）；缺项用知识条目兜底，绝不从热点编造。"""
-        raw = (data or {}).get("final") or (data or {}).get("topics") or []
-        out = {pid: [] for pid in self.PIDS}
-        if isinstance(raw, list):
-            for t in raw:
-                if not isinstance(t, dict):
-                    continue
-                pid = str(t.get("projectId") or "")
-                title = str(t.get("title") or t.get("angle") or "").strip()
-                if pid not in out or not title or len(out[pid]) >= 2:
-                    continue
-                out[pid].append({"projectId": pid, "title": title[:60],
-                                 "angle": str(t.get("angle") or title)[:80],
-                                 "form": str(t.get("form") or "内化提炼")[:16],
-                                 "durationSec": _to_int(t.get("durationSec"), 45),
-                                 "reason": str(t.get("reason") or "")[:140],
-                                 "knowledgeRefs": [str(x)[:60] for x in
-                                                   (t.get("knowledgeRefs") or [])][:3]})
-        for pid in self.PIDS:
-            while len(out[pid]) < 2:
-                used = {t["title"] for pid2 in self.PIDS for t in out[pid2]}
-                cand = [e for e in kb["entries"]
-                        if e.get("projectId") in (pid, "", "all") and e["title"] not in used]
-                cand = cand or [e for e in kb["entries"] if e["title"] not in used]
-                if not cand:
-                    break
-                e = cand[0]
-                out[pid].append({"projectId": pid, "title": e["title"][:60],
-                                 "angle": e.get("summary") or e["title"], "form": "内化提炼",
-                                 "durationSec": 45,
-                                 "reason": f"知识库条目兜底（{e.get('at') or '—'}）",
-                                 "knowledgeRefs": [e["title"]]})
-            out[pid] = out[pid][:2]
-        return out
+        return pipeline_kit._coerce_cco_topics(self, data, kb)
 
     def _coerce_plan(self, data, topic, idx):
-        raw = (data or {}).get("assessment")
-        if isinstance(raw, dict) and isinstance(raw.get("items"), list):
-            raw = raw["items"]
-        items = raw if isinstance(raw, list) else []
-        src = items[idx] if idx < len(items) and isinstance(items[idx], dict) else {}
-        tts = src.get("tts") if isinstance(src.get("tts"), dict) else {}
-        shots = []
-        for s in (src.get("storyboardShots") or [])[:8]:
-            if isinstance(s, dict) and (s.get("画面") or s.get("scene")):
-                shots.append({"no": _to_int(s.get("no"), len(shots) + 1),
-                              "画面": str(s.get("画面") or s.get("scene"))[:120],
-                              "台词": str(s.get("台词") or s.get("line") or "")[:120],
-                              "秒": _to_int(s.get("秒") or s.get("sec"), 6),
-                              "素材": str(s.get("素材") or s.get("asset") or "")[:60]})
-        vtasks = [{"shot": str(t.get("shot") or i + 1),
-                   "task": str(t.get("task") or "")[:120]}
-                  for i, t in list(enumerate(src.get("videoTasks") or []))[:12]
-                  if isinstance(t, dict)]
-        return {"durationSec": _to_int(src.get("durationSec"), topic.get("durationSec", 45)),
-                "tts": {"voice": str(tts.get("voice") or "zh-CN-XiaoxiaoNeural")[:40],
-                        "style": str(tts.get("style") or "纪录片口播")[:40]},
-                "materials": [str(x)[:60] for x in (src.get("materials") or [])][:8],
-                "copyBrief": str(src.get("copyBrief") or "按定稿选题写口播稿")[:200],
-                "storyboardNotes": str(src.get("storyboardNotes") or "4-6 镜，首镜 3 秒抓人")[:300],
-                "storyboardShots": shots, "videoTasks": vtasks}
+        return pipeline_kit._coerce_plan(self, data, topic, idx)
 
     def _review_map(self, data, ids):
-        """样片评审：三票制；评审结果缺失按未通过处理（基础设施故障不得放行）。"""
-        raw = (data or {}).get("reviews")
-        out = {}
-        if isinstance(raw, list):
-            for r in raw:
-                if not isinstance(r, dict):
-                    continue
-                iid = str(r.get("itemId") or "")
-                if iid in ids:
-                    out[iid] = (bool(r.get("pass")),
-                                [str(x)[:100] for x in (r.get("reasons") or [])][:5])
-        for iid in ids:
-            out.setdefault(iid, (False, ["评审结果未返回，按未通过处理"]))
-        return out
+        return pipeline_kit._review_map(self, data, ids)
 
     def _sample_wave(self, trace, ids, items):
-        """CCO、CTO 各评审全部样片；PM 只评审本项目样片。"""
-        if not ids:
-            return {}, {}
-        payload = [{"itemId": i, "projectId": items[i]["projectId"],
-                    "title": items[i].get("title"), "copy": items[i].get("copy"),
-                    "storyboard": items[i].get("storyboard"),
-                    "durationSec": items[i].get("durationSec"),
-                    "render": items[i].get("renderCheck")} for i in ids]
-        ctx = json.dumps(payload, ensure_ascii=False)
-        extra = ("逐条判定并输出 reviews 数组：[{itemId, pass(布尔), reasons(数组≤2条)}]。"
-                 "只有创意完成度/调性/技术可交付性明显不达标才判 false。")
-        schema = "summary, evidence, confidence, tools, reviews"
-        jobs = {
-            "cco": HERMES.pool.submit(self.call_agent, "cco",
-                                      "以 CCO 身份评审样片：项目调性、创意完成度、人设是否串味。", ctx, extra, schema),
-            "cto": HERMES.pool.submit(self.call_agent, "cto",
-                                      "以 CTO 身份评审样片：分镜可执行性、时长、配音/TTS 与素材风险。", ctx, extra, schema),
-        }
-        for pid in self.PIDS:
-            pid_ids = [i for i in ids if items[i]["projectId"] == pid]
-            if pid_ids:
-                p_ctx = json.dumps([items[i] for i in pid_ids], ensure_ascii=False)
-                jobs[pid] = HERMES.pool.submit(
-                    self.call_agent, f"pm_{pid}",
-                    f"以 {self.projects[pid]['name']} 产品经理身份评审本项目样片，判断能否进入定版。",
-                    p_ctx, extra, schema)
-        maps, metas = {}, {}
-        for who, job in jobs.items():
-            data, meta = job.result()
-            data = data or {}
-            ids_for_role = ids if who in ("cco", "cto") else \
-                [i for i in ids if items[i]["projectId"] == who]
-            maps[who] = self._review_map(data, ids_for_role)
-            metas[who] = meta
-            self.send("result", who if who in ("cco", "cto") else f"pm_{who}", "ceo", trace,
-                      {"verdict": {"role": who, "reviews": maps[who]}, "engine": meta["engine"]},
-                      project="all" if who in ("cco", "cto") else who)
-        return maps, metas
+        return pipeline_kit._sample_wave(self, trace, ids, items)
 
     def _production_checks(self, items):
-        """开工审批单的成本/素材/合规摘要：调用量按编排静态估算，不伪造金额。"""
-        n = len(items)
-        return {
-            "cost": {
-                "modelCallsTypical": 22 + 4 * n,
-                "modelCallsWorst": 54 + 3 * n,
-                "renders": n,
-                "ttsSegments": [4 * n, 6 * n],
-                "cashUsd": None,
-                "budgetCapUsd": None,
-                "note": "渲染/TTS 走本地链路（现金 0）；模型调用按 provider 计费，用量未回传，无法核算",
-            },
-            "materials": {
-                "source": "本地 SVG 插图 + 本地 CosyVoice2 配音",
-                "externalAssets": 0,
-                "licenseRisk": "无外部素材",
-                "assetGapsPending": True,
-            },
-            "compliance": {
-                "toneIsolation": True,
-                "projectBinding": True,
-                "sourcesRequired": False,
-                "reviewerGate": "定版后终审",
-            },
-        }
+        return pipeline_kit._production_checks(self, items)
 
     def _publish_checks(self, items, passed_items, review_history):
-        """发布审批单的成本/素材/合规摘要。"""
-        n = len(items)
-        total_assets = sum(len(i.get("assets") or []) for i in passed_items.values())
-        rounds = len({h.get("round") for h in review_history}) or 0
-        return {
-            "cost": {
-                "modelCallsTypical": 22 + 4 * n,
-                "renders": n,
-                "cashUsd": None,
-                "budgetCapUsd": None,
-                "note": "本轮未使用付费素材/生成接口；模型金额未回传，无法核算",
-            },
-            "materials": {
-                "assets": total_assets,
-                "externalAssets": 0,
-                "licenseRisk": "无外部素材",
-            },
-            "compliance": {
-                "reviewPassed": len(passed_items),
-                "blocked": n - len(passed_items),
-                "reviewRounds": rounds,
-                "toneIsolation": True,
-                "reviewerGate": "已通过",
-            },
-        }
+        return pipeline_kit._publish_checks(self, items, passed_items, review_history)
 
     def _stage_timeout(self, c):
-        """审批超时：流程定义优先，未配置时沿用 OPC_APPROVAL_TIMEOUT。"""
-        return c.stage.timeout_sec or APPROVAL_TIMEOUT
+        return pipeline._stage_timeout(self, c)
 
     def _pipeline(self, trace, hotspot, start=None, state=None):
-        """按流程定义（config/pipeline.yaml）顺序执行阶段。
-
-        每个阶段一个 _stage_<id> 方法，阶段间状态放 PipelineContext；
-        新增/调整阶段只改定义文件与对应实现，不再维护一条硬编码长函数。
-        每次进入阶段前把「阶段 + 上下文快照」写入过程库，进程重启可从这里续跑。
-        """
-        c = PipelineContext(self, trace, hotspot)
-        if state:
-            c.load_state(state)
-            # 续跑时把快照里的内容单挂回总线，否则前端/报表看不到这些单
-            with self.lock:
-                known = {x.get("id") for x in self.contents}
-                for item in c.items.values():
-                    if item.get("id") not in known:
-                        self.contents.append(item)
-        stages = [st for st in CC.PIPELINE.stages if st.enabled]
-        begin = 0
-        if start:
-            idx = next((i for i, st in enumerate(stages) if st.id == start), None)
-            if idx is None:
-                raise RuntimeError(f"断点阶段 {start} 不在流程定义里，无法续跑")
-            begin = idx
-            print(f"[pipeline] {trace} 从阶段 {start}（#{idx}）续跑", flush=True)
-        for pos in range(begin, len(stages)):
-            st = stages[pos]
-            fn = getattr(self, "_stage_" + st.id, None)
-            if fn is None:
-                raise RuntimeError(f"流程定义里的阶段 {st.id} 没有实现 _stage_{st.id}")
-            c.stage = st
-            self._run_checkpoint(trace, st, pos, c)
-            self._workshop_start(trace, st)
-            try:
-                stop = fn(c)
-            except Exception:
-                self._workshop_end(trace, st, "failed", c)
-                try:
-                    FEED.hermes_node(self.db, self.emit, trace, self._trace_title(trace),
-                                     st.name, "failed", len(c.items))
-                except Exception as e:
-                    print(f"[msgfeed] hermes 节点记录失败：{type(e).__name__}: {e}", flush=True)
-                raise
-            self._workshop_end(trace, st, "stopped" if stop else "done", c)
-            # 关键节点（消息中心 hermes 源）：阶段收口 + 在制数量
-            try:
-                FEED.hermes_node(self.db, self.emit, trace, self._trace_title(trace),
-                                 st.name, "stopped" if stop else "done", len(c.items))
-            except Exception as e:
-                print(f"[msgfeed] hermes 节点记录失败：{type(e).__name__}: {e}", flush=True)
-            if stop is _PIPELINE_STOP:
-                return
+        return pipeline._pipeline(self, trace, hotspot, start, state)
 
     # ---------- 制片工厂（车间监控/控制） ----------
     def _workshop_start(self, trace, st):
-        """阶段开始：车间工位标记 running（过程库关闭时静默跳过）。"""
-        if not self.db:
-            return
-        self.db.workshop_step_start(trace, st.id, st.name, st.om_stage)
-        try:
-            FEED.factory_step(self.db, self.emit, trace, self._trace_title(trace),
-                              st.name, "running", self._factory_products(trace, st.id))
-        except Exception as e:
-            print(f"[msgfeed] 车间开工记录失败：{type(e).__name__}: {e}", flush=True)
+        return pipeline_kit._workshop_start(self, trace, st)
 
     def _workshop_end(self, trace, st, status, ctx=None):
-        """阶段结束：车间工位落定 done/stopped/failed，摘要随行供前端回放。"""
-        if not self.db:
-            return
-        self.db.workshop_step_end(trace, st.id, status, {
-            "stage": st.id, "name": st.name, "kind": st.kind, "omStage": st.om_stage,
-            "items": len(getattr(ctx, "items", ()) or ()),
-        })
-        # 车间流水线动态（消息中心 factory 源）：本工位收工 + 每件产品推进的工序
-        try:
-            FEED.factory_step(self.db, self.emit, trace, self._trace_title(trace),
-                              st.name, status, self._factory_products(trace, st.id))
-        except Exception as e:
-            print(f"[msgfeed] 车间收工记录失败：{type(e).__name__}: {e}", flush=True)
+        return pipeline_kit._workshop_end(self, trace, st, status, ctx)
 
     def factory_view(self):
-        """制片工厂聚合：13 类车间 + 各车间产品（工艺决策 + 工位过程 + 运行态）。
-
-        只展示 CCO 审批通过（product_crafts 有记录、带流水号 serial_no）的内容单；
-        工艺轴只取工厂段（进厂 assessment → 出厂 review），前段选题/开工审批与
-        后段发布/归档/汇报在 hermes 调度，不属于工厂工序。
-        """
-        workshops = [dict(w) for w in CC.OPENMONTAGE_CRAFTS]
-        enabled = [s for s in CC.PIPELINE.stages if s.enabled]
-        ids = [s.id for s in enabled]
-        try:
-            lo, hi = ids.index(CC.FACTORY_ENTRY_STAGE), ids.index(CC.FACTORY_EXIT_STAGE)
-        except ValueError:
-            lo, hi = 0, len(ids) - 1
-        axis_stages = enabled[min(lo, hi):max(lo, hi) + 1]
-        stage_axis = [{"id": s.id, "name": s.name, "kind": s.kind, "omStage": s.om_stage}
-                      for s in axis_stages]
-        axis_ids = {s.id for s in axis_stages}
-        products = []
-        if self.db:
-            runs = {r.get("trace_id"): r for r in self.db.pipeline_runs_recent(80)}
-            steps_by_trace = {}
-            for s in self.db.workshop_steps():
-                steps_by_trace.setdefault(s.get("trace_id"), []).append(s)
-            for row in self.db.product_crafts(120):
-                tid = row.get("trace_id") or ""
-                run = runs.get(tid) or {}
-                # 工艺步骤序列：CCO 审批时快照（steps 列），老数据回退到工艺定义现值
-                try:
-                    seq = json.loads(row.get("steps") or "null")
-                except ValueError:
-                    seq = None
-                if not seq:
-                    seq = CC.CRAFT_STEPS.get(row.get("craft_id") or "", [])
-                steps_by_stage = {s.get("stage_id"): _step_view(s)
-                                  for s in steps_by_trace.get(tid, [])}
-                craft_steps = []
-                for st in seq:
-                    rec = steps_by_stage.get(st.get("opcStage"))
-                    craft_steps.append({**st,
-                                        "status": (rec or {}).get("status") or "pending",
-                                        "startedAt": (rec or {}).get("started_at") or "",
-                                        "finishedAt": (rec or {}).get("finished_at") or ""})
-                products.append({
-                    "itemId": row.get("item_id"), "traceId": tid,
-                    "serialNo": row.get("serial_no") or "",
-                    "projectId": row.get("project_id"), "title": row.get("title"),
-                    "workshopNo": row.get("workshop_no"), "craftId": row.get("craft_id"),
-                    "craftName": row.get("craft_name"), "product": row.get("product"),
-                    "renderMode": row.get("render_mode"), "reason": row.get("reason"),
-                    "decidedBy": row.get("decided_by"),
-                    "decidedAt": row.get("updated_at") or row.get("created_at"),
-                    "shippedAt": row.get("shipped_at") or "",
-                    "craftSteps": craft_steps,
-                    "run": {"status": run.get("status"), "stage": run.get("stage"),
-                            "stageIndex": run.get("stage_index"),
-                            "updatedAt": run.get("updated_at"), "closedAt": run.get("closed_at")},
-                    "steps": [v for v in steps_by_stage.values()
-                              if v.get("stage_id") in axis_ids],
-                })
-        return {"ok": True, "workshops": workshops, "stages": stage_axis, "products": products}
+        return factory.factory_view(self)
 
     def _factory_works_index(self):
         """作品档案 × 工厂车间对齐：以 product_crafts（有流水号）为准的 (trace,item) 索引。
@@ -1885,305 +1033,33 @@ class Kernel:
         return idx, step_status
 
     def _run_checkpoint(self, trace, st, pos, c):
-        """阶段边界写档：stage 是即将执行的阶段，状态快照随行。"""
-        self._write_stage_checkpoint(trace, st, pos, c)
-        if not self.db:
-            return
-        try:
-            self.db.pipeline_run_stage(trace, st.id, pos, c.to_state())
-        except Exception as e:
-            print(f"[pipeline] 断点写档失败（不影响执行）：{type(e).__name__}: {e}", flush=True)
+        return pipeline._run_checkpoint(self, trace, st, pos, c)
 
     def _write_stage_checkpoint(self, trace, st, pos, c):
-        """按 om_stage 对齐的断点文件（OpenMontage 侧没有原生 checkpoint 协议）。
-
-        与过程库同源：trace_id + stage + om_stage，外部编排器或排障时可直接读文件，
-        不必连库；checkpoints.jsonl 保留整轮轨迹，checkpoint.json 只留当前断点。
-        """
-        try:
-            d = os.path.join(VAULT, "OPC", "运行态", trace)
-            os.makedirs(d, exist_ok=True)
-            payload = {"traceId": trace, "stage": st.id, "omStage": st.om_stage,
-                       "stageIndex": pos, "items": len(c.items), "at": iso_now()}
-            with open(os.path.join(d, "checkpoint.json"), "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            with open(os.path.join(d, "checkpoints.jsonl"), "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        except OSError as e:
-            print(f"[pipeline] 断点文件写入失败：{e}", flush=True)
+        return pipeline._write_stage_checkpoint(self, trace, st, pos, c)
 
     def _stage_topic_meeting(self, c):
-        """1. 每日选题（知识库内化）：CCO 从知识库归档认知中提炼 6 条最佳选题（每项目 2 条）直出定稿。
-
-        不再按热点给三个项目分别匹配选题，也不再发起选题评审会：CCO 决策即定稿，直接进入汇报与建单。
-        """
-        self.guard_budget(c.trace)
-        kb = self._kb_brief()
-        if not kb["entries"]:
-            raise RuntimeError("知识库暂无可用于选题的条目：请先在 OPC/知识库 归档内化认知后再发起每日选题")
-        hint = str(c.hotspot.get("title") or "") if str(c.hotspot.get("kind") or "") != "knowledge" else ""
-        participants = c.participants = ["cco", "kb_manager"]
-        agenda = [f"知识来源：{hint or '知识库内化'}",
-                  f"知识条目 {kb['count']} 条（分类 {len(kb['categories'])} 个）",
-                  "CCO 提炼最佳选题：每项目 2 条，共 6 条", "不设评审会：CCO 决策即定稿"]
-        self.meeting_begin(c.trace, "每日选题会", participants, agenda)
-        self.set_scene("MEETING", c.trace, title="每日选题会", participants=participants, agenda=agenda)
-        for aid in participants:
-            self.set_agent(aid, "meeting", "选题会")
-            self.send("delegation", "cco", aid, c.trace, {"task": "参会：知识库内化选题"}, priority=1)
-        self.meeting_say("cco", f"今天不从热点找题，直接从知识库 {kb['count']} 条内化认知里提炼："
-                                "每个项目 2 条，共 6 条；我定了就进制作，不再开评审会。", "opening", c.trace)
-
-        ctx = {"知识库": {"条目总数": kb["count"], "分类分布": kb["categories"],
-                        "项目分布": kb["projects"], "近期条目": kb["entries"]},
-               "项目": {pid: {"名称": self.projects[pid]["name"], "调性": self.tone[pid]}
-                        for pid in self.PIDS},
-               "老板指定方向": hint}
-        # 自动采集 → CCO 分析出的最新灵感：选题时优先采用（有就先占位，不足再用知识库条目补）
-        try:
-            import collector
-            fresh = collector.priority_ideas(self.data_dir, limit=8)
-        except Exception:
-            fresh = []
-        if fresh:
-            ctx["采集灵感（优先采用）"] = [
-                {"标题": r.get("title") or "", "灵感": r.get("summary") or "",
-                 "结合点": r.get("detail") or "", "标签": r.get("tags") or "",
-                 "来源": r.get("source") or "", "素材目录": r.get("asset") or ""}
-                for r in fresh]
-        data, meta = self.call_agent(
-            "cco",
-            "你是 CCO。从给定知识库条目中提炼今日最佳选题：优先近 30 天、可复用结论扎实、"
-            "与项目调性一致且具备制作可行性的认知；每个项目恰好 2 条（共 6 条）。"
-            "要求：1) 不得直接照抄条目标题，要提炼成可拍选题；2) 必须引用具体知识条目（knowledgeRefs）；"
-            "3) 不引用热点榜单、不编造数字；4) 同一项目的两条之间要有差异化；"
-            "5) 给了「采集灵感（优先采用）」时，先把这些灵感按项目落成选题（它们来自自动采集的最新素材，"
-            "老板要求优先采用），不足 6 条再用知识库条目补足，并在 reason 里注明「采集灵感」。",
-            json.dumps(ctx, ensure_ascii=False),
-            "额外 JSON 字段：final(数组，恰好 6 条，每条 {projectId,title,angle,form,durationSec,reason,knowledgeRefs})；"
-            "excluded(数组，0-6 条，未采用的认知 {title, projectId, reason})；minutes(会议纪要 Markdown ≤800 字)。",
-            "summary, evidence, confidence, tools, final, excluded, minutes")
-        data = data or self._deg("cco", "知识库选题")
-        c.final = self._coerce_cco_topics(data, kb)
-        c.selected = {pid: list(v) for pid, v in c.final.items()}
-        c.pool_size = kb["count"]
-        c.eliminated = [x for x in (data.get("excluded") or []) if isinstance(x, dict)]
-        total = sum(len(v) for v in c.final.values())
-        self.send("topic.select", "cco", "ceo", c.trace,
-                  {"selected": c.selected, "eliminated": c.eliminated, "poolSize": c.pool_size,
-                   "result": data, "engine": meta["engine"], "source": "knowledge"}, priority=2)
-        self.send("topic.select", "cco", "cto", c.trace,
-                  {"selected": c.selected, "eliminated": c.eliminated, "cc": True,
-                   "engine": meta["engine"]}, priority=1)
-        self.emit("engine-meta", c.trace, {"agent": "cco", **meta})
-        picked = [t.get("title", "") for pid in self.PIDS for t in c.final[pid]]
-        self.meeting_say("cco", (data.get("summary") or
-                                 f"从知识库 {kb['count']} 条认知中提炼出 {total} 条选题。") +
-                         (" 定稿：" + "；".join(picked) if picked else ""), "decision", c.trace)
-
-        # 会议纪要：只有一场选题会（知识库内化），CCO 结论即定稿，不再有第二场评审
-        display = lambda xs: ["老板" if x == "owner" else self.agents.get(x, {}).get("name", x) for x in xs]
-        minutes = str(data.get("minutes") or "").strip() or (
-            f"# 每日选题会（知识库内化）\n\n- 知识来源：{hint or '知识库'}（{kb['count']} 条）\n"
-            "- 参会：" + "、".join(display(participants)) + "\n"
-            f"- 结论：CCO 提炼定稿 {total} 条（每项目 2 条），不发起评审会\n\n## 定稿\n"
-            + "\n".join(f"- {self.projects[pid]['name']}《{t['title']}》："
-                        f"{t.get('reason') or t.get('angle') or ''}"
-                        for pid in self.PIDS for t in c.final[pid]) + "\n")
-        recipients = [str(x) for x in (data.get("recipients") or [])] or ["cco", "ceo", "cto"]
-        cc = [str(x) for x in (data.get("cc") or [])] or ["owner"]
-        c.meeting_doc = {}
-        if self.DL:
-            try:
-                c.meeting_doc = self.DL.export_meeting(c.trace, {
-                    "title": "每日选题会（知识库内化）", "minutes": minutes,
-                    "recipients": display(recipients), "cc": display(cc),
-                    "final": c.final, "hotspot": c.hotspot})
-            except Exception as e:
-                print(f"[pipeline] 会议纪要落盘失败：{type(e).__name__}: {e}", flush=True)
-        self.send("decision", "cco", "all", c.trace,
-                  {"text": f"知识库内化定稿 {total} 条（每项目 2 条）",
-                   "final": c.final, "minutes": minutes,
-                   "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
-                   "mailUrl": (c.meeting_doc or {}).get("mail", ""),
-                   "result": data, "engine": meta["engine"]}, project="all", priority=2)
-        self.send("report.ready", "cco", "owner", c.trace,
-                  {"kind": "meeting", "title": "每日选题会纪要（知识库内化）",
-                   "minutesUrl": (c.meeting_doc or {}).get("minutes", ""),
-                   "mailUrl": (c.meeting_doc or {}).get("mail", ""),
-                   "recipients": recipients, "cc": cc}, priority=1)
-        c.conclusion = (f"知识库内化定稿 {total} 条（每项目 2 条，知识条目 {kb['count']} 条，无评审）：" +
-                        "；".join(f"{self.projects[pid]['name']}《{t['title']}》"
-                                 for pid in self.PIDS for t in c.final[pid]))
-        self.meeting_say("cco", "结论：" + c.conclusion + "。纪要已归档，直接进制作前的开工审批。",
-                         "conclusion", c.trace)
-        self.meeting_end(c.trace, c.conclusion, (c.meeting_doc or {}).get("minutes", ""))
-        # 祁南（kb_manager）在选题定稿即归档：来源写知识内化，不再挂热点标签
-        self.archive_knowledge(c.trace, [
-            {"projectId": pid, "title": t.get("title"),
-             "body": f"选题定稿：{t.get('angle') or t.get('title')}；来源：知识库内化；"
-                     f"依据：{'、'.join(t.get('knowledgeRefs') or []) or '知识条目'}；"
-                     f"CCO 结论：{c.conclusion[:100]}",
-             "tags": ["知识内化"] + list(kb["categories"].keys())[:3]}
-            for pid in self.PIDS for t in c.final.get(pid, [])])
-        self.set_scene("WORK", c.trace, title=f"定稿 {total} 条，进入制作")
+        return pipeline._stage_topic_meeting(self, c)
 
 
     def _stage_boss_report(self, c):
-        """3.5 CCO 邮件汇报老板：知识库选题定稿 + 等待开工审批（抄送 CEO/CTO）"""
-        self.guard_budget(c.trace)
-        total = sum(len(v) for v in c.final.values())
-        src = "知识库内化" if str(c.hotspot.get("kind") or "") == "knowledge" \
-            else f"老板指定方向「{c.hotspot.get('title')}」"
-        mail_lines = [
-            f"老板：",
-            "",
-            f"今日选题已完成（{src}）。",
-            f"知识库 {c.pool_size} 条内化认知 → CCO 提炼定稿 {total} 条（每项目 2 条），"
-            "不经评审会，CCO 决策即定稿。",
-            "",
-            "## 定稿清单",
-        ]
-        for pid in self.PIDS:
-            mail_lines.append(f"### {self.projects[pid]['name']}")
-            for t in c.final[pid]:
-                refs = "、".join(t.get("knowledgeRefs") or []) or "—"
-                mail_lines.append(
-                    f"- 《{t['title']}》｜角度：{t.get('angle', '—')}｜形态：{t.get('form', '—')}｜"
-                    f"时长：{t.get('durationSec', '—')}s｜理由：{t.get('reason', '—')}｜知识依据：{refs}")
-        if c.eliminated:
-            mail_lines += ["", "## 未采用的认知"]
-            for e in c.eliminated[:12]:
-                mail_lines.append(f"- {e.get('title', '—')}：{e.get('reason', '—')}")
-        mail_lines += [
-            "",
-            "## 待办",
-            "- 开工审批单已生成（含成本/素材/合规检查），请老板在 OPC 工作台批准后进入制作。",
-            f"- 会议纪要：{(c.meeting_doc or {}).get('minutes', '（未生成）')}",
-        ]
-        mail_subject = f"[每日选题] {src} · 定稿 {total} 条，待开工审批"
-        mail_body = "\n".join(mail_lines)
-        self.send("biz.event", "cco", "owner", c.trace,
-                  {"text": "CCO 已邮件汇报知识库选题结果，等待开工审批",
-                   "to": BOSS_MAIL, "cc": ["ceo", "cto"], "subject": mail_subject,
-                   "finalCount": total, "eliminated": len(c.eliminated)}, priority=2)
-        threading.Thread(target=self.mail_boss,
-                         args=(mail_subject, mail_body, "cco", ["ceo", "cto"]),
-                         daemon=True).start()
+        return pipeline._stage_boss_report(self, c)
 
 
     def _stage_create_items(self, c):
-        """4. 建 6 条内容（每项目 2 条）"""
-        # 4. 建 6 条内容（每项目 2 条）
-        # 内容单 id 由 trace+项目+序号+标题 决定：阶段中途被打断、续跑重建时复用同一条，
-        # 既有内容不会变成孤儿，发布回执（release_ledger 按 item_id 判重）也不会失效。
-        c.items = {}
-        for pid in self.PIDS:
-            for idx, t in enumerate(c.final[pid]):
-                iid = self._content_id(c.trace, pid, idx, t["title"])
-                item = {"id": iid, "projectId": pid, "traceId": c.trace, "stage": "topic",
-                        "title": t["title"], "angle": t.get("angle", ""),
-                        "owner": f"pm_{pid}", "toneProfile": self.tone[pid], "assets": [],
-                        "reviewNote": "", "durationSec": t.get("durationSec", 45)}
-                with self.lock:
-                    existing = next((x for x in self.contents if x.get("id") == iid), None)
-                    if existing is not None:
-                        item = existing            # 断点续跑：复用已有内容单，不重复登记
-                    else:
-                        self.contents.append(item)
-                c.items[item["id"]] = item
-                self.emit("pipeline", c.trace, item)
-            self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
-                      {"task": f"承接本项目 {len(c.final[pid])} 条定稿选题，先出制作评估再写稿"}, project=pid)
-            self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
-                      {"task": f"承接本项目 {len(c.final[pid])} 条定稿选题，先出制作评估再制作样片"}, project=pid)
+        return pipeline._stage_create_items(self, c)
 
     @staticmethod
+    @staticmethod
     def _content_id(trace, pid, idx, title):
-        """内容单稳定 id：同一 trace 下同样一条选题，重跑也得到同一个 id。"""
-        raw = f"{trace}|{pid}|{idx}|{title}".encode("utf-8")
-        return "c_" + hashlib.sha1(raw).hexdigest()[:12]
+        return pipeline_kit._content_id(trace, pid, idx, title)
 
 
     def _open_approval(self, c, draft):
-        """审批单幂等开单：同一 trace + 动作已有单就复用，重启续跑不会重复打扰老板。
-
-        返回 (审批单, 唤醒事件 or None, 是否新建)。
-        - 已有已决单：不新建、不等待（事件为 None）
-        - 已有待决单：复用记录并重新登记唤醒事件，等待老板处理
-        - 无记录：与改造前一致，新建 + 推送 + 写库
-        """
-        existing = None
-        if self.db:
-            try:
-                existing = self.db.approval_for(c.trace, draft["action"])
-            except Exception as e:
-                print(f"[approval] 读库失败，按新单处理：{type(e).__name__}: {e}", flush=True)
-        with self.lock:
-            if not existing:
-                self.approvals.append(draft)
-                ev = threading.Event()
-                self.approval_events[draft["id"]] = ev
-                row, created = draft, True
-            else:
-                row = next((a for a in self.approvals if a["id"] == existing["id"]), None)
-                if row is None:
-                    row = dict(existing.get("raw") or {})
-                    for k in ("id", "traceId", "action", "status", "createdAt", "decidedAt", "timeoutSec"):
-                        if existing.get(k) not in (None, ""):
-                            row[k] = existing[k]
-                    self.approvals.append(row)
-                if row.get("status") != "pending":
-                    return row, None, False
-                ev = self.approval_events.get(row["id"]) or threading.Event()
-                self.approval_events[row["id"]] = ev
-                created = False
-        # 新建单与“重启后重新挂起”都推一次提醒，保证老板能看到待办
-        self.send("approval", "ceo", "owner", c.trace,
-                  {"approval": row} if created else {"approval": row, "reopened": True}, priority=2)
-        self.emit("approval", c.trace, row)
-        return row, ev, created
+        return approvals._open_approval(self, c, draft)
 
     def _stage_production_approval(self, c):
-        """4.5 开工审批：老板批准选题与成本/素材/合规摘要后才进入制作"""
-        # 4.5 开工审批：老板批准选题与成本/素材/合规摘要后才进入制作
-        prod_approval = {
-            "id": uid("ap"), "traceId": c.trace, "action": "production.start", "risk": "high",
-            "status": "pending", "approver": "老板", "createdAt": iso_now(), "decidedAt": "",
-            "timeoutSec": self._stage_timeout(c),
-            "items": list(c.items.keys()),
-            "titles": [i["title"] for i in c.items.values()],
-            "title": f"{len(c.items)} 条内容开工审批（含成本/素材/合规检查）",
-            "checks": self._production_checks(c.items),
-        }
-        prod_approval, prod_ev, _ = self._open_approval(c, prod_approval)
-        prod_ok = (prod_approval["status"] == "approved") if prod_ev is None \
-            else prod_ev.wait(timeout=self._stage_timeout(c))
-        with self.lock:
-            prod_appr = next(a for a in self.approvals if a["id"] == prod_approval["id"])
-            self.approval_events.pop(prod_approval["id"], None)
-        if not prod_ok or prod_appr["status"] != "approved":
-            with self.lock:
-                if prod_appr["status"] == "pending":
-                    prod_appr["status"] = "timeout"
-                    prod_appr["decidedAt"] = iso_now()
-                    prod_appr["timeoutReason"] = f"等待老板审批超过 {self._stage_timeout(c)}s，按挂起处理"
-                for item in c.items.values():
-                    item["stage"] = "blocked"
-                    item["blockedBy"] = "production-gate"
-                t = self.traces.get(c.trace)
-                if t:
-                    t["status"] = "rejected" if prod_appr["status"] == "rejected" else "timeout"
-                    t["closedAt"] = iso_now()
-            for item in c.items.values():
-                self.items_emit(c.trace, item)
-            self.send("escalation", "ceo", "owner", c.trace,
-                      {"text": "开工审批未通过，本轮不进入制作"}, priority=2)
-            self.emit("approval", c.trace, prod_appr)
-            self.set_scene("WORK", c.trace, title="开工审批未通过")
-            return _PIPELINE_STOP
-
-        self.guard_budget(c.trace)   # CTO 成本熔断：审批通过后、进入制作前再核一次
+        return pipeline._stage_production_approval(self, c)
 
 
     RENDER_MODES = ("remotion", "full_video", "voice_video")
@@ -2290,119 +1166,11 @@ class Kernel:
             self.items_emit(c.trace, item)
 
     def _stage_assessment(self, c):
-        """5. PM 细化分镜脚本并按并行原则拆分派单；CCO 定出片模式；scout 补素材缺口"""
-        # 5. PM 组织本项目组出《制作评估报告》：把分镜补充完善（逐镜 画面/台词/时长/素材），
-        #    并按并行原则拆任务——视频制作耗时较长，逐镜子任务先行开工，文案岗同步领取成稿与补素材指令。
-        jobs = {}
-        for pid, pm in c.pms:
-            boss_reqs = "；".join(
-                f"《{t.get('title')}》{t['bossBrief']}" for t in (c.final.get(pid) or [])
-                if t.get("bossBrief"))
-            jobs[pid] = HERMES.pool.submit(
-                self.call_agent, pm,
-                f"为 {self.projects[pid]['name']} 的 {len(c.final.get(pid) or [])} 条定稿选题细化制作方案：把分镜脚本补充完善到逐镜可执行"
-                "（画面/台词/时长/所需素材），并按并行原则拆分任务——视频制作拆成逐镜子任务先开工，"
-                "文案岗同步领取成稿与补素材指令。"
-                + (f"老板特定要求（逐条落实，不得跑偏）：{boss_reqs}" if boss_reqs else ""),
-                json.dumps(c.final.get(pid) or [], ensure_ascii=False),
-                "额外 JSON 字段：assessment({items:[{title,durationSec,tts:{voice,style},"
-                "copyBrief,storyboardNotes,"
-                "storyboardShots:[{no,画面,台词,秒,素材}],videoTasks:[{shot,task}]}], summary})；"
-                "assetGaps(数组，每条 {item, why})。",
-                "summary, evidence, confidence, tools, assessment, assetGaps")
-        gap_jobs = {}
-        for pid, pm in c.pms:
-            data, meta = jobs[pid].result()
-            data = data or self._deg(pm, "制作评估报告")
-            pid_items = [i for i in c.items.values() if i["projectId"] == pid]
-            for idx, item in enumerate(pid_items):
-                item["plan"] = self._coerce_plan(data, item, idx)
-                item["assessment"] = {"summary": data.get("summary", ""),
-                                      "evidence": data.get("evidence", []),
-                                      "risks": data.get("risks", []),
-                                      "assetGaps": data.get("assetGaps", [])}
-                self.items_emit(c.trace, item)
-            self._cco_render_mode(c, pid, pid_items)
-            self._cco_craft(c, pid, pid_items)
-            # 只派发 CCO 审批通过（已发流水号）的内容单：审批通过才能进流水线
-            approved = [it for it in pid_items if it.get("craft")]
-            if approved:
-                vtasks = [{"item": it["title"], "renderMode": it.get("renderMode"),
-                           "serialNo": it.get("serialNo", ""),
-                           **t} for it in approved
-                          for t in ((it.get("plan") or {}).get("videoTasks") or [])] or \
-                         [{"item": it["title"], "shot": "all",
-                           "task": "按细化分镜逐镜并行制作"} for it in approved]
-                # 并行派单：视频耗时长，priority=1 先开工（逐镜细分）；文案同步领取
-                self.send("delegation", pm, f"vd_{pid}", c.trace,
-                          {"task": "分镜已细化，按逐镜子任务并行开工（视频制作耗时较长，立即启动）",
-                           "videoTasks": vtasks[:16]}, project=pid, priority=1)
-            self.send("delegation", pm, f"cw_{pid}", c.trace,
-                      {"task": "按文案要求成稿；收到补素材指令后先查素材库，缺口走 ComfyUI 生成，"
-                               "台词/对白走 TTS 出音频"}, project=pid)
-            self.send("result", pm, "cco", c.trace,
-                      {"result": data, "assessment": data.get("assessment"), "engine": meta["engine"]}, project=pid)
-            self.send("result", pm, "cto", c.trace,
-                      {"assessment": data.get("assessment"), "engine": meta["engine"]}, project=pid)
-            gaps = data.get("assetGaps") or []
-            if gaps:
-                self.send("delegation", pm, "scout", c.trace,
-                          {"task": "素材缺失工单：补齐/替代并给出结论", "gaps": gaps}, project=pid, priority=2)
-                gap_jobs[pid] = HERMES.pool.submit(
-                    self.call_agent, "scout", "承接素材缺失工单：逐项给出补齐、替代或「无可用素材」的结论。",
-                    json.dumps(gaps, ensure_ascii=False),
-                    "额外 JSON 字段：gaps(数组，每条 {item,status,alternative})。",
-                    "summary, evidence, confidence, tools, gaps")
-        for pid, job in gap_jobs.items():
-            data, meta = job.result()
-            data = data or self._deg("scout", "素材工单")
-            for item in c.items.values():
-                if item["projectId"] == pid:
-                    item["assetResolution"] = data.get("gaps", [])
-                    self.items_emit(c.trace, item)
-            self.send("result", "scout", f"pm_{pid}", c.trace,
-                      {"result": data, "engine": meta["engine"]}, project=pid)
+        return pipeline._stage_assessment(self, c)
 
 
     def _stage_copy(self, c):
-        """6. 文案成稿 + 补素材链路（素材库 → ComfyUI 生成 → TTS 音频），两者并行"""
-        # 6. 文案成稿（6 个真实调用）
-        jobs = {}
-        for iid, item in c.items.items():
-            pid = item["projectId"]
-            plan = item.get("plan") or {}
-            jobs[iid] = HERMES.pool.submit(
-                self.call_agent, f"cw_{pid}",
-                f"为《{item['title']}》写一段成稿文案（≤80字），符合本项目人设，禁止串用其他项目风格。",
-                f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}；时长：{plan.get('durationSec', 45)}s；"
-                f"文案要求：{plan.get('copyBrief', '')}",
-                "额外 JSON 字段：copy(成稿文案≤80字)。",
-                "summary, evidence, confidence, tools, copy")
-            self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
-                      {"task": f"按评估报告写《{item['title']}》成稿；收到补素材指令：先查素材库，"
-                               f"缺口走 ComfyUI 生成，台词/对白走 TTS"}, project=pid)
-        # 补素材与成稿并行推进：素材库检索/ComfyUI 出图/TTS 都有 IO 等待，不占文案的推理时间
-        fill_jobs = {iid: HERMES.pool.submit(self._fill_materials, c.trace, item,
-                                             item["projectId"])
-                     for iid, item in c.items.items()}
-        for iid, item in c.items.items():
-            pid = item["projectId"]
-            data, meta = jobs[iid].result()
-            if meta.get("engine") != "hermes" or not (data or {}).get("copy"):
-                item.setdefault("degraded", []).append("copy")
-            data = data or {"summary": "文案已交付（降级）", "evidence": [], "confidence": 0.2,
-                            "tools": [], "copy": f"{self.projects[pid]['name']} 文案占位"}
-            item["stage"] = "copy"
-            item["copy"] = data.get("copy") or data.get("summary", "")
-            self.send("result", f"cw_{pid}", f"pm_{pid}", c.trace,
-                      {"result": data, "itemId": iid, "engine": meta["engine"],
-                       "latencyMs": meta.get("latencyMs", 0)}, project=pid)
-            self.items_emit(c.trace, item)
-        for job in fill_jobs.values():
-            try:
-                job.result()
-            except Exception as e:
-                print(f"[materials] 补素材任务异常：{type(e).__name__}: {e}", flush=True)
+        return pipeline._stage_copy(self, c)
 
     def _fill_materials(self, trace, item, pid):
         """文案岗补素材：逐缺口先查已有资料库，未命中的走 ComfyUI 文生图尽快补齐；
@@ -2473,1043 +1241,146 @@ class Kernel:
 
 
     def _stage_sample(self, c):
-        """7. 视频制作出样片（6 个真实调用）"""
-        # 7. 视频制作出样片（6 个真实调用）
-        jobs = {}
-        for iid, item in c.items.items():
-            pid = item["projectId"]
-            plan = item.get("plan") or {}
-            jobs[iid] = HERMES.pool.submit(
-                self.call_agent, f"vd_{pid}",
-                f"按《制作评估报告》与 PM 细化分镜为《{item['title']}》出样片方案："
-                f"出片模式 {item.get('renderMode', 'remotion')}（{item.get('renderModeNote', '')}），"
-                "逐镜剧本、封面、配音/TTS。",
-                f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}；时长：{plan.get('durationSec', 45)}s；"
-                f"配音：{plan.get('tts', {})}；文案：{item.get('copy', '')}；"
-                f"细化分镜：{json.dumps(plan.get('storyboardShots') or [], ensure_ascii=False)}；"
-                f"分镜要点：{plan.get('storyboardNotes', '')}",
-                "额外 JSON 字段：shots(数字), storyboard(4-6 镜，每镜 画面/台词，可加 插图:1-2 个中文物件名，"
-                "如 相纸/药水盘/放大镜，≤220字), cover(≤20字), sample(样片说明≤80字)。",
-                "summary, evidence, confidence, tools, shots, storyboard, cover, sample")
-            self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
-                      {"task": f"按评估报告出《{item['title']}》样片"}, project=pid)
-        for iid, item in c.items.items():
-            pid = item["projectId"]
-            data, meta = jobs[iid].result()
-            if meta.get("engine") != "hermes" or not (data or {}).get("storyboard"):
-                item.setdefault("degraded", []).append("video")
-            data = data or {"summary": "样片已出（降级）", "evidence": [], "confidence": 0.2, "tools": []}
-            item["stage"] = "sample"
-            item["video"] = data
-            item["shots"] = data.get("shots")
-            item["storyboard"] = data.get("storyboard") or ""
-            item["cover"] = data.get("cover") or ""
-            item["sampleNote"] = data.get("sample") or data.get("summary", "")
-            self.send("result", f"vd_{pid}", f"pm_{pid}", c.trace,
-                      {"result": data, "itemId": iid, "engine": meta["engine"],
-                       "latencyMs": meta.get("latencyMs", 0)}, project=pid)
-            self.items_emit(c.trace, item)
+        return pipeline._stage_sample(self, c)
 
 
     def _stage_render(self, c):
-        """7.5 真实出片：MCP-TTS 旁白 + OpenMontage 渲染 + 画面验收门（多条目并行）"""
-        # 视频制作是流水线耗时大头：多条目并行渲染（逐条内部仍按镜串行，
-        # 共享的 MCP-TTS 进程在 om_render.TTSClient 内部有锁，不会串流）。
-        c.render_blocked = set()
-        from concurrent.futures import ThreadPoolExecutor
-        total = len(c.items)
-        args = [(idx, total, iid, item) for idx, (iid, item) in enumerate(c.items.items(), 1)]
-        workers = min(4, total) if total > 1 and os.environ.get("OPC_SKIP_RENDER") != "1" else 1
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            for _ in pool.map(lambda a: self._render_one(c, *a), args):
-                pass
+        return factory._stage_render(self, c)
 
     def _render_one(self, c, idx, total, iid, item):
-        pid = item["projectId"]
-        self.send("biz.event", f"vd_{pid}", "ceo", c.trace,
-                  {"text": f"真实出片 {idx}/{total}：《{item['title']}》", "step": "render"},
-                  project=pid, priority=2)
-        if os.environ.get("OPC_SKIP_RENDER") == "1":
-            files = item.get("files") or {}
-            item["renderCheck"] = {"pass": True, "reasons": ["测试模式：跳过真实渲染"]}
-            item["assets"] = [files.get("video", ""), files.get("cover", "")]
-            item["renderSkipped"] = True
-        elif not OMR:
-            item["renderCheck"] = {"pass": False, "reasons": ["渲染模块不可用"]}
-        else:
-            res = OMR.produce(item, self.projects[pid], self.tone.get(pid, ""),
-                              CC.DELIVERY.get(pid) or CC.DELIVERY["_default"])
-            item["render"] = {k: v for k, v in res.items() if k != "check"}
-            item["renderCheck"] = res.get("check") or {
-                "pass": False, "reasons": [res.get("reason") or "未知渲染错误"]}
-            if res.get("ok"):
-                item["assets"] = [res["videoUrl"], res["coverUrl"]]
-            else:
-                item["assets"] = []
-                item["renderError"] = res.get("reason", "")
-        if not item["renderCheck"].get("pass"):
-            c.render_blocked.add(iid)
-            item["blockedBy"] = "render-gate"
-            reason = item.get("renderError") or "；".join(
-                (item["renderCheck"].get("reasons") or [])[:2])
-            self.send("escalation", f"vd_{pid}", "owner", c.trace,
-                      {"text": f"《{item['title']}》样片未过画面验收：{reason}"},
-                      project=pid, priority=2)
-        self.emit("render-gate", c.trace, {"itemId": iid,
-                                        "pass": item["renderCheck"].get("pass"),
-                                        "check": item["renderCheck"]})
-        self.items_emit(c.trace, item)
+        return factory._render_one(self, c, idx, total, iid, item)
 
-    # ---------- 重发（分镜素材 / 出片阶段） ----------
-    _RESEND_SKIP = ("不新增任务", "锁定不动", "已含在", "无新增", "原登记")
-    _RESEND_AUDIO = ("BGM", "bgm", "音频", "wav", "配音", "音效", "语音")
+    # 类常量真源在 factory.py，这里只做别名，外部按 Kernel.STAGE_BUTTONS 取值不受影响
+    STAGE_BUTTONS = factory.STAGE_BUTTONS
+    TOOLBOX_SUB = factory.TOOLBOX_SUB
+    _RESEND_SKIP = factory._RESEND_SKIP
+    _RESEND_AUDIO = factory._RESEND_AUDIO
 
-    def resend_render(self, trace_id, action="assets", shots=None, stage="render",
-                      prompts=None, project=""):
-        """按 trace 重发制作需求（老板手工补发，不动流水线其它环节）。
-
-        action=assets：从内容单逐镜表（item.plan.storyboardShots）取「画面」，
-          逐镜重新提交 ComfyUI 文生图；跳过锁定镜与纯音频镜；后台串行生成，接口立即返回。
-        action=render：把过程库断点改到 stage（默认 render），复用 resume_pipeline 重跑该阶段。
-        """
-        trace_id = str(trace_id or "").strip()
-        if not trace_id:
-            raise ValueError("缺少 traceId")
-        act = str(action or "assets").strip().lower()
-        if act in ("render", "video", "reproduce", "stage"):
-            return self._resend_stage(trace_id, str(stage or "render").strip())
-        if act not in ("assets", "asset", "image"):
-            raise ValueError(f"不支持的重发类型：{action}（可选 assets / render）")
-
-        with self.lock:
-            items = [dict(c) for c in self.contents if c.get("traceId") == trace_id]
-        if not items:
-            raise ValueError("该 trace 下没有内容单，无法重发素材")
-        only = {int(s) for s in (shots or []) if str(s).strip().isdigit()}
-        reqs = []
-        if prompts:
-            reqs = [{"no": i + 1, "prompt": str(p).strip(), "itemId": items[0]["id"],
-                     "projectId": items[0].get("projectId", "")}
-                    for i, p in enumerate(prompts) if str(p).strip()]
-        else:
-            for it in items:
-                for idx, shot in enumerate(((it.get("plan") or {}).get("storyboardShots") or []), 1):
-                    try:
-                        no = int(shot.get("no") or idx)
-                    except (TypeError, ValueError):
-                        no = idx
-                    if only and no not in only:
-                        continue
-                    mat = str(shot.get("素材") or "")
-                    pic = str(shot.get("画面") or "").strip()
-                    if not pic:
-                        continue
-                    if any(k in mat for k in self._RESEND_SKIP):
-                        continue
-                    if any(k in mat for k in self._RESEND_AUDIO):
-                        continue
-                    reqs.append({"no": no, "prompt": pic, "itemId": it["id"],
-                                 "projectId": it.get("projectId", "")})
-        if not reqs:
-            raise ValueError("该 trace 的分镜里没有可重发的画面素材需求（可能全是锁定镜或只有音频）")
-
-        threading.Thread(target=self._resend_assets_worker, args=(trace_id, reqs),
-                         daemon=True).start()
-        self.send("biz.event", "vd_wenren", "owner", trace_id,
-                  {"text": f"分镜素材重发：{len(reqs)} 条已提交 ComfyUI", "step": "assets-resend"},
-                  priority=2)
-        return {"ok": True, "traceId": trace_id, "action": "assets",
-                "queued": len(reqs), "requests": reqs,
-                "note": "已在后台逐镜生成，产物落 OPC/交付物/<trace>/<项目-单号>/assets/images/"}
+    def resend_render(self, trace_id, action='assets', shots=None, stage='render', prompts=None, project=''):
+        return factory.resend_render(self, trace_id, action, shots, stage, prompts, project)
 
     def _resend_assets_worker(self, trace_id, reqs):
-        """后台串行补图：ComfyUI 单 worker，串行反而稳；失败逐条升级给老板。"""
-        try:
-            import asset_fill
-        except Exception as exc:
-            self.send("escalation", "cto", "owner", trace_id,
-                      {"text": f"素材重发失败：素材模块不可用（{type(exc).__name__}: {exc}）"},
-                      priority=2)
-            return
-        done = 0
-        for r in reqs:
-            pid = r.get("projectId") or ""
-            out_dir = os.path.join(VAULT, "OPC", "交付物", trace_id,
-                                   f"{pid}-{r['itemId']}", "assets", "images")
-            out_path = os.path.join(out_dir, f"shot{r['no']:02d}.png")
-            try:
-                asset_fill.gen_image(r["prompt"], out_path, width=768, height=1344)
-                done += 1
-                self.send("biz.event", f"vd_{pid}", "owner", trace_id,
-                          {"text": f"素材重发完成：镜{r['no']}", "file": out_path,
-                           "step": "assets"}, project=pid, priority=2)
-            except Exception as exc:
-                self.send("escalation", f"vd_{pid}", "owner", trace_id,
-                          {"text": f"素材重发失败：镜{r['no']}（{type(exc).__name__}: {exc}）"},
-                          project=pid, priority=2)
-        print(f"[resend] {trace_id} 素材重发收口：成功 {done}/{len(reqs)}", flush=True)
+        return factory._resend_assets_worker(self, trace_id, reqs)
 
     def _resend_stage(self, trace_id, stage):
-        """把断点改到指定阶段并续跑（重出片走这里，不改分镜与文案）。"""
-        if not self.db:
-            raise ValueError("过程库未启用（OPC_DB=0），无法重发出片")
-        if self.active_trace and self.active_trace != trace_id:
-            raise ValueError(f"已有任务在跑（{self.active_trace}），等它结束再重发")
-        row = self.db.pipeline_run(trace_id)
-        if not row:
-            raise ValueError("过程库里没有这条 trace 的运行记录（无法定位断点）")
-        stages = [s.get("id") for s in (CC.PIPELINE.stages or [])]
-        if stage not in stages:
-            raise ValueError(f"未知阶段：{stage}（可选 {', '.join(x for x in stages if x)}）")
-        state = json.loads(row.get("state") or "{}")
-        self.db.pipeline_run_stage(trace_id, stage, stages.index(stage), state)
-        info = self.resume_pipeline(trace_id)
-        return {"ok": True, "traceId": trace_id, "action": "render",
-                "from": info.get("from"), "note": f"已从 {stage} 阶段重跑"}
+        return factory._resend_stage(self, trace_id, stage)
 
-    # ---------- 分镜工作台：多渠道并行生成 + 三环节手工多次启动 ----------
-    STAGE_BUTTONS = {"render": "素材制作", "sample_review": "剪辑合成", "final": "终版合成"}
 
     def _media(self):
-        """当前工作区的素材作业管理器（按 data_dir 隔离，绑定事件推送）。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        root = self.data_dir or os.path.dirname(os.path.abspath(__file__))
-        mgr = MEDIA.manager(os.path.join(root, "media_jobs.db"))
-        mgr.notify = self.emit
-        return mgr
+        return factory._media(self)
 
-    def _shot_item(self, trace_id, item_id=""):
-        """取内容单：优先内存（最新），回退过程库 contents.raw。"""
-        with self.lock:
-            for it in self.contents:
-                if it.get("traceId") == trace_id and (not item_id or it.get("id") == item_id):
-                    return dict(it)
-        if not self.db:
-            return {}
-        try:
-            if item_id:
-                row = self.db.fetch_one(
-                    "SELECT raw FROM contents WHERE trace_id=? AND id=? LIMIT 1",
-                    (trace_id, item_id))
-            else:
-                row = self.db.fetch_one(
-                    "SELECT raw FROM contents WHERE trace_id=? ORDER BY created_at DESC LIMIT 1",
-                    (trace_id,))
-        except Exception as e:
-            print(f"[factory] 读内容单失败：{type(e).__name__}: {e}", flush=True)
-            return {}
-        if not row:
-            return {}
-        try:
-            return json.loads(row.get("raw") or "{}")
-        except ValueError:
-            return {}
+    def _shot_item(self, trace_id, item_id=''):
+        return factory._shot_item(self, trace_id, item_id)
 
     def _shots_of(self, item):
-        """分镜清单：优先方案里的 storyboardShots（含素材标注），回退 storyboard 文本归一化。"""
-        plan = item.get("plan") or {}
-        shots = []
-        for idx, s in enumerate(plan.get("storyboardShots") or [], 1):
-            if not isinstance(s, dict):
-                continue
-            try:
-                no = int(s.get("no") or idx)
-            except (TypeError, ValueError):
-                no = idx
-            shots.append({"no": no,
-                          "prompt": str(s.get("画面") or s.get("prompt") or "").strip(),
-                          "line": str(s.get("台词") or s.get("line") or "").strip(),
-                          "sec": _num(s.get("秒") or s.get("sec") or 0),
-                          "asset": str(s.get("素材") or s.get("asset") or "").strip()})
-        total = _num(item.get("seconds") or 0)
-        if not total:
-            total = _num(item.get("durationSec") or 0) or _num((plan or {}).get("durationSec") or 0)
-        if not shots and item.get("storyboard"):
-            sb = item.get("storyboard")
-            # 真实分镜多是「镜一：…镜二：…」一整段，先走宽松切分器
-            if isinstance(sb, str) and MEDIA:
-                try:
-                    shots = MEDIA.split_storyboard(sb, total or 45)
-                except Exception as e:
-                    print(f"[factory] 分镜切分失败：{type(e).__name__}: {e}", flush=True)
-            if not shots and self.DL:
-                try:
-                    for idx, s in enumerate(self.DL.normalize_storyboard(sb, total or 45), 1):
-                        try:
-                            no = int(s.get("no") or idx)
-                        except (TypeError, ValueError):
-                            no = idx
-                        shots.append({"no": no,
-                                      "prompt": str(s.get("visual") or "").strip(),
-                                      "line": str(s.get("line") or "").strip(),
-                                      "sec": _num(s.get("dur") or 0), "asset": ""})
-                except Exception as e:
-                    print(f"[factory] 分镜归一化失败：{type(e).__name__}: {e}", flush=True)
-        # 没有任何时长的，按总时长均分，保证视频渠道有时长可用
-        avg = round(total / len(shots), 2) if (total and shots) else 0
-        for s in shots:
-            if not s["sec"] and avg:
-                s["sec"] = avg
-        return shots
+        return factory._shots_of(self, item)
 
     def _shot_out_dir(self, trace_id, project_id, item_id, kind):
-        sub = {"image": "images", "video": "videos", "audio": "audio"}[kind]
-        return os.path.join(self.vault_dir, "OPC", "交付物", trace_id,
-                            f"{project_id or 'x'}-{item_id or 'x'}", "assets", sub)
+        return factory._shot_out_dir(self, trace_id, project_id, item_id, kind)
 
     def factory_channels(self):
-        """渠道注册表 + 实时可用性（前端工作台渲染参数表单与渠道选择）。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败）")
-        chans, cap = MEDIA.channels(force=True)
-        return {"channels": chans, "maxSec": cap}
+        return factory.factory_channels(self)
 
-    # ---------- 工具箱：单技能手工验证（不进流水线，直接排队出片） ----------
-    TOOLBOX_SUB = {"image": "图片", "video": "视频", "audio": "语音"}
 
     def toolbox_save_frame(self, raw):
-        """校验并保存图生视频首帧，返回文件名（提交时作为 frame 传回）。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        if not raw:
-            raise ValueError("请求体为空（应上传图片文件）")
-        if len(raw) > 8 * 1024 * 1024:
-            raise ValueError("首帧图片超过 8MB，请先压缩")
-        if raw.startswith(b"\x89PNG\r\n\x1a\n"):
-            ext = ".png"
-        elif raw.startswith(b"\xff\xd8\xff"):
-            ext = ".jpg"
-        elif raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-            ext = ".webp"
-        else:
-            raise ValueError("仅支持 png / jpg / webp 图片")
-        name = "frame-" + os.urandom(6).hex() + ext
-        with open(os.path.join(MEDIA.frame_dir(), name), "wb") as f:
-            f.write(raw)
-        return name
+        return factory.toolbox_save_frame(self, raw)
 
     def toolbox_voices(self):
-        """音色表（含 clone- 自建音色）；media-engine 每次合成前重读 voices.json，写入即生效。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        d = MEDIA.voices_list(force=True)
-        return {"default": d.get("default") or "",
-                "voices": d.get("voices") or [],
-                "cloned": [v["id"] for v in d.get("voices") or [] if v.get("cloned")]}
+        return factory.toolbox_voices(self)
 
-    def toolbox_clone_voice(self, raw, name="", text="", owner=""):
-        """上传参考音频建音色：转 16k 单声道 wav + 写入共享 voices.json，无需重启 media-engine。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        return MEDIA.clone_voice(raw, text, name=name, owner=owner)
+    def toolbox_clone_voice(self, raw, name='', text='', owner=''):
+        return factory.toolbox_clone_voice(self, raw, name, text, owner)
 
-    def toolbox_tune_voice(self, vid, direction="", raw=b"", text=""):
-        """微调一轮：按方向改参考音频（或换新录音）→ 重新登记 → 自检不过自动还原。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        return MEDIA.tune_clone_voice(vid, direction, raw, text)
+    def toolbox_tune_voice(self, vid, direction='', raw=b'', text=''):
+        return factory.toolbox_tune_voice(self, vid, direction, raw, text)
 
     def toolbox_undo_voice(self, vid):
-        """撤销最后一轮微调，回到上一版参考。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        return MEDIA.undo_tune(vid)
+        return factory.toolbox_undo_voice(self, vid)
 
     def toolbox_voice_profile(self, vid):
-        """微调档案：可选方向 + 已调轮次。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        return MEDIA.voice_profile(vid)
+        return factory.toolbox_voice_profile(self, vid)
 
     def toolbox_delete_voice(self, vid):
-        """删除自建音色（只允许 clone- 前缀，内置音色不可动）。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        return MEDIA.delete_clone_voice(vid)
+        return factory.toolbox_delete_voice(self, vid)
 
     def toolbox_voice_ref(self, vid):
-        """试听用：取某个克隆音色的参考音频路径。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        return MEDIA.clone_ref_path(vid)
+        return factory.toolbox_voice_ref(self, vid)
 
     def toolbox_channels(self):
-        """渠道注册表（分组/端点/能力）+ 图生视频可用性。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        chans, cap = MEDIA.channels(force=True)
-        i2v = [c["name"] for c in chans
-               if "i2v" in (c.get("modes") or []) and c.get("available")]
-        return {"channels": chans, "groups": MEDIA.groups(), "maxSec": cap,
-                "modes": {"i2v": bool(i2v), "i2vChannels": i2v,
-                          "i2vReason": "" if i2v else
-                          "当前没有可用的图生视频渠道（Wan2.2 TI2V 的视频端点 8189 不可达）"}}
+        return factory.toolbox_channels(self)
 
-    def toolbox_run(self, kind, channels, prompt="", line="", sec=0.0, params=None,
-                    frame=""):
-        """手工提交一条单技能任务：独立 trace（tb-），成品直接落 vault 素材目录。"""
-        if MEDIA is None:
-            raise ValueError("素材作业模块不可用（media_jobs 导入失败，见启动日志）")
-        kind = str(kind or "").strip()
-        if kind not in self.TOOLBOX_SUB:
-            raise ValueError("类型只能是 image / audio / video")
-        prompt = str(prompt or "").strip()
-        line = str(line or "").strip()
-        if kind == "audio":
-            if not (line or prompt):
-                raise ValueError("口播任务需要台词")
-        elif not prompt:
-            raise ValueError("出图/出片任务需要提示词")
-        chans = [str(c).strip() for c in (channels or []) if str(c).strip()]
-        if not chans:
-            raise ValueError("至少选择一个渠道")
-        params = dict(params or {})
-        frame = os.path.basename(str(frame or "").strip())
-        if frame:
-            fp = os.path.join(MEDIA.frame_dir(), frame)
-            if not os.path.isfile(fp):
-                raise ValueError("首帧图片不存在或已被清理，请重新上传")
-            # 只往支持 i2v 的视频渠道挂首帧，其它渠道忽略（不静默改变语义）
-            for name in chans:
-                ch = MEDIA.CHANNELS.get(name) or {}
-                if "i2v" in (ch.get("modes") or []):
-                    params[name] = dict(params.get(name) or {}, frame=frame)
-        trace_id = "tb-" + os.urandom(4).hex()
-        day = time.strftime("%Y-%m-%d")
-        # 成品落在个人空间而不是公共 vault：工具箱内容属于本人的私有产物，
-        # 因此不经 /vault 或 /toolbox 公开，只走 /private/<手机号>/工具箱/（服务端按会话校验）
-        out_dir = os.path.join(self.data_dir or OWNER_DATA_DIR, "工具箱", day,
-                               self.TOOLBOX_SUB[kind])
-        try:
-            os.makedirs(out_dir, exist_ok=True)
-        except OSError as e:
-            raise ValueError(f"素材目录不可写（{out_dir}）：{e}") from e
-        mgr = self._media()
-        res = mgr.submit(trace_id=trace_id, item_id="toolbox", project_id="toolbox",
-                         shot_no=0, kind=kind, channels=chans, prompt=prompt,
-                         line=line, sec=_num(sec), params=params or {},
-                         out_dir=out_dir, vault_dir=self.vault_dir)
-        jobs = res.get("jobs") or []
-        if jobs:
-            try:
-                self.emit("toolbox.job", trace_id,
-                          {"jobIds": [j.get("id") for j in jobs], "kind": kind})
-            except Exception:  # noqa: BLE001 - 推送失败不影响已入队的作业
-                pass
-        return {"traceId": trace_id, "outDir": out_dir,
-                "jobs": jobs, "warnings": res.get("warnings") or []}
+    def toolbox_run(self, kind, channels, prompt='', line='', sec=0.0, params=None, frame=''):
+        return factory.toolbox_run(self, kind, channels, prompt, line, sec, params, frame)
 
     def toolbox_jobs(self, limit=40):
-        """工具箱最近的手工任务（含产物地址，供工作台轮询）。"""
-        if MEDIA is None:
-            return []
-        return self._media().toolbox_jobs(limit=limit)
+        return factory.toolbox_jobs(self, limit)
 
     def forget_output(self, dest):
-        """成品从素材页删掉后，清空作业库里指向它的产物地址（历史记录保留）。"""
-        if MEDIA is None:
-            return 0
-        try:
-            return self._media().forget_output(dest)
-        except Exception as e:
-            print(f"[media] 清空产物记录失败：{type(e).__name__}: {e}", flush=True)
-            return 0
+        return factory.forget_output(self, dest)
 
-    def factory_shots(self, trace_id, item_id=""):
-        """分镜清单 + 渠道注册表 + 每镜作业状态（前端工作台一次拉全）。"""
-        trace_id = str(trace_id or "").strip()
-        if not trace_id:
-            raise ValueError("缺少 traceId")
-        mgr = self._media()
-        item = self._shot_item(trace_id, item_id)
-        item_id = str(item_id or item.get("id") or "").strip()
-        project_id = str(item.get("projectId") or "").strip()
-        shots = self._shots_of(item)
-        overrides = mgr.shots(trace_id, item_id) if item_id else {}
-        job_rows = mgr.jobs(trace_id, item_id, limit=400) if item_id else []
-        by_shot = {}
-        for j in job_rows:
-            by_shot.setdefault(int(j.get("shotNo") or 0), []).append(j)
-        chans, cap = MEDIA.channels()
-        out = []
-        for s in shots:
-            ov = overrides.get(s["no"]) or {}
-            try:
-                saved_ch = json.loads(ov.get("channels") or "[]")
-            except ValueError:
-                saved_ch = []
-            try:
-                saved_params = json.loads(ov.get("params") or "{}")
-            except ValueError:
-                saved_params = {}
-            jobs = by_shot.get(s["no"]) or []
-            active = [j for j in jobs if j.get("status") in ("queued", "running")]
-            done = [j for j in jobs if j.get("status") == "done"]
-            out.append({
-                "no": s["no"],
-                "prompt": ov.get("prompt") if ov.get("prompt") not in (None, "") else s["prompt"],
-                "line": ov.get("line") if ov.get("line") not in (None, "") else s["line"],
-                "sec": _num(ov.get("sec")) if ov.get("sec") not in (None, "") else s["sec"],
-                "asset": s["asset"],
-                "channels": saved_ch,
-                "params": saved_params,
-                "jobs": jobs,
-                "summary": {"total": len(jobs), "active": len(active), "done": len(done),
-                            "failed": len([j for j in jobs if j.get("status") == "failed"]),
-                            "progress": max([int(j.get("progress") or 0) for j in jobs] or [0])},
-            })
-        seconds = _num(item.get("seconds") or item.get("durationSec")
-                       or (item.get("plan") or {}).get("durationSec") or 0)
-        if not seconds:  # 内容单没记总时长时，用分镜时长之和兜底（前端显示要一致）
-            seconds = round(sum(s.get("sec") or 0 for s in out), 2)
-        return {"traceId": trace_id, "itemId": item_id, "projectId": project_id,
-                "title": item.get("title") or "", "tone": item.get("tone") or "",
-                "stage": item.get("stage") or "", "seconds": seconds,
-                "maxSec": cap, "channels": chans, "shots": out,
-                "activeTrace": self.active_trace,
-                "stages": [{"stage": k, "label": v} for k, v in self.STAGE_BUTTONS.items()]}
+    def factory_shots(self, trace_id, item_id=''):
+        return factory.factory_shots(self, trace_id, item_id)
 
     def factory_shot_save(self, trace_id, item_id, shot_no, fields):
-        """保存分镜提示词/台词/时长/渠道与参数（同时回写内容单，后续重跑沿用）。"""
-        mgr = self._media()
-        rec = mgr.shot_save(trace_id, item_id, shot_no, fields or {})
-        # 回写内容单，保证「素材制作」重跑时用的是改过的提示词
-        with self.lock:
-            target = None
-            for it in self.contents:
-                if it.get("traceId") == trace_id and it.get("id") == item_id:
-                    target = it
-                    break
-        if target is None:
-            target = self._shot_item(trace_id, item_id) or None
-        if target:
-            plan = target.setdefault("plan", {})
-            arr = plan.get("storyboardShots") or []
-            changed = False
-            for idx, s in enumerate(arr, 1):
-                if not isinstance(s, dict):
-                    continue
-                try:
-                    no = int(s.get("no") or idx)
-                except (TypeError, ValueError):
-                    no = idx
-                if no != int(shot_no):
-                    continue
-                if fields.get("prompt") not in (None, ""):
-                    s["画面"] = fields["prompt"]
-                if fields.get("line") not in (None, ""):
-                    s["台词"] = fields["line"]
-                if fields.get("sec") not in (None, ""):
-                    s["秒"] = _num(fields["sec"])
-                changed = True
-                break
-            if changed:
-                try:
-                    if self.db:
-                        self.db.upsert_content(target)
-                except Exception as e:
-                    print(f"[factory] 分镜回写失败：{type(e).__name__}: {e}", flush=True)
-        return rec
+        return factory.factory_shot_save(self, trace_id, item_id, shot_no, fields)
 
     def factory_run(self, trace_id, item_id, kind, channels, shots=None, params=None):
-        """把所选分镜按所选渠道并发提交（同一提示词可同时投多个渠道）。"""
-        mgr = self._media()
-        data = self.factory_shots(trace_id, item_id)
-        if not data["shots"]:
-            raise ValueError("该内容单没有分镜清单（先在方案里生成分镜）")
-        want = {int(s) for s in (shots or []) if str(s).strip().isdigit()}
-        targets = [s for s in data["shots"] if not want or s["no"] in want]
-        if not targets:
-            raise ValueError("所选分镜不存在")
-        jobs, warnings = [], []
-        for s in targets:
-            merged = {}
-            for name, p in (params or {}).items():
-                base = dict((s.get("params") or {}).get(name) or {})
-                base.update(p or {})
-                merged[name] = base
-            for name in channels or []:
-                if name not in merged:
-                    merged[name] = dict((s.get("params") or {}).get(name) or {})
-            try:
-                res = mgr.submit(
-                    trace_id=data["traceId"], item_id=data["itemId"],
-                    project_id=data["projectId"], shot_no=s["no"], kind=kind,
-                    channels=channels, prompt=s["prompt"], line=s["line"], sec=s["sec"],
-                    params=merged, out_dir=self._shot_out_dir(data["traceId"], data["projectId"],
-                                                              data["itemId"], kind),
-                    vault_dir=self.vault_dir)
-            except ValueError as e:
-                raise ValueError(f"分镜 {s['no']}：{e}")
-            jobs.extend(res["jobs"])
-            warnings.extend(f"分镜{s['no']}：{w}" for w in res["warnings"])
-        if jobs:
-            self.emit("media-jobs", data["traceId"],
-                      {"itemId": data["itemId"], "kind": kind, "channels": list(channels or []),
-                       "count": len(jobs), "shots": [s["no"] for s in targets]})
-        return {"ok": True, "jobs": jobs, "warnings": warnings,
-                "traceId": data["traceId"], "itemId": data["itemId"]}
+        return factory.factory_run(self, trace_id, item_id, kind, channels, shots, params)
 
-    def factory_jobs(self, trace_id, item_id=""):
-        mgr = self._media()
-        return {"jobs": mgr.jobs(str(trace_id or ""), str(item_id or ""), limit=400)}
+    def factory_jobs(self, trace_id, item_id=''):
+        return factory.factory_jobs(self, trace_id, item_id)
 
     def factory_cancel(self, job_ids):
-        mgr = self._media()
-        res = mgr.cancel(job_ids)
-        return {"ok": True, "results": res}
+        return factory.factory_cancel(self, job_ids)
 
     def factory_retry(self, job_ids):
-        mgr = self._media()
-        res = mgr.retry(job_ids)
-        return {"ok": True, "results": res}
+        return factory.factory_retry(self, job_ids)
 
     # ---- 三环节手工多次启动：排队串行下发，不阻塞 HTTP
     def _stage_lane(self):
-        if self._stage_queue is None:
-            self._stage_queue = queue.Queue()
-            self._stage_thread = threading.Thread(
-                target=self._stage_lane_loop, name=f"stage-lane-{id(self) % 10000}", daemon=True)
-            self._stage_thread.start()
-        return self._stage_queue
+        return factory._stage_lane(self)
 
     def factory_stage_start(self, trace_id, stage):
-        stage = str(stage or "").strip()
-        if stage not in self.STAGE_BUTTONS:
-            raise ValueError(f"未知环节：{stage}（可选 {'/'.join(self.STAGE_BUTTONS)}）")
-        if not self.db:
-            raise ValueError("过程库未启用（OPC_DB=0），无法手工启动环节")
-        if not self.db.pipeline_run(trace_id):
-            raise ValueError("过程库里没有这条 trace 的运行记录")
-        rec = {"id": uid("srun"), "traceId": trace_id, "stage": stage,
-               "label": self.STAGE_BUTTONS[stage], "status": "queued",
-               "queuedAt": iso_now(), "startedAt": "", "finishedAt": "", "note": ""}
-        self.stage_launches.append(rec)
-        del self.stage_launches[:-60]        # 只留最近 60 次手工启动记录
-        self._stage_queue_put(rec)
-        self.emit("factory-stage", trace_id, dict(rec))
-        return dict(rec)
+        return factory.factory_stage_start(self, trace_id, stage)
 
     def _stage_queue_put(self, rec):
-        self._stage_lane().put(rec)
+        return factory._stage_queue_put(self, rec)
 
     def _stage_lane_loop(self):
-        q = self._stage_queue
-        while True:
-            rec = q.get()
-            try:
-                self._stage_lane_run(rec)
-            except Exception as e:
-                rec.update(status="failed", finishedAt=iso_now(),
-                           note=f"{type(e).__name__}: {e}")
-                self.emit("factory-stage", rec.get("traceId") or "", dict(rec))
-            finally:
-                q.task_done()
+        return factory._stage_lane_loop(self)
 
     def _stage_lane_run(self, rec):
-        trace_id, stage = rec["traceId"], rec["stage"]
-        deadline = time.time() + 3600
-        # 手工多次启动允许排队：等当前这轮（含同一 trace）跑完再下一条，不覆盖别人
-        while self.active_trace and time.time() < deadline:
-            time.sleep(3)
-        rec.update(status="running", startedAt=iso_now(), note="已下发流水线")
-        self.emit("factory-stage", trace_id, dict(rec))
-        info = self._resend_stage(trace_id, stage)
-        rec.update(status="done", finishedAt=iso_now(),
-                   note=f"{info.get('note') or '已下发'}（断点 {info.get('from')}）")
-        self.emit("factory-stage", trace_id, dict(rec))
+        return factory._stage_lane_run(self, rec)
 
     def factory_stage_runs(self, trace_id):
-        runs = [dict(r) for r in self.stage_launches if r.get("traceId") == trace_id]
-        current = ""
-        if self.db:
-            try:
-                row = self.db.pipeline_run(trace_id)
-                current = (row or {}).get("stage") or ""
-            except Exception:
-                current = ""
-        return {"runs": list(reversed(runs)), "current": current,
-                "activeTrace": self.active_trace,
-                "stages": [{"stage": k, "label": v} for k, v in self.STAGE_BUTTONS.items()]}
+        return factory.factory_stage_runs(self, trace_id)
 
     def _stage_sample_review(self, c):
-        """8. 样片三方评审（CCO + CTO + 本项目 PM），最多两轮"""
-        # 8. 样片三方评审（CCO + CTO + 本项目 PM），最多两轮
-        c.sample_blocked = set()
-        c.review_ids = [iid for iid in c.items if iid not in c.render_blocked]
-        for rnd in range(1, c.stage.rounds + 1):
-            maps, metas = self._sample_wave(c.trace, c.review_ids, c.items)
-            failed = []
-            for iid in c.review_ids:
-                item = c.items[iid]
-                pid = item["projectId"]
-                roles = {"cco": maps["cco"][iid], "cto": maps["cto"][iid], "pm": maps[pid][iid]}
-                item["sampleReviews"] = {k: {"pass": v[0], "reasons": v[1]} for k, v in roles.items()}
-                passed = all(v[0] for v in roles.values())
-                item["samplePass"] = passed
-                self.emit("sample-review", c.trace,
-                          {"itemId": iid, "projectId": pid, "round": rnd, "pass": passed,
-                           "reviews": item["sampleReviews"]})
-                if not passed:
-                    failed.append(iid)
-            if not failed:
-                break
-            if rnd >= c.stage.rounds:
-                for iid in failed:
-                    c.items[iid]["stage"] = "blocked"
-                    c.items[iid]["blockedBy"] = "sample-gate"
-                    c.sample_blocked.add(iid)
-                    self.items_emit(c.trace, c.items[iid])
-                    self.send("escalation", "cco", "owner", c.trace,
-                              {"text": f"《{c.items[iid]['title']}》两轮样片评审未通过，已阻断"},
-                              project=c.items[iid]["projectId"], priority=2)
-                break
-            jobs = {}
-            for iid in failed:
-                item = c.items[iid]
-                pid = item["projectId"]
-                reasons = json.dumps(item.get("sampleReviews", {}), ensure_ascii=False)
-                jobs[iid] = HERMES.pool.submit(
-                    self.call_agent, f"vd_{pid}",
-                    f"按三方样片评审意见返工《{item['title']}》的样片：重出逐镜剧本、封面与样片说明。",
-                    f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}；评审意见：{reasons}",
-                    "额外 JSON 字段：shots(数字), storyboard(≤220字，每镜可加 插图:1-2 个中文物件名，"
-                    "如 相纸/药水盘/放大镜), cover(≤20字), sample(≤80字)。",
-                    "summary, evidence, confidence, tools, shots, storyboard, cover, sample")
-                self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
-                          {"task": "按样片三方评审意见返工"}, project=pid, priority=2)
-            for iid, job in jobs.items():
-                data, meta = job.result()
-                data = data or {"summary": "返工未返回，沿用原样片", "evidence": [], "confidence": 0.2}
-                item = c.items[iid]
-                pid = item["projectId"]
-                item["storyboard"] = data.get("storyboard") or item.get("storyboard", "")
-                item["cover"] = data.get("cover") or item.get("cover", "")
-                item["sampleNote"] = data.get("sample") or item.get("sampleNote", "")
-                # 返工必须重新出片，否则第二轮仍在评审同一份视频（空转）
-                if OMR and not item.get("renderSkipped"):
-                    try:
-                        res = OMR.produce(item, self.projects[pid], self.tone.get(pid, ""),
-                                          CC.DELIVERY.get(pid) or CC.DELIVERY["_default"])
-                        item["render"] = {k: v for k, v in res.items() if k != "check"}
-                        item["renderCheck"] = res.get("check") or {
-                            "pass": False, "reasons": [res.get("reason") or "未知渲染错误"]}
-                        if res.get("ok"):
-                            item["assets"] = [res["videoUrl"], res["coverUrl"]]
-                            item.pop("renderError", None)
-                        else:
-                            item["assets"] = []
-                            item["renderError"] = res.get("reason", "")
-                    except Exception as e:
-                        item["renderCheck"] = {"pass": False, "reasons": [f"返工出片异常：{type(e).__name__}"]}
-                        print(f"[pipeline] {iid} 返工出片异常：{type(e).__name__}: {e}", flush=True)
-                self.items_emit(c.trace, item)
-                self.send("result", f"vd_{item['projectId']}", f"pm_{item['projectId']}", c.trace,
-                          {"result": data, "itemId": iid, "engine": meta["engine"]},
-                          project=item["projectId"])
-            c.review_ids = failed
+        return pipeline._stage_sample_review(self, c)
 
 
     def _stage_final(self, c):
-        """9. 样片过审后「定版」：不再二次剪辑，直接把过审样片锁为 05-final.mp4"""
-        # 9. 样片过审后「定版」：不再二次剪辑，直接把过审样片锁为 05-final.mp4
-        final_ids = [iid for iid in c.items
-                     if iid not in c.sample_blocked and iid not in c.render_blocked]
-        jobs = {}
-        for iid in final_ids:
-            item = c.items[iid]
-            pid = item["projectId"]
-            jobs[iid] = HERMES.pool.submit(
-                self.call_agent, f"vd_{pid}",
-                f"《{item['title']}》样片已通过 CCO/CTO/PM 评审，现执行定版：确认交付物清单与口径。",
-                f"项目：{self.projects[pid]['name']}；文案：{item.get('copy', '')}；"
-                f"样片说明：{item.get('sampleNote', '')}",
-                "制度：定版不重剪，禁止声称做了帧级调整或重新剪辑；额外 JSON 字段："
-                "finalCut(定版说明≤120字，须写明「不改画面」), assets(数组，交付文件名)。",
-                "summary, evidence, confidence, tools, finalCut, assets")
-            self.send("delegation", f"pm_{pid}", f"vd_{pid}", c.trace,
-                      {"task": "样片评审通过，执行定版（不重剪）"}, project=pid)
-        for iid, job in jobs.items():
-            data, meta = job.result()
-            data = data or {"summary": "定版完成（降级）", "evidence": [], "confidence": 0.2}
-            item = c.items[iid]
-            pid = item["projectId"]
-            item["stage"] = "final"
-            item["finalCut"] = data.get("finalCut") or data.get("summary", "")
-            # 定版 = 以过审样片为母版锁定，不做二次剪辑；禁止声称改动画面
-            files = item.get("files") or {}
-            final_url = files.get("final", "")
-            src = (item.get("render") or {}).get("video") or ""
-            item["finalAssets"] = []
-            if DL and final_url and src and os.path.isfile(src):
-                try:
-                    dst = self.DL._local(final_url)
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    shutil.copyfile(src, dst)
-                    item["finalAssets"] = [final_url]
-                    item["assets"] = [a for a in item.get("assets", []) if a and a != final_url] + [final_url]
-                except Exception as e:
-                    print(f"[pipeline] {iid} 定版母版落盘失败：{type(e).__name__}: {e}", flush=True)
-            self.send("result", f"vd_{pid}", f"pm_{pid}", c.trace,
-                      {"result": data, "itemId": iid, "engine": meta["engine"]}, project=pid)
-            self.items_emit(c.trace, item)
+        return pipeline._stage_final(self, c)
 
 
     def _stage_review(self, c):
-        """10. 审核员终审（定版后）；驳回返工重写，最多 2 轮"""
-        # 10. 审核员终审（定版后）；驳回返工重写，最多 2 轮
-        self.guard_budget(c.trace)   # 制作完成后、终审前核对成本
-        c.passed_items, c.review_history = {}, []
-        c.pending = [iid for iid in c.items
-                   if iid not in c.sample_blocked and iid not in c.render_blocked]
-        for rnd in range(1, c.stage.rounds + 1):
-            rev_jobs = {iid: HERMES.pool.submit(self.review_with_model, c.items[iid], c.trace) for iid in c.pending}
-            failed = []
-            for iid in c.pending:
-                item = c.items[iid]
-                pid = item["projectId"]
-                verdict, reasons, meta = rev_jobs[iid].result()
-                item["stage"] = "review"
-                item["reviewNote"] = "通过" if verdict else "；".join(reasons)
-                c.review_history.append({"itemId": iid, "projectId": pid, "round": rnd, "pass": verdict})
-                self.send("result", "reviewer", "ceo", c.trace,
-                          {"verdict": {"pass": verdict, "reasons": reasons,
-                                       "projectId": pid, "itemId": iid},
-                           "result": {"summary": "审核通过" if verdict else "审核驳回",
-                                      "evidence": reasons, "confidence": 0.9, "tools": ["review.check"]},
-                           "engine": meta["engine"], "reason": meta.get("reason", "")}, project=pid)
-                self.items_emit(c.trace, item)
-                if verdict:
-                    c.passed_items[iid] = item
-                    # 质检审核通过 → 出厂：工厂段流水到此结束
-                    if self.db and item.get("serialNo"):
-                        self.db.mark_shipped(c.trace, iid)
-                        self.emit("factory.shipped", c.trace,
-                                  {"itemId": iid, "title": item["title"], "projectId": pid,
-                                   "serialNo": item.get("serialNo"), "by": "reviewer"})
-                else:
-                    failed.append(iid)
-            if not failed:
-                break
-            if rnd >= c.stage.rounds:
-                for iid in failed:
-                    c.items[iid]["stage"] = "blocked"
-                    c.items[iid]["blockedBy"] = "review-gate"
-                    self.items_emit(c.trace, c.items[iid])
-                    self.send("escalation", "reviewer", "owner", c.trace,
-                              {"text": f"《{c.items[iid]['title']}》两次审核未通过，已阻断，不进入审批"},
-                              project=c.items[iid]["projectId"], priority=2)
-                break
-            rework = {}
-            for iid in failed:
-                item = c.items[iid]
-                pid = item["projectId"]
-                rework[iid] = HERMES.pool.submit(
-                    self.call_agent, f"cw_{pid}", f"按审核意见重写《{item['title']}》文案（≤80字）。",
-                    f"项目：{self.projects[pid]['name']}；风格：{self.tone[pid]}",
-                    f"审核驳回理由：{item['reviewNote']}。必须修正这些问题且保持本项目人设。",
-                    "summary, evidence, confidence, tools, copy")
-                self.send("delegation", f"pm_{pid}", f"cw_{pid}", c.trace,
-                          {"task": "按审核意见返工重写"}, project=pid, priority=2)
-            self.emit("rework", c.trace, {"round": rnd, "items": failed,
-                                        "reasons": [c.items[i]["reviewNote"] for i in failed]})
-            for iid, job in rework.items():
-                new, m = job.result()
-                item = c.items[iid]
-                item["copy"] = (new or {}).get("copy") or item.get("copy", "")
-                self.send("result", f"cw_{item['projectId']}", f"pm_{item['projectId']}", c.trace,
-                          {"result": new or {"summary": "返工未返回，沿用原稿", "evidence": [],
-                                             "confidence": 0.2}, "engine": m["engine"]}, project=item["projectId"])
-                self.items_emit(c.trace, item)
-            c.pending = failed
-
-        with self.lock:
-            self.traces[c.trace]["reviewHistory"] = c.review_history
-            self.traces[c.trace]["reviewGate"] = {"passed": len(c.passed_items),
-                                                "blocked": len(c.items) - len(c.passed_items)}
-        self._persist_trace(c.trace)
-        self.export_trace_docs(c.trace)
-
-        if not c.passed_items:
-            self.send("escalation", "reviewer", "owner", c.trace,
-                      {"text": "全部内容审核未通过，本轮不进入审批"}, priority=2)
-            self.set_scene("WORK", c.trace, title="全部驳回，等待返工")
-            with self.lock:
-                self.traces[c.trace]["status"] = "blocked"
-                self.traces[c.trace]["closedAt"] = iso_now()
-            self._persist_trace(c.trace)
-            return _PIPELINE_STOP
+        return pipeline._stage_review(self, c)
 
 
     def _stage_publish_approval(self, c):
-        """11. 审批门（仅放行审核通过的内容）"""
-        # 11. 审批门（仅放行审核通过的内容）
-        self.guard_budget(c.trace)   # 发布审批前最后一道成本核对
-        approval = {"id": uid("ap"), "traceId": c.trace, "action": "publish.execute", "risk": "high",
-                    "status": "pending", "approver": "老板", "createdAt": iso_now(), "decidedAt": "",
-                    "timeoutSec": self._stage_timeout(c),
-                    "items": list(c.passed_items),
-                    "titles": [i["title"] for i in c.passed_items.values()],
-                    "title": f"{len(c.passed_items)} 条内容发布审批（含同心圆对外承诺）",
-                    "checks": self._publish_checks(c.items, c.passed_items, c.review_history)}
-        approval, ev, _ = self._open_approval(c, approval)
-        for item in c.passed_items.values():
-            item["stage"] = "approved"
-            self.items_emit(c.trace, item)
-
-        approved = (approval["status"] == "approved") if ev is None \
-            else ev.wait(timeout=self._stage_timeout(c))
-        with self.lock:
-            appr = next(a for a in self.approvals if a["id"] == approval["id"])
-            self.approval_events.pop(approval["id"], None)
-        if not approved or appr["status"] != "approved":
-            with self.lock:
-                if appr["status"] == "pending":
-                    appr["status"] = "timeout"
-                    appr["decidedAt"] = iso_now()
-                    appr["timeoutReason"] = f"等待老板审批超过 {self._stage_timeout(c)}s，按挂起处理"
-                for item in c.passed_items.values():
-                    item["stage"] = "blocked"
-                    item["blockedBy"] = "publish-gate"
-                    self._schedule_export(c.trace, item)
-                self.traces[c.trace]["status"] = "rejected" if appr["status"] == "rejected" else "timeout"
-                self.traces[c.trace]["closedAt"] = iso_now()
-            self._persist_trace(c.trace)
-            for item in c.passed_items.values():
-                self.emit("pipeline", c.trace, item)
-            self.send("escalation", "ceo", "owner", c.trace,
-                      {"text": "审批未通过或超时，内容已标记 blocked（publish-gate），保持未发布"}, priority=2)
-            self.emit("approval", c.trace, appr)
-            return _PIPELINE_STOP
+        return pipeline._stage_publish_approval(self, c)
 
 
     def _stage_release(self, c):
-        """12. release_ops 发布（幂等：同一 trace 的每条内容只发布一次）"""
-        # 断点续跑会重跑 release，靠发布回执判重，避免重复发消息/重复计数
-        done = set()
-        if self.db:
-            try:
-                done = self.db.released_items(c.trace)
-            except Exception as e:
-                print(f"[release] 读发布回执失败，按未发布处理：{type(e).__name__}: {e}", flush=True)
-        fresh = {iid: it for iid, it in c.passed_items.items() if iid not in done}
-        for iid in done:
-            if iid in c.passed_items:
-                c.passed_items[iid]["stage"] = "published"      # 续跑回填，不重复广播
-        if not fresh:
-            print(f"[release] {c.trace} 无新增待发布内容（已有回执 {len(done)} 条），跳过重复执行",
-                  flush=True)
-            return
-        c.pub_ctx = json.dumps({i["title"]: i["projectId"] for i in fresh.values()}, ensure_ascii=False)
-        data, meta = self.call_agent("release_ops", f"按排期发布 {len(fresh)} 条内容并给出监控口径。",
-                                     c.pub_ctx, "", "summary, evidence, confidence, tools")
-        data = data or {"summary": "内容已发布并进入监控", "evidence": ["平台回执 200"],
-                        "confidence": 0.9, "tools": ["publish.execute"]}
-        for iid, item in fresh.items():
-            item["stage"] = "published"
-            if self.db:
-                try:
-                    self.db.release_mark(c.trace, iid, item.get("projectId"), item.get("title"))
-                except Exception as e:
-                    print(f"[release] 发布回执登记失败（继续发布）：{type(e).__name__}: {e}", flush=True)
-            self.send("result", "release_ops", "ceo", c.trace,
-                      {"result": data, "engine": meta["engine"], "itemId": iid},
-                      project=item["projectId"])
-            self.items_emit(c.trace, item)
-        # KPI 按项目上调；续跑时只补此前一条都没发布过的项目，避免重复累计
-        released_pids = {c.passed_items[iid]["projectId"] for iid in done if iid in c.passed_items}
-        pids = {i["projectId"] for i in fresh.values()} - released_pids
-        with self.lock:
-            self.stats["published"] += len(fresh)
-            for pid in pids:
-                k = self.projects[pid]["kpi"]
-                if "views" in k:
-                    k["views"] += 1200
-                    k["fans"] += 18
-                    k["completion"] = 0.62
-                    k["engagement"] = 0.071
-                else:
-                    k["tickets"] = 2
-                    k["delivery_hours"] = 36.0
-        if pids:
-            self.emit("metrics", c.trace, {p: self.projects[p]["kpi"] for p in pids})
+        return pipeline._stage_release(self, c)
 
 
     def _stage_archive(self, c):
-        """13. kb_manager 归档"""
-        # 13. kb_manager 归档
-        data, meta = self.call_agent("kb_manager", "把本轮 6 条内容归档为知识条目，给出检索标签。",
-                                     c.pub_ctx, "", "summary, evidence, confidence, tools")
-        data = data or {"summary": "已归档知识资产", "evidence": ["kb.write"], "confidence": 0.9, "tools": []}
-        # 定稿时已归档过同题条目，这里按 traceId + 标题更新为发布口径，不重复计数
-        self.archive_knowledge(c.trace, [
-            {"projectId": item["projectId"], "title": item["title"],
-             "body": data.get("summary", "归档"), "tags": ["内容复盘"]}
-            for item in c.passed_items.values()], stage_label="发布归档")
-        for iid, item in c.passed_items.items():
-            item["stage"] = "archived"
-            self.items_emit(c.trace, item)
-        self.send("result", "kb_manager", "ceo", c.trace, {"result": data, "engine": meta["engine"]},
-                  project="all")
+        return pipeline._stage_archive(self, c)
 
 
     def _stage_report(self, c):
-        """14. 汇报：CEO 日报 / CTO 技术周报 / 项目周报（并行）"""
-        # 14. 汇报：CEO 日报 / CTO 技术周报 / 项目周报（并行）
-        self.set_scene("REPORT", c.trace, title="CEO 日报生成")
-        wave = {
-            "ceo": HERMES.pool.submit(self.call_agent, "ceo",
-                                      "写一段今日 CEO 日报结论，覆盖 6 条产出与审批。",
-                                      c.pub_ctx, "", "summary, evidence, confidence, tools"),
-            "cto": HERMES.pool.submit(self.call_agent, "cto",
-                                      "写一段 CTO 技术周报：Agent 编排健康度与风险。",
-                                      f"本轮消息数 {len([m for m in self.messages if m['traceId'] == c.trace])}；"
-                                      "审批门拦截 publish.execute", "", "summary, evidence, confidence, tools"),
-        }
-        for pid in {i["projectId"] for i in c.passed_items.values()}:
-            wave[f"pm_{pid}"] = HERMES.pool.submit(
-                self.call_agent, f"pm_{pid}", f"写一段 {self.projects[pid]['name']} 项目周报结论。",
-                c.pub_ctx, "", "summary, evidence, confidence, tools")
-
-        daily_data, daily_meta = wave["ceo"].result()
-        daily_data = daily_data or self._deg("ceo", "CEO 日报")
-        report = {"id": uid("rp"), "traceId": c.trace, "kind": "daily", "title": "CEO 日报",
-                  "conclusion": daily_data.get("summary", ""), "evidence": daily_data.get("evidence", []),
-                  "decisions": [{"text": "定稿 6 条（每项目 2 条）并发布", "owner": "ceo",
-                                 "risk": "mid", "approved": True}],
-                  "engine": daily_meta["engine"], "createdAt": iso_now()}
-        with self.lock:
-            self.reports.append(report)
-        self.send("report.ready", "ceo", "owner", c.trace, {"report": report}, priority=1)
-        self.emit("report", c.trace, report)
-
-        tech_data, tech_meta = wave["cto"].result()
-        tech_data = tech_data or self._deg("cto", "技术周报")
-        tech = {"id": uid("rp"), "traceId": c.trace, "kind": "tech", "title": "CTO 技术周报",
-                "conclusion": tech_data.get("summary", ""), "evidence": tech_data.get("evidence", []),
-                "decisions": [], "engine": tech_meta["engine"], "createdAt": iso_now()}
-        with self.lock:
-            self.reports.append(tech)
-        self.emit("report", c.trace, tech)
-
-        for pid in {i["projectId"] for i in c.passed_items.values()}:
-            wd, wm = wave[f"pm_{pid}"].result()
-            wd = wd or self._deg(f"pm_{pid}", "项目周报")
-            weekly = {"id": uid("rp"), "traceId": c.trace, "kind": "weekly",
-                      "title": f"{self.projects[pid]['name']} 项目周报",
-                      "conclusion": wd.get("summary", ""), "evidence": wd.get("evidence", []),
-                      "decisions": [], "engine": wm["engine"], "createdAt": iso_now()}
-            with self.lock:
-                self.reports.append(weekly)
-            self.emit("report", c.trace, weekly)
-
-        with self.lock:
-            self.traces[c.trace]["status"] = "completed"
-            self.traces[c.trace]["closedAt"] = iso_now()
-            self.traces[c.trace]["hermes"] = HERMES.stats()
-        self._persist_trace(c.trace)
-        self.set_scene("WORK", c.trace, title="归档完成，回到生产")
+        return pipeline._stage_report(self, c)
 
 
     def mgmt_delegate(self, sender, recipient, text):
@@ -3536,119 +1407,10 @@ class Kernel:
 
     # ---------- 审核 ----------
     def _asset_owned(self, item, url):
-        """素材必须落在本条内容自己的交付目录里（真实路径，不再接受 asset:// 占位）。"""
-        if not DL:
-            return str(url).startswith(f"asset://{item['projectId']}/")
-        try:
-            prefix = self.DL.plan(item["traceId"], item["projectId"], item["id"])["dir"] + "/"
-        except Exception:
-            return False
-        return str(url).startswith(prefix)
+        return ops._asset_owned(self, item, url)
 
     def _tech_gate(self, item):
-        """发布前的技术硬门槛：对实际落盘的成片重新 probe，不达标即不得 PASS。
-
-        制度要求「导出文件必须重新 probe 才算验收」，本函数是这条制度的执行点：
-        分辨率/帧率/编码/像素格式/音轨/采样率/声道/时长/黑帧/削波/静音，逐项实测。
-        """
-        import subprocess
-        path = ""
-        # 复检对象优先取"定版母版"（05-final.mp4），其次取样片
-        cands = list(item.get("finalAssets") or []) + [((item.get("files") or {}).get("final") or "")]
-        cands += [a for a in reversed(item.get("assets") or []) if str(a).lower().endswith(".mp4")]
-        for a in cands:
-            if not a:
-                continue
-            cand = self.DL._local(a) if (self.DL and str(a).startswith("/vault/")) else str(a)
-            if os.path.isfile(cand):
-                path = cand
-                break
-        if not path or not os.path.isfile(path):
-            return {"pass": False, "reasons": ["缺少可复检的成片文件"], "path": path}
-        env = dict(os.environ)
-        env.pop("LD_LIBRARY_PATH", None)
-        try:
-            out = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", path],
-                capture_output=True, text=True, timeout=120, env=env).stdout
-            info = json.loads(out or "{}")
-        except Exception as e:
-            return {"pass": False, "reasons": [f"ffprobe 失败：{type(e).__name__}"], "path": path}
-        streams = info.get("streams") or []
-        v = next((s for s in streams if s.get("codec_type") == "video"), None)
-        au = next((s for s in streams if s.get("codec_type") == "audio"), None)
-        pid = item.get("projectId") or ""
-        spec = CC.DELIVERY.get(pid) or CC.DELIVERY.get("_default") or CC.DEFAULT_DELIVERY["_default"]
-        checks_spec = {"projectId": pid, "source": "项目配置.md#交付合同" if pid in CC.DELIVERY else "内置默认",
-                       "width": spec["width"], "height": spec["height"], "fps": spec["fps"]}
-        reasons, checks = [], {"spec": checks_spec}
-        if not v:
-            reasons.append("没有视频流")
-        if not au:
-            reasons.append("没有音轨（旁白缺失）")
-        if v:
-            checks.update(width=v.get("width"), height=v.get("height"),
-                          fps=v.get("r_frame_rate"), codec=v.get("codec_name"),
-                          pix_fmt=v.get("pix_fmt"), duration=v.get("duration"))
-            if (v.get("width"), v.get("height")) != (spec["width"], spec["height"]):
-                reasons.append(f"分辨率 {v.get('width')}x{v.get('height')}，"
-                               f"交付合同要求 {spec['width']}x{spec['height']}")
-            if str(v.get("r_frame_rate")) != spec["fps"]:
-                reasons.append(f"帧率 {v.get('r_frame_rate')}，交付合同要求 {spec['fps']}")
-            if v.get("codec_name") != spec["video_codec"]:
-                reasons.append(f"视频编码 {v.get('codec_name')}，交付合同要求 {spec['video_codec']}")
-            if v.get("pix_fmt") not in spec["pix_fmt"]:
-                reasons.append(f"像素格式 {v.get('pix_fmt')}，交付合同要求 {'/'.join(spec['pix_fmt'])}")
-        if au:
-            checks.update(sample_rate=au.get("sample_rate"), channels=au.get("channels"),
-                          audio_codec=au.get("codec_name"))
-            if str(au.get("sample_rate")) != str(spec["sample_rate"]):
-                reasons.append(f"采样率 {au.get('sample_rate')}，交付合同要求 {spec['sample_rate']}")
-            if _to_int(au.get("channels"), 0) != spec["channels"]:
-                reasons.append(f"声道数 {au.get('channels')}，交付合同要求 {spec['channels']}")
-            if au.get("codec_name") != spec["audio_codec"]:
-                reasons.append(f"音频编码 {au.get('codec_name')}，交付合同要求 {spec['audio_codec']}")
-        try:
-            dur = float((info.get("format") or {}).get("duration") or 0)
-        except (TypeError, ValueError):
-            dur = 0.0
-        checks["duration"] = round(dur, 3)
-        want = float(item.get("durationSec") or 0)
-        if want and abs(dur - want) > spec["duration_tolerance"]:
-            reasons.append(f"时长 {dur:.2f}s 与分镜 {want:.0f}s 偏差超过 "
-                           f"{spec['duration_tolerance']}s")
-        # 黑帧与音量：只读输入，不产生新文件
-        try:
-            bd = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-vf",
-                 "blackdetect=d=0.5:pix_th=0.10", "-an", "-f", "null", "-"],
-                capture_output=True, text=True, timeout=300, env=env).stderr
-            checks["blackFrames"] = bd.count("black_start")
-            if checks["blackFrames"]:
-                reasons.append(f"检出 {checks['blackFrames']} 段黑帧（>0.5s）")
-        except Exception as e:
-            reasons.append(f"黑帧检测失败：{type(e).__name__}")
-        try:
-            vd = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af", "volumedetect",
-                 "-vn", "-f", "null", "-"],
-                capture_output=True, text=True, timeout=300, env=env).stderr
-            mx = re.search(r"max_volume:\s*(-?[\d.]+) dB", vd)
-            mn = re.search(r"mean_volume:\s*(-?[\d.]+) dB", vd)
-            if mx:
-                checks["maxVolumeDb"] = float(mx.group(1))
-                if checks["maxVolumeDb"] > spec["max_peak_db"]:
-                    reasons.append(f"峰值 {checks['maxVolumeDb']} dB，超过交付合同上限 "
-                                   f"{spec['max_peak_db']} dB")
-            if mn:
-                checks["meanVolumeDb"] = float(mn.group(1))
-                if checks["meanVolumeDb"] <= spec["min_mean_db"]:
-                    reasons.append(f"音轨近乎静音（均值 {checks['meanVolumeDb']} dB，"
-                                   f"下限 {spec['min_mean_db']} dB）")
-        except Exception as e:
-            reasons.append(f"音量检测失败：{type(e).__name__}")
-        checks["path"] = path
-        return {"pass": not reasons, "reasons": reasons, "checks": checks}
+        return pipeline_kit._tech_gate(self, item)
 
     def review_with_model(self, item, trace):
         structural = []
@@ -3709,130 +1471,20 @@ class Kernel:
         self.emit("pipeline", trace, item)
 
     def _schedule_export(self, trace, item):
-        """把当前阶段写入 Obsidian；文件地址先算好挂到 item.files，渲染异步串行跑。"""
-        if not DL:
-            return
-        try:
-            files = self.DL.plan(trace, item["projectId"], item["id"])
-            item["files"] = files
-            project = dict(self.projects.get(item["projectId"], {"name": item["projectId"], "color": "#64748B"}))
-            tone = item.get("toneProfile") or self.tone.get(item["projectId"], "")
-            snap = json.loads(json.dumps(item, ensure_ascii=False))
-
-            def job():
-                res = self.DL.export_item(snap, project, tone)
-                if res.get("video_written") and (snap.get("renderCheck") or {}).get("pass"):
-                    with self.lock:
-                        cur = next((c for c in self.contents if c["id"] == item["id"]), None)
-                    if cur:
-                        cur["assets"] = [files["video"], files["cover"]]
-                        self.emit("pipeline", trace, cur)
-                elif res.get("error"):
-                    print(f"[export] {item['id']} {res['error'][:120]}", flush=True)
-
-            self.DL.submit(job)
-        except Exception as e:
-            print(f"[export] 排期失败 {type(e).__name__}: {e}", flush=True)
+        return ops._schedule_export(self, trace, item)
 
     def export_trace_docs(self, trace):
-        """本轮交付清单 + 过程记录。"""
-        if not DL:
-            return
-        try:
-            with self.lock:
-                contents = [dict(c) for c in self.contents if c.get("traceId") == trace]
-                msgs = [dict(m) for m in self.messages if m.get("traceId") == trace]
-                apprs = [dict(a) for a in self.approvals if a.get("traceId") == trace]
-                tr = dict(self.traces.get(trace) or {})
-            names = {pid: p["name"] for pid, p in self.projects.items()}
-            self.DL.submit(lambda: self.DL.export_trace(trace, contents, msgs, apprs, names, tr))
-        except Exception as e:
-            print(f"[export] trace 文档失败 {type(e).__name__}: {e}", flush=True)
+        return ops.export_trace_docs(self, trace)
 
     # ---------- 审批 ----------
-    def decide_approval(self, approval_id, decision, decided_by=""):
-        with self.lock:
-            appr = next((a for a in self.approvals if a["id"] == approval_id), None)
-        if not appr and self.db:
-            appr = self._approval_from_db(approval_id)   # 重启后内存里没有，从过程库补（锁外查库）
-        if not appr:
-            return None
-        # 查找→判状态→写状态必须一次锁内完成：锁外“先判后写”时，两个并发请求会同时看到
-        # pending，同一张单被批两次、续跑被触发两次（TOCTOU）
-        with self.lock:
-            cur = next((a for a in self.approvals if a["id"] == appr["id"]), None)
-            if cur is None:      # 从库补出来的单此前不在内存里，补进去让续跑逻辑能看到最新状态
-                self.approvals.append(appr)
-                cur = appr
-            if cur.get("status") != "pending":
-                # 超时挂起的单允许老板迟到补批：补批后从断点续跑，不用整轮重来
-                if not (cur.get("status") == "timeout" and decision == "approve"):
-                    return cur
-            cur["status"] = "approved" if decision == "approve" else "rejected"
-            cur["decidedAt"] = iso_now()
-            cur["decidedBy"] = decided_by or cur.get("approver", "")
-            try:
-                created = datetime.fromisoformat(cur["createdAt"])
-                decided = datetime.fromisoformat(cur["decidedAt"])
-                self.stats["approvalSeconds"].append(round((decided - created).total_seconds(), 1))
-            except Exception as e:
-                log_event("decide_approval.duration", e, level="debug", quiet=True, approvalId=approval_id)
-            if decision != "approve" and cur.get("action") == "publish.execute":
-                self.stats["blockedPublish"] += 1
-            appr = cur
-        self.emit("approval", appr["traceId"], appr)
-        ev = self.approval_events.get(approval_id)
-        if ev:
-            ev.set()
-        elif decision == "approve":
-            # 没有等待线程 = 进程重启后恢复的审批单，run 仍停在断点，放行后自动续跑
-            self._resume_if_interrupted(appr["traceId"])
-        return appr
+    def decide_approval(self, approval_id, decision, decided_by=''):
+        return approvals.decide_approval(self, approval_id, decision, decided_by)
 
     def _resume_if_interrupted(self, trace):
-        """审批放行后自动续跑：仅当该 trace 在过程库里停在断点（interrupted / 审批超时）。"""
-        if not self.db or not trace:
-            return False
-        try:
-            run = self.db.pipeline_run(trace)
-        except Exception as e:
-            print(f"[approval] 读运行态失败，跳过自动续跑：{type(e).__name__}: {e}", flush=True)
-            return False
-        if not run or run.get("status") not in ("interrupted", "timeout"):
-            return False
-        with self.lock:
-            if self.traces.get(trace, {}).get("status") == "running":
-                return False                     # 已经在续跑，避免重复拉起
-        try:
-            info = self.resume_pipeline(trace, auto=True)
-        except Exception as e:
-            print(f"[approval] 自动续跑失败 {trace}：{type(e).__name__}: {e}", flush=True)
-            return False
-        print(f"[approval] {trace} 审批放行后自动续跑：从阶段 {info.get('from')} 恢复", flush=True)
-        return True
+        return approvals._resume_if_interrupted(self, trace)
 
     def _approval_from_db(self, approval_id):
-        """从过程库补一张待决审批单到内存（进程重启后审批仍可被处理）。"""
-        try:
-            rows = self.db.approvals_pending()
-        except Exception:
-            return None
-        row = next((r for r in rows if r.get("id") == approval_id), None)
-        if not row:
-            return None
-        try:
-            raw = json.loads(row.get("raw") or "{}")
-        except ValueError:
-            raw = {}
-        raw.setdefault("id", approval_id)
-        raw.setdefault("traceId", row.get("trace_id"))
-        raw.setdefault("action", row.get("action"))
-        raw.setdefault("createdAt", row.get("created_at"))
-        raw["status"] = "pending"
-        raw.setdefault("timeoutSec", APPROVAL_TIMEOUT)
-        with self.lock:
-            self.approvals.append(raw)
-        return raw
+        return approvals._approval_from_db(self, approval_id)
 
     # ---------- 人设串味注入 ----------
     def persona_injection(self):
@@ -3889,446 +1541,63 @@ class Kernel:
                     print(f"[mirror] 文档镜像失败：{type(e).__name__}: {e}", flush=True)
 
     @staticmethod
+    @staticmethod
+    @staticmethod
     def _kb_norm(item):
-        """统一知识条目结构：文件解析结果与内存归档保持同一套字段。"""
-        body = str(item.get("body") or "")
-        category = item.get("category") or _infer_category(item)
-        sancai = SC.norm(item.get("sancai")) or SC.infer(
-            {"title": item.get("title"), "summary": item.get("summary") or body[:120],
-             "category": category, "tags": item.get("tags")})
-        return {"id": item.get("id"), "projectId": item.get("projectId"),
-                "traceId": item.get("traceId") or item.get("sourceTrace") or "",
-                "sourceTrace": item.get("sourceTrace") or "",
-                "title": item.get("title") or "",
-                "summary": item.get("summary") or body[:80],
-                "category": category, "sancai": sancai,
-                "body": body, "tags": item.get("tags") or [], "at": item.get("at") or "",
-                # 出处：召回时直接给出，agent 按需读原文，省掉一次全库搜索
-                "source": item.get("source") or item.get("path") or ""}
+        return ops._kb_norm(item)
 
     def _sync_knowledge_from_vault(self):
-        """运行中重扫 OPC/知识库：md 有变化就以文件为准替换 Web 端知识库。"""
-        if not DL:
-            return
-        stamp = self.DL.knowledge_stamp()
-        if stamp == self._kb_stamp:
-            return
-        # 上限必须远大于当前条目数：limit 截断会让差集清理把"没读到的条目"当死节点删掉
-        items = self.DL.load_knowledge(limit=5000)
-        if not items:
-            return
-        fresh = [self._kb_norm(k) for k in items]
-        with self.lock:
-            before = len(self.knowledge)
-            self.knowledge = fresh
-        self._kb_stamp = stamp
-        # 同步到 SQLite：upsert 全量 + 差集删除（只 upsert 会把移走的条目留成死节点）
-        if self.db:
-            for k in fresh:
-                self.db.upsert_knowledge(k)
-            if len(fresh) >= max(1, before // 2):   # 读盘异常导致条目骤减时只写不删
-                try:
-                    self.db.prune_knowledge([k.get("id") for k in fresh])
-                except Exception as e:
-                    print(f"[kb] 差集清理失败：{type(e).__name__}: {e}", flush=True)
-            if len(fresh) != before:
-                self.emit("knowledge", "", {"stage": "vault-sync", "count": len(fresh)})
-        try:
-            self.rebuild_relations()      # 条目正文/标签变了，边要跟着重建
-        except Exception as e:
-            print(f"[kb] 关系边重建失败：{type(e).__name__}: {e}", flush=True)
+        return ops._sync_knowledge_from_vault(self)
 
     def _sync_config_from_vault(self):
-        """项目配置/员工名册改动后自动热加载，不用手动点重载（仅 owner，共享 Obsidian 配置）。"""
-        if not self.is_owner:
-            return
-        try:
-            stamp = (os.path.getmtime(PROJECT_FILE), os.path.getmtime(ROSTER_FILE))
-        except OSError:
-            return
-        if stamp == self._cfg_stamp:
-            return
-        self._cfg_stamp = stamp
-        try:
-            info = self.reload_config()
-            print(f"[config] 检测到 Obsidian 配置变更，已热加载：{info}", flush=True)
-        except Exception as e:
-            print(f"[config] 自动热加载失败：{type(e).__name__}: {e}", flush=True)
+        return ops._sync_config_from_vault(self)
 
     def _sync_hotspots_from_vault(self, force=False):
-        """运行中重扫 OPC/热点采集：苏寒新落盘的业务简报无需重启即可进面板。"""
-        if not DL:
-            return
-        now = time.time()
-        if not force and now - self._hotspot_scan_at < 60:
-            return
-        self._hotspot_scan_at = now
-        try:
-            self.collection = self.DL.load_collection_status()
-        except Exception as e:
-            print(f"[hotspot] 读取采集状态失败：{type(e).__name__}: {e}", flush=True)
-        try:
-            disk = self.DL.load_hotspots()
-        except Exception as e:
-            print(f"[hotspot] 扫描热点目录失败：{type(e).__name__}: {e}", flush=True)
-            return
-        if not disk:
-            return
-        changed = False
-        with self.lock:
-            before = len(self.hotspots)
-            by_key = {_hotkey(h.get("title")): h for h in self.hotspots if h.get("title")}
-            for h in disk:
-                key = _hotkey(h.get("title"))
-                if not key:
-                    continue
-                cur = by_key.get(key)
-                if not cur:
-                    self.hotspots.append(h)
-                    by_key[key] = h
-                elif not cur.get("traceId"):
-                    # 内存里是启动时读入的旧简报，用磁盘上的最新字段覆盖
-                    for field in ("score", "tags", "at", "source"):
-                        if h.get(field):
-                            cur[field] = h[field]
-            self.hotspots = self._hotspot_view(20)
-            changed = len(self.hotspots) != before
-        if changed:
-            self.save_runtime()
+        return ops._sync_hotspots_from_vault(self, force)
 
     def _hotspot_view(self, limit=5):
-        """同一标题只保留最新一条，避免“简报 + 注入”出现两行重复。"""
-        latest = {}
-        for h in sorted(self.hotspots, key=lambda x: str(x.get("at") or "")):
-            if h.get("title"):
-                latest[_hotkey(h.get("title"))] = h
-        return sorted(latest.values(), key=lambda x: str(x.get("at") or ""))[-limit:]
+        return kb_views._hotspot_view(self, limit)
 
-    def _page_params(self, query="", default_size=20, max_size=100):
-        """解析 ?page=&size=&q=，供列表接口做服务端分页与关键词过滤。"""
-        qs = parse_qs(query)
-        try:
-            page = max(1, int(qs.get("page", ["1"])[0]))
-        except (TypeError, ValueError):
-            page = 1
-        try:
-            size = min(max_size, max(1, int(qs.get("size", [str(default_size)])[0])))
-        except (TypeError, ValueError):
-            size = default_size
-        q = (qs.get("q", [""])[0] or "").strip().lower()
-        return page, size, q
+    def _page_params(self, query='', default_size=20, max_size=100):
+        return kb_views._page_params(self, query, default_size, max_size)
 
     def _knowledge_all(self):
-        """合并内存 + SQLite 的全量知识条目（去重、剔除无标题的阶段事件行）。"""
-        with self.lock:
-            mem = [k for k in self.knowledge if k.get("id") and k.get("title")]
-        mem_ids = {str(k.get("id")) for k in mem}
-        db_items = []
-        if self.db:
-            try:
-                rows = self.db.fetch("SELECT id,title,summary,category,sancai,project_id,trace_id,tags,updated_at,body,raw FROM knowledge ORDER BY updated_at DESC")
-                for r in rows:
-                    k = _kb_from_row(r)
-                    if k and k["id"] not in mem_ids:
-                        mem_ids.add(k["id"])
-                        db_items.append(k)
-            except Exception as e:
-                print(f"[kb] SQLite 补充失败：{type(e).__name__}: {e}", flush=True)
-        return mem + db_items
+        return kb_views._knowledge_all(self)
 
     def knowledge_categories(self):
-        """返回 5 大分类定义 + 条目数 + 实际标签统计（标签筛选以真实标签为准）。"""
-        items = self._knowledge_all()
-        counts, tag_buckets = {}, {}
-        san_counts = {key: 0 for key in SC.SANCAI_KEYS}
-        san_cross = {}
-        for k in items:
-            cat = k.get("category") or _infer_category(k)
-            counts[cat] = counts.get(cat, 0) + 1
-            sk = SC.norm(k.get("sancai")) or SC.infer(k)
-            k["sancai"] = sk
-            san_counts[sk] = san_counts.get(sk, 0) + 1
-            row = san_cross.setdefault(cat, {key: 0 for key in SC.SANCAI_KEYS})
-            row[sk] += 1
-            bucket = tag_buckets.setdefault(cat, {})
-            for t in (k.get("tags") or []):
-                s = str(t).strip()
-                if s:
-                    bucket[s] = bucket.get(s, 0) + 1
-        result = []
-        for c in KB_CATEGORIES:
-            entry = dict(c)
-            entry["count"] = counts.get(c["key"], 0)
-            entry["sancaiCounts"] = san_cross.get(c["key"], {key: 0 for key in SC.SANCAI_KEYS})
-            entry["tagStats"] = [
-                {"key": t, "label": t, "count": n}
-                for t, n in sorted(tag_buckets.get(c["key"], {}).items(),
-                                   key=lambda kv: (-kv[1], kv[0]))[:18]
-            ]
-            result.append(entry)
-        sancai_rows = [dict(c, count=san_counts.get(c["key"], 0)) for c in SC.SANCAI]
-        return {"ok": True, "items": result, "total": len(result), "page": 1, "size": len(result),
-                "sancai": sancai_rows, "sancaiByCat": san_cross,
-                "sancaiTotal": len(items), "schema": SC.describe()}
+        return kb_views.knowledge_categories(self)
 
-    def knowledge_page(self, query=""):
-        """知识库分页列表：支持 ?category=&tag= 过滤，返回卡片摘要。"""
-        page, size, q = self._page_params(query)
-        qs = parse_qs(query)
-        cat_filter = (qs.get("category", [""])[0] or "").strip()
-        tag_filter = (qs.get("tag", [""])[0] or "").strip()
-        sancai_filter = SC.norm((qs.get("sancai", [""])[0] or "").strip())
-        # 知识图谱需要正文才能推导「正文引用」边；默认不返回 body，避免列表变重
-        with_body = (qs.get("with_body", [""])[0] or "").strip().lower() in ("1", "true", "yes")
-        items = self._knowledge_all()
-        # 确保每条都有 category / sancai 字段（旧数据懒推断）
-        for k in items:
-            if not k.get("category"):
-                k["category"] = _infer_category(k)
-            k["sancai"] = SC.norm(k.get("sancai")) or SC.infer(k)
-        if cat_filter and cat_filter in KB_CATEGORY_MAP:
-            items = [k for k in items if k.get("category") == cat_filter]
-        if sancai_filter:
-            items = [k for k in items if k.get("sancai") == sancai_filter]
-        if tag_filter:
-            items = [k for k in items if tag_filter in (k.get("tags") or [])]
-        if q:
-            items = [k for k in items if q in
-                     f"{k.get('title') or ''} {k.get('summary') or ''} {k.get('body') or ''} "
-                     f"{k.get('projectId') or ''} {' '.join(k.get('tags') or [])}".lower()]
-        items.sort(key=lambda k: str(k.get("at") or ""), reverse=True)
-        total = len(items)
-        start = (page - 1) * size
-        rows = []
-        for k in items[start:start + size]:
-            row = {"id": k.get("id"),
-                   "title": k.get("title") or k.get("summary") or "",
-                   "summary": k.get("summary") or (k.get("title") or "")[:80],
-                   "category": k.get("category"), "sancai": k.get("sancai"),
-                   "projectId": k.get("projectId"), "traceId": k.get("traceId"),
-                   "tags": k.get("tags") or [], "at": k.get("at"),
-                   "hasBody": bool(k.get("body"))}
-            if with_body:
-                row["body"] = k.get("body") or ""
-            rows.append(row)
-        return {"ok": True, "total": total, "page": page, "size": size, "items": rows}
+    def knowledge_page(self, query=''):
+        return kb_views.knowledge_page(self, query)
 
-    def hotspot_page(self, query=""):
-        """热点分页列表：沿用 _hotspot_view 的同标题去重。"""
-        page, size, q = self._page_params(query)
-        items = sorted(self._hotspot_view(10 ** 6), key=lambda h: str(h.get("at") or ""), reverse=True)
-        if q:
-            items = [h for h in items if q in
-                     f"{h.get('title') or ''} {h.get('source') or ''} "
-                     f"{' '.join(h.get('tags') or [])}".lower()]
-        san_filter = SC.norm(parse_qs(query).get("sancai", [""])[0])
-        # 热点天生属「天」：外部信号。显式标注优先，其余按关键词推断
-        rows = []
-        for h in items:
-            row = dict(h)
-            row["sancai"] = SC.norm(h.get("sancai")) or SC.infer(h, "hotspot")
-            if san_filter and row["sancai"] != san_filter:
-                continue
-            rows.append(row)
-        items = rows
-        total = len(items)
-        start = (page - 1) * size
-        return {"ok": True, "total": total, "page": page, "size": size,
-                "items": items[start:start + size]}
+    def hotspot_page(self, query=''):
+        return kb_views.hotspot_page(self, query)
 
     def knowledge_detail(self, kid):
-        with self.lock:
-            hit = next((k for k in self.knowledge if k.get("id") == kid), None)
-        if hit and hit.get("title"):
-            return self._kb_norm(hit)
-        # 从 SQLite 查找：同样走 raw 归一化，否则老数据返回的正文/摘要为空
-        if self.db:
-            try:
-                row = self.db.fetch_one(
-                    "SELECT id,title,summary,category,project_id,trace_id,tags,updated_at,body,raw "
-                    "FROM knowledge WHERE id=?", (kid,))
-                if row:
-                    return _kb_from_row(row)
-            except Exception as e:
-                log_event("knowledge_detail.db", e, level="warn", kid=kid)
-        return None
+        return kb_views.knowledge_detail(self, kid)
 
     def hotspot_detail(self, hid):
-        with self.lock:
-            hit = next((h for h in self.hotspots if h.get("id") == hid), None)
-        if not hit:
-            return None
-        row = dict(hit)
-        row["sancai"] = SC.norm(hit.get("sancai")) or SC.infer(hit, "hotspot")
-        return row
+        return kb_views.hotspot_detail(self, hid)
 
     # ---------- 知识归档 ----------
-    def archive_knowledge(self, trace, entries, stage_label="选题定稿"):
-        """祁南（kb_manager）归档：按 traceId + 标题去重，重复触发只更新不叠加。"""
-        made = []
-        if not entries:
-            return made
-        with self.lock:
-            index = {(k.get("sourceTrace") or k.get("traceId"), k.get("title")): k
-                     for k in self.knowledge}
-            for e in entries:
-                title = str(e.get("title") or "").strip()
-                if not title:
-                    continue
-                pid = e.get("projectId") or "全公司"
-                body = str(e.get("body") or "").strip()
-                tags = [pid, stage_label] + [str(t) for t in (e.get("tags") or []) if t]
-                cur = index.get((trace, title))
-                if cur:
-                    if body:
-                        cur["body"] = body[:300]
-                    cur["tags"] = list(dict.fromkeys(list(cur.get("tags") or []) + tags))[:12]
-                    cur["at"] = iso_now()
-                    made.append(cur)
-                    continue
-                category = _infer_category({"title": title, "tags": tags})
-                entry = {"id": uid("kb"), "projectId": pid, "traceId": trace,
-                         "sourceTrace": trace, "title": title, "summary": title[:80],
-                         "category": category,
-                         "sancai": SC.norm(e.get("sancai")) or SC.infer(
-                             {"title": title, "category": category, "tags": tags}),
-                         "body": body[:300] or "（归档占位）",
-                         "tags": list(dict.fromkeys(tags))[:12], "at": iso_now()}
-                self.knowledge.append(entry)
-                index[(trace, title)] = entry
-                made.append(entry)
-        if made:
-            if self.DL:                                   # 写回 Obsidian，文件与 Web 同步落地
-                for k in made:
-                    try:
-                        self.DL.save_knowledge(k)
-                    except Exception as e:
-                        print(f"[kb] 写回 Obsidian 失败：{type(e).__name__}: {e}", flush=True)
-            # 逐条写入 SQLite（带完整字段）
-            if self.db:
-                for k in made:
-                    self.db.upsert_knowledge(k)
-            self.emit("knowledge", trace, {
-                "stage": stage_label, "count": len(made),
-                "latest": [{"title": k["title"], "summary": k.get("summary") or k["title"][:80],
-                            "projectId": k["projectId"], "id": k["id"]} for k in made[-3:]]})
-        try:
-            self.rebuild_relations()      # 新条目入档后补边，图谱随之长大
-        except Exception as e:
-            print(f"[kb] 关系边重建失败：{type(e).__name__}: {e}", flush=True)
-        return made
+    def archive_knowledge(self, trace, entries, stage_label='选题定稿'):
+        return ops.archive_knowledge(self, trace, entries, stage_label)
 
     def _backfill_knowledge(self):
-        """已禁用自动补登。
-
-        流水线选题(deliverable items, 均带 traceId)不属于知识库/知识图谱，
-        不应自动沉淀为知识条目。真 KB 由 OPC/知识库 目录的 md 经 load_knowledge
-        加载；交付物目录(OPC/交付物/tr_*)只用于历史交付清单，不回填知识库。
-        """
-        return
+        return kb_views._backfill_knowledge(self)
 
     # ---------- 知识图谱关系边 ----------
     def rebuild_relations(self):
-        """用启发式重建关系边并落库：共享标签 + 正文引用（与前端原规则一致）。
-
-        边入库后前端只读不算；后续 AI 抽取的边走 origin='ai'，不被此处覆盖。
-        """
-        with self.lock:
-            items = [k for k in self.knowledge
-                     if str(k.get("id") or "").strip() and str(k.get("title") or "").strip()]
-        by_id = {str(k["id"]): k for k in items}
-        pairs = {}
-        # 1) 共享标签：只取出现 2~4 次的标签，避免泛标签把全图连死
-        tag_groups = {}
-        for k in items:
-            for t in {str(x).strip() for x in (k.get("tags") or []) if str(x).strip()}:
-                tag_groups.setdefault(t, []).append(str(k["id"]))
-        for tag, ids in tag_groups.items():
-            if not 2 <= len(ids) <= 4:
-                continue
-            for i in range(len(ids)):
-                for j in range(i + 1, len(ids)):
-                    p = pairs.setdefault(_rel_key(ids[i], ids[j]),
-                                         {"src": ids[i], "dst": ids[j], "tags": [],
-                                          "ref": False, "from": "", "to": ""})
-                    p["tags"].append(tag)
-        # 2) 正文引用：A 的正文出现 B 的标题核心 → A 引用 B（有向）
-        meta = [(str(k["id"]), re.sub(r"\s+", "", str(k.get("body") or "")).lower())
-                for k in items]
-        for aid, body in meta:
-            if not body:
-                continue
-            for bid, _ in meta:
-                if aid == bid:
-                    continue
-                core = _core_title(by_id[bid].get("title")).lower()
-                if len(core) < 4 or core not in body:
-                    continue
-                p = pairs.setdefault(_rel_key(aid, bid),
-                                     {"src": aid, "dst": bid, "tags": [],
-                                      "ref": False, "from": "", "to": ""})
-                p["ref"] = True
-                if not p["from"]:
-                    p["from"], p["to"] = aid, bid
-        rows = []
-        for key, p in pairs.items():
-            tags = sorted(set(p["tags"]))
-            src, dst = p["src"], p["dst"]
-            if not tags and p["from"]:      # 纯引用边保留真实方向
-                src, dst = p["from"], p["to"]
-            rows.append({"id": key, "src": src, "dst": dst,
-                         "kind": "tag" if tags else "ref",
-                         "label": "、".join(f"#{t}" for t in tags) if tags else "引用",
-                         "weight": len(tags) + (1 if p["ref"] else 0),
-                         # detail 保留引用方向：同一对既共享标签又互引时，kind 会被合并成 tag，
-                         # 但入度统计仍需真实 from→to
-                         "detail": json.dumps({"tags": tags, "from": p["from"],
-                                               "to": p["to"]}, ensure_ascii=False)})
-        if self.db:
-            self.db.replace_relations(rows)
-            self.db.flush()
-        print(f"[kb] 关系边重建：{len(rows)} 条 / 条目 {len(items)}", flush=True)
-        return rows
+        return kb_views.rebuild_relations(self)
 
     def knowledge_relations(self):
-        """读取关系边（图谱页与提示词召回共用）；过滤掉指向已删除条目的孤儿边。"""
-        if not self.db:
-            return {"ok": True, "items": []}
-        keep = {str(k.get("id")) for k in self.knowledge if k.get("id")}
-        items = [{"id": r["id"], "src": r["src"], "dst": r["dst"],
-                  "kind": r.get("kind") or "tag", "label": r.get("label") or "",
-                  "weight": r.get("weight") or 1,
-                  "origin": r.get("origin") or "heuristic",
-                  "confirmed": bool(r.get("confirmed")),
-                  "detail": r.get("detail") or ""}
-                 for r in self.db.list_relations()
-                 if r["src"] in keep and r["dst"] in keep]
-        return {"ok": True, "items": items}
+        return kb_views.knowledge_relations(self)
 
     def recall_kb(self, text, limit=None):
-        """知识图谱召回：标题/标签词面 → 一跳引用扩展 → 压成有预算的提示词块。
-
-        实现放在 kb_graph.py，与 agent 手工调用的 CLI 共用同一套打分与渲染，
-        避免「提示词里一套、命令行里一套」漂移。无命中返回空串（对提示词零影响）。
-        """
-        if not KB_INJECT_ON:
-            return ""
-        try:
-            import kb_graph
-            return kb_graph.brief(
-                text,
-                path=getattr(self.db, "path", None),
-                vault=self.vault_dir,
-                limit=limit or KB_INJECT_LIMIT,
-                budget=KB_INJECT_CHARS,
-            )
-        except Exception as e:      # 召回只是增益，失败绝不能拖垮任务
-            print(f"[kernel] 知识图谱召回异常（忽略）：{type(e).__name__}: {e}", flush=True)
-            return ""
+        return kb_views.recall_kb(self, text, limit)
 
     def kb_brief(self, text, limit=None):
-        """给外部（HTTP/CLI）的图谱简报，语义同 recall_kb。"""
-        return self.recall_kb(text, limit=limit)
+        return kb_views.kb_brief(self, text, limit)
 
     # ---------- 快照 ----------
     def snapshot(self):
@@ -4372,60 +1641,4 @@ class Kernel:
                  "closedAt": r.get("closed_at"), "resumeTries": r.get("resume_tries") or 0}
                 for r in rows]
 
-KERNELS = {}
-KERNELS_LOCK = threading.Lock()
-KERNELS_AT = {}                   # 用户内核最近访问时间，供池上限逐出用
-KERNEL_POOL_MAX = max(1, int(os.environ.get("OPC_KERNEL_POOL", "8") or 8))
-_SAVE_LOCK = threading.Lock()     # runtime 快照串行写
-
-def _kernel_for(data_dir):
-    """取/建某用户工作区的内核；owner 目录的内核在 boot 时即创建。
-
-    池有上限：每个内核自带 Store 写线程 + 审批巡检线程 + 全量 vault 缓存，
-    只增不减时用户越多内存/线程越涨（旧实现 KERNELS 从不逐出）。
-    """
-    data_dir = os.path.abspath(data_dir or OWNER_DATA_DIR)
-    evicted, k = [], None
-    with KERNELS_LOCK:
-        k = KERNELS.get(data_dir)
-        if k is None:
-            try:
-                k = Kernel(data_dir=data_dir)
-            except Exception as e:
-                print(f"[kernel] 用户内核创建失败 {data_dir}：{type(e).__name__}: {e}", flush=True)
-                raise
-            KERNELS[data_dir] = k
-            # 超上限就逐出最久未访问、且当前没在跑任务的非 owner 内核
-            if len(KERNELS) > KERNEL_POOL_MAX:
-                idle = sorted(((KERNELS_AT.get(d, 0.0), d) for d in KERNELS
-                               if d != OWNER_DATA_DIR and not KERNELS[d].active_trace),
-                              key=lambda x: x[0])
-                for _, d in idle[:len(KERNELS) - KERNEL_POOL_MAX]:
-                    evicted.append((d, KERNELS.pop(d, None)))
-                    KERNELS_AT.pop(d, None)
-        KERNELS_AT[data_dir] = time.time()
-    # 停线程/关连接放锁外，避免阻塞其它用户的请求
-    for d, old in evicted:
-        try:
-            if old:
-                old.stop()
-            if DBX:
-                DBX.drop_store(os.path.join(d, "opc.db"))
-            print(f"[kernel] 内核池超上限（{KERNEL_POOL_MAX}），逐出空闲内核 {d}", flush=True)
-        except Exception as e:
-            print(f"[kernel] 逐出内核异常（忽略）{d}：{type(e).__name__}: {e}", flush=True)
-    return k
-
-def _kernel_reset(data_dir):
-    """数据导入后重置内核：停后台线程、丢 Store 缓存，下次访问按新数据重建。"""
-    data_dir = os.path.abspath(data_dir)
-    with KERNELS_LOCK:
-        k = KERNELS.pop(data_dir, None)
-    if k:
-        try:
-            k.stop()
-        except Exception as e:
-            print(f"[kernel] 旧内核停止异常（忽略）：{type(e).__name__}: {e}", flush=True)
-    if DBX:
-        DBX.drop_store(os.path.join(data_dir, "opc.db"))
-    return _kernel_for(data_dir)
+_SAVE_LOCK = threading.Lock()     # runtime 快照串行写（内核池已迁至 pool.py）

@@ -124,7 +124,8 @@ import llm_registry as LREG
 import mail as MAILM
 from hermes_adapter import HERMES
 from deps import *  # noqa: F401,F403 —— 基础设施单例（DBX/ING/DL/WK/OMR/asset_fill/insights/ops_monitor）
-from kernel import BusyError, _kernel_for, _kernel_reset
+from kernel import BusyError
+from pool import _kernel_for, _kernel_reset, pool_stats
 import sancai as SC
 import voice_bridge
 import asset_audit
@@ -996,6 +997,7 @@ class Handler(BaseHTTPRequestHandler):
                                             runs=self._kernel().pipeline_runs_view(),
                                             llm=LREG._llm_view())
                 payload["failTop"] = obs.recent_top(60, 10)   # C3：近 1 小时失败点 Top10
+                payload["pool"] = pool_stats()                    # C1：内核池规模
                 return self._json(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
@@ -2694,8 +2696,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         q = queue.Queue(maxsize=500)
-        with self._kernel().lock:
-            self._kernel().subscribers.append(q)
+        self._kernel().bus.subscribe(q)
 
         def chunk(payload):
             raw = payload.encode()
@@ -2717,9 +2718,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
         finally:
             try:
-                with self._kernel().lock:
-                    if q in self._kernel().subscribers:
-                        self._kernel().subscribers.remove(q)
+                self._kernel().bus.unsubscribe(q)
             finally:
                 try:
                     self.wfile.write(b"0\r\n\r\n")   # 客户端先断时这里必抛 BrokenPipe

@@ -955,6 +955,36 @@ class Store:
         except Exception as e:
             _log(f"upsert_knowledge 失败：{type(e).__name__}: {e}")
 
+    # ---------- C4 老板指令版本化 ----------
+    def upsert_directive(self, d):
+        """指令只增不改：同 id 重复写入不改原文，保证事后能对账。"""
+        try:
+            self.put("""INSERT INTO directives(id,trace_id,text,source,scope,project_id,
+                        confirmed_by,created_at,raw) VALUES(?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(id) DO UPDATE SET trace_id=excluded.trace_id,
+                          source=excluded.source,scope=excluded.scope,
+                          project_id=excluded.project_id,
+                          confirmed_by=excluded.confirmed_by,raw=excluded.raw""",
+                     (d.get("id"), d.get("traceId"), d.get("text"), d.get("source"),
+                      d.get("scope"), d.get("projectId"), d.get("confirmedBy"),
+                      d.get("createdAt"), d.get("raw")))
+        except Exception as e:
+            _log(f"指令记录写入失败：{type(e).__name__}: {e}")
+
+    def directive(self, did):
+        row = self.fetch_one("SELECT * FROM directives WHERE id=?", (did,))
+        return _directive_from_row(row) if row else None
+
+    def directives(self, limit=100, trace=""):
+        sql = "SELECT * FROM directives"
+        params = []
+        if trace:
+            sql += " WHERE trace_id=?"
+            params.append(trace)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(1, min(500, int(limit or 100))))
+        return [_directive_from_row(r) for r in (self.fetch(sql, tuple(params)) or [])]
+
     def prune_knowledge(self, keep_ids):
         """以 vault 为准清掉 db 里已不存在的知识条目（连边一起删）。
 
