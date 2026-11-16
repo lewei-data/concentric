@@ -36,11 +36,13 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
-        <!-- 0.12.0：启动先走登录页（本机号码提示 / 手机号+密码），登录后才进首页 -->
+        <!-- 0.12.0：启动先走登录页（本机号码提示 / 手机号+密码），登录后才进首页。
+             label 必须是 app_name：带 MAIN/LAUNCHER 的 activity 的 label 会覆盖
+             桌面上显示的应用名（之前写 @string/login_title 导致图标名变成「登录」）。 -->
         <activity
             android:name=".LoginActivity"
             android:exported="true"
-            android:label="@string/login_title"
+            android:label="@string/app_name"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

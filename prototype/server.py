@@ -2106,19 +2106,28 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(d, exist_ok=True)
         return d
 
-    def _chat_put_inbound(self, db, *, modality, content, content_kind="text",
-                          meta=None, asr=None):
-        """老板从 Web 发来的一条消息 → web:secretary 线程；返回线程 ID。
+    # 统一消息通道的来源：Web 桌面精灵 / APP 语音模式共用同一套线程与流水线
+    _CHAT_SOURCE_TITLES = {"web": "Web · 小秘书", "app": "APP · 小秘书"}
+    _CHAT_SOURCE_LABELS = {"web": "Web 消息中心", "app": "APP 语音模式"}
 
-        参考 APP 语音链路的处理：入库后小秘书立即给一条「收到」回执（随时回复能力），
-        正式回复由后台任务完成后再异步到达。
+    def _chat_source(self, qs):
+        """query 里的 source（web / app），非法值一律按 web 处理。"""
+        raw = (qs.get("source") or ["web"])[0].strip().lower()
+        return raw if raw in self._CHAT_SOURCE_TITLES else "web"
+
+    def _chat_put_inbound(self, db, *, modality, content, content_kind="text",
+                          meta=None, asr=None, source="web"):
+        """老板发来的一条消息 → <source>:secretary 线程；返回线程 ID。
+
+        Web 桌面精灵与 APP 语音模式走同一个入口：入库后小秘书立即给一条「收到」回执，
+        正式回复由后台任务完成后再异步到达（SSE chat.message + /api/chat/messages 可查）。
         """
-        tid = "web:secretary"
+        tid = f"{source}:secretary"
         now = iso_now()
-        db.chat_upsert_thread(tid, "web", "Web · 小秘书",
+        db.chat_upsert_thread(tid, source, self._CHAT_SOURCE_TITLES.get(source, "小秘书"),
                               [{"id": "boss", "name": "老板"},
                                {"id": "secretary", "name": "小秘书"}], now, now)
-        db.chat_insert({"thread_id": tid, "source": "web", "modality": modality,
+        db.chat_insert({"thread_id": tid, "source": source, "modality": modality,
                         "direction": "inbound", "sender_id": "boss", "sender_name": "老板",
                         "content": str(content)[:4000], "content_kind": content_kind,
                         "origin_table": "chat_web", "origin_id": uid("cw"),
@@ -2131,20 +2140,21 @@ class Handler(BaseHTTPRequestHandler):
         else:
             ack = "收到，老板。马上处理，稍后向你汇报。"
         k = self._kernel()
-        db.chat_insert({"thread_id": tid, "source": "web", "modality": "text",
+        db.chat_insert({"thread_id": tid, "source": source, "modality": "text",
                         "direction": "outbound", "sender_id": "secretary",
                         "sender_name": k.agents.get("secretary", {}).get("name", "小秘书"),
                         "content": ack, "content_kind": "text",
                         "origin_table": "chat_web", "origin_id": uid("cw"),
                         "meta": {"ack": 1}, "created_at": iso_now()})
-        k.emit("chat.message", "", {"threadId": tid, "source": "web",
+        k.emit("chat.message", "", {"threadId": tid, "source": source,
                                     "direction": "outbound", "content": ack, "ack": 1})
         return tid
 
-    def _chat_reply_async(self, k, tid, user_text, note=""):
+    def _chat_reply_async(self, k, tid, user_text, note="", source="web"):
         """后台调小秘书（hermes）回复；回复落库 + TTS 语音 + SSE 推送。"""
         chat_dir = self._chat_dir()
         secret_name = k.agents.get("secretary", {}).get("name", "小秘书")
+        channel = self._CHAT_SOURCE_LABELS.get(source, "Web 消息中心")
 
         def work():
             reply, audio, err, nav = "", "", "", ""
@@ -2152,8 +2162,8 @@ class Handler(BaseHTTPRequestHandler):
                 task = user_text if not note else f"{user_text}\n（附带：{note}）"
                 data, meta = k.call_agent(
                     "secretary",
-                    f"老板通过 Web 消息中心给你发来一条消息，请直接回应或执行：\n{task}",
-                    context="这是老板的私人指令通道（Web 桌面精灵）。回复简短口语化、先给结论；"
+                    f"老板通过{channel}给你发来一条消息，请直接回应或执行：\n{task}",
+                    context=f"这是老板的私人指令通道（{channel}）。回复简短口语化、先给结论；"
                             "老板在 Web 端能看到你引用的资料链接。需要查资料/操作网页可用 browser_exec。"
                             "如果老板想看某个页面（报表/工厂/作品等），用 navigate 给出页面路径，"
                             "老板的浏览器会自动整页跳转过去展示。",
@@ -2183,12 +2193,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 now = iso_now()
                 k.db.chat_insert({
-                    "thread_id": tid, "source": "web", "modality": "voice" if audio else "text",
+                    "thread_id": tid, "source": source, "modality": "voice" if audio else "text",
                     "direction": "outbound", "sender_id": "secretary", "sender_name": secret_name,
                     "content": reply, "content_kind": "text",
                     "origin_table": "chat_web", "origin_id": uid("cw"), "reply_to": None,
                     "meta": {"audio": audio, "error": err, "navigate": nav}, "created_at": now})
-                k.emit("chat.message", "", {"threadId": tid, "source": "web",
+                k.emit("chat.message", "", {"threadId": tid, "source": source,
                                             "direction": "outbound", "content": reply[:160],
                                             "audio": audio, "navigate": nav})
             except Exception as e:
@@ -2287,7 +2297,7 @@ class Handler(BaseHTTPRequestHandler):
         return {"ok": True, "greeting": "老板好，小秘书上线了，今日要点：", "items": items[:4]}
 
     def _chat_binary_post(self, path):
-        """桌面精灵的二进制直传路由：/api/chat/voice（音频）、/api/chat/upload（文件）。"""
+        """二进制直传路由：/api/asr（只识别）、/api/chat/voice（语音消息）、/api/chat/upload（文件）。"""
         if not self._owner_only():
             return
         k = self._kernel()
@@ -2300,24 +2310,39 @@ class Handler(BaseHTTPRequestHandler):
             if len(blob) > self._CHAT_FILE_MAX:
                 return self._json({"ok": False, "error": "超过 25MB 上限"}, 413)
             qs = parse_qs(urlparse(self.path).query)
+            source = self._chat_source(qs)
             stamp = datetime.now(TZ).strftime("%Y%m%d-%H%M%S")
-            if path == "/api/chat/voice":
-                ext = (qs.get("ext") or ["webm"])[0]
+            if path in ("/api/asr", "/api/chat/voice"):
+                ext = (qs.get("ext") or ["webm"])[0].strip().lower()
                 if ext not in self._CHAT_AUDIO_EXT:
                     ext = "webm"
                 fname = f"{stamp}-voice.{ext}"
                 with open(os.path.join(self._chat_dir(), fname), "wb") as f:
                     f.write(blob)
-                try:
-                    transcript = voice_bridge.asr_transcribe(base64.b64encode(blob).decode())
-                except Exception as e:
-                    return self._json({"ok": False,
-                                       "error": f"语音识别失败：{type(e).__name__}"}, 502)
-                if not transcript.strip():
-                    return self._json({"ok": False, "error": "没有识别到语音内容"}, 400)
+                # APP 语音模式：先单独识别（/api/asr），拿到文字后让老板决定发文字还是发语音，
+                # 发语音时把已识别的文字一起带回来（text=...），整条链路只做一次 ASR。
+                preset = (qs.get("text") or [""])[0].strip()
+                transcript = preset
+                if not transcript:
+                    try:
+                        transcript = voice_bridge.asr_transcribe(
+                            base64.b64encode(blob).decode())
+                    except Exception as e:
+                        return self._json({"ok": False,
+                                           "error": f"语音识别失败：{type(e).__name__}"}, 502)
+                    transcript = (transcript or "").strip()
+                    if not transcript:
+                        return self._json({"ok": False, "error": "没有识别到语音内容"}, 400)
+                if path == "/api/asr":
+                    # 纯识别：不建线程、不触发回复，只把音频留档并把文字交给客户端确认
+                    return self._json({"ok": True, "transcript": transcript,
+                                       "audio": f"/chat-files/{fname}",
+                                       "bytes": len(blob)})
                 tid = self._chat_put_inbound(k.db, modality="voice", content=transcript,
-                                             asr=1, meta={"audio": f"/chat-files/{fname}"})
-                self._chat_reply_async(k, tid, transcript, note="这是一条语音消息的转写")
+                                             asr=1, meta={"audio": f"/chat-files/{fname}"},
+                                             source=source)
+                self._chat_reply_async(k, tid, transcript, note="这是一条语音消息的转写",
+                                       source=source)
                 return self._json({"ok": True, "threadId": tid, "transcript": transcript})
             # /api/chat/upload
             name = (qs.get("name") or ["附件"])[0]

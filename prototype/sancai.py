@@ -163,8 +163,54 @@ def counts(items, kind="knowledge") -> dict:
     return out
 
 
+# 显性 8 节点：5 行 × 1~2 个锚点（卦名 + 节点名 + 人机分工）
+XIAN_8 = [
+    {"key": "kun", "symbol": "坤", "name": "坤元仓廪", "element": "earth", "polarity": "yin",
+     "position": "输入", "skills": ["素材批量采集", "去重分拣", "元信息自动补全"]},
+    {"key": "gen", "symbol": "艮", "name": "艮山质检关", "element": "earth", "polarity": "yang",
+     "position": "输出", "skills": ["素材质量校验", "可信度评级", "版本管理"]},
+    {"key": "kan", "symbol": "坎", "name": "坎水渠网", "element": "water", "polarity": "all",
+     "position": "中枢", "skills": ["图谱构建", "实体对齐", "链路溯源", "情景推演"]},
+    {"key": "li", "symbol": "离", "name": "离火中枢塔", "element": "fire", "polarity": "all",
+     "position": "决策中枢", "skills": ["范式路由", "规则判定", "加权打分", "风险预警"]},
+    {"key": "qian", "symbol": "乾", "name": "乾金机作坊", "element": "metal", "polarity": "yang",
+     "position": "执行", "skills": ["原子能力执行", "流程编排", "异常重试", "结果回填"]},
+    {"key": "dui", "symbol": "兑", "name": "兑泽交付台", "element": "metal", "polarity": "yin",
+     "position": "交付", "skills": ["格式封装", "口径对齐", "内容润色", "多格式导出"]},
+    {"key": "zhen", "symbol": "震", "name": "震雷讯号台", "element": "wood", "polarity": "yang",
+     "position": "触发", "skills": ["埋点采集", "信号分级", "异常告警", "问题打标"]},
+    {"key": "xun", "symbol": "巽", "name": "巽风润化坊", "element": "wood", "polarity": "yin",
+     "position": "落地", "skills": ["资产自动更新", "灰度发布", "回归测试", "变更日志"]},
+]
+
+# 隐性 7 环节：5 行 × 3 才 的 15 格中落在输入端 / 处理端 / 输出端的 7 格
+YIN_7 = [
+    {"key": "earth_ren", "element": "earth", "sancai": "ren", "name": "素材结构化加工",
+     "stage": "处理端", "bridge": "坤 → 艮",
+     "skills": ["文档结构化抽取", "自动标签打标", "素材可信度初评", "过期信息识别"]},
+    {"key": "water_di", "element": "water", "sancai": "di", "name": "实体关系抽取",
+     "stage": "输入端", "bridge": "艮 → 坎",
+     "skills": ["实体关系三元组抽取", "实体消歧与对齐", "同义词映射"]},
+    {"key": "water_tian", "element": "water", "sancai": "tian", "name": "图谱关联推理服务",
+     "stage": "输出端", "bridge": "坎 → 决策/执行",
+     "skills": ["图谱链路溯源", "实体关联推荐", "多跳推理", "情景传导测算"]},
+    {"key": "fire_di", "element": "fire", "sancai": "di", "name": "决策要素归集",
+     "stage": "输入端", "bridge": "召回 → 离",
+     "skills": ["决策上下文组装", "相似案例匹配", "约束条件校验", "特征标准化"]},
+    {"key": "fire_tian", "element": "fire", "sancai": "tian", "name": "决策指令封装",
+     "stage": "输出端", "bridge": "离 → 乾",
+     "skills": ["决策理由链组装", "执行指令生成", "结论边界标注"]},
+    {"key": "metal_di", "element": "metal", "sancai": "di", "name": "指令解析与参数校验",
+     "stage": "输入端", "bridge": "决策 → 乾",
+     "skills": ["指令解析与参数提取", "参数合法性校验", "依赖环境检查", "Skill 路由匹配"]},
+    {"key": "wood_ren", "element": "wood", "sancai": "ren", "name": "自动归因与方案生成",
+     "stage": "处理端", "bridge": "震 → 巽",
+     "skills": ["双维自动归因", "根因定位", "优化方案生成", "问题等级评定"]},
+]
+
+
 def describe() -> dict:
-    """对外口径：8 个显性（5 行 + 3 才）与 7 个隐性（关系）。"""
+    """对外口径：8 个显性（5 行 + 3 才节点）与 7 个隐性（行×才 内部工序）。"""
     return {
         "explicit": {
             "count": 8,
@@ -172,11 +218,16 @@ def describe() -> dict:
                        {"key": "earth", "label": "土"}, {"key": "metal", "label": "金"},
                        {"key": "water", "label": "水"}],
             "sancai": SANCAI,
-            "note": "五行定「性质」，三才定「所处」；两者正交，可单独筛，也可叠加筛。",
+            "nodes": XIAN_8,
+            "note": "五行定「性质」，三才定「所处」；两者正交，可单独筛，也可叠加筛。"
+                    "显性节点是人机协同锚点：人做验收与边界，Skill 做执行与标准化。",
         },
         "implicit": {
             "count": 7,
+            "steps": YIN_7,
             "relations": RELATIONS_7,
-            "note": "隐性关系由系统从正文与标签推导，不出现在标签栏，只在知识图谱的边上呈现。",
+            "note": "7 个隐性环节 = 行×才 格子里的输入端 / 处理端 / 输出端工序，"
+                    "封装为内部流转型原子 Skill（托管于金行·技能资产），可观测、可干预、可版本化；"
+                    "relations 是五行生克乘侮，只做图谱边上的解释。",
         },
     }

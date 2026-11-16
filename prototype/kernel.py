@@ -904,7 +904,8 @@ class Kernel:
         n = KB_INJECT_LIMIT if kb is None else _to_int(kb, 0)
         if n > 0 and KB_INJECT_ON:
             try:
-                block = self.recall_kb(f"{task}\n{context}", limit=n)
+                # 检索词以 task 为主：context 过长会掺入大量泛词把相关性打分拉平
+                block = self.recall_kb(f"{task}\n{str(context or '')[:200]}", limit=n)
             except Exception as e:      # 召回失败不能拖垮这次调用
                 block = ""
                 print(f"[kb] 召回失败，跳过注入：{type(e).__name__}: {e}", flush=True)
@@ -3972,12 +3973,15 @@ class Kernel:
         # 知识图谱需要正文才能推导「正文引用」边；默认不返回 body，避免列表变重
         with_body = (qs.get("with_body", [""])[0] or "").strip().lower() in ("1", "true", "yes")
         items = self._knowledge_all()
-        # 确保每条都有 category 字段（旧数据懒推断）
+        # 确保每条都有 category / sancai 字段（旧数据懒推断）
         for k in items:
             if not k.get("category"):
                 k["category"] = _infer_category(k)
+            k["sancai"] = SC.norm(k.get("sancai")) or SC.infer(k)
         if cat_filter and cat_filter in KB_CATEGORY_MAP:
             items = [k for k in items if k.get("category") == cat_filter]
+        if sancai_filter:
+            items = [k for k in items if k.get("sancai") == sancai_filter]
         if tag_filter:
             items = [k for k in items if tag_filter in (k.get("tags") or [])]
         if q:

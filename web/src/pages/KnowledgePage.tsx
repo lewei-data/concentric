@@ -9,7 +9,8 @@ import { ReflectionPage } from "./ReflectionPage";
 import { GraphPage } from "./GraphPage";
 import { AssetLinksPanel } from "../components/AssetLinksPanel";
 import { QuestionsPanel } from "../components/QuestionsPanel";
-import { SancaiBadge, SancaiChips } from "../components/SancaiBadge";
+import { SancaiBadge } from "../components/SancaiBadge";
+import { KbDimensions } from "../components/KbDimensions";
 import { sancaiOf, type SanCai } from "../sancai";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
@@ -294,59 +295,25 @@ export function KnowledgePage() {
         <p className="kb-hint">分类统计暂不可用，已回退到内置五行分类；列表数据不受影响。</p>
       )}
 
-      {/* ── 五行分类 ── */}
-      <div className="kb-tabs" role="tablist" aria-label="知识库五行分类">
-        {categories.map((c) => {
-          const el = wxOf(c.element);
-          const theme = WUXING[el];
-          const isActive = activeCat === c.key;
-          return (
-            <button
-              key={c.key}
-              type="button" role="tab" aria-selected={isActive}
-              className={`kb-tab ${isActive ? "active" : ""} ${el === wx.reading.element ? "is-today" : ""}`}
-              style={{ "--kb-el-1": theme.color, "--kb-el-2": theme.color2 } as React.CSSProperties}
-              title={`${c.label} · ${WUXING[el].classic}`}
-              onClick={() => switchCategory(c.key as KnowledgeCategory, c.element)}
-            >
-              <span className="kb-tab-logo"><WuxingLogo element={el} size={28} /></span>
-              <span className="kb-tab-text">
-                <span className="kb-tab-label">{c.label}</span>
-                <span className="kb-tab-slogan">{c.slogan}</span>
-              </span>
-              <span className="kb-tab-count">{catCounts[c.key] ?? 0}</span>
-              {el === wx.reading.element && <span className="kb-tab-today">当令</span>}
-            </button>
-          );
-        })}
-        {/* 待解决：提出但还没有知识条目认领的问题 */}
-        <button
-          type="button" role="tab" aria-selected={activeCat === "questions"}
-          className={`kb-tab kb-tab--q ${activeCat === "questions" ? "active" : ""}`}
-          title="待解决 · 已提出但还没有知识来认领的问题"
-          onClick={() => switchCategory("questions")}
-        >
-          <span className="kb-tab-logo kb-tab-logo--q" aria-hidden="true">?</span>
-          <span className="kb-tab-text">
-            <span className="kb-tab-label">待解决</span>
-            <span className="kb-tab-slogan">已知之不足</span>
-          </span>
-          <span className="kb-tab-count">{openQuestions}</span>
-        </button>
-      </div>
-
-      {/* ── 三才（天/地/人）：第二维，可与五行分类叠加，也可单独用 ── */}
-      {isPlainList && (
-        <SancaiChips
-          value={activeSancai}
-          counts={sancaiCounts}
-          onChange={(next) => {
-            setActiveSancai(next as SanCai | "");
-            setPage(1);
-            setSelectedId(null);
-          }}
-        />
-      )}
+      {/* ── 分类维度：上五行（5 行全展示）、下三才（固定维度），两行同宽对齐 ── */}
+      <KbDimensions
+        categories={categories}
+        activeCat={String(activeCat)}
+        activeSancai={activeSancai}
+        catCounts={catCounts}
+        sancaiCounts={sancaiCounts}
+        openQuestions={openQuestions}
+        todayElement={wx.reading.element}
+        onPickCat={(key, element) => switchCategory(key as KnowledgeCategory, element)}
+        onPickSancai={(next) => {
+          setActiveSancai(next as SanCai | "");
+          // 图谱/决策档案/复盘/待解决这些视图不吃 sancai，点了就回到「全部条目」
+          if (!isPlainList) setActiveCat("all");
+          setPage(1);
+          setSelectedId(null);
+        }}
+        onQuestions={() => switchCategory("questions")}
+      />
 
       {/* ── 分类说明 + 真实标签筛选 ── */}
       {(activeCategory || currentTags.length > 0) && (
