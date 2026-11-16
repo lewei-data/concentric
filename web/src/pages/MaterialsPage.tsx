@@ -4,6 +4,8 @@ import { CollectTasks } from "./CollectTasks";
 import { ToolboxGallery } from "../components/ToolboxGallery";
 import { AnchoredPanel } from "../components/AnchoredPanel";
 import { siteUrl } from "../lib/siteUrl";
+import { SancaiBadge, SancaiChips } from "../components/SancaiBadge";
+import { sancaiOf } from "../sancai";
 
 type MatItem = {
   id: string;
@@ -12,6 +14,8 @@ type MatItem = {
   desc: string;
   url: string;
   meta: string;
+  /** 三才：素材默认属「地」，后端已按标注/关键词推断 */
+  sancai?: string;
 };
 
 type BrowseDir = { name: string };
@@ -256,6 +260,8 @@ export function MaterialsPage() {
 
   const [tab, setTab] = useState<TabKey>(boot.tab);
   const [items, setItems] = useState<MatItem[]>([]);
+  // 三才：与「分类」分组正交的第二维，空串=全部
+  const [activeSancai, setActiveSancai] = useState("");
   const [updated, setUpdated] = useState("");
   const [indexErr, setIndexErr] = useState("");
 
@@ -513,16 +519,21 @@ export function MaterialsPage() {
     setNotice(null);
   }, [path, effRoot]);
 
+  // 三才：素材默认属「地」，这里按才位做单维过滤（前端过滤，切换不重新拉清单）
+  const filteredItems = useMemo(() => (activeSancai
+    ? items.filter((it) => (it.sancai || sancaiOf(it, "material")) === activeSancai)
+    : items), [items, activeSancai]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, MatItem[]>();
-    for (const it of items) {
+    for (const it of filteredItems) {
       const k = it.category || "未分类";
       const arr = map.get(k) ?? [];
       arr.push(it);
       map.set(k, arr);
     }
     return [...map.entries()];
-  }, [items]);
+  }, [filteredItems]);
 
   return (
     <div className="mat-page">
@@ -555,6 +566,10 @@ export function MaterialsPage() {
 
       {tab === "index" && (
         <section className="mat-section">
+          <SancaiChips
+            value={activeSancai}
+            onChange={(next) => setActiveSancai(next)}
+          />
           {indexErr && <div className="error-banner">{indexErr}</div>}
           {!indexErr && items.length === 0 && (
             <p className="muted">清单为空。素材实际存放在 vault 的「素材」目录，切到「共享资料」查看。</p>
@@ -568,7 +583,10 @@ export function MaterialsPage() {
               <div className="mat-grid">
                 {list.map((it) => (
                   <article key={it.id} className="mat-card">
-                    <h4>{it.title}</h4>
+                    <h4>
+                      {it.title}
+                      <SancaiBadge sancai={it.sancai || sancaiOf(it, "material")} />
+                    </h4>
                     {it.desc && <p className="mat-desc">{it.desc}</p>}
                     <div className="mat-card-foot">
                       {it.meta && <span className="mat-meta">{it.meta}</span>}

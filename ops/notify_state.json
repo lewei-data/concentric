@@ -1,0 +1,26 @@
+{
+ "f7c69a5a587ee785": {
+  "at": 1794783641.3082216,
+  "iso": "2026-11-16T07:00:41+08:00",
+  "level": "warning",
+  "source": "cto-notify-drill"
+ },
+ "469872480af97220": {
+  "at": 1794783695.5239289,
+  "iso": "2026-11-16T07:01:35+08:00",
+  "level": "critical",
+  "source": "cto-notify-drill"
+ },
+ "597a755a14e41695": {
+  "at": 1794783710.9952915,
+  "iso": "2026-11-16T07:01:50+08:00",
+  "level": "critical",
+  "source": "cto-drill-fail"
+ },
+ "8d0580046ca20cda": {
+  "at": 1794783766.3404584,
+  "iso": "2026-11-16T07:02:46+08:00",
+  "level": "critical",
+  "source": "cto-drill-fail2"
+ }
+}

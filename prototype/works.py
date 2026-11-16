@@ -14,6 +14,8 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 
+import sancai as SC
+
 VAULT = os.environ.get("OPC_VAULT", "/opt/sefs/obsidian")
 ROOT = os.path.join(VAULT, "OPC", "交付物")
 URL_PREFIX = "/vault/OPC/交付物"
@@ -146,6 +148,7 @@ def _factory_record(trace, f, fv):
         "traceId": trace,
         "contentId": f.get("itemId") or "",
         "stage": "factory",
+        "sancai": SC.work_stage_of("factory"),
         "stageName": fv.get("craftName") or "工厂",
         "status": status,
         "statusKey": status_key,
@@ -316,6 +319,7 @@ def _build(folder, trace, sub, approvals=None, factory=None, step_status=None):
         "traceId": trace,
         "contentId": data.get("id") or sub.split("-")[-1],
         "stage": stage,
+        "sancai": SC.work_stage_of(stage),
         "stageName": STAGE_LABELS.get(stage, stage or "制作中"),
         "status": status,
         "statusKey": status_key,
@@ -408,14 +412,17 @@ def scan(approvals=None, factory=None, step_status=None):
 
 
 def _facets(items):
-    by_status, by_project = {}, {}
+    by_status, by_project, by_sancai = {}, {}, {"tian": 0, "di": 0, "ren": 0}
     for it in items:
         by_status[it["status"]] = by_status.get(it["status"], 0) + 1
         by_project[it["projectName"]] = by_project.get(it["projectName"], 0) + 1
+        key = it.get("sancai") or SC.work_stage_of(it.get("stage"))
+        by_sancai[key] = by_sancai.get(key, 0) + 1
     return {
         "total": len(items),
         "byStatus": by_status,
         "byProject": by_project,
+        "bySancai": by_sancai,
         "withFinal": sum(1 for it in items if it["hasFinal"]),
         "withReview": sum(1 for it in items if it["reviewNote"]),
     }
@@ -439,9 +446,14 @@ def page(query_params, approvals=None, factory=None, step_status=None):
     project = one("project")
     stage = one("stage")
     status = one("status")
+    sancai = one("sancai").lower()
     sort = one("sort", "updated")
 
     items = scan(approvals, factory, step_status)
+    # 三才：作品默认属「人」；有 stage 的按阶段映射，显式标注优先
+    for it in items:
+        it["sancai"] = SC.norm(it.get("sancai")) or SC.stage_of(it.get("stage")) \
+            or SC.OBJECT_DEFAULT["work"]
     facets = _facets(items)
     if q:
         items = [it for it in items if q in " ".join([
@@ -455,6 +467,8 @@ def page(query_params, approvals=None, factory=None, step_status=None):
         items = [it for it in items if it.get("stage") == stage]
     if status:
         items = [it for it in items if it.get("status") == status]
+    if sancai:
+        items = [it for it in items if it.get("sancai") == sancai]
     if sort == "name":
         items.sort(key=lambda it: str(it.get("title") or ""))
     elif sort == "created":

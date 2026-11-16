@@ -268,6 +268,7 @@ def _user_create(phone, password):
     if not os.path.exists(mat):
         with open(mat, "w", encoding="utf-8") as f:
             json.dump({"updated": iso_now()[:10], "root": os.path.join(data_dir, "素材"),
+                       "root_server": os.path.join(data_dir, "素材"),
                        "items": []}, f, ensure_ascii=False, indent=2)
     os.makedirs(os.path.join(data_dir, "素材"), exist_ok=True)
     # 独立 vault 目录树：知识库/热点采集/交付物/会议纪要/邮件 全部用户私有

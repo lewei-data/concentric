@@ -5612,3 +5612,72 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   border: 1px solid #e2e8f0;
   border-radius: 6px;
 }
+
+/* ── 三才（天 / 地 / 人）：与五行并列的第二分类维 ── */
+.sancai-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 2px;
+}
+
+.sancai-row--compact { margin: 6px 0 0; }
+
+.sancai-lead {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+.sancai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, color 0.16s;
+}
+
+.sancai-chip b { font-size: 13px; font-weight: 700; color: var(--sc); }
+.sancai-chip > span { font-size: 11px; opacity: 0.85; }
+.sancai-chip > i { font-style: normal; font-size: 11px; opacity: 0.7; }
+.sancai-chip:hover { border-color: var(--sc); }
+.sancai-chip.is-active {
+  border-color: var(--sc);
+  background: color-mix(in srgb, var(--sc) 12%, transparent);
+  color: var(--sc);
+  font-weight: 600;
+}
+
+.sancai-clear {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sancai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--sc) 42%, transparent);
+  background: color-mix(in srgb, var(--sc) 10%, transparent);
+  color: var(--sc);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sancai-badge i { font-style: normal; font-weight: 700; }
+.sancai-badge em { font-style: normal; font-size: 10px; opacity: 0.8; }
+.sancai-badge--md { font-size: 12px; padding: 4px 8px; }

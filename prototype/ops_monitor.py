@@ -859,6 +859,22 @@ def build(state, health, force_probe=False, runs=None, llm=None):
                        if status == "exhausted"
                        else "在「大模型开关」重新启用，否则 Hermes 调用将全部降级为规则模式"),
         })
+    # P0-3 紧急播报降级横幅：notify.py 在 spoken=false 时挂，成功后清除
+    try:
+        with open(os.path.join(REPO_ROOT, "ops", "notify_banner.json"),
+                  encoding="utf-8") as f:
+            _nb = json.load(f)
+        if _nb.get("active"):
+            alerts.append({
+                "id": "notify-boss-failed", "level": "critical",
+                "title": "紧急播报失败：语音通道不可用，已降级为纯邮件",
+                "detail": f"{_nb.get('at')} 来源 {_nb.get('source')}：{_nb.get('text')}；"
+                          f"{_nb.get('detail')}。老板面板/APP 当时不会响，请人工确认送达。",
+                "source": "ops/notify_banner.json", "at": _nb.get("at") or "",
+                "action": "检查 8848 /api/notify/boss 与 media-engine TTS（9200），修复后 notify.py 自动清除横幅",
+            })
+    except Exception:
+        pass
     order = {"critical": 0, "warning": 1, "info": 2}
     alerts.sort(key=lambda x: order.get(x.get("level"), 9))
 

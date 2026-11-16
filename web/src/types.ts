@@ -7,6 +7,8 @@ export type Hotspot = {
   tags?: string[];
   at?: string;
   fit?: Record<string, unknown>;
+  /** 三才：热点默认属「天」 */
+  sancai?: string;
 };
 
 /** 知识库 5 大分类 */
@@ -33,6 +35,8 @@ export type Knowledge = {
   title: string;
   summary: string;
   category?: KnowledgeCategory;
+  /** 三才：与五行分类正交的第二维 */
+  sancai?: string;
   projectId?: string;
   traceId?: string;
   tags?: string[];
@@ -138,6 +142,8 @@ export type Work = {
   traceId: string;
   contentId: string;
   stage: string;
+  /** 三才：作品默认属「人」 */
+  sancai?: string;
   stageName: string;
   status: string;
   statusKey: string;

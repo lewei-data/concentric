@@ -26,6 +26,33 @@ FLUSH_ROWS = 200
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 
+-- v4（2026-11-16，P1-1 IT 系统资产台账）：权威数据在库，人读版由
+-- prototype/it_assets.py render 自动重写 公司/IT系统资产台账.md，禁止手工维护两份。
+-- 字段口径见 CEO 指令：system/host/role/public_domain/reverse_proxy/ports/
+-- depends_on/cert_path/cert_expire/data_disk/log_paths/backup_policy/runbook/
+-- verify_cmd/owner/status/updated_at；evidence 存采集来源（命令/配置文件路径）。
+CREATE TABLE IF NOT EXISTS it_assets (
+  id             TEXT PRIMARY KEY,
+  system         TEXT NOT NULL,
+  host           TEXT,
+  role           TEXT,
+  public_domain  TEXT,
+  reverse_proxy  TEXT,
+  ports          TEXT,
+  depends_on     TEXT,
+  cert_path      TEXT,
+  cert_expire    TEXT,
+  data_disk      TEXT,
+  log_paths      TEXT,
+  backup_policy  TEXT,
+  runbook        TEXT,
+  verify_cmd     TEXT,
+  owner          TEXT,
+  status         TEXT,
+  updated_at     TEXT,
+  evidence       TEXT
+);
+
 CREATE TABLE IF NOT EXISTS traces (
   trace_id       TEXT PRIMARY KEY,
   hotspot_id     TEXT,
@@ -142,6 +169,7 @@ CREATE TABLE IF NOT EXISTS knowledge (
   updated_at TEXT,
   raw        TEXT,
   category   TEXT,
+  sancai     TEXT,                          -- 三才：tian / di / ren（与 category 正交）
   summary    TEXT,
   project_id TEXT,
   trace_id   TEXT,
@@ -610,6 +638,8 @@ class Store:
                 cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(knowledge)")}
                 if cols and "category" not in cols:
                     self._conn.execute("ALTER TABLE knowledge ADD COLUMN category TEXT")
+                if cols and "sancai" not in cols:
+                    self._conn.execute("ALTER TABLE knowledge ADD COLUMN sancai TEXT")
                 if cols and "summary" not in cols:
                     self._conn.execute("ALTER TABLE knowledge ADD COLUMN summary TEXT")
                 if cols and "project_id" not in cols:
@@ -632,6 +662,7 @@ class Store:
                     self._conn.execute("ALTER TABLE knowledge ADD COLUMN superseded_by TEXT")
                 # knowledge 表索引（补列后创建，确保列存在）
                 self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge(category)")
+                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_sancai ON knowledge(sancai)")
                 self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge(project_id)")
                 self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_trace ON knowledge(trace_id)")
                 self._conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_updated ON knowledge(updated_at)")
@@ -651,6 +682,10 @@ class Store:
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (3)")
             elif _int(row["version"]) < 3:
                 self._conn.execute("UPDATE schema_version SET version=3")
+            # v4（2026-11-16 CEO P1-1）：it_assets IT 系统资产台账。建表已由 SCHEMA
+            # 幂等完成，这里只推进版本戳；人读版 公司/IT系统资产台账.md 由
+            # prototype/it_assets.py 随巡检自动重写，禁止手工维护两份。
+            self._conn.execute("UPDATE schema_version SET version=4 WHERE version<4")
             self._conn.commit()
         try:
             os.chmod(self.path, 0o600)
@@ -835,16 +870,19 @@ class Store:
     def upsert_knowledge(self, k):
         try:
             self.put("""INSERT INTO knowledge(id,title,path,tags,updated_at,raw,
-                        category,summary,project_id,trace_id,body)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                        category,sancai,summary,project_id,trace_id,body)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(id) DO UPDATE SET title=excluded.title,path=excluded.path,
                           tags=excluded.tags,updated_at=excluded.updated_at,raw=excluded.raw,
-                          category=excluded.category,summary=excluded.summary,
+                          category=excluded.category,sancai=excluded.sancai,
+                          summary=excluded.summary,
                           project_id=excluded.project_id,trace_id=excluded.trace_id,
                           body=excluded.body""",
-                     (k.get("id"), k.get("title"), k.get("path"), jdump(k.get("tags")),
+                     (k.get("id"), k.get("title"),
+                      k.get("path") or k.get("source"),   # 出处：召回直接给路径
+                      jdump(k.get("tags")),
                       k.get("updatedAt") or k.get("at") or now_iso(), jdump(k),
-                      k.get("category"), k.get("summary"),
+                      k.get("category"), k.get("sancai"), k.get("summary"),
                       k.get("projectId") or k.get("project_id"),
                       k.get("traceId") or k.get("trace_id"),
                       k.get("body")))

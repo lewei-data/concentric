@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { useList, useOne } from "@refinedev/core";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Work } from "../types";
+import { SancaiBadge, SancaiChips } from "../components/SancaiBadge";
+import { workStageSancai } from "../sancai";
 
 // 档案正文是 Markdown，按需加载渲染器，避免拖大首屏
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
@@ -260,6 +262,7 @@ function WorksListPage() {
   const [q, setQ] = useState("");
   const [project, setProject] = useState("");
   const [status, setStatus] = useState("");
+  const [sancai, setSancai] = useState("");
   const [sort, setSort] = useState("updated");
   const [page, setPage] = useState(1);
 
@@ -267,6 +270,7 @@ function WorksListPage() {
   if (q) filters.push({ field: "q", operator: "eq", value: q });
   if (project) filters.push({ field: "project", operator: "eq", value: project });
   if (status) filters.push({ field: "status", operator: "eq", value: status });
+  if (sancai) filters.push({ field: "sancai", operator: "eq", value: sancai });
   if (sort !== "updated") filters.push({ field: "sort", operator: "eq", value: sort });
 
   const list = useList<Work>({
@@ -341,6 +345,14 @@ function WorksListPage() {
             </button>
           ))}
         </div>
+        <SancaiChips
+          compact
+          value={sancai}
+          onChange={(next) => {
+            setSancai(next);
+            resetPage();
+          }}
+        />
         <div className="chip-group">
           {[
             { id: "updated", name: "按时间" },
@@ -376,6 +388,7 @@ function WorksListPage() {
                   <tr>
                     <th>编号</th>
                     <th>名称 / 阶段</th>
+                    <th>才位</th>
                     <th>项目</th>
                     <th>负责人</th>
                     <th>状态</th>
@@ -399,6 +412,12 @@ function WorksListPage() {
                           {item.craftProgress ? ` · 工序 ${item.craftProgress}` : ""}
                           {item.hasFinal ? " · 已有最终成片" : item.hasPreview ? " · 已有预览样片" : ""}
                         </div>
+                      </td>
+                      <td className="nowrap">
+                        <SancaiBadge
+                          sancai={item.sancai ?? workStageSancai(item.stage)}
+                          showVerb
+                        />
                       </td>
                       <td className="nowrap">{item.projectName}</td>
                       <td className="nowrap">{item.owner || "-"}</td>

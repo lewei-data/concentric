@@ -23,6 +23,7 @@ import company_config as CC
 import mail as MAILM
 import message_feeds as FEED
 import pipeline_defs as PIPE
+import sancai as SC
 from hermes_adapter import HERMES
 try:
     import media_jobs as MEDIA
@@ -129,7 +130,9 @@ def _infer_category(item):
 # ---------- 知识图谱关系边（启发式建边，规则与前端 GraphPage.buildGraph 一致） ----------
 KB_INJECT_ON = (os.environ.get("OPC_KB_INJECT", "1") or "1").strip().lower() \
     not in ("0", "false", "no", "off")
-KB_INJECT_LIMIT = _to_int(os.environ.get("OPC_KB_INJECT_N"), 3) or 3
+KB_INJECT_LIMIT = _to_int(os.environ.get("OPC_KB_INJECT_N"), 5) or 5
+# 注入块字符预算：知识图谱再有用也不能把提示词撑爆，超预算按相关度截断
+KB_INJECT_CHARS = _to_int(os.environ.get("OPC_KB_INJECT_CHARS"), 900) or 900
 
 
 def _rel_key(a, b):
@@ -182,12 +185,16 @@ def _kb_from_row(row):
     summary = str(r.get("summary") or raw.get("summary") or "").strip()
     if not summary:
         summary = body[:120] or title[:80]
+    category = str(r.get("category") or raw.get("category") or "").strip() \
+        or _infer_category({"title": title, "tags": tags})
+    sancai = SC.norm(r.get("sancai") or raw.get("sancai")) or SC.infer(
+        {"title": title, "summary": summary, "category": category, "tags": tags})
     return {
         "id": kid,
         "title": title,
         "summary": summary,
-        "category": str(r.get("category") or raw.get("category") or "").strip()
-                    or _infer_category({"title": title, "tags": tags}),
+        "category": category,
+        "sancai": sancai,
         "projectId": r.get("project_id") or raw.get("projectId") or "",
         "traceId": r.get("trace_id") or raw.get("traceId") or raw.get("sourceTrace") or "",
         "tags": tags,
@@ -3783,13 +3790,18 @@ class Kernel:
         """统一知识条目结构：文件解析结果与内存归档保持同一套字段。"""
         body = str(item.get("body") or "")
         category = item.get("category") or _infer_category(item)
+        sancai = SC.norm(item.get("sancai")) or SC.infer(
+            {"title": item.get("title"), "summary": item.get("summary") or body[:120],
+             "category": category, "tags": item.get("tags")})
         return {"id": item.get("id"), "projectId": item.get("projectId"),
                 "traceId": item.get("traceId") or item.get("sourceTrace") or "",
                 "sourceTrace": item.get("sourceTrace") or "",
                 "title": item.get("title") or "",
                 "summary": item.get("summary") or body[:80],
-                "category": category,
-                "body": body, "tags": item.get("tags") or [], "at": item.get("at") or ""}
+                "category": category, "sancai": sancai,
+                "body": body, "tags": item.get("tags") or [], "at": item.get("at") or "",
+                # 出处：召回时直接给出，agent 按需读原文，省掉一次全库搜索
+                "source": item.get("source") or item.get("path") or ""}
 
     def _sync_knowledge_from_vault(self):
         """运行中重扫 OPC/知识库：md 有变化就以文件为准替换 Web 端知识库。"""
@@ -3905,7 +3917,7 @@ class Kernel:
         db_items = []
         if self.db:
             try:
-                rows = self.db.fetch("SELECT id,title,summary,category,project_id,trace_id,tags,updated_at,body,raw FROM knowledge ORDER BY updated_at DESC")
+                rows = self.db.fetch("SELECT id,title,summary,category,sancai,project_id,trace_id,tags,updated_at,body,raw FROM knowledge ORDER BY updated_at DESC")
                 for r in rows:
                     k = _kb_from_row(r)
                     if k and k["id"] not in mem_ids:
@@ -3919,9 +3931,16 @@ class Kernel:
         """返回 5 大分类定义 + 条目数 + 实际标签统计（标签筛选以真实标签为准）。"""
         items = self._knowledge_all()
         counts, tag_buckets = {}, {}
+        san_counts = {key: 0 for key in SC.SANCAI_KEYS}
+        san_cross = {}
         for k in items:
             cat = k.get("category") or _infer_category(k)
             counts[cat] = counts.get(cat, 0) + 1
+            sk = SC.norm(k.get("sancai")) or SC.infer(k)
+            k["sancai"] = sk
+            san_counts[sk] = san_counts.get(sk, 0) + 1
+            row = san_cross.setdefault(cat, {key: 0 for key in SC.SANCAI_KEYS})
+            row[sk] += 1
             bucket = tag_buckets.setdefault(cat, {})
             for t in (k.get("tags") or []):
                 s = str(t).strip()
@@ -3931,13 +3950,17 @@ class Kernel:
         for c in KB_CATEGORIES:
             entry = dict(c)
             entry["count"] = counts.get(c["key"], 0)
+            entry["sancaiCounts"] = san_cross.get(c["key"], {key: 0 for key in SC.SANCAI_KEYS})
             entry["tagStats"] = [
                 {"key": t, "label": t, "count": n}
                 for t, n in sorted(tag_buckets.get(c["key"], {}).items(),
                                    key=lambda kv: (-kv[1], kv[0]))[:18]
             ]
             result.append(entry)
-        return {"ok": True, "items": result, "total": len(result), "page": 1, "size": len(result)}
+        sancai_rows = [dict(c, count=san_counts.get(c["key"], 0)) for c in SC.SANCAI]
+        return {"ok": True, "items": result, "total": len(result), "page": 1, "size": len(result),
+                "sancai": sancai_rows, "sancaiByCat": san_cross,
+                "sancaiTotal": len(items), "schema": SC.describe()}
 
     def knowledge_page(self, query=""):
         """知识库分页列表：支持 ?category=&tag= 过滤，返回卡片摘要。"""
@@ -3945,6 +3968,7 @@ class Kernel:
         qs = parse_qs(query)
         cat_filter = (qs.get("category", [""])[0] or "").strip()
         tag_filter = (qs.get("tag", [""])[0] or "").strip()
+        sancai_filter = SC.norm((qs.get("sancai", [""])[0] or "").strip())
         # 知识图谱需要正文才能推导「正文引用」边；默认不返回 body，避免列表变重
         with_body = (qs.get("with_body", [""])[0] or "").strip().lower() in ("1", "true", "yes")
         items = self._knowledge_all()
@@ -3968,7 +3992,7 @@ class Kernel:
             row = {"id": k.get("id"),
                    "title": k.get("title") or k.get("summary") or "",
                    "summary": k.get("summary") or (k.get("title") or "")[:80],
-                   "category": k.get("category"),
+                   "category": k.get("category"), "sancai": k.get("sancai"),
                    "projectId": k.get("projectId"), "traceId": k.get("traceId"),
                    "tags": k.get("tags") or [], "at": k.get("at"),
                    "hasBody": bool(k.get("body"))}
@@ -3985,6 +4009,16 @@ class Kernel:
             items = [h for h in items if q in
                      f"{h.get('title') or ''} {h.get('source') or ''} "
                      f"{' '.join(h.get('tags') or [])}".lower()]
+        san_filter = SC.norm(parse_qs(query).get("sancai", [""])[0])
+        # 热点天生属「天」：外部信号。显式标注优先，其余按关键词推断
+        rows = []
+        for h in items:
+            row = dict(h)
+            row["sancai"] = SC.norm(h.get("sancai")) or SC.infer(h, "hotspot")
+            if san_filter and row["sancai"] != san_filter:
+                continue
+            rows.append(row)
+        items = rows
         total = len(items)
         start = (page - 1) * size
         return {"ok": True, "total": total, "page": page, "size": size,
@@ -4009,7 +4043,12 @@ class Kernel:
 
     def hotspot_detail(self, hid):
         with self.lock:
-            return next((h for h in self.hotspots if h.get("id") == hid), None)
+            hit = next((h for h in self.hotspots if h.get("id") == hid), None)
+        if not hit:
+            return None
+        row = dict(hit)
+        row["sancai"] = SC.norm(hit.get("sancai")) or SC.infer(hit, "hotspot")
+        return row
 
     # ---------- 知识归档 ----------
     def archive_knowledge(self, trace, entries, stage_label="选题定稿"):
@@ -4035,9 +4074,12 @@ class Kernel:
                     cur["at"] = iso_now()
                     made.append(cur)
                     continue
+                category = _infer_category({"title": title, "tags": tags})
                 entry = {"id": uid("kb"), "projectId": pid, "traceId": trace,
                          "sourceTrace": trace, "title": title, "summary": title[:80],
-                         "category": _infer_category({"title": title, "tags": tags}),
+                         "category": category,
+                         "sancai": SC.norm(e.get("sancai")) or SC.infer(
+                             {"title": title, "category": category, "tags": tags}),
                          "body": body[:300] or "（归档占位）",
                          "tags": list(dict.fromkeys(tags))[:12], "at": iso_now()}
                 self.knowledge.append(entry)
@@ -4152,58 +4194,29 @@ class Kernel:
         return {"ok": True, "items": items}
 
     def recall_kb(self, text, limit=None):
-        """按字符 bigram 重合度召回知识条目，返回可直接拼进提示词的文本块。
+        """知识图谱召回：标题/标签词面 → 一跳引用扩展 → 压成有预算的提示词块。
 
-        不调模型、不走向量：标签命中权重高于标题命中，弱相关一律丢弃。
-        无命中返回空串，此时对提示词零影响。
+        实现放在 kb_graph.py，与 agent 手工调用的 CLI 共用同一套打分与渲染，
+        避免「提示词里一套、命令行里一套」漂移。无命中返回空串（对提示词零影响）。
         """
-        limit = limit or KB_INJECT_LIMIT
-        q = _bigrams(text)
-        if not q:
+        if not KB_INJECT_ON:
             return ""
-        with self.lock:
-            snapshot = list(self.knowledge)
-        scored = []
-        for k in snapshot:
-            title = str(k.get("title") or "").strip()
-            if not title:
-                continue
-            score = len(q & _bigrams(title)) * 3
-            tag_bg = set()
-            for t in (k.get("tags") or [])[:12]:
-                tag_bg |= _bigrams(t)
-            score += len(q & tag_bg) * 2
-            if score < 4:                   # 阈值：不够相关就别塞进提示词
-                continue
-            scored.append((score, k))
-        if not scored:
+        try:
+            import kb_graph
+            return kb_graph.brief(
+                text,
+                path=getattr(self.db, "path", None),
+                vault=self.vault_dir,
+                limit=limit or KB_INJECT_LIMIT,
+                budget=KB_INJECT_CHARS,
+            )
+        except Exception as e:      # 召回只是增益，失败绝不能拖垮任务
+            print(f"[kernel] 知识图谱召回异常（忽略）：{type(e).__name__}: {e}", flush=True)
             return ""
-        scored.sort(key=lambda x: -x[0])
-        picked = scored[:max(1, limit)]
-        title_of = {str(k.get("id")): str(k.get("title") or "") for k in snapshot}
-        lines = ["【公司知识库参考】（自动召回，用于对齐公司口径；与本任务无关可忽略，"
-                 "输出仍严格按 JSON 字段要求）"]
-        for i, (_, k) in enumerate(picked, 1):
-            title = str(k.get("title") or "").strip()
-            summary = re.sub(r"\s+", " ", str(k.get("summary") or k.get("body") or ""))[:110]
-            tags = "、".join(str(t) for t in (k.get("tags") or [])[:4])
-            lines.append(f"{i}. 《{title}》{('：' + summary) if summary else ''}"
-                         f"{('（标签：' + tags + '）') if tags else ''}")
-        picked_ids = {str(k.get("id")) for _, k in picked}
-        rels = []
-        for r in self.knowledge_relations().get("items") or []:
-            if r["src"] not in picked_ids and r["dst"] not in picked_ids:
-                continue
-            a, b = title_of.get(r["src"], ""), title_of.get(r["dst"], "")
-            if not a or not b:
-                continue
-            arrow = "→" if r["kind"] == "ref" else "—"
-            item = f"{a} {arrow} {b}（{r['label']}）"
-            if item not in rels:
-                rels.append(item)
-        if rels:
-            lines.append("相关关系：" + "；".join(rels[:5]))
-        return "\n".join(lines)
+
+    def kb_brief(self, text, limit=None):
+        """给外部（HTTP/CLI）的图谱简报，语义同 recall_kb。"""
+        return self.recall_kb(text, limit=limit)
 
     # ---------- 快照 ----------
     def snapshot(self):

@@ -28,239 +28,101 @@ class HermesAdapter:
     def available(self):
         return MODE == "hermes" and os.path.exists(CLI)
 
+# ---------- 提示词 ----------
+    # 原则：身份/纪律/记录义务由系统提示词（profiles/<id>/SOUL.md）承载，这里只补
+    # 「本次任务的增量边界」。同一句话不写两遍——重复既稀释注意力，又直接烧 token。
+    # 曾经每人 700~1600 字的权限手册里，一半是 kb/邮件通用规则，一半是「概念工具→实际
+    # 操作」两层命名（kb.write → write_file），模型要在两套词汇间对齐，纯负担。
+    def _boundary(self, agent, vault):
+        """按岗位给最小边界：可写路径 + 可用工具 + 红线，一人一段（约 200-400 字）。"""
+        aid = str(agent.get("id") or "")
+        head = (f"边界：{vault} 默认只读，只有下面点名的路径可写；一律不删、不改名、不出 vault；"
+                f"邮件仅限 @mail.conring.cn 内部域，以本人 {aid}@mail.conring.cn 收发，"
+                f"禁冒用身份、禁群发外发、禁写凭据；")
+        # 与系统提示词共享的收尾：告诉模型图谱从哪来、不够时怎么补，避免全库瞎搜
+        tail = ("背景里的【知识图谱命中】是公司已有结论；不够时按出处路径直接 read_file 原文，"
+                "不要全库遍历。\n")
+        body = {
+            "kb_manager": (
+                f"可读写 {vault}/OPC/知识库 与 OPC/汇报（write_file/patch），新增条目同步 00-索引.md；"
+                "可用 terminal 只读盘点（sqlite3 -readonly、ls/du/find/wc）与 asset_audit.py 产出的 "
+                "OPC/汇报/资产盘点/最新.md；数字必须可追溯到表名/文件/口径，禁写业务库、禁改流水线状态；"
+                "深挖单条：python3 /opt/sefs/opc-workbench/prototype/kb_graph.py show <id>；"
+                "除 file/terminal(只读)/cronjob/邮件外不要调用其它工具。"),
+            "scout": (
+                f"可只读查证公开信息（不登录、不提交、不发布），URL 写入 evidence；"
+                f"可写 {vault}/OPC/热点采集/*.md，禁改 公司/ 与 动态/；"
+                "除 web/file/邮件外不要调用其它工具。"),
+            "release_ops": (
+                "可只读监控公开数据与舆情（不登录、不提交），URL 写入 evidence；"
+                "除 web/file/邮件外不要调用其它工具。"),
+            "reviewer": (
+                f"可读写 {vault} 下 .md，审核报告写项目目录；terminal 限 /opt/sefs/OpenMontage 产线命令"
+                "（ffprobe/ffmpeg/python）取证；可用 media_asr/media_tts/media_job_status；web 只读核实；"
+                "红线：字幕竖屏 y>1500 不合格、横屏 y>980 不合格；图片单边 <2048px 不合格；"
+                "字幕与旁白误差 >100ms 不合格；交付片必须 yuv420p+bt709；"
+                "不改叙事与选镜头、不删素材、不覆盖作者原工程；"
+                "除 file/terminal/media_*/web/邮件外不要调用其它工具。"),
+            "ceo": (
+                f"可读写 {vault} 下 .md；web/browser 只读调研（不登录不提交），URL 写入 evidence；"
+                "cronjob 设定期学习盘点；五行学习落到文件：金=知识库审计报告、木=技能缺口报告、"
+                "水=对标分析、火=趋势/风险/OKR、土=归档过时条目+维护索引；"
+                "除 file/web/browser/cronjob/邮件外不要调用其它工具。"),
+            "cto": (
+                f"可读写 {vault} 下 .md；terminal 可跑 hermes mcp/plugins/cron 与诊断"
+                "（ss/ps/top/df/free/curl/systemctl）；web 只读技术调研；cronjob 做巡检；"
+                f"禁改宿主配置与 {vault} 以外的业务数据，禁删业务文件；"
+                "除 file/terminal/web/cronjob/邮件外不要调用其它工具。"),
+            "secretary": (
+                f"可读写 {vault} 下 .md（汇报与记录写到 OPC/汇报/secretary、OPC/岗位记录/secretary）；"
+                "可用 browser_exec 做只读网页操控（查资料、截图、填表；不提交支付、不发布、不登录敏感账号）；"
+                "可用 mail 收发与 cronjob 设提醒；"
+                "除 file/browser/cronjob/邮件外不要调用其它工具。"),
+            "cco": (
+                f"可读写 {vault} 下 .md；terminal 限 /opt/sefs/OpenMontage 产线命令；"
+                "web 只读创意调研（URL 写入 evidence）；cronjob 做定期学习；"
+                "五行：金=创意规格评估+风格指南、木=能力升级计划、水=行业对标、"
+                "火=趋势与受众洞察、土=归档+方法论沉淀；"
+                "除 file/terminal/web/cronjob/邮件外不要调用其它工具。"),
+        }
+        if aid in body:
+            return head + body[aid] + tail
+        # 三个产线岗位族：同一套流程，只差交付物与红线
+        family = {
+            "pm": (
+                f"可读写 {vault} 下 .md；terminal 限产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
+                "交付 projects/<slug>/artifacts/script.json（total_duration_seconds、voice_performance、"
+                "sections[]）、artifacts/scene_plan.json（style_playbook、scenes[] 五段式）、"
+                "STORYBOARD.md（每帧画面/音效/旁白/转场/特效/节奏锚点）；"
+                "禁改 render_runtime、禁在 provider_text 写 SSML、不替配音合成音轨、不替剪辑渲染；"
+                "除 file/terminal/邮件外不要调用其它工具。"),
+            "cw": (
+                f"可读写 {vault} 下 .md；terminal 限产线命令；"
+                "交付 projects/<slug>/assets/subtitles/captions.json（style、position、words、sentences），"
+                "时间戳只能来自 media_asr 词级转写；字幕竖屏安全区 y=1200–1500px，禁 y>1500；"
+                "禁改旁白文字、禁编造时间戳、不替剪辑渲染；"
+                "除 file/terminal/media_asr/邮件外不要调用其它工具。"),
+            "vd": (
+                f"可读写 {vault} 下 .md；terminal 限产线命令；"
+                "ComfyUI 文生图（192.168.21.157:8188/prompt）写 projects/<slug>/assets/images|videos；"
+                "收到分镜后 5 分钟内给素材清单/依赖/估时；图片 ≥2048px、音画同步 <100ms；"
+                "禁改旁白与音轨、禁用低清素材、不跳过细节自检；"
+                "除 file/terminal/邮件外不要调用其它工具。"),
+        }
+        return head + family.get(aid.split("_")[0],
+                                "除 file 与邮件工具外不要调用其它工具。") + tail
+
     def prompt(self, agent, task, context="", extra="", schema=None):
         project = CC.PROJECTS.get(agent["projectId"])
         fields = schema or "summary(≤60字), evidence(2-4条字符串), confidence(0到1数字), tools(字符串数组)"
-        # 知识库范围 = 员工所在工作区的 vault（owner=共享 Obsidian；注册用户=自己的工作区）
         vault = str(agent.get("vault") or VAULT)
-        # 全员基础权限：只读访问本工作区 vault 的知识库（名册/项目配置/热点采集等）
-        kb_read = (f"允许使用 file 工具**只读**查阅 {vault} 下的 .md 文件"
-                   "（名册/项目配置/热点采集/知识库等），"
-                   "需要人名、岗位、项目、KPI 或历史结论作为依据时先查文件，并在 evidence（或 reasons）写明来源路径；"
-                   f"禁止写入、编辑、删除、移动文件，禁止访问 {vault} 以外的路径。")
-        # 全员邮件权限：以本人邮箱收发内部邮件（仅限内部域）
-        mail_rule = ("允许使用邮件工具（mcp__mail__mail_check / mail_list / mail_read / mail_send）"
-                     "以本人邮箱 <agent_id>@mail.conring.cn 收发内部邮件：发件人固定为本人，不可冒用他人身份；"
-                     "收件人与抄送仅限 @mail.conring.cn 内部域；禁止全员群发与向外部域发信，"
-                     "禁止把邮箱密码或凭据文件内容写进邮件；邮件内容须符合本人岗位职责与项目口径。")
-        # 角色附加权限（在基础只读之上）
-        role_rules = {
-            "kb_manager": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                           "允许使用 file.write 写文件到项目目录（整理知识条目、更新索引与笔记、写入 OPC/知识库 与 OPC/汇报 文档）；"
-                           "允许使用 terminal 执行**只读**盘点命令：sqlite3 -readonly 查询过程库/系统库的表结构与行数、"
-                           "ls/du/find/wc 统计 vault 与工程目录的文件数、体积与最近更新时间；"
-                           "允许使用 kb.write 创建/更新知识库条目；"
-                           "允许使用 kb.index 维护知识库索引；"
-                           "允许使用 kb.qa 执行知识库问答；"
-                           "允许使用 cronjob_manage 维护每日凌晨资产盘点与知识库自检任务；"
-                           "禁止删除、移动、重命名文件，禁止访问该目录以外的路径；"
-                           "修改 公司/ 配置类文件（员工名册/项目配置）时保持原有表格与字段格式，并在 evidence 写明改动理由；\n"
-                           "知识库管理权限（概念工具→实际操作映射）：\n"
-                           "  · kb.write → write_file 创建/更新 OPC/知识库/*.md 条目；\n"
-                           "  · kb.index → write_file 更新 OPC/知识库/00-索引.md（分类+标题+日期）；\n"
-                           "  · kb.qa → search_files + read_file 检索知识库条目并回答；\n"
-                           "  · kb.audit → search_files 扫描 OPC/知识库/ 全部条目 + read_file 逐条评估质量与时效，输出盘点报告；\n"
-                           "  · kb.retire → patch/write_file 给过时条目标记 archived: true，并在索引里移到「归档」分区；\n"
-                           "  · asset.audit → 系统每日凌晨自动跑全量盘点（asset_audit.py，只读过程库），"
-                           "代理读 OPC/汇报/资产盘点/最新.md 做解读、补漏与归因；需要复算时用 terminal 只读 sqlite3 自助查询；\n"
-                           "  · report.render → write_file 输出《资产盘点日报》到 OPC/汇报/资产盘点/（含库/表/行数、"
-                           "产品与工厂产出、素材库与知识库规模、问题清单与建议）；\n"
-                           "  · asset.read → 读取素材清单 materials.json 与 OPC/素材库，核对条目与文件可达性；\n"
-                           "盘点红线：数字必须来自实际查询/落盘（写清表名、文件路径、统计口径）；"
-                           "禁止写业务库、禁止删表改表、禁止改流水线状态；发现阻塞/断点只出结论与建议，不越权处置；\n"
-                           "禁止：不改叙事与选镜头；不替配音合成音轨；不替视频制作剪辑或渲染；\n"
-                           "除 file、terminal（只读盘点）、kb.write/kb.index/kb.qa/kb.audit/kb.retire、cronjob 与邮件工具外禁止调用其它工具。"),
-            "scout": ("允许使用 web 检索工具做只读查证（只查公开信息，不登录、不提交、不发布），把来源 URL 写进 evidence；"
-                      f"允许使用 file 工具把采集结果写入 {vault}/OPC/热点采集/ 下的 .md（只能写该目录，"
-                      "禁止改写 公司/、动态/ 等配置与状态文件）；除 web、file 与邮件工具外禁止调用其它工具。"),
-            "release_ops": "允许使用 web 检索工具做只读监控（查公开数据与舆情，不登录、不提交、不发布），把来源 URL 写进 evidence；除 web、file 与邮件工具外禁止调用其它工具。",
-            "reviewer": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                         "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（ffmpeg/ffprobe/python）用于取证；"
-                         "允许使用 media_asr（Whisper 转写）和 media_tts（TTS 合成）用于音频验证；"
-                         "允许使用 media_job_status 查询异步任务状态；"
-                         "允许使用 web 检索工具做只读查证（核对链接可达性与事实来源，不登录、不提交）；"
-                         "允许使用 file.write 写审核报告到项目目录；\n"
-                         "审核取证权限（概念工具→实际操作映射）：\n"
-                         "  · review.check → terminal 执行 ffprobe/ffmpeg 抽帧、volumedetect 电平检测、signalstats 像素分析；\n"
-                         "  · compliance.check → web_search 核实素材来源、版权、事实准确性；\n"
-                         "  · media_asr → terminal 执行 Whisper 转写，核对字幕与旁白同步；\n"
-                         "审核红线（必须检查）：\n"
-                         "  · 字幕位置：竖屏 y>1500px 不合格（被平台 UI 遮挡）；横屏 y>980px 不合格；\n"
-                         "  · 素材分辨率：图片单边 <2048px 不合格；\n"
-                         "  · 音画同步：字幕与旁白误差 >100ms 不合格；\n"
-                         "  · 色彩空间：交付片必须 yuv420p + bt709；\n"
-                         "禁止：不改叙事与选镜头；不删除素材；不在作者原工程上直接覆盖；\n"
-                         "除 file、terminal（限产线取证）、media_asr/media_tts/media_job_status、web（只读查证）与邮件工具外禁止调用其它工具。"),
-            "ceo": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                    f"允许使用 web 工具（web_search/web_extract）做只读调研，把来源 URL 写进 evidence；"
-                    "允许使用 browser_exec 做市场调研与竞品分析（只读，不登录不提交）；"
-                    "允许使用 cronjob_manage 设定定期学习与盘点任务；\n"
-                    "管理层专属五行学习权限 + 战略管理权限（概念工具→实际操作映射）：\n"
-                    "  · 金（技能锻造）— kb.audit → 用 search_files 扫描 {vault}/OPC/知识库/ 全部条目，逐条 read_file 评估质量，输出盘点报告 write_file 到岗位记录；\n"
-                    "  · 木（生态成长）— skill.evolve → read_file 查阅各岗位 SKILL.md 与员工名册，识别缺口后 write_file 输出《技能缺口报告》；\n"
-                    "  · 水（知识流通）— kb.benchmark → web_search 搜索行业标杆，web_extract 提取关键内容，write_file 输出《对标分析报告》到知识库；\n"
-                    "  · 火（战略洞察）— web.research + strategy.plan → web_search 追踪行业趋势与竞品策略，write_file 输出《战略规划》《周度洞察简报》到岗位记录；\n"
-                    "  · 土（根基沉淀）— kb.retire + kb.write → read_file + search_files 扫描全库，对过时条目标记 archived: true（用 patch/write_file），有效条目维护分类索引；\n"
-                    "  · 战略管理 — okr.track → write_file 维护 OKR 跟踪表；risk.assess → write_file 输出风险评估报告；project.write → write_file 更新项目文档；metric.write → write_file 更新指标文档；\n"
-                    "除 file、web（只读调研）、browser（只读调研）、cronjob 与邮件工具外禁止调用其它工具。"),
-            "cto": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                    "允许使用 terminal 工具执行 hermes 的 mcp / plugins / cron 子命令，按员工 profile 独立安装 MCP 与插件、管理定时任务；"
-                    "允许使用 terminal 执行系统诊断命令（ss/ps/top/df/free/curl/systemctl）做技术栈审计；"
-                    "允许使用 web 工具（web_search/web_extract）做只读技术调研，把来源 URL 写进 evidence；"
-                    "允许使用 cronjob_manage 设定定期巡检与清理任务；"
-                    "禁止删除、移动、重命名业务文件，禁止改动宿主系统配置与 /opt/sefs/obsidian 以外的业务数据；\n"
-                    "管理层专属五行学习权限 + 技术管理权限（概念工具→实际操作映射）：\n"
-                    "  · 金（技能锻造）— kb.audit → search_files 扫描知识库 + terminal 执行 hermes status/hermes security 审计各 profile 技能安装状态；"
-                    "security.audit → terminal 执行 ss -tlnp/ps aux 端口进程扫描 + web_search 查 CVE 漏洞库；\n"
-                    "  · 木（生态成长）— skill.evolve → terminal 执行 hermes skills install 为各 profile 安装新技能 + write_file 更新技能文档；\n"
-                    "  · 水（知识流通）— kb.benchmark → web_search 搜索技术方案 + web_extract 提取关键内容 + write_file 输出对标报告到知识库；\n"
-                    "  · 火（战略洞察）— web.research → web_search 追踪 AI/MCP 前沿；perf.monitor → terminal 执行 top/ps/curl 监控服务健康度；"
-                    "cost.optimize → terminal + read_file 分析 LLM 用量账本与基础设施成本；\n"
-                    "  · 土（根基沉淀）— kb.retire → patch/write_file 标记过时条目 archived；repo.write → write_file 更新技术文档；"
-                    "deploy.write → terminal 执行部署与配置变更；\n"
-                    "  · 技术管理 — alert.write → cronjob_manage + write_file 配置定期巡检任务与告警规则；arch.review → write_file 输出架构评审报告；\n"
-                    "除 file、terminal、web（只读调研）、cronjob 与邮件工具外禁止调用其它工具。"),
-            "cco": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                    "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令；"
-                    "允许使用 web 工具（web_search/web_extract）做只读创意调研，把来源 URL 写进 evidence；"
-                    "允许使用 cronjob_manage 设定定期创意学习与盘点任务；\n"
-                    "管理层专属五行学习权限 + 创意管理权限（概念工具→实际操作映射）：\n"
-                    "  · 金（技能锻造）— kb.audit → search_files 扫描 {vault}/OPC/创意规格/ 全部文件，read_file 评估风格指南覆盖度；"
-                    "style.write → write_file 创建/迭代各项目风格指南（OPC/创意规格/style_*.md）；"
-                    "copy.write → write_file 更新文案规范与 SOP；asset.write → write_file 维护素材库索引与亮点卡；\n"
-                    "  · 木（生态成长）— skill.evolve → read_file 查阅 PM/CW/VD 的 SKILL.md 与样片评审记录，识别创意能力缺口后 write_file 输出《创意能力升级计划》；\n"
-                    "  · 水（知识流通）— kb.benchmark → web_search 搜索行业爆款案例与竞品策略，web_extract 提取关键内容，write_file 输出《创意对标报告》到知识库；\n"
-                    "  · 火（战略洞察）— web.research → web_search 追踪平台算法变化与用户偏好迁移；"
-                    "trend.analyze → web_search + write_file 输出《周度内容趋势简报》；"
-                    "audience.insight → web_search 调研受众画像与内容偏好，write_file 输出《受众洞察报告》；\n"
-                    "  · 土（根基沉淀）— kb.retire → patch/write_file 标记过时创意模板 archived；kb.write → write_file 沉淀创意方法论到知识库；\n"
-                    "  · 创意管理 — cron.write → cronjob_manage 设定每周趋势简报、每两周资产盘点、每月对标分析定时任务；\n"
-                    "除 file、terminal（限产线）、web（只读调研）、cronjob 与邮件工具外禁止调用其它工具。"),
-            "pm_wenren": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                          "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                          "允许使用 script.write 写 script.json（口播文案）；"
-                          "允许使用 scene_plan.write 写 scene_plan.json（镜头规划）；"
-                          "允许使用 storyboard.write 写 STORYBOARD.md（分镜脚本）；"
-                          "允许使用 file.write 写文件到项目目录；\n"
-                          "分镜脚本编写权限（概念工具→实际操作映射）：\n"
-                          "  · script.write → write_file 写 projects/<slug>/artifacts/script.json，必须含 total_duration_seconds、voice_performance、sections[]；\n"
-                          "  · scene_plan.write → write_file 写 projects/<slug>/artifacts/scene_plan.json，必须含 style_playbook、scenes[]（五段式描述）；\n"
-                          "  · storyboard.write → write_file 写 projects/<slug>/STORYBOARD.md，必须含每帧的画面/音效/旁白/转场/特效/节奏锚点；\n"
-                          "  · terminal → 执行产线命令（make preflight / npm run / npx hyperframes / python 校验脚本）；\n"
-                          "禁止：不改 proposal_packet 里的 render_runtime；不在 provider_text 里写 SSML 标签；不替配音合成音轨；不替视频制作剪辑或渲染；\n"
-                          "除 file、terminal（限产线）、script/scene_plan/storyboard.write 与邮件工具外禁止调用其它工具。"),
-            "pm_gou": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                       "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                       "允许使用 script.write 写 script.json（口播文案）；"
-                       "允许使用 scene_plan.write 写 scene_plan.json（镜头规划）；"
-                       "允许使用 storyboard.write 写 STORYBOARD.md（分镜脚本）；"
-                       "允许使用 file.write 写文件到项目目录；\n"
-                       "分镜脚本编写权限（概念工具→实际操作映射）：\n"
-                       "  · script.write → write_file 写 projects/<slug>/artifacts/script.json，必须含 total_duration_seconds、voice_performance、sections[]；\n"
-                       "  · scene_plan.write → write_file 写 projects/<slug>/artifacts/scene_plan.json，必须含 style_playbook、scenes[]（五段式描述）；\n"
-                       "  · storyboard.write → write_file 写 projects/<slug>/STORYBOARD.md，必须含每帧的画面/音效/旁白/转场/特效/节奏锚点；\n"
-                       "  · terminal → 执行产线命令（make preflight / npm run / npx hyperframes / python 校验脚本）；\n"
-                       "禁止：不改 proposal_packet 里的 render_runtime；不在 provider_text 里写 SSML 标签；不替配音合成音轨；不替视频制作剪辑或渲染；\n"
-                       "除 file、terminal（限产线）、script/scene_plan/storyboard.write 与邮件工具外禁止调用其它工具。"),
-            "pm_tongxinyuan": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                               "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                               "允许使用 script.write 写 script.json（口播文案）；"
-                               "允许使用 scene_plan.write 写 scene_plan.json（镜头规划）；"
-                               "允许使用 storyboard.write 写 STORYBOARD.md（分镜脚本）；"
-                               "允许使用 file.write 写文件到项目目录；\n"
-                               "分镜脚本编写权限（概念工具→实际操作映射）：\n"
-                               "  · script.write → write_file 写 projects/<slug>/artifacts/script.json，必须含 total_duration_seconds、voice_performance、sections[]；\n"
-                               "  · scene_plan.write → write_file 写 projects/<slug>/artifacts/scene_plan.json，必须含 style_playbook、scenes[]（五段式描述）；\n"
-                               "  · storyboard.write → write_file 写 projects/<slug>/STORYBOARD.md，必须含每帧的画面/音效/旁白/转场/特效/节奏锚点；\n"
-                               "  · terminal → 执行产线命令（make preflight / npm run / npx hyperframes / python 校验脚本）；\n"
-                               "禁止：不改 proposal_packet 里的 render_runtime；不在 provider_text 里写 SSML 标签；不替配音合成音轨；不替视频制作剪辑或渲染；\n"
-                               "除 file、terminal（限产线）、script/scene_plan/storyboard.write 与邮件工具外禁止调用其它工具。"),
-            "cw_wenren": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                          "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                          "允许使用 subtitle.write 写 captions.json（字幕文件）；"
-                          "允许使用 file.write 写文件到项目目录；"
-                          "允许使用 media_asr（Whisper 转写）提取词级时间戳；\n"
-                          "字幕生成权限（概念工具→实际操作映射）：\n"
-                          "  · subtitle.write → write_file 写 projects/<slug>/assets/subtitles/captions.json，必须含 style/position/words/sentences；\n"
-                          "  · media_asr → terminal 执行 Whisper 转写，从音轨提取词级时间戳；\n"
-                          "  · terminal → 执行产线命令（ffmpeg 字幕烧录 / python 校验脚本）；\n"
-                          "字幕位置红线：竖屏 y=1200–1500px（安全区），禁止放在底部（y>1500 会被平台 UI 遮挡）；\n"
-                          "禁止：不改旁白文字；不编造时间戳；不把字幕放在底部危险区；不替视频制作剪辑或渲染；\n"
-                          "除 file、terminal（限产线）、subtitle.write、media_asr 与邮件工具外禁止调用其它工具。"),
-            "cw_gou": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                       "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                       "允许使用 subtitle.write 写 captions.json（字幕文件）；"
-                       "允许使用 file.write 写文件到项目目录；"
-                       "允许使用 media_asr（Whisper 转写）提取词级时间戳；\n"
-                       "字幕生成权限（概念工具→实际操作映射）：\n"
-                       "  · subtitle.write → write_file 写 projects/<slug>/assets/subtitles/captions.json，必须含 style/position/words/sentences；\n"
-                       "  · media_asr → terminal 执行 Whisper 转写，从音轨提取词级时间戳；\n"
-                       "  · terminal → 执行产线命令（ffmpeg 字幕烧录 / python 校验脚本）；\n"
-                       "字幕位置红线：竖屏 y=1200–1500px（安全区），禁止放在底部（y>1500 会被平台 UI 遮挡）；\n"
-                       "禁止：不改旁白文字；不编造时间戳；不把字幕放在底部危险区；不替视频制作剪辑或渲染；\n"
-                       "除 file、terminal（限产线）、subtitle.write、media_asr 与邮件工具外禁止调用其它工具。"),
-            "cw_tongxinyuan": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                               "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                               "允许使用 subtitle.write 写 captions.json（字幕文件）；"
-                               "允许使用 file.write 写文件到项目目录；"
-                               "允许使用 media_asr（Whisper 转写）提取词级时间戳；\n"
-                               "字幕生成权限（概念工具→实际操作映射）：\n"
-                               "  · subtitle.write → write_file 写 projects/<slug>/assets/subtitles/captions.json，必须含 style/position/words/sentences；\n"
-                               "  · media_asr → terminal 执行 Whisper 转写，从音轨提取词级时间戳；\n"
-                               "  · terminal → 执行产线命令（ffmpeg 字幕烧录 / python 校验脚本）；\n"
-                               "字幕位置红线：竖屏 y=1200–1500px（安全区），禁止放在底部（y>1500 会被平台 UI 遮挡）；\n"
-                               "禁止：不改旁白文字；不编造时间戳；不把字幕放在底部危险区；不替视频制作剪辑或渲染；\n"
-                               "除 file、terminal（限产线）、subtitle.write、media_asr 与邮件工具外禁止调用其它工具。"),
-            "vd_wenren": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                          "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                          "允许使用 image.gen 生成图片素材（ComfyUI 文生图）；"
-                          "允许使用 asset.write 写素材到项目目录；"
-                          "允许使用 file.write 写文件到项目目录；\n"
-                          "素材生成权限（概念工具→实际操作映射）：\n"
-                          "  · image.gen → terminal 调用 ComfyUI API（192.168.21.157:8188/prompt）生成图片，分辨率 ≥ 2048px；\n"
-                          "  · asset.write → write_file 写 projects/<slug>/assets/images/*.png 和 videos/*.mp4；\n"
-                          "  · terminal → 执行产线命令（ComfyUI 文生图/图生视频 / Remotion 渲染 / ffmpeg 合成）；\n"
-                          "任务分解要求：收到分镜后 5 分钟内完成素材清单、依赖关系、时间估算；\n"
-                          "细节红线：图片分辨率 ≥ 2048px；字幕在安全区内；音画同步误差 <100ms；\n"
-                          "禁止：不改旁白文字；不改音轨；不用低于 2K 的图片素材；不跳过细节自检；\n"
-                          "除 file、terminal（限产线）、image.gen、asset.write 与邮件工具外禁止调用其它工具。"),
-            "vd_gou": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                       "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                       "允许使用 image.gen 生成图片素材（ComfyUI 文生图）；"
-                       "允许使用 asset.write 写素材到项目目录；"
-                       "允许使用 file.write 写文件到项目目录；\n"
-                       "素材生成权限（概念工具→实际操作映射）：\n"
-                       "  · image.gen → terminal 调用 ComfyUI API（192.168.21.157:8188/prompt）生成图片，分辨率 ≥ 2048px；\n"
-                       "  · asset.write → write_file 写 projects/<slug>/assets/images/*.png 和 videos/*.mp4；\n"
-                       "  · terminal → 执行产线命令（ComfyUI 文生图/图生视频 / Remotion 渲染 / ffmpeg 合成）；\n"
-                       "任务分解要求：收到分镜后 5 分钟内完成素材清单、依赖关系、时间估算；\n"
-                       "细节红线：图片分辨率 ≥ 2048px；字幕在安全区内；音画同步误差 <100ms；\n"
-                       "禁止：不改旁白文字；不改音轨；不用低于 2K 的图片素材；不跳过细节自检；\n"
-                       "除 file、terminal（限产线）、image.gen、asset.write 与邮件工具外禁止调用其它工具。"),
-            "vd_tongxinyuan": (f"允许使用 file 工具（read_file/write_file/search_files/patch）在 {vault} 下**读写** .md 文件；"
-                               "允许使用 terminal 限 `/opt/sefs/OpenMontage` 内的产线命令（make/npm/npx/node/ffmpeg/python/piper）；"
-                               "允许使用 image.gen 生成图片素材（ComfyUI 文生图）；"
-                               "允许使用 asset.write 写素材到项目目录；"
-                               "允许使用 file.write 写文件到项目目录；\n"
-                               "素材生成权限（概念工具→实际操作映射）：\n"
-                               "  · image.gen → terminal 调用 ComfyUI API（192.168.21.157:8188/prompt）生成图片，分辨率 ≥ 2048px；\n"
-                               "  · asset.write → write_file 写 projects/<slug>/assets/images/*.png 和 videos/*.mp4；\n"
-                               "  · terminal → 执行产线命令（ComfyUI 文生图/图生视频 / Remotion 渲染 / ffmpeg 合成）；\n"
-                               "任务分解要求：收到分镜后 5 分钟内完成素材清单、依赖关系、时间估算；\n"
-                               "细节红线：图片分辨率 ≥ 2048px；字幕在安全区内；音画同步误差 <100ms；\n"
-                               "禁止：不改旁白文字；不改音轨；不用低于 2K 的图片素材；不跳过细节自检；\n"
-                               "除 file、terminal（限产线）、image.gen、asset.write 与邮件工具外禁止调用其它工具。"),
-        }
-        rule = ("硬性要求：" + kb_read + mail_rule
-                + role_rules.get(agent["id"], "除 file 与邮件工具外禁止调用其它工具。")
-                + "只输出一个 JSON 对象，禁止代码块、禁止解释。")
         return (
-            f"你是 OPC 一人公司员工「{agent['name']}」，职位：{agent['role']}，负责：{agent['scope']}。"
-            f"你的项目：{project['name'] if project else '全公司'}。风格要求：{agent['tone']}。\n"
+            f"你是 OPC 员工「{agent['name']}」，职位：{agent['role']}，负责：{agent['scope']}；"
+            f"项目：{project['name'] if project else '全公司'}；风格：{agent['tone']}。\n"
             f"任务：{task}\n"
             f"背景：{context or '无'}\n{extra}\n"
-            f"{rule}"
-            f"JSON 字段：{fields}。"
+            f"{self._boundary(agent, vault)}"
+            f"只输出一个 JSON 对象（不要代码块、不要解释），字段：{fields}。"
         )
 
     def ask(self, agent, task, context="", extra="", schema=None):

@@ -9,6 +9,8 @@ import { ReflectionPage } from "./ReflectionPage";
 import { GraphPage } from "./GraphPage";
 import { AssetLinksPanel } from "../components/AssetLinksPanel";
 import { QuestionsPanel } from "../components/QuestionsPanel";
+import { SancaiBadge, SancaiChips } from "../components/SancaiBadge";
+import { sancaiOf, type SanCai } from "../sancai";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
@@ -62,6 +64,8 @@ type CategoryWithStats = {
   /** 后端按真实条目聚合出的标签（优先于静态定义，否则筛选永远命中不了） */
   tagStats?: TagStat[];
   count?: number;
+  /** 本分类下三条才位的条目数（后端 knowledge_categories 返回） */
+  sancaiCounts?: Record<string, number>;
 };
 
 /** 前端兜底分类定义（五行体系），后端 /api/knowledge/categories 优先 */
@@ -124,6 +128,8 @@ export function KnowledgePage() {
   const [activeCat, setActiveCat] = useState<KnowledgeCategory | "all" | "questions">("questions");
   const [openQuestions, setOpenQuestions] = useState(0);
   const [activeTag, setActiveTag] = useState("");
+  // 三才：与五行分类正交的第二维，空串=不限，可与分类同时生效
+  const [activeSancai, setActiveSancai] = useState<SanCai | "">("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
@@ -174,9 +180,26 @@ export function KnowledgePage() {
     const f: { field: string; operator: "eq"; value: unknown }[] = [];
     if (q) f.push({ field: "q", operator: "eq", value: q });
     if (activeCat !== "all" && activeCat !== "questions") f.push({ field: "category", operator: "eq", value: activeCat });
+    if (activeSancai) f.push({ field: "sancai", operator: "eq", value: activeSancai });
     if (activeTag) f.push({ field: "tag", operator: "eq", value: activeTag });
     return f;
-  }, [q, activeCat, activeTag]);
+  }, [q, activeCat, activeSancai, activeTag]);
+
+  // 才位计数跟着当前五行分类走：选了某一类就显示该类下的分布，选「全部」则合计
+  const sancaiCounts = useMemo(() => {
+    const pool = activeCat === "all" || activeCat === "questions"
+      ? categories
+      : categories.filter((c) => c.key === activeCat);
+    const out: Record<string, number> = {};
+    for (const c of pool) {
+      for (const [k, v] of Object.entries(c.sancaiCounts ?? {})) {
+        out[k] = (out[k] ?? 0) + Number(v || 0);
+      }
+    }
+    return out;
+  }, [activeCat, categories]);
+
+  const isPlainList = !["questions", "graph", "decision", "reflection"].includes(String(activeCat));
 
   const list = useList<Knowledge>({
     resource: "knowledge",
@@ -312,6 +335,19 @@ export function KnowledgePage() {
         </button>
       </div>
 
+      {/* ── 三才（天/地/人）：第二维，可与五行分类叠加，也可单独用 ── */}
+      {isPlainList && (
+        <SancaiChips
+          value={activeSancai}
+          counts={sancaiCounts}
+          onChange={(next) => {
+            setActiveSancai(next as SanCai | "");
+            setPage(1);
+            setSelectedId(null);
+          }}
+        />
+      )}
+
       {/* ── 分类说明 + 真实标签筛选 ── */}
       {(activeCategory || currentTags.length > 0) && (
         <div
@@ -383,6 +419,7 @@ export function KnowledgePage() {
             <div className="kb-detail-meta">
               <span className="kb-detail-logo"><WuxingLogo element={detailElement} size={24} /></span>
               <span className="kb-detail-cat-label">{selectedCat?.label ?? "未分类"}</span>
+              <SancaiBadge sancai={selected?.sancai ?? sancaiOf(selected, "knowledge")} showVerb />
               {selected?.projectId && <span className="kb-chip">{selected.projectId}</span>}
               {fmtDate(selected?.at) && <span className="kb-chip">{fmtDate(selected?.at)}</span>}
             </div>
@@ -438,8 +475,8 @@ export function KnowledgePage() {
             <KbState kind="error" text="列表接口未返回，可能是会话过期或后端暂不可用"
                      onRetry={() => void list.refetch()} />
           ) : items.length === 0 ? (
-            <KbState kind="empty" text={q || activeTag
-              ? "当前筛选下没有条目，试试清空搜索或标签"
+            <KbState kind="empty" text={q || activeTag || activeSancai
+              ? "当前筛选下没有条目，试试清空搜索、标签或才位"
               : "当前分类还没有归档知识"} />
           ) : (
             <>
@@ -466,6 +503,7 @@ export function KnowledgePage() {
                       <div className="kb-card-head">
                         <span className="kb-card-logo"><WuxingLogo element={el} size={24} /></span>
                         <span className="kb-card-cat">{cat?.label ?? "未分类"}</span>
+                        <SancaiBadge sancai={item.sancai ?? sancaiOf(item, "knowledge")} />
                         {fmtDate(item.at) && <time className="kb-card-time">{fmtDate(item.at)}</time>}
                       </div>
                       <h3 className="kb-card-title">{item.title}</h3>

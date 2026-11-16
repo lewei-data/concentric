@@ -125,6 +125,7 @@ import mail as MAILM
 from hermes_adapter import HERMES
 from deps import *  # noqa: F401,F403 —— 基础设施单例（DBX/ING/DL/WK/OMR/asset_fill/insights/ops_monitor）
 from kernel import BusyError, _kernel_for, _kernel_reset
+import sancai as SC
 import voice_bridge
 import asset_audit
 from users import (SESSIONS, SESS_LOCK, SESSION_COOKIE, SESSION_TTL,
@@ -905,6 +906,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._kernel().knowledge_categories())
         if path == "/api/knowledge/relations":
             return self._json(self._kernel().knowledge_relations())
+        if path == "/api/knowledge/brief":
+            # 提问前的图谱简报：与内核注入同一套打分，前端可先看命中了什么
+            q = (parse_qs(urlparse(self.path).query).get("q") or [""])[0]
+            return self._json({"ok": True, "q": q, "brief": self._kernel().kb_brief(q)})
+        if path == "/api/sancai":
+            # 双维口径：8 显性（5 行 + 3 才）/ 7 隐性（生克乘侮…）+ 各对象的三才分布
+            return self._json(self._sancai_overview())
         if path == "/api/knowledge/assets":
             return self._json(self._knowledge_assets_view(urlparse(self.path).query))
         if path == "/api/knowledge/questions":
@@ -1300,15 +1308,52 @@ class Handler(BaseHTTPRequestHandler):
         for it in items:
             if not isinstance(it, dict) or not it.get("url"):
                 continue
+            title = str(it.get("title") or "未命名素材")
+            category = str(it.get("category") or "其他")
             out.append({
                 "id": str(it.get("id") or ""),
-                "title": str(it.get("title") or "未命名素材"),
-                "category": str(it.get("category") or "其他"),
+                "title": title,
+                "category": category,
                 "desc": str(it.get("desc") or ""),
                 "url": str(it["url"]),
                 "meta": str(it.get("meta") or ""),
+                # 三才：素材默认属「地」；显式标注优先，其次按标题/分类关键词推断
+                "sancai": SC.norm(it.get("sancai")) or SC.infer(
+                    {"title": title, "category": category, "desc": str(it.get("desc") or "")},
+                    "material"),
             })
         return {"ok": True, "updated": str(data.get("updated") or ""), "items": out}
+
+    def _sancai_overview(self):
+        """三才总览：口径（8 显性 / 7 隐性）+ 素材/热点/知识/作品/处理过程 的分布。"""
+        ker = self._kernel()
+        sources = {}
+
+        def tally(name, items, kind):
+            try:
+                sources[name] = SC.counts(list(items or []), kind)
+            except Exception as e:
+                sources[name] = {"error": f"{type(e).__name__}: {e}"}
+
+        tally("knowledge", ker._knowledge_all(), "knowledge")
+        tally("hotspot", ker._hotspot_view(10 ** 6), "hotspot")
+        try:
+            tally("material", self._materials_index().get("items") or [], "material")
+        except Exception as e:
+            sources["material"] = {"error": f"{type(e).__name__}: {e}"}
+        if WK is not None:
+            try:
+                with ker.lock:
+                    approvals = list(ker.approvals)
+                idx = ker._factory_works_index()
+                factory, step_status = idx if idx else (None, None)
+                tally("work", WK.scan(approvals, factory, step_status), "work")
+            except Exception as e:
+                sources["work"] = {"error": f"{type(e).__name__}: {e}"}
+        stages = [{"key": st.id, "label": st.name, "sancai": SC.stage_of(st.id)}
+                  for st in getattr(PIPE.PIPELINE, "stages", []) or []]
+        sources["stage"] = SC.counts(stages, "stage")
+        return {"ok": True, "schema": SC.describe(), "sources": sources, "stages": stages}
 
     def _materials_root_of(self, root_name):
         """解析浏览根，返回 (root, err)。private 的根由会话手机号决定，不接受参数指定别人的目录。"""

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useList, useOne } from "@refinedev/core";
 import type { Hotspot } from "../types";
+import { SancaiBadge, SancaiChips } from "../components/SancaiBadge";
+import { sancaiOf } from "../sancai";
 
 const PAGE_SIZE = 20;
 
@@ -40,13 +42,19 @@ export function HotspotsPage() {
   const [input, setInput] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  // 三才：热点天生属「天」，仍允许按才位单维筛（有些热点其实是地/人视角的复盘素材）
+  const [sancai, setSancai] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const listFilters: { field: string; operator: "eq"; value: string }[] = [];
+  if (q) listFilters.push({ field: "q", operator: "eq", value: q });
+  if (sancai) listFilters.push({ field: "sancai", operator: "eq", value: sancai });
 
   // 工作流热点卡（原有：AI 员工产出的业务热点）
   const list = useList<Hotspot>({
     resource: "hotspots",
     pagination: { current: page, pageSize: PAGE_SIZE },
-    filters: q ? [{ field: "q", operator: "eq", value: q }] : [],
+    filters: listFilters,
     // 15 秒自动重取，界面跟着 OPC 里落盘的数据走（后端每 60 秒同步一次）
     queryOptions: { refetchInterval: 15000 },
   });
@@ -197,6 +205,14 @@ export function HotspotsPage() {
       {/* 工作流热点卡（AI 员工产出，按用户隔离） */}
       <div className="card">
         <h2>工作流热点卡 <small className="muted">（AI 员工采集与复核产出，按用户隔离）</small></h2>
+        <SancaiChips
+          compact
+          value={sancai}
+          onChange={(next) => {
+            setSancai(next);
+            setPage(1);
+          }}
+        />
         {list.isLoading ? (
           <p className="muted">加载中…</p>
         ) : list.isError ? (
@@ -209,6 +225,7 @@ export function HotspotsPage() {
               <thead>
                 <tr>
                   <th>标题</th>
+                  <th>才位</th>
                   <th>来源</th>
                   <th className="num">评分</th>
                   <th>标签</th>
@@ -223,6 +240,9 @@ export function HotspotsPage() {
                     onClick={() => setSelectedId(item.id)}
                   >
                     <td className="title-cell">{item.title}</td>
+                    <td className="nowrap">
+                      <SancaiBadge sancai={item.sancai ?? sancaiOf(item, "hotspot")} />
+                    </td>
                     <td>{item.source || "-"}</td>
                     <td className="num">
                       {typeof item.score === "number" ? item.score.toFixed(2) : "-"}
