@@ -1409,6 +1409,9 @@ class Handler(BaseHTTPRequestHandler):
                 "sancai": SC.norm(it.get("sancai")) or SC.infer(
                     {"title": title, "category": category, "desc": str(it.get("desc") or "")},
                     "material"),
+                # 五行五维评分（prototype/asset_score.py --apply 写入 materials.json）
+                "score": it.get("score"),
+                "grade": it.get("grade"),
             })
         return {"ok": True, "updated": str(data.get("updated") or ""), "items": out}
 
@@ -1529,6 +1532,19 @@ class Handler(BaseHTTPRequestHandler):
             files = []
         dirs.sort(key=lambda x: x["name"])
         files.sort(key=lambda x: -x["mtime"])
+        # 单文件评分（prototype/asset_score.py --apply 生成）：逐文件回带 score/grade
+        try:
+            _fs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "..", "ops", "asset_file_scores.json")
+            with open(_fs_path, encoding="utf-8") as _f:
+                fscores = json.load(_f).get("files", {})
+        except Exception:
+            fscores = {}
+        if fscores:
+            for f in files:
+                s = fscores.get(os.path.join(full, f["name"]))
+                if s:
+                    f["score"], f["grade"] = s["score"], s["grade"]
         # 指纹给前端长轮询用：服务器上直接增删文件时，页面能自己发现并刷新
         keep = self.PRIVATE_SUBS if (root_name == "private" and not rel) else None
         resp = {"ok": True, "root": root_name, "path": rel,

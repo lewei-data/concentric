@@ -23,7 +23,12 @@ type MatItem = {
 };
 
 type BrowseDir = { name: string };
-type BrowseFile = { name: string; size: number; mtime: number; ext: string };
+type BrowseFile = {
+  name: string; size: number; mtime: number; ext: string;
+  /** 单文件评分（prototype/asset_score.py），服务端 browse 逐文件回带 */
+  score?: number;
+  grade?: string;
+};
 type BrowseData = {
   ok: boolean;
   root?: RootKey;
@@ -895,7 +900,15 @@ export function MaterialsPage() {
                             />
                           )}
                           <span className="mat-tile-cap">
-                            <b>{f.name}</b>
+                            <b>
+                              {f.name}
+                              {f.grade && (
+                                <span className={`mat-grade mat-grade-${f.grade}`}
+                                      title={`五行五维评分 ${f.score}`}>
+                                  {f.grade} {f.score}
+                                </span>
+                              )}
+                            </b>
                             <small>
                               {f.ext ? `${f.ext.toUpperCase()} · ` : ""}{humanSize(f.size)}
                             </small>
@@ -964,6 +977,12 @@ export function MaterialsPage() {
                         <a className="mat-entry" href={href} target="_blank" rel="noreferrer">
                           <span className="mat-icon" aria-hidden="true">·</span>
                           <span className="mat-name">{f.name}</span>
+                          {f.grade && (
+                            <span className={`mat-grade mat-grade-${f.grade}`}
+                                  title={`五行五维评分 ${f.score}`}>
+                              {f.grade} {f.score}
+                            </span>
+                          )}
                           <span className="mat-file-meta">
                             {f.ext ? `${f.ext.toUpperCase()}　` : ""}{humanSize(f.size)}　{shortDate(f.mtime)}
                           </span>

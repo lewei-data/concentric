@@ -52,6 +52,7 @@ MATERIALS_JSON = os.environ.get("OPC_MATERIALS_JSON",
 KB_DIR = Path(VAULT) / "OPC" / "知识库"
 OPS_DIR = Path(BASE_DIR).parent / "ops"
 STATE = OPS_DIR / "asset_scores.json"
+OM_ROOT = os.environ.get("OPC_OM_ROOT", "/opt/sefs/OpenMontage")
 TZ = timezone(timedelta(hours=8))
 
 WEIGHTS = {"ref": 35, "quality": 25, "fresh": 20, "ret": 15, "base": 5}
@@ -59,6 +60,19 @@ GRADES = [(75, "优质"), (50, "可用"), (30, "待观察"), (0, "淘汰候选")
 RETIRE_AFTER_DAYS = 30          # 冷静期：候选满 30 天仍零引用才进待批清单
 RECENT_REF_DAYS = 30            # 30 天内被引用给 ref 维度加成
 COOLDOWN_BONUS_MINUTES = 0      # 预留
+MAX_FILES = 3000                # 单文件评分扫描上限，防失控
+
+# 单文件评分范围：OM 项目产物 + vault 纯素材目录 + 素材/（浏览页能看到的媒体文件）
+MEDIA_EXTS = {
+    "image": (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"),
+    "video": (".mp4", ".mov", ".webm", ".mkv", ".avi"),
+    "audio": (".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg"),
+}
+FILE_SCOPE_DIRS = ["dogs", "苟大人与狗茅品牌", "数字人口播形象", "videos",
+                   "背景音乐", "素材"]
+# 相机/微信导出这类无信息文件名，检索维降权
+GENERIC_NAME_RE = re.compile(
+    r"^(img[_-]?|dsc|screenshot|mmexport|wechat|微信图片|temp|untitled|final|new)", re.I)
 
 # 底座类关键词（tags/分类命中即受保护，不可再生）
 PROTECTED_KW = ("数字人", "口播形象", "品牌KV", "BGM", "音乐素材", "犬种照片", "狗大人")
@@ -128,8 +142,45 @@ def _material_items():
     return out
 
 
+def _media_files():
+    """单文件素材（图/视频/音频）：OM 项目产物 + vault 素材目录。
+
+    key = 绝对路径（与 server._materials_browse 的文件全路径对齐，
+    ops/asset_file_scores.json 供 browse 接口逐文件回带评分）。
+    """
+    out = []
+    roots = [Path(OM_ROOT) / "projects"] + \
+            [Path(VAULT) / d for d in FILE_SCOPE_DIRS]
+    seen = 0
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for p in root.rglob("*"):
+            if seen >= MAX_FILES:
+                break
+            if not p.is_file() or "history" in p.parts or "/." in str(p):
+                continue
+            kind = next((k for k, exts in MEDIA_EXTS.items()
+                         if p.suffix.lower() in exts), None)
+            if not kind:
+                continue
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            seen += 1
+            out.append({
+                "kind": "file", "key": str(p), "id": str(p),
+                "title": p.name, "path": str(p), "ftype": kind,
+                "size": st.st_size, "mtime": st.st_mtime,
+                "tags": [kind], "sancai": "di", "summary": "",
+                "sections": [], "members": [], "updated": "",
+            })
+    return out
+
+
 def subjects():
-    return _material_items() + _kb_material_entries()
+    return _material_items() + _kb_material_entries() + _media_files()
 
 
 # ---------------- 引用语料与计数（火） ----------------
@@ -167,6 +218,13 @@ def ref_corpus():
 def identifiers_of(sub):
     """素材标识：id/路径/标题（足够长才计，防误命中）/成员文件名。"""
     idents = []
+    if sub.get("kind") == "file":
+        name = os.path.basename(sub["path"])
+        idents.append(name)
+        stem = os.path.splitext(name)[0]
+        if len(stem) >= 6:
+            idents.append(stem)
+        return [i for i in dict.fromkeys(idents) if i]
     if sub.get("id"):
         idents.append(sub["id"])
     if sub.get("path"):
@@ -208,26 +266,43 @@ def score_subject(sub, refs, recent_refs, now_ts):
         ref = 0.4
     if refs > 0 and recent_refs > 0:
         ref = min(1.0, ref + 0.1)
-    # 金·质量（字段完整度）
-    q = 0.0
-    if (sub.get("summary") or sub.get("desc")):
-        q += 0.4
-    if len(sub.get("summary", "")) > 60 or sub.get("meta"):
-        q += 0.2
-    if sub.get("members"):
-        q += 0.25
-    if len(sub.get("tags", [])) >= 2 or sub.get("sections"):
-        q += 0.15
-    q = min(1.0, q)
+    # 金·质量（字段完整度；单文件=体量档位，越接近原始素材越高）
+    if sub.get("kind") == "file":
+        sz, ft = sub.get("size", 0), sub.get("ftype", "image")
+        tiers = {"image": (1_000_000, 300_000), "video": (10_000_000, 2_000_000),
+                 "audio": (2_000_000, 500_000)}
+        hi, lo = tiers.get(ft, (1_000_000, 300_000))
+        q = 1.0 if sz >= hi else 0.7 if sz >= lo else 0.4
+    else:
+        q = 0.0
+        if (sub.get("summary") or sub.get("desc")):
+            q += 0.4
+        if len(sub.get("summary", "")) > 60 or sub.get("meta"):
+            q += 0.2
+        if sub.get("members"):
+            q += 0.25
+        if len(sub.get("tags", [])) >= 2 or sub.get("sections"):
+            q += 0.15
+        q = min(1.0, q)
     # 木·新鲜度（mtime 线性衰减，一年归零）
     mt = _mtime_of(sub)
     days = max(0.0, (now_ts - mt) / 86400) if mt else 365
     fresh = max(0.0, 1.0 - days / 365.0)
-    # 水·检索（标签数/标题信息量/有路径）
-    r = min(1.0, 0.3 * min(len(sub.get("tags", [])), 3) / 3
-            + (0.3 if 8 <= len(sub.get("title", "")) <= 60 else 0.1)
-            + (0.3 if sub.get("path") else 0.0)
-            + (0.1 if sub.get("members") else 0.0))
+    # 水·检索（标签数/标题信息量/有路径；单文件=文件名信息量）
+    if sub.get("kind") == "file":
+        stem = os.path.splitext(os.path.basename(sub["path"]))[0]
+        lossless = sub["path"].lower().endswith((".png", ".wav", ".flac", ".mov"))
+        parent = os.path.basename(os.path.dirname(sub["path"]))
+        in_named_subdir = parent not in ("", "projects", *FILE_SCOPE_DIRS)
+        r = min(1.0, (0.2 if GENERIC_NAME_RE.match(stem) else 0.45)
+                + (0.2 if len(stem) >= 10 else 0.05)
+                + (0.2 if in_named_subdir else 0.1)
+                + (0.15 if lossless else 0.0))
+    else:
+        r = min(1.0, 0.3 * min(len(sub.get("tags", [])), 3) / 3
+                + (0.3 if 8 <= len(sub.get("title", "")) <= 60 else 0.1)
+                + (0.3 if sub.get("path") else 0.0)
+                + (0.1 if sub.get("members") else 0.0))
     # 土·底座（不可再生保护）
     tags_txt = "、".join(sub.get("tags", [])) + (sub.get("meta") or "")
     protected = any(k in tags_txt for k in PROTECTED_KW)
@@ -244,7 +319,9 @@ def score_subject(sub, refs, recent_refs, now_ts):
 
 
 def _mtime_of(sub):
-    """kb 条目取 vault md mtime；卡片条目取 materials.json mtime 或 captured_at。"""
+    """kb 条目取 vault md mtime；单文件取自身 mtime；卡片条目取 materials.json mtime。"""
+    if sub.get("kind") == "file":
+        return sub.get("mtime") or 0
     if sub.get("kind") == "kb":
         hits = list(KB_DIR.glob(f"*{sub['id']}.md"))
         if hits:
@@ -324,6 +401,17 @@ def apply_kb_tags(scored):
     return changed_db, changed_md
 
 
+def apply_file_scores(scored):
+    """单文件评分落盘：ops/asset_file_scores.json（绝对路径 → score/grade），
+    server._materials_browse 逐文件回带给前端。"""
+    m = {s["key"]: {"score": s["score"], "grade": s["grade"]}
+         for s in scored.values() if s["kind"] == "file"}
+    p = OPS_DIR / "asset_file_scores.json"
+    p.write_text(json.dumps({"updated": datetime.now(TZ).isoformat(timespec="seconds"),
+                             "files": m}, ensure_ascii=False), encoding="utf-8")
+    return len(m)
+
+
 def write_report(scored, now, retire_ready):
     """vault OPC/ 素材评分报告（不以「台账」结尾，避开 _vault 屏蔽口径）。"""
     buckets = {}
@@ -400,6 +488,7 @@ def run(apply=False, as_json=False, quiet=False):
     if apply:
         n_card = apply_card_grades(scored)
         n_db, n_md = apply_kb_tags(scored)
+        n_file = apply_file_scores(scored)
         STATE.parent.mkdir(parents=True, exist_ok=True)
         STATE.write_text(json.dumps(
             {"updated": now.isoformat(), "grades": ops,
@@ -411,8 +500,8 @@ def run(apply=False, as_json=False, quiet=False):
                 json.dumps(retire_ready, ensure_ascii=False, indent=1),
                 encoding="utf-8")
         print(f"[asset-score] 落地：卡片 {n_card} 条 / knowledge tags {n_db} / "
-              f"md {n_md}；报告 {report.name}；淘汰待批 {len(retire_ready)} 项",
-              flush=True)
+              f"md {n_md} / 单文件 {n_file} 个；报告 {report.name}；"
+              f"淘汰待批 {len(retire_ready)} 项", flush=True)
         if not quiet:
             print(f"[asset-score] 分布 {json.dumps(ops, ensure_ascii=False)}")
     else:
