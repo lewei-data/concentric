@@ -337,6 +337,9 @@ def load_recent_messages(limit=120, traces=6):
 HOT_DIR = os.path.join(VAULT, "OPC", "热点采集")
 KB_DIR = os.path.join(VAULT, "OPC", "知识库")
 ARCHIVE_DIR = os.path.join(VAULT, "OPC", "_归档")
+# 调研/研究报告入库：报告正文本来只躺在 vault 里，Web 知识库页与 APP 都看不见
+# （2026-11-16 老板反馈「web 上看不到新增调研报告」）。此处与知识条目同一条通道展示。
+RESEARCH_DIR = os.path.join(VAULT, "OPC", "技术研究")
 
 
 def load_hotspots(limit=20):
@@ -445,13 +448,19 @@ def _frontmatter(text):
     return fm, text[end + 4:]
 
 
+def _date_from_name(path):
+    """`2026-11-16_标题.md` → ISO 时间串；取不到返回空（不伪造时间，排序自然靠后）。"""
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})", os.path.basename(path))
+    return f"{m.group(1)}T00:00:00+08:00" if m else ""
+
+
 def load_knowledge(limit=40):
-    """从 OPC/知识库（含 _归档）恢复知识条目，供首页「热点与知识库」展示。"""
-    paths = []
+    """从 OPC/知识库（含 _归档）与技术研究恢复条目，供 Web 知识库页与 agent 召回展示。"""
+    paths = []   # [(绝对路径, kind)]：kb=知识条目，research=调研/研究报告
     try:
         for name in os.listdir(KB_DIR):
             if name.endswith(".md") and not name.startswith("00-"):
-                paths.append(os.path.join(KB_DIR, name))
+                paths.append((os.path.join(KB_DIR, name), "kb"))
     except OSError:
         pass
     try:
@@ -460,12 +469,18 @@ def load_knowledge(limit=40):
                 continue
             for name in files:
                 if name.endswith(".md") and not name.startswith("00-"):
-                    paths.append(os.path.join(root, name))
+                    paths.append((os.path.join(root, name), "kb"))
+    except OSError:
+        pass
+    try:
+        for name in os.listdir(RESEARCH_DIR):
+            if name.endswith(".md") and not name.startswith("00-"):
+                paths.append((os.path.join(RESEARCH_DIR, name), "research"))
     except OSError:
         pass
 
     out = []
-    for path in paths:
+    for path, kind in paths:
         try:
             text = open(path, encoding="utf-8").read()
         except OSError:
@@ -484,6 +499,9 @@ def load_knowledge(limit=40):
                 pid = key
                 break
         tags = re.findall(r"[\w\u4e00-\u9fa5/\-]+", fm.get("tags") or "")
+        if kind == "research":
+            # 报告统一打标：前端按「调研分析」分类可见，也便于 agent 用「研究报告」检索
+            tags = ["研究报告"] + [t for t in tags if t != "研究报告"]
         # body 取落盘全文（去掉文件尾部的“- 标签：”行）；summary 只是首行前 120 字，供列表预览
         kept = []
         for line in body.splitlines():
@@ -493,19 +511,31 @@ def load_knowledge(limit=40):
         full_text = "\n".join(kept).strip()
         summary = ""
         for line in full_text.splitlines():
-            s = line.strip().lstrip("#").strip()
-            if s and not s.startswith("|") and not s.startswith("-"):
-                summary = s[:120]
-                break
+            raw = line.strip()
+            s = raw.lstrip("#").strip()
+            if not s or s.startswith("|"):
+                continue
+            if kind == "research":
+                # 报告：跳过元信息列表/引用/分隔线与短小标题，取第一段可读正文
+                if raw.startswith(("-", ">", "---")) or len(s) < 16:
+                    continue
+            elif raw.startswith("-"):
+                continue
+            summary = s[:120]
+            break
+        if kind == "research" and not summary:
+            # 全文都是表格/列表时退回标题，绝不用文件路径充数
+            summary = title[:120]
         out.append({
-            "id": fm.get("kb_id") or ("kb_" + _slug(os.path.splitext(os.path.basename(path))[0])),
+            "id": fm.get("kb_id") or ((("rep_" if kind == "research" else "kb_")
+                                      + _slug(os.path.splitext(os.path.basename(path))[0]))),
             "projectId": pid,
             "title": title,
             "body": full_text,
             "summary": summary,
             "tags": tags[:8],
-            "sourceTrace": fm.get("trace") or "",
-            "at": fm.get("archived") or "",
+            "sourceTrace": fm.get("trace") or (os.path.relpath(path, VAULT) if kind == "research" else ""),
+            "at": fm.get("archived") or fm.get("date") or (_date_from_name(path) if kind == "research" else ""),
             "source": os.path.relpath(path, VAULT),
         })
     out.sort(key=lambda k: str(k.get("at") or ""))
@@ -555,17 +585,21 @@ def save_knowledge(entry):
 
 
 def knowledge_stamp():
-    """知识库指纹（文件数 + 最新 mtime），60 秒轮询用它判断是否要重扫。"""
+    """知识指纹（知识库 + 技术研究：文件数 + 最新 mtime），60 秒轮询判断是否重扫。
+
+    技术研究目录必须计入，否则新增一份调研报告不会触发重载，Web 上一直看不到。
+    """
     total, latest = 0, 0.0
-    for root, _dirs, files in os.walk(KB_DIR):
-        for name in files:
-            if not name.endswith(".md") or name.startswith("00-"):
-                continue
-            try:
-                latest = max(latest, os.path.getmtime(os.path.join(root, name)))
-            except OSError:
-                continue
-            total += 1
+    for base in (KB_DIR, RESEARCH_DIR):
+        for root, _dirs, files in os.walk(base):
+            for name in files:
+                if not name.endswith(".md") or name.startswith("00-"):
+                    continue
+                try:
+                    latest = max(latest, os.path.getmtime(os.path.join(root, name)))
+                except OSError:
+                    continue
+                total += 1
     return (total, round(latest, 3))
 
 

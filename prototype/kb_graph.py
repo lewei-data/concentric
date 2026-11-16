@@ -466,16 +466,16 @@ def show(nid, path=None, chars=None):
     if not n:
         return f"未找到知识条目：{nid}"
     lines = [f"《{n['title']}》", f"id: {n['id']}",
-             f"分类: {n['category'] or '-'}｜标签: {'、'.join(n['tags']) or '-'}",
-             f"出处: {n['source'] or '-'}"]
-    if n["summary"]:
-        lines.append(f"摘要: {_trim(n['summary'], 200)}")
+             f"分类: {n.get('category') or '-'}｜标签: {'、'.join(n.get('tags') or []) or '-'}",
+             f"出处: {n.get('source') or '-'}"]
+    if n.get("summary"):
+        lines.append(f"摘要: {_trim(n.get('summary'), 200)}")
     rels = _neighbors(n["id"], edges)
     if rels:
         lines.append("关系: " + "；".join(
             f"{'→' if e['kind'] == 'ref' else '—'}《{_trim(nodes[o]['title'], 24)}》"
             f"（{e['label'] or e['kind']}）" for o, e in rels[:8]))
-    body = re.sub(r"\n{3,}", "\n\n", n["body"] or "").strip()
+    body = re.sub(r"\n{3,}", "\n\n", n.get("body") or "").strip()
     lines.append("正文: " + (body[:chars] + ("…" if len(body) > chars else "") if body else "-"))
     return "\n".join(lines)
 
@@ -486,7 +486,9 @@ def stats(path=None):
     for e in edges:
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
     for n in nodes.values():
-        cats[n["category"] or "-"] = cats.get(n["category"] or "-", 0) + 1
+        # load() 的节点没有 category 键（分类是 Web 端 _infer_category 才补的），这里必须容错
+        cat = n.get("category") or "-"
+        cats[cat] = cats.get(cat, 0) + 1
     deg = {}
     for e in edges:
         deg[e["src"]] = deg.get(e["src"], 0) + 1

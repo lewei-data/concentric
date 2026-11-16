@@ -30,6 +30,11 @@ try:
 except Exception as _e:  # 素材作业模块缺失不应拖垮整个内核
     MEDIA = None
     print(f"[boot] media_jobs 导入失败：{type(_e).__name__}: {_e}", flush=True)
+try:
+    import vault_mirror as DOCMIRROR   # 共享 vault 文档 → 老板个人空间（内部 300 秒节流）
+except Exception as _e:
+    DOCMIRROR = None
+    print(f"[boot] vault_mirror 导入失败：{type(_e).__name__}: {_e}", flush=True)
 
 
 class BudgetAbort(Exception):
@@ -115,6 +120,9 @@ def _infer_category(item):
         return "analysis"
     if "mgmt-audit" in combined or "mgmt-retire" in combined or "管理层盘点" in combined or "淘汰标记" in combined:
         return "skill"
+    # 调研/研究报告统一进「分析调研」，否则标题里没有"调研"二字的技术报告会落到知识图谱
+    if "研究报告" in combined or "技术研究" in combined:
+        return "analysis"
     # 通用关键词（注意：「技能进化」已在上面精确匹配，此处「技能」不会误判）
     if any(k in combined for k in ("技能", "skill", "方法", "sop")):
         return "skill"
@@ -3785,6 +3793,13 @@ class Kernel:
                 self._sync_config_from_vault()
             except Exception as e:
                 print(f"[config] 后台同步失败：{type(e).__name__}: {e}", flush=True)
+            # 共享 vault 的调研报告/知识条目 → 老板个人空间（APP 与私有目录可见），
+            # 不放进用户内核：个人空间是 owner 的对外窗口，员工目录不广播公司文档
+            if DOCMIRROR is not None and self.is_owner:
+                try:
+                    DOCMIRROR.mirror()      # 内部按 OPC_DOC_MIRROR_INTERVAL 节流
+                except Exception as e:
+                    print(f"[mirror] 文档镜像失败：{type(e).__name__}: {e}", flush=True)
 
     @staticmethod
     def _kb_norm(item):
