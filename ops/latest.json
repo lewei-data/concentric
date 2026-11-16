@@ -1,10 +1,10 @@
 {
- "ts": "2026-11-16T17:37:48+0800",
- "total": 16,
- "ok": 16,
+ "ts": "2026-11-16T18:57:35+0800",
+ "total": 23,
+ "ok": 23,
  "failed": 0,
  "critical_failed": 0,
- "summary": "2026-11-16 17:38 巡检正常：16/16 项服务在线",
+ "summary": "2026-11-16 18:57 巡检正常：23/23 项服务在线",
  "report_path": "",
  "results": [
   {
@@ -16,8 +16,8 @@
    "proto": "ssh",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 4269,
-   "detail": "localhost.localdomain /  17:37:52 up 134 days"
+   "latency_ms": 8161,
+   "detail": "localhost.localdomain /  18:57:44 up 134 days"
   },
   {
    "node": "comfy-21-157",
@@ -28,7 +28,7 @@
    "proto": "files",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 7440,
+   "latency_ms": 7624,
    "detail": "权重 7/7 正常"
   },
   {
@@ -40,7 +40,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 13,
+   "latency_ms": 11,
    "detail": "HTTP 200"
   },
   {
@@ -64,7 +64,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 253,
+   "latency_ms": 951,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -76,7 +76,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 244,
+   "latency_ms": 937,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -112,7 +112,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 61,
+   "latency_ms": 30,
    "detail": "HTTP 200"
   },
   {
@@ -124,7 +124,7 @@
    "proto": "mcp",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 5,
+   "latency_ms": 3,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -136,7 +136,7 @@
    "proto": "mcp",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 6,
+   "latency_ms": 4,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -148,7 +148,7 @@
    "proto": "mcp",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 11,
+   "latency_ms": 5,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -160,7 +160,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 16,
+   "latency_ms": 9,
    "detail": "HTTP 200"
   },
   {
@@ -172,7 +172,7 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 4,
+   "latency_ms": 2,
    "detail": "HTTP 200"
   },
   {
@@ -184,7 +184,7 @@
    "proto": "http",
    "criticality": "low",
    "status": "ok",
-   "latency_ms": 4,
+   "latency_ms": 2,
    "detail": "HTTP 426"
   },
   {
@@ -196,8 +196,92 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 6,
+   "latency_ms": 5,
    "detail": "HTTP 200"
+  },
+  {
+   "node": "sup206",
+   "node_name": "应用主机 sup206",
+   "host": "192.168.21.206",
+   "service": "workbench",
+   "port": 8848,
+   "proto": "http",
+   "criticality": "high",
+   "status": "ok",
+   "latency_ms": 2,
+   "detail": "HTTP 200"
+  },
+  {
+   "node": "sup206",
+   "node_name": "应用主机 sup206",
+   "host": "192.168.21.206",
+   "service": "hermes-llm-gw",
+   "port": 8642,
+   "proto": "tcp",
+   "criticality": "high",
+   "status": "ok",
+   "latency_ms": 0,
+   "detail": "TCP 8642 可连"
+  },
+  {
+   "node": "sup206",
+   "node_name": "应用主机 sup206",
+   "host": "192.168.21.206",
+   "service": "qwen-asr",
+   "port": 9312,
+   "proto": "http",
+   "criticality": "mid",
+   "status": "ok",
+   "latency_ms": 2,
+   "detail": "HTTP 200"
+  },
+  {
+   "node": "sup206",
+   "node_name": "应用主机 sup206",
+   "host": "192.168.21.206",
+   "service": "qwen-tts",
+   "port": 9311,
+   "proto": "http",
+   "criticality": "mid",
+   "status": "ok",
+   "latency_ms": 2,
+   "detail": "HTTP 200"
+  },
+  {
+   "node": "sup206",
+   "node_name": "应用主机 sup206",
+   "host": "192.168.21.206",
+   "service": "backup-db",
+   "port": "-",
+   "proto": "fresh",
+   "criticality": "high",
+   "status": "ok",
+   "latency_ms": 2,
+   "detail": "新鲜 1/1"
+  },
+  {
+   "node": "sup206",
+   "node_name": "应用主机 sup206",
+   "host": "192.168.21.206",
+   "service": "backup-files",
+   "port": "-",
+   "proto": "fresh",
+   "criticality": "mid",
+   "status": "ok",
+   "latency_ms": 0,
+   "detail": "新鲜 1/1"
+  },
+  {
+   "node": "sup206",
+   "node_name": "应用主机 sup206",
+   "host": "192.168.21.206",
+   "service": "ports-drift",
+   "port": 0,
+   "proto": "ports",
+   "criticality": "mid",
+   "status": "ok",
+   "latency_ms": 30,
+   "detail": "无漂移，白名单与实际均 41 个"
   }
  ]
 }

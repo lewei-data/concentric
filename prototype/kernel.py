@@ -42,6 +42,7 @@ from events import EventBus     # C1：事件总线独立成模块
 import kb_views                # C1：知识库视图/图谱边独立成模块
 import factory                  # C1：工厂/渲染独立成模块
 import approvals                # C1：审批门/断点续跑独立成模块
+import capacity                 # CEO 产能均衡口径（各产品组成品数/缺口）
 import ops                      # C1：会议/vault 同步/知识归档/交付导出独立成模块
 import pipeline_kit             # C1：流水线无状态辅助（归一/评审映射/技术门/车间事件）
 import pipeline                 # C1：流水线编排与 15 个阶段独立成模块
@@ -249,6 +250,17 @@ class Kernel:
 
     def resume_pipeline(self, trace, auto=False):
         return approvals.resume_pipeline(self, trace, auto)
+
+    # ---------- CEO 超时代审批 + 产能均衡（老板 2026-11-16 授权） ----------
+    def ceo_proxy_sweep(self):
+        """手动触发一轮 CEO 代审（老板/巡检可调；仍需过限速与置信度门槛）。"""
+        return approvals._ceo_proxy_kick(self)
+
+    def ceo_proxy_status(self):
+        return approvals.ceo_proxy_status()
+
+    def capacity_snapshot(self):
+        return capacity.snapshot(self)
 
     def _restore_history(self):
         """重启后恢复历史：交付物读磁盘，报告/审批/热点/知识/消息读运行时日志。"""

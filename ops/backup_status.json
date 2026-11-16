@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-16T18:38:00+08:00",
+  "mode": "db",
+  "dest": "/mnt/sefs/conring/backup",
+  "today": "20261116",
+  "db_ok": 25,
+  "files_ok": null,
+  "fail": 0,
+  "db_err": "",
+  "files_err": "",
+  "log": "/opt/sefs/opc-workbench/ops/backups/backup.log"
+}

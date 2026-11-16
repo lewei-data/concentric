@@ -16,10 +16,13 @@ DEFAULT_AGENT_SPEC = [
      ["project.read", "project.write", "metric.read", "metric.write", "report.render",
       "kb.search", "kb.read", "kb.write", "kb.audit", "kb.benchmark", "kb.retire",
       "web.research", "skill.evolve", "strategy.plan", "okr.track", "risk.assess",
-      "cron.write", "browser_exec", "mail.read", "mail.send"],
+      "cron.write", "browser_exec", "mail.read", "mail.send",
+      "approval.proxy", "capacity.plan"],
      "全公司；五行学习：战略知识库盘点、行业对标、技能淘汰与升级；"
      "职责：战略规划与OKR管理、跨项目资源调度、风险评估与管控、管理层绩效审视、"
-     "知识库健康度治理、行业趋势洞察、文化建设与团队能力提升"),
+     "知识库健康度治理、行业趋势洞察、文化建设与团队能力提升；"
+     "老板超时未审批的审批单由 CEO 酌情代批（approval.proxy，2026-11-16 老板授权）；"
+     "产能均衡（capacity.plan）：每个产品组成品产出不少于 2，派单先补缺口最大的组"),
     ("cto", "扶频", "CTO", "all",
      ["repo.read", "repo.write", "deploy.read", "deploy.write", "arch.review",
       "kb.write", "kb.read", "kb.audit", "kb.benchmark", "kb.retire",

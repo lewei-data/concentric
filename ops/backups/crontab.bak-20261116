@@ -1,0 +1,7 @@
+5 * * * * /opt/sefs/hermes/collect-hotspots.sh >> /opt/sefs/hermes/logs/hotspots.log 2>&1
+
+*/2 * * * * /opt/sefs/hermes/mail-dispatch.sh
+# OPC 工作台 GitHub 自动同步（每小时，日志 logs/github-sync.log）
+0 * * * * /opt/sefs/opc-workbench/sync-github.sh
+# hermes 调度中心开机自启（须清掉 LD_LIBRARY_PATH，否则 sqlite3 报 undefined symbol）
+@reboot cd /opt/sefs/hermes/dispatch && sleep 5 && setsid env -u LD_LIBRARY_PATH DISPATCH_HOST=0.0.0.0 DISPATCH_WS_PUBLIC_URL="wss://ai.boraydata.com/conring/dispatch-ws/channel/<channel_id>" python3 dispatchd.py </dev/null >>logs/stdout.log 2>&1 &

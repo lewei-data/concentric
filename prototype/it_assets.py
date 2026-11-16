@@ -178,7 +178,7 @@ SEED = [
   cert_path="不适用", cert_expire="不适用",
   data_disk="/opt/sefs/hermes/dispatch/dispatch.db+wal/shm+state.db（/ LVM 29%）",
   log_paths="sqlite 无日志；写侧看 dispatch.log",
-  backup_policy="未建立（建议纳入每日 sqlite3 .backup——列入 18:00 后改进项）",
+  backup_policy="每日 03:30 sqlite3 .backup 至 /mnt/sefs/conring/backup/db/<日期>/dispatch.db（保留 14 天）",
   verify_cmd="sqlite3 /opt/sefs/hermes/dispatch/dispatch.db 'PRAGMA quick_check;' | grep -qx ok",
   evidence="ls /opt/sefs/hermes/dispatch/（dispatch.db-shm/-wal 在盘=WAL 活跃）；dispatchd.py docstring「记台账（SQLite WAL）」"),
  dict(id="sefs-cluster", system="SEFS（RapidSeFS）分布式存储集群",
@@ -253,10 +253,76 @@ SEED = [
   cert_path="不适用", cert_expire="不适用",
   data_disk="/opt/sefs/obsidian 位于 /dev/nvme0n1 xfs /opt/sefs 1.8T 用 104G(6%)",
   log_paths="无守护日志；导出方 cron（cto-daily-report 等）经 journalctl 间接可查",
-  backup_policy="未建立（实测 vault 内无 .git，sync-github.sh 不覆盖——列为 18:00 后第一改进项）",
+  backup_policy="每日 03:30 rsync 镜像至 /mnt/sefs/conring/backup/vault（--delete 与源 1:1，排除 .trash）；成功标记 .files_success 由巡检判新鲜",
   verify_cmd="test -f /opt/sefs/obsidian/00-首页.md && test -w /opt/sefs/obsidian",
   evidence="df -h /opt/sefs/obsidian → /dev/nvme0n1 6%；mount /opt/sefs xfs；ls vault 根；git remote 空输出实测"),
- dict(id="nas", system="NAS 网络存储",
+ dict(id="platform-services", system="平台组件（有 systemd 单元 / 常驻，非公司业务）",
+  host="sup206（192.168.21.206 / 192.168.31.206，无公网 IP）",
+  role="backlot-board 4750（OpenMontage 分镜看板，uvicorn `--host 0.0.0.0`，**首页 200 无鉴权**）；"
+       "hermes-dashboard 9119（hermes 管理面板，`0.0.0.0`，有 /login；MainPID 2149775 起于 11-09）；"
+       "**37603 孤儿**（pid 1015221，`Hermes Agent - Dashboard`，`HERMES_SUPERVISED_CHILD=1` 但 ppid=1、"
+       "不在 dashboard 的 CGroup，11-13 20:07 出生，0 连接未清理，待 owner 确认）；"
+       "rpdsql-ops 9999（rapids-manager，**root 常驻 96 天**，管理面）；"
+       "SEFS 集群 13300/13301/13303/13305/13307；syncthing 8384/22000；smbd 445；adb 5037",
+  public_domain="无（仅内网）", reverse_proxy="无（未进 nginx）",
+  ports="4750/9119/9999/13300/13301/13303/13305/13307/8384/22000/445/5037（进程级认领见 ops/ports.md）",
+  depends_on="systemd（backlot-board / hermes-dashboard / rpdsql-ops）；SEFS 集群自身；"
+             "syncthing 承担 vault 跨机同步（6700 条 MD 依赖它）",
+  cert_path="不适用", cert_expire="不适用",
+  data_disk="同 /mnt/sefs（备份未单独覆盖 ComfyUI 102G 权重与 OpenMontage 产物）",
+  log_paths="journalctl -u backlot-board / hermes-dashboard / rpdsql-ops",
+  backup_policy="未单独备份（配置随代码发版；产物目录未纳入 ops/backup.sh）",
+  runbook="4750/9119 若被投诉\"外网能打开\"：`ip addr` 确认无公网 IP + iptables 无 DNAT 即内网；"
+          "要收紧就改单元 `--host 127.0.0.1` 后 `sudo -n systemctl restart <unit>`（会影响内网访问，需 owner 同意）",
+  verify_cmd="systemctl is-active backlot-board.service hermes-dashboard.service rpdsql-ops.service >/dev/null",
+  owner="CTO",
+  evidence="2026-11-16 全量 `ss -tlnp` 对账：iptables INPUT policy=ACCEPT 且仅 8642 有源限制规则，"
+           "ufw 不活动，无 PREROUTING DNAT，本机仅 192.168.21.206/192.168.31.206/172.17.0.1 → 内网可达、非公网。"
+           "4750 首页 200、9999 首页 200、9119 → 302 /login（实测）。"
+           "第二轮对账 42 个监听端口：**本机无 443**（`ss -tln` 计 0，HTTPS 由 208 终结）已从 ports.md 撤下；"
+           "37603 为 dashboard 脱管孤儿（0 连接、/login 不引用、MainPID 无连接）未杀。详见 ops/ports.md"),
+dict(id="opc-db", system="工作台业务库（每员工一库）",
+  host="sup206 /mnt/sefs/conring/users/<手机号>/opc.db（owner 18911789286 16M；测试号三库各 268K）",
+  role="**业务数据真源**。25 张业务表 + 4 张 FTS 影子表："
+       "messages/chat_messages/chat_threads（会话与消息）、pipeline_runs/traces/trace_events（流水线与追踪）、"
+       "approvals（审批）、knowledge/knowledge_relations/knowledge_questions（知识库）、"
+       "meetings/meeting_speeches（会议）、contents/reports/hotspots/collect_*（内容与采集）、"
+       "token_usage/llm_models/llm_schedule（模型与计量）、workshop_steps/product_crafts/runs（工坊）、"
+       "directives/ingest_cursor/stats_daily/release_ledger/asset_links。"
+       "**敏感级：高**——含聊天正文、审批意见、员工记忆、令牌用量",
+  public_domain="不适用", reverse_proxy="不适用",
+  ports="无监听（由 8848 进程内经 prototype/db.py 直连 sqlite）",
+  depends_on="/mnt/sefs/conring（SEFS 集群盘，非本地盘）、prototype/db.py（唯一读写入口）、ops/backup.sh",
+  cert_path="不适用", cert_expire="不适用",
+  data_disk="owner 库 16M（trace_events 3623 行最多、chat_messages 1231、messages 1037）；"
+            "四库合计 16.8M，日增约 1–3M；/mnt/sefs 3.5T 用 2.4T(67%)",
+  log_paths="无独立日志（审计走 trace_events/traces 表）；备份日志 ops/backups/backup.log",
+  backup_policy="每日 03:30 `sqlite3 .backup` → backup/db/<日期>/opc-<手机号>.db，"
+                "integrity_check=ok 才计入成功数，保留 14 天。**RPO ≤ 24h**",
+  runbook="恢复：停 opc-workbench.service → cp 备份库覆盖 → **同删 -wal/-shm** → 启服务 → selfcheck。"
+          "**RTO ≤ 5 分钟**。保留期：业务表永久（不可自动裁剪）；trace_events/token_usage 建议 180 天滚动，未实施。"
+          "勿用 prototype/opc.db 代替（那是 CLI 遗留库，无业务数据）",
+  verify_cmd="python3 -c \"import sqlite3;c=sqlite3.connect('file:/mnt/sefs/conring/users/18911789286/opc.db?mode=ro',uri=True);"
+             "assert c.execute('PRAGMA integrity_check').fetchone()[0]=='ok';print('messages',c.execute('select count(*) from messages').fetchone()[0])\"",
+  owner="CTO（数据）/ owner（内容）",
+  evidence="2026-11-16 实测：integrity_check=ok；messages 1037、pipeline_runs 16、approvals 39；"
+           "与当日备份副本三个数完全一致（恢复演练通过）；表清单见 `sqlite3 opc.db .tables`"),
+dict(id="backup-store", system="数据备份（DB 快照 + 文件镜像）",
+  host="sup206 192.168.21.206 → /mnt/sefs/conring/backup（SEFS 集群盘）",
+  role="opc.db/media_jobs.db/nodes.db/dispatch.db/hermes state.db 每日快照；vault 与各用户 vault rsync 镜像",
+  public_domain="不适用", reverse_proxy="不适用",
+  ports="无监听（ops/backup.sh 由 cron 触发，不常驻）",
+  depends_on="ops/backup.sh、crontab 30 3 * * *、/mnt/sefs/conring/backup、rsync、sqlite3",
+  cert_path="不适用", cert_expire="不适用",
+  data_disk="/mnt/sefs 3.5T 用 2.4T(67%)；备份目标 /mnt/sefs/conring/backup",
+  log_paths="/opt/sefs/opc-workbench/ops/backups/backup.log；状态 ops/backup_status.json",
+  backup_policy="每日 03:30 全量 DB 快照（保留 14 天）+ vault/用户 vault 镜像；"
+                "成功标记 $DEST/db/.last_success 与 $DEST/.files_success，"
+                "由巡检 fresh 协议判新鲜（>26h 即告警，防止备份静默失效）",
+  verify_cmd="python3 -c \"import json;d=json.load(open('/opt/sefs/opc-workbench/ops/backup_status.json'));raise SystemExit(0 if d['fail']==0 else 1)\"",
+  evidence="2026-11-16 首跑：7 库 .backup+integrity=ok 耗时 4.6s；"
+           "vault 26G/97504 文件首次镜像；巡检 sup206/backup-db 与 backup-files 两项"),
+dict(id="nas", system="NAS 网络存储",
   host="待补（本轮无设备信息）",
   role="CEO 必录清单项；当前全司共享存储职责实际由 SEFS 集群承担",
   public_domain="不适用", reverse_proxy="不适用", ports="待补", depends_on="待补",

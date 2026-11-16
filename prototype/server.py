@@ -3345,9 +3345,12 @@ class Handler(BaseHTTPRequestHandler):
                     if not tid:
                         return self._json({"ok": False, "error": "缺少续跑的 traceId"}, 400)
                     result = self._kernel().resume_pipeline(tid)
+                elif action == "ceo-proxy":
+                    # 老板超时未批的单据：手动让 CEO 立刻代审一轮（仍受限速与置信度门槛）
+                    result = self._kernel().ceo_proxy_sweep()
                 else:
                     return self._json({"ok": False, "error": "invalid action",
-                                       "expected": "patrol|reload|approve|reject|resume"}, 400)
+                                       "expected": "patrol|reload|approve|reject|resume|ceo-proxy"}, 400)
             except (ValueError, RuntimeError) as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
             except Exception as e:
