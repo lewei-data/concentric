@@ -1,6 +1,7 @@
 """运行配置：全部可用环境变量覆盖，默认值与产线现有组件对齐。"""
 
 import os
+import re
 from pathlib import Path
 
 PKG_DIR = Path(__file__).resolve().parent
@@ -9,7 +10,41 @@ DATA_DIR = Path(os.environ.get("OPC_MCP_DATA_DIR") or (ROOT / "data"))
 DB_PATH = DATA_DIR / "opc.db"
 
 VAULT = Path(os.environ.get("OPC_VAULT") or "/mnt/sefs/conring/users/18911789286/obsidian")
+# 用户根目录与工作台 dataDir 同源；MCP 产出的文件落在 <root>/<phone>/mcp/ 下。
+USER_ROOT = Path(os.environ.get("OPC_USER_ROOT", "/mnt/sefs/conring/users"))
+
+
+def phone_root(phone):
+    """手机号 → 该用户 OPC 根目录（工作台 dataDir），只接受 11 位数字。"""
+    digits = re.sub(r"\D", "", str(phone or ""))
+    if len(digits) > 11 and digits.startswith("86"):
+        digits = digits[2:]
+    safe = digits if len(digits) == 11 else "unknown"
+    return USER_ROOT / safe
+
+
+def user_dir(phone, sub=""):
+    """手机号 → 该用户 OPC 根目录下的 MCP 工作区。"""
+    path = phone_root(phone) / "mcp"
+    if sub:
+        path = path / str(sub).lstrip("/")
+    return path
+
+
+def user_vault(phone):
+    return phone_root(phone) / "obsidian"
+
+
 CRED_TABLE = Path(os.environ.get("OPC_CRED_TABLE") or (VAULT / "公司" / "登录凭据.md"))
+
+
+def cred_table(phone=None):
+    """每个手机号用自己的 OPC vault 里的凭据表；没有才回退全局默认。"""
+    if phone:
+        own = user_vault(phone) / "公司" / "登录凭据.md"
+        if own.is_file():
+            return own
+    return CRED_TABLE
 
 SESSION_TTL_SEC = int(os.environ.get("OPC_MCP_SESSION_TTL", 7 * 86400))
 # 外部部署默认关掉「仅凭手机号发会话」；本机历史客户端可用 OPC_MCP_PHONE_ONLY=1 兼容

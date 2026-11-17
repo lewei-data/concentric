@@ -39,7 +39,7 @@ textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8
 const $=id=>document.getElementById(id);
 function say(t,err){$('msg').textContent=t||'';$('msg').className=err?'err':'hint'}
 async function api(action){var opt=action?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}:{};var r=await fetch('api/mcp-key',opt);if(r.status===401){location.href='login?next='+encodeURIComponent(location.pathname);return null}var d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));return d}
-function render(d){$('phone').textContent=d.phone||'—';$('badge').textContent=d.configured?'已配置':'未配置';$('badge').className='badge'+(d.configured?'':' off');$('urls').textContent='MCP:    '+(d.mcp_url||'')+'\n上传:  '+(d.upload_url||'')+'\n申请页: '+(d.apply_url||location.href)}
+function render(d){$('phone').textContent=d.phone||'—';$('badge').textContent=d.configured?'已配置':'未配置';$('badge').className='badge'+(d.configured?'':' off');$('urls').textContent='MCP:    '+(d.mcp_url||'')+'\n上传:  '+(d.upload_url||'')+'\n申请页: '+(d.apply_url||location.href)+'\nOPC 根目录: '+(d.dataDir||'')+'\nVault:  '+(d.vault||'')}
 function showKey(d){$('result').style.display='block';$('key').value=d.key||'';$('cfg-http').textContent=JSON.stringify({mcpServers:{'opc-kb':{type:'http',url:d.mcp_url,headers:{'X-Mail-Agent':d.key}}}},null,2);$('cfg-path').textContent=d.doubao_url||''}
 $('refresh').onclick=function(){api(null).then(function(d){if(d){render(d);say('')}}).catch(function(e){say(e.message,true)})};
 $('gen').onclick=function(){api('create').then(function(d){if(d){render(d);showKey(d);say('已生成，仅显示这一次',false)}}).catch(function(e){say(e.message,true)})};

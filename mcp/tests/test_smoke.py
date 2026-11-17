@@ -15,13 +15,15 @@ from pathlib import Path
 
 TMP = tempfile.mkdtemp(prefix="opc-mcp-test-")
 os.environ["OPC_MCP_DATA_DIR"] = TMP
+# 用户产物根目录也隔离，避免测试写到 /mnt/sefs/conring/users/<真实手机号>
+os.environ["OPC_USER_ROOT"] = os.path.join(TMP, "users")
 os.environ["OPC_MCP_API_KEYS"] = os.environ.get("OPC_MCP_API_KEYS") or "testkey-123"
 # 历史用例沿用本机 phone-only；外部部署默认关闭，见下方 need_secret 检查
 os.environ["OPC_MCP_PHONE_ONLY"] = "1"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from opc_mcp import auth, config, knowledge, llm, media  # noqa: E402
+from opc_mcp import auth, config, knowledge, llm, media, resources  # noqa: E402
 from opc_mcp.server import OpcServer  # noqa: E402
 from opc_mcp.store import Store  # noqa: E402
 
@@ -94,10 +96,104 @@ def main():
     srv0 = OpcServer()
     who = eval_content(srv0.dispatch("opc_whoami", {"client_key": personal}))
     check("opc_whoami 走网关注入 key", who["phone"] == PHONE, who)
+
+    # 2c. opc_route 路由兜底：触发词命中，且纯提示工具不需要鉴权
+    rt = eval_content(srv0.dispatch("opc_route", {"query": "知识库和知识图谱里关于同心圆的说明"}))
+    check("opc_route 知识类命中 kb_search+ask",
+          rt["knowledge_related"] is True
+          and "kb_search" in rt["steps"] and "ask" in rt["steps"], rt)
+    check("opc_route 携带 ask 参数模板",
+          "text=" in rt["templates"].get("ask", ""), rt["templates"])
+    rt2 = eval_content(srv0.dispatch("opc_route", {"query": "我要上传一个大文件"}))
+    check("opc_route 非知识类先 whoami",
+          rt2["steps"][0] == "opc_whoami" and "upload_begin" in rt2["steps"], rt2)
+    check("opc_route 无需鉴权",
+          srv0.dispatch("opc_route", {"query": "OPC"}).get("isError") is False)
     config.PHONE_ONLY = False
     need = eval_content(srv0.dispatch("opc_init", {"phone": PHONE}))
     check("外部模式仅手机号 → need_secret", need["status"] == "need_secret", need)
     config.PHONE_ONLY = True
+
+    # 2d. 跨源资源互通：在隔离目录造一个 owner 库，验证 MCP 可见 OPC 库 + 屏蔽规则
+    import sqlite3 as _sq
+    oroot = config.phone_root(PHONE)
+    oroot.mkdir(parents=True, exist_ok=True)
+    odb = oroot / "opc.db"
+    con = _sq.connect(str(odb))
+    con.executescript(
+        "CREATE TABLE knowledge(id TEXT PRIMARY KEY,title TEXT,summary TEXT,body TEXT,path TEXT,"
+        "category TEXT,sancai TEXT,updated_at TEXT);"
+        "CREATE TABLE reports(id TEXT PRIMARY KEY,title TEXT,kind TEXT,conclusion TEXT,evidence TEXT,"
+        "decisions TEXT,raw TEXT,created_at TEXT);")
+    con.execute("INSERT INTO knowledge VALUES(?,?,?,?,?,?,?,?)",
+                ("kb_web_1", "Web 侧制度说明", "摘要", "同心圆知识图谱与图数据库互通说明",
+                 "OPC/知识库/web.md", "skill", "ren", "2026-11-18"))
+    con.execute("INSERT INTO reports VALUES(?,?,?,?,?,?,?,?)",
+                ("rep_1", "调研报告", "analysis", "结论含知识库关键词", "evidence", "", "", "2026-11-18"))
+    con.commit()
+    con.close()
+
+    rc = eval_content(srv0.dispatch("opc_resources", {"client_key": personal}))
+    check("opc_resources 看见 owner 库", rc.get("ownerDbExists") is True
+          and rc.get("knowledge") == 1 and rc.get("reports") == 1, rc)
+    xhits = eval_content(srv0.dispatch("kb_search", {"client_key": personal,
+                                                     "query": "知识图谱 图数据库"}))
+    check("kb_search 跨源命中 OPC 知识", any(h["source"] == "opc.knowledge" for h in xhits.get("hits", [])), xhits)
+    klist = eval_content(srv0.dispatch("opc_resource_list", {"client_key": personal,
+                                                             "kind": "knowledge"}))
+    check("opc_resource_list 列出 OPC 条目", len(klist.get("items", [])) == 1, klist)
+    one = eval_content(srv0.dispatch("opc_resource_read", {"client_key": personal,
+                                                           "ref": "knowledge:kb_web_1"}))
+    check("opc_resource_read 读取 OPC 条目", "知识图谱" in (one.get("item", {}).get("body") or ""), one)
+    blocked = srv0.dispatch("opc_resource_read", {"client_key": personal,
+                                                   "ref": "vault:公司/登录凭据.md"})
+    check("凭据文件被屏蔽", blocked.get("isError") and "屏蔽" in blocked["content"][0]["text"],
+          blocked["content"][0]["text"][:160])
+    outside = srv0.dispatch("opc_resource_read", {"client_key": personal,
+                                                   "ref": "vault:../../etc/passwd"})
+    check("vault 越界被拒", outside.get("isError") and "越界" in outside["content"][0]["text"],
+          outside["content"][0]["text"][:160])
+
+    # 2e. 全局共享资源：任意 key（含别的手机号）都能看到共享部分
+    resources.SHARED_DB.parent.mkdir(parents=True, exist_ok=True)
+    sc = _sq.connect(str(resources.SHARED_DB))
+    cols = {r[1] for r in sc.execute("PRAGMA table_info(knowledge)")}
+    if "project_id" not in cols:
+        sc.execute("ALTER TABLE knowledge ADD COLUMN project_id TEXT")
+    existing = {r[0] for r in sc.execute("SELECT id FROM knowledge")}
+    if "kb_shared_1" not in existing:
+        sc.execute("INSERT INTO knowledge(id,title,summary,body,path,category,sancai,project_id,updated_at) "
+                   "VALUES(?,?,?,?,?,?,?,?,?)",
+                   ("kb_shared_1", "全公司共享制度", "摘要", "共享部分：全员可见的知识图谱规范",
+                    "公司/规范.md", "decision", "ren", "全公司", "2026-11-18"))
+    if "kb_private_1" not in existing:
+        sc.execute("INSERT INTO knowledge(id,title,summary,body,path,category,sancai,project_id,updated_at) "
+                   "VALUES(?,?,?,?,?,?,?,?,?)",
+                   ("kb_private_1", "私密资料", "", "不该被看到", "OPC/私人.md", "skill", "ren", "gou", "2026-11-18"))
+    sc.commit(); sc.close()
+    resources.SHARED_MATERIALS.write_text(
+        '{"items":[{"id":"mat_share_1","title":"共享素材包","desc":"全员可见共享资料","url":"/materials/x"}]}',
+        encoding="utf-8")
+    other_key = "opc_other_phone_key"
+    store.add_api_key("13900000000", auth.hash_key(other_key), "shared-test")
+    other = eval_content(srv0.dispatch("opc_resources", {"client_key": other_key}))
+    check("别的手机号也见共享段", other["shared"]["sharedKnowledge"] == 1
+          and other["shared"]["sharedMaterials"] == 1, other["shared"])
+    shared_hits = eval_content(srv0.dispatch("kb_search", {"client_key": other_key,
+                                                           "query": "共享 知识图谱"}))
+    check("跨源检索命中共享知识", any(h["source"] == "shared.knowledge" for h in shared_hits.get("hits", [])), shared_hits)
+    check("跨源检索不泄漏非全公司条目",
+          not any(h.get("id") == "kb_private_1" for h in shared_hits.get("hits", [])), shared_hits)
+    slist = eval_content(srv0.dispatch("opc_resource_list", {"client_key": other_key,
+                                                             "kind": "shared_knowledge"}))
+    check("共享列表只含全公司条目", len(slist.get("items", [])) == 1
+          and slist["items"][0]["id"] == "kb_shared_1", slist)
+    sread = eval_content(srv0.dispatch("opc_resource_read", {"client_key": other_key,
+                                                             "ref": "shared_knowledge:kb_shared_1"}))
+    check("共享条目可读", "共享" in (sread.get("item", {}).get("body") or ""), sread)
+    priv = srv0.dispatch("opc_resource_read", {"client_key": other_key,
+                                               "ref": "shared_knowledge:kb_private_1"})
+    check("非全公司共享条目拒读", priv.get("isError"), priv["content"][0]["text"][:120])
 
     # 3. MCP 服务：上传 → 后台分析 → 检索 → 问答
     srv = OpcServer()
@@ -152,6 +248,13 @@ def main():
                                             "text": "本批素材的验收标准是什么？", "wait_sec": 120}))
     check("问答作业返回答案", bool(ans.get("result", {}).get("answer")), ans)
     check("问答附带引用", "citations" in ans.get("result", {}), ans.get("result", {}).keys())
+    ans_q = eval_content(srv.dispatch("ask", {"token": token,
+                                              "question": "本批素材的验收标准是什么？", "wait_sec": 120}))
+    check("ask 的 question 别名生效", bool(ans_q.get("result", {}).get("answer")), ans_q)
+    empty_ask = srv.dispatch("ask", {"token": token})
+    check("ask 无问题内容报错并提示两参数",
+          empty_ask.get("isError") and "text 或 question" in empty_ask["content"][0]["text"],
+          empty_ask["content"][0]["text"][:120])
     print("llm_ok =", ok, "degraded =", ans.get("result", {}).get("degraded"), detail or "")
 
     status = eval_content(srv.dispatch("kb_status", {"token": token}))

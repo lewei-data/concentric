@@ -28,9 +28,9 @@ def hash_key(key):
     return hashlib.sha256(("opc-personal:" + str(key or "").strip()).encode()).hexdigest()
 
 
-def _cred_rows():
-    """解析 `公司/登录凭据.md` 的 Markdown 表格（表头：用户名/手机号/邮箱/角色/头像/密码）。"""
-    path = config.CRED_TABLE
+def _cred_rows(phone=None):
+    """解析该手机号自己 OPC vault 的 `公司/登录凭据.md`（不存在才回退全局）。"""
+    path = config.cred_table(phone)
     if not path.exists():
         return []
     lines = [ln.strip() for ln in path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -49,7 +49,7 @@ def _cred_rows():
 
 def lookup(phone):
     phone = normalize_phone(phone)
-    for row in _cred_rows():
+    for row in _cred_rows(phone):
         if normalize_phone(row.get("手机号")) == phone and phone:
             return row
     return None
@@ -73,7 +73,9 @@ def _issue(store, phone):
             "expires_in": config.SESSION_TTL_SEC,
             "user": {"phone": phone, "name": user["name"], "role": user["role"],
                      "email": user["email"], "auth_kind": user["auth_kind"]},
-            "workspace": str(config.DATA_DIR / "users" / phone)}
+            "tenant": config.phone_root(phone).name,
+            "dataDir": str(config.phone_root(phone)),
+            "workspace": str(config.user_dir(phone))}
 
 
 def _key_ok(key):

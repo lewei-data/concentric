@@ -16,6 +16,7 @@ JSON 结果写入原有类型化总线。规则仅保留“结构性护栏”（
 
 import base64
 import concurrent.futures
+from pathlib import Path
 import hashlib
 import hmac
 import json
@@ -2126,6 +2127,7 @@ class Handler(BaseHTTPRequestHandler):
             sys.path.insert(0, mcp_dir)
         from opc_mcp import auth as m_auth, config as m_config
         from opc_mcp.store import Store as McpStore
+        m_config.USER_ROOT = Path(OWNER_DATA_DIR).parent   # 与工作台 dataDir 同源
         return (phone, m_auth, m_config, McpStore(m_config.DB_PATH)), None
 
     def _mcp_key_get(self):
@@ -2145,6 +2147,8 @@ class Handler(BaseHTTPRequestHandler):
                 "last_used": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["last_used"]))
                              if row and row["last_used"] else None,
                 "note": "key 只存哈希，页面无法回显；如忘记请点“重新生成”",
+                "dataDir": str(m_conf.phone_root(phone)),
+                "vault": str(m_conf.user_vault(phone)),
                 "mcp_url": "https://ai.boraydata.com/mcp",
                 "upload_url": "https://ai.boraydata.com/conring/upload/",
                 "apply_url": m_conf.KEY_APPLY_URL,

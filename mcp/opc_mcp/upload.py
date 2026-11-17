@@ -93,7 +93,7 @@ def human_speed(bps):
 
 
 def user_materials_dir(phone):
-    d = config.DATA_DIR / "users" / phone / "materials" / time.strftime("%Y-%m-%d")
+    d = config.user_dir(phone, "materials") / time.strftime("%Y-%m-%d")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -125,8 +125,10 @@ class App:
                 lk = self._locks[upload_id] = threading.Lock()
             return lk
 
-    def part_path(self, upload_id):
-        return config.UPLOAD_DIR / (upload_id + ".part")
+    def part_path(self, upload_id, phone=""):
+        d = config.user_dir(phone, "uploads")
+        d.mkdir(parents=True, exist_ok=True)
+        return d / (upload_id + ".part")
 
     def create(self, user, filename, size, chunk_size=0):
         if size <= 0:
@@ -134,7 +136,7 @@ class App:
         if size > config.UPLOAD_MAX_MB * 1024 * 1024:
             raise ApiError(413, "文件超过上限 %sMB" % config.UPLOAD_MAX_MB)
         upload_id = "up_" + secrets.token_hex(8)
-        path = self.part_path(upload_id)
+        path = self.part_path(upload_id, user["phone"])
         path.write_bytes(b"")
         self.store.add_upload(upload_id, user["phone"], safe_name(filename), int(size), path,
                               chunk_size=int(chunk_size or 0))
@@ -365,8 +367,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers",
                          "Authorization, Content-Type, Content-Range, Tus-Resumable, "
                          "Upload-Offset, Upload-Length, Upload-Name, Upload-Metadata, "
-                         "X-Upload-Offset, X-OPC-Token, X-Upload-Token, X-Content-SHA256, "
-                         "X-Chunk-Size, X-Part-Number, X-Auto-Complete")
+                         "X-Upload-Offset, X-OPC-Token, X-Upload-Token, X-Mail-Agent, "
+                         "X-Content-SHA256, X-Chunk-Size, X-Part-Number, X-Auto-Complete")
         self.send_header("Access-Control-Expose-Headers",
                          "Location, Upload-Offset, Upload-Length, X-Upload-Offset, "
                          "X-Upload-Size, X-Upload-Percent, Range, Tus-Resumable")
@@ -396,7 +398,7 @@ class Handler(BaseHTTPRequestHandler):
         h = self.headers.get("Authorization") or ""
         if h.lower().startswith("bearer "):
             return h[7:].strip()
-        for name in ("X-OPC-Token", "X-Upload-Token", "token"):
+        for name in ("X-Mail-Agent", "X-OPC-Token", "X-Upload-Token", "token"):
             value = (self.headers.get(name) or "").strip()
             if value:
                 return value
@@ -406,9 +408,14 @@ class Handler(BaseHTTPRequestHandler):
     def _user(self, q=None):
         token = self._token(q)
         if not token:
-            raise ApiError(401, "缺少 Authorization: Bearer <session_token>")
+            raise ApiError(401, "缺少凭据：X-Mail-Agent: <个人 API key> 或 Authorization: Bearer <session_token>")
         try:
-            return auth.authenticate(self.app.store, token)
+            return auth.authenticate(self.app.store, token=token)
+        except auth.AuthError:
+            pass
+        # 外部用户只有 MCP 个人 key：同一把 key 也用于上传服务
+        try:
+            return auth.authenticate(self.app.store, api_key=token)
         except auth.AuthError as e:
             raise ApiError(401, str(e))
 

@@ -1,4 +1,4 @@
-"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材/分片续传/知识库/对话/TTS/图像共 13 个工具。"""
+"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材/分片续传/知识库/跨源资源/路由/对话/TTS/图像共 18 个工具。"""
 
 import base64
 import binascii
@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, auth, config, knowledge, llm, media
+from . import __version__, auth, config, knowledge, llm, media, resources
 from .jobs import JobRunner
 from .store import Store
 
@@ -129,13 +129,15 @@ TOOLS = [
     },
     {
         "name": "kb_status",
-        "description": "知识库与依赖服务状态：素材数、片段数、卡片数、近期作业、LLM/TTS/图像探活。",
+        "description": "知识库与依赖服务状态：素材数、可检索片段数、卡片数、近期作业、LLM/TTS/图像探活。"
+                       "当用户提到知识库/知识管理/OPC/同心圆/知识图谱/图数据库，想先看数据规模或是否可用时优先调用。",
         "inputSchema": {"type": "object", "properties": {"token": {"type": "string"}},
                         "required": ["token"]},
     },
     {
         "name": "kb_search",
-        "description": "在本人知识库做关键词检索，返回最相关片段与出处。",
+        "description": "在本人知识库做关键词检索，返回最相关片段与出处。当用户提到知识库/知识管理/OPC/同心圆/"
+                       "知识图谱/图数据库，或要查原文、找出处、确认『有没有/在哪里』时优先调用（配合 ask 做综合问答）。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"}, "query": {"type": "string"},
             "k": {"type": "integer", "default": 6}},
@@ -143,11 +145,53 @@ TOOLS = [
     },
     {
         "name": "ask",
-        "description": "文本问答：后台结合知识库内化内容调用 LLM 生成结果；wait_sec>0 可直接拿答案。",
+        "description": "文本问答：后台结合知识库内化内容调用 LLM 生成结果；wait_sec>0 可直接拿答案。"
+                       "当用户提到知识库/知识管理/OPC/同心圆/知识图谱/图数据库，或要求总结/解释/对比/给结论并带引用时"
+                       "优先调用。问题内容用 text 或 question 任一传入即可（两者等价）。",
         "inputSchema": {"type": "object", "properties": {
-            "token": {"type": "string"}, "text": {"type": "string"},
+            "token": {"type": "string"},
+            "text": {"type": "string", "description": "问题内容；与 question 二选一"},
+            "question": {"type": "string", "description": "同 text，问题内容；二选一即可"},
             "wait_sec": {"type": "number", "default": 0, "description": "0=只返回作业号"}},
-            "required": ["token", "text"]},
+            "required": ["token"]},
+    },
+    {
+        "name": "opc_route",
+        "description": "路由兜底：当用户提到知识库/知识管理/OPC/同心圆/知识图谱/图数据库等词但不确定该调哪个 OPC 工具时，"
+                       "先调本工具，传用户原话 query，返回推荐工具链和参数模板。纯提示工具，不需要鉴权或手机号。",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "用户原话或意图描述"}},
+            "required": ["query"]},
+    },
+    {
+        "name": "opc_resources",
+        "description": "资源总览：一次看清本人手机号下所有可访问资源——OPC 库（知识/报告/内容/消息/流水线/审批）、"
+                       "Obsidian vault 顶层目录、MCP 自有素材/片段/卡片，以及全局共享部分 shared"
+                       "（全公司知识、共享素材清单、公开下载区、共享热点流；所有 key 可见）。"
+                       "想确认『key 能看到哪些东西』或跨源检索前先调本工具。",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "opc_resource_list",
+        "description": "列出某类资源。本人手机号：knowledge/reports/contents/messages/approvals/vault"
+                       "（vault 只列未屏蔽 md）。全局共享（所有 key 可见）：shared_knowledge/"
+                       "shared_materials/shared_hotspots/downloads。",
+        "inputSchema": {"type": "object", "properties": {
+            "kind": {"type": "string", "default": "knowledge",
+                     "description": "knowledge/reports/contents/messages/approvals/vault/"
+                                    "shared_knowledge/shared_materials/shared_hotspots/downloads"},
+            "limit": {"type": "integer", "default": 20}},
+            "required": []},
+    },
+    {
+        "name": "opc_resource_read",
+        "description": "读取单个资源：本人 knowledge:kb_xxx / report:<id> / content:<id> / "
+                       "vault:相对路径 / material:<mat_id>；全局共享 shared_knowledge:<id> / "
+                       "shared_material:<id> / shared_hotspot:<id> / shared_download:<文件名>。"
+                       "敏感文件按安全策略屏蔽；超过 2MB 请用 kb_search 检索片段。",
+        "inputSchema": {"type": "object", "properties": {
+            "ref": {"type": "string", "description": "<类型>:<标识>"}},
+            "required": ["ref"]},
     },
     {
         "name": "tts",
@@ -179,7 +223,7 @@ TOOLS = [
 for _tool in TOOLS:
     _schema = _tool["inputSchema"]
     _props = _schema.setdefault("properties", {})
-    if _tool["name"] not in ("opc_init", "opc_login", "opc_whoami"):
+    if _tool["name"] not in ("opc_init", "opc_login", "opc_whoami", "opc_route"):
         _props.setdefault("client_key", {
             "type": "string",
             "description": "个人 API key；外网客户端由 MCP 网关按请求头自动注入，无需手写"})
@@ -207,10 +251,10 @@ class OpcServer:
 
     def _job_ask(self, store, phone, payload):
         question = payload["text"]
-        context = knowledge.build_context(store, phone, question)
-        citations = [{"material_id": h["material_id"], "seq": h["seq"], "score": h["score"],
-                      "filename": (store.material(h["material_id"]) or {}).get("filename")}
-                     for h in knowledge.search(store, phone, question, k=5)]
+        context = resources.context(store, phone, question)
+        hits = resources.search(store, phone, question, k=5)
+        citations = [{"source": h["source"], "id": h["id"], "title": h["title"],
+                      "score": h["score"], "path": h["path"]} for h in hits]
         history = store.messages(phone, limit=8)
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         if context:
@@ -228,9 +272,9 @@ class OpcServer:
                 raise llm.LLMError("模型未返回内容（重试后仍为空）")
         except Exception as e:
             degraded, error = True, str(e)[:300]
-            if citations:
+            if hits:
                 answer = "（LLM 通道不可用，先给知识库命中）\n" + "\n".join(
-                    "- %s" % h["snippet"] for h in knowledge.search(store, phone, question, k=5))
+                    "- 【%s】%s" % (h["source"], h["snippet"]) for h in hits)
             else:
                 answer = "LLM 通道不可用，且知识库没有命中「%s」的内容。" % question
 
@@ -241,7 +285,7 @@ class OpcServer:
 
     # ---------------------------------------------------------------- 工具实现
     def _dir(self, phone, sub):
-        d = config.DATA_DIR / "users" / phone / sub / time.strftime("%Y-%m-%d")
+        d = config.user_dir(phone, sub) / time.strftime("%Y-%m-%d")
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -254,8 +298,12 @@ class OpcServer:
 
     def tool_opc_whoami(self, args):
         user = auth.resolve(self.store, args)
-        return _json({"phone": user["phone"], "name": user["name"], "role": user["role"],
-                      "workspace": str(config.DATA_DIR / "users" / user["phone"])})
+        phone = user["phone"]
+        return _json({"phone": phone, "name": user["name"], "role": user["role"],
+                      "tenant": config.phone_root(phone).name,
+                      "dataDir": str(config.phone_root(phone)),
+                      "vault": str(config.user_vault(phone)),
+                      "workspace": str(config.user_dir(phone))})
 
     def tool_material_upload(self, args):
         user = auth.resolve(self.store, args)
@@ -422,13 +470,18 @@ class OpcServer:
         chunks = self.store.one("SELECT COUNT(*) n FROM chunks WHERE phone=?", (phone,))
         cards = self.store.one("SELECT COUNT(*) n FROM cards WHERE phone=?", (phone,))
         ok, detail = llm.probe()
+        rc = resources.counts(phone, self.store)
         return _json({
             "user": {"phone": phone, "name": user["name"], "role": user["role"]},
-            "workspace": str(config.DATA_DIR / "users" / phone),
+            "tenant": config.phone_root(phone).name,
+            "dataDir": rc["dataDir"], "vault": rc["vault"],
+            "workspace": str(config.user_dir(phone)),
             "materials": {"total": total, "by_status": by_status,
                           "content_bearing": len(content_ids),
                           "archived_only": max(0, total - len(content_ids))},
             "chunks": chunks["n"], "cards": cards["n"],
+            "opc": {k: rc[k] for k in ("ownerDbExists", "knowledge", "reports", "contents",
+                                       "chatMessages", "pipelineRuns", "approvals", "vaultDirs")},
             "recent_jobs": [{"job_id": j["id"], "kind": j["kind"], "status": j["status"],
                              "error": j["error"]} for j in self.store.jobs(phone, limit=5)],
             "llm": {"ok": ok, "base_url": config.LLM_BASE_URL, "model": config.LLM_MODEL,
@@ -439,21 +492,103 @@ class OpcServer:
     def tool_kb_search(self, args):
         user = auth.resolve(self.store, args)
         query = str(args.get("query") or "")
-        hits = knowledge.search(self.store, user["phone"], query, int(args.get("k") or 6))
-        for h in hits:
-            h["filename"] = (self.store.material(h["material_id"]) or {}).get("filename")
-        return _json({"query": query, "count": len(hits), "hits": hits})
+        hits = resources.search(self.store, user["phone"], query, int(args.get("k") or 6))
+        return _json({"query": query, "count": len(hits), "hits": hits,
+                      "sources": ["opc.knowledge", "opc.report", "opc.content",
+                                  "opc.message", "mcp.material",
+                                  "shared.knowledge", "shared.material", "shared.hotspot"]})
+
+    def tool_opc_resources(self, args):
+        user = auth.resolve(self.store, args)
+        return _json(resources.counts(user["phone"], self.store))
+
+    def tool_opc_resource_list(self, args):
+        user = auth.resolve(self.store, args)
+        return _json(resources.list_kind(user["phone"], str(args.get("kind") or "knowledge"),
+                                         int(args.get("limit") or 20)))
+
+    def tool_opc_resource_read(self, args):
+        user = auth.resolve(self.store, args)
+        out, error = resources.read(user["phone"], args.get("ref"), self.store)
+        return _err(error, status="blocked") if error else _json(out)
 
     def tool_ask(self, args):
         user = auth.resolve(self.store, args)
-        text = str(args.get("text") or "").strip()
+        text = str(args.get("text") or args.get("question") or "").strip()
         if not text:
-            return _err("text 不能为空")
+            return _err("请提供问题内容：text 或 question 任填一项")
         job = self.runner.submit(user["phone"], "ask", {"text": text})
         wait = float(args.get("wait_sec") or 0)
         if wait > 0:
             return _json(self.runner.wait(job["job_id"], user["phone"], wait))
         return _json(job)
+
+    def tool_opc_route(self, args):
+        query = str(args.get("query") or "").strip()
+        low = query.lower()
+        kb_words = ("知识库", "知识管理", "opc", "同心圆", "知识图谱", "图数据库")
+        knowledge_related = any(w.lower() in low for w in kb_words)
+
+        rules = (
+            (("身份", "我是谁", "手机号", "根目录", "租户", "whoami"), "opc_whoami",
+             "确认当前 key 对应的手机号与 OPC 根目录"),
+            (("状态", "多少", "统计", "健康", "可用", "探活", "status"), "kb_status",
+             "看素材/片段/卡片数与 LLM 状态"),
+            (("上传", "导入", "传文件", "upload"), "upload_begin",
+             "大文件走 upload_begin 分片；<100MB 可用 material_upload"),
+            (("列出", "我的素材", "下载", "导出", "list", "download"), "material_list",
+             "先 list 拿 material_id 再 download"),
+            (("重新分析", "再分析", "analyze"), "material_analyze",
+             "提交分析后用 job_get 等结果"),
+            (("语音", "朗读", "配音", "tts"), "tts", "文本转语音"),
+            (("图片", "画图", "生图", "图像", "image"), "image", "文生图"),
+            (("检索", "查找", "原文", "出处", "有没有", "在哪里", "搜索", "search"), "kb_search",
+             "关键词检索拿片段与出处"),
+            (("总结", "解释", "为什么", "怎么办", "如何", "对比", "问答", "回答", "ask"), "ask",
+             "带引用的综合问答（参数名 text）"),
+        )
+        matched = []
+        for words, tool, why in rules:
+            if any(w.lower() in low for w in words):
+                matched.append((tool, why))
+        if not matched:
+            matched = [("kb_search", "关键词检索拿片段与出处"),
+                       ("ask", "带引用的综合问答（参数名 text）")]
+
+        ordered = list(dict.fromkeys(t for t, _ in matched))
+        non_kb = ("material_upload", "upload_begin", "material_list", "material_download",
+                  "tts", "image")
+        steps = []
+        if not knowledge_related and ordered and ordered[0] in non_kb:
+            steps.append("opc_whoami")
+        steps += ordered
+        if knowledge_related and "kb_search" in steps and "ask" not in steps:
+            steps.append("ask")
+        steps = list(dict.fromkeys(steps))
+
+        templates = {
+            "opc_whoami": "opc_whoami()",
+            "kb_status": "kb_status()",
+            "kb_search": 'kb_search(query="<关键词>", k=6)',
+            "ask": 'ask(text="<你的问题>", wait_sec=60)',
+            "material_list": "material_list(limit=50)",
+            "material_download": 'material_download(material_id="<mat_id>")',
+            "material_upload": 'material_upload(path="<本地文件路径>")',
+            "upload_begin": 'upload_begin(filename="<名称>", size=<字节数>, chunk_size=8388608)',
+            "material_analyze": 'material_analyze(material_id="<mat_id> 或 all>")',
+            "job_get": 'job_get(job_id="<job_id>", wait_sec=60)',
+            "tts": 'tts(text="<要朗读的文字>")',
+            "image": 'image(prompt="<画面描述>")',
+        }
+        return _json({
+            "query": query,
+            "knowledge_related": knowledge_related,
+            "recommended": [t for t, _ in matched],
+            "steps": steps,
+            "templates": {t: templates[t] for t in steps if t in templates},
+            "notes": "身份由 key 自带，不要传 phone；ask 的问题内容用 text 或 question 均可；"
+                     "检索不到要明确说明，不要用通用知识冒充公司内部资料。",
+        })
 
     def tool_tts(self, args):
         user = auth.resolve(self.store, args)
