@@ -1,6 +1,6 @@
 # CTO 节点台账
 
-> 由 `opsctl` 自动生成于 2026-11-17 20:40:29；权威数据在 `nodes.db`，本文件每次巡检后重写。
+> 由 `opsctl` 自动生成于 2026-11-17 21:42:29；权威数据在 `nodes.db`，本文件每次巡检后重写。
 
 ## 节点
 
@@ -14,35 +14,35 @@
 
 | 节点 | 服务 | 端口 | 协议 | 级别 | 最近状态 | 耗时 | 检查时间 | 说明 |
 |---|---|---|---|---|---|---|---|---|
-| comfy-21-157 | SSH | 22 | ssh | high | 正常 | 20213ms | 11-17 20:39 | localhost.localdomain /  20:40:07 up 135 days |
-| comfy-21-157 | 模型资产 | - | files | high | 正常 | 20217ms | 11-17 20:39 | 权重 7/7 正常 |
-| comfy-21-157 | ComfyUI 出图 | 8188 | http | high | 正常 | 12ms | 11-17 20:39 | HTTP 200 |
-| comfy-21-157 | ComfyUI 视频 | 8189 | http | high | 正常 | 4ms | 11-17 20:39 | HTTP 200 |
-| comfy-21-157 | 出图能力 | - | nodes | high | 正常 | 231ms | 11-17 20:39 | 节点 8/8 就绪 |
-| comfy-21-157 | 视频音频能力 | - | nodes | high | 正常 | 900ms | 11-17 20:39 | 节点 8/8 就绪 |
-| gw-21-208 | HTTP | 80 | tcp | mid | 正常 | 0ms | 11-17 20:39 | TCP 80 可连 |
-| gw-21-208 | HTTPS | 443 | tcp | high | 正常 | 0ms | 11-17 20:39 | TCP 443 可连 |
-| gw-21-208 | ai.boraydata.com | 443 | http | high | 正常 | 34ms | 11-17 20:39 | HTTP 200 |
-| sup206 | 邮件 MCP | 9100 | mcp | high | 正常 | 6ms | 11-17 20:39 | MCP initialize HTTP 200 |
-| sup206 | TTS MCP | 9101 | mcp | high | 正常 | 6ms | 11-17 20:39 | MCP initialize HTTP 200 |
-| sup206 | ASR MCP | 9102 | mcp | mid | 正常 | 6ms | 11-17 20:39 | MCP initialize HTTP 200 |
-| sup206 | 媒体引擎 | 9200 | http | high | 正常 | 10ms | 11-17 20:39 | HTTP 200 |
-| sup206 | 调度服务 | 9120 | http | mid | 正常 | 3ms | 11-17 20:39 | HTTP 200 |
-| sup206 | 调度 WS | 9121 | http | low | 正常 | 2ms | 11-17 20:39 | HTTP 426 |
-| sup206 | 媒体生成 MCP | 9103 | http | mid | 正常 | 6ms | 11-17 20:39 | HTTP 200 |
-| sup206 | workbench | 8848 | http | high | 正常 | 3ms | 11-17 20:39 | HTTP 200 |
-| sup206 | hermes-llm-gw | 8642 | tcp | high | 正常 | 0ms | 11-17 20:39 | TCP 8642 可连 |
-| sup206 | qwen-asr | 9312 | http | mid | 正常 | 2ms | 11-17 20:39 | HTTP 200 |
-| sup206 | qwen-tts | 9311 | http | mid | 正常 | 3ms | 11-17 20:39 | HTTP 200 |
-| sup206 | backup-db | - | fresh | high | 正常 | 2ms | 11-17 20:39 | 新鲜 1/1 |
-| sup206 | backup-files | - | fresh | mid | 正常 | 0ms | 11-17 20:39 | 新鲜 1/1 |
-| sup206 | ports-drift | 0 | ports | mid | 异常 | 31ms | 11-17 20:39 | 未登记 9104,9105；台账有但未监听 8384,22000（白名单 40 / 实际 41） |
+| comfy-21-157 | SSH | 22 | ssh | high | 正常 | 20210ms | 11-17 21:41 | localhost.localdomain /  21:42:07 up 136 days |
+| comfy-21-157 | 模型资产 | - | files | high | 正常 | 20215ms | 11-17 21:41 | 权重 7/7 正常 |
+| comfy-21-157 | ComfyUI 出图 | 8188 | http | high | 正常 | 13ms | 11-17 21:41 | HTTP 200 |
+| comfy-21-157 | ComfyUI 视频 | 8189 | http | high | 正常 | 4ms | 11-17 21:41 | HTTP 200 |
+| comfy-21-157 | 出图能力 | - | nodes | high | 正常 | 1046ms | 11-17 21:41 | 节点 8/8 就绪 |
+| comfy-21-157 | 视频音频能力 | - | nodes | high | 正常 | 234ms | 11-17 21:41 | 节点 8/8 就绪 |
+| gw-21-208 | HTTP | 80 | tcp | mid | 正常 | 0ms | 11-17 21:41 | TCP 80 可连 |
+| gw-21-208 | HTTPS | 443 | tcp | high | 正常 | 0ms | 11-17 21:41 | TCP 443 可连 |
+| gw-21-208 | ai.boraydata.com | 443 | http | high | 正常 | 35ms | 11-17 21:41 | HTTP 200 |
+| sup206 | 邮件 MCP | 9100 | mcp | high | 正常 | 6ms | 11-17 21:41 | MCP initialize HTTP 200 |
+| sup206 | TTS MCP | 9101 | mcp | high | 正常 | 5ms | 11-17 21:41 | MCP initialize HTTP 200 |
+| sup206 | ASR MCP | 9102 | mcp | mid | 正常 | 8ms | 11-17 21:41 | MCP initialize HTTP 200 |
+| sup206 | 媒体引擎 | 9200 | http | high | 正常 | 16ms | 11-17 21:41 | HTTP 200 |
+| sup206 | 调度服务 | 9120 | http | mid | 正常 | 5ms | 11-17 21:41 | HTTP 200 |
+| sup206 | 调度 WS | 9121 | http | low | 正常 | 3ms | 11-17 21:41 | HTTP 426 |
+| sup206 | 媒体生成 MCP | 9103 | http | mid | 正常 | 6ms | 11-17 21:41 | HTTP 200 |
+| sup206 | workbench | 8848 | http | high | 正常 | 3ms | 11-17 21:41 | HTTP 200 |
+| sup206 | hermes-llm-gw | 8642 | tcp | high | 正常 | 0ms | 11-17 21:41 | TCP 8642 可连 |
+| sup206 | qwen-asr | 9312 | http | mid | 正常 | 3ms | 11-17 21:41 | HTTP 200 |
+| sup206 | qwen-tts | 9311 | http | mid | 正常 | 3ms | 11-17 21:41 | HTTP 200 |
+| sup206 | backup-db | - | fresh | high | 正常 | 2ms | 11-17 21:41 | 新鲜 1/1 |
+| sup206 | backup-files | - | fresh | mid | 正常 | 0ms | 11-17 21:41 | 新鲜 1/1 |
+| sup206 | ports-drift | 0 | ports | mid | 异常 | 32ms | 11-17 21:41 | 未登记 9104,9105；台账有但未监听 8384,22000（白名单 40 / 实际 41） |
 
 ## 最近一次巡检
 
-- 时间：2026-11-17 20:08:47
-- 结果：2026-11-17 20:09 巡检异常：1/23 项不可用（sup206/ports-drift）
-- 报告：/opt/sefs/opc-workbench/ops/reports/20261117-2009.md
+- 时间：2026-11-17 21:10:47
+- 结果：2026-11-17 21:11 巡检异常：1/23 项不可用（sup206/ports-drift）
+- 报告：/opt/sefs/opc-workbench/ops/reports/20261117-2111.md
 
 ## 维护约定
 

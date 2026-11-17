@@ -6074,6 +6074,53 @@ a.ceo-stage {
 }
 a.ceo-stage:hover { border-color: var(--accent); }
 
+/* 成品仓库：要素成品二级导航 + 分区概览 */
+.wk-kinds {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px;
+  padding: 6px; background: var(--surface-soft); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow-x: auto;
+}
+.wk-kind {
+  flex: 1 0 auto; min-width: 118px; display: flex; align-items: center;
+  justify-content: center; gap: 8px; padding: 9px 12px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--muted); font: inherit; font-size: 14px;
+  font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.wk-kind:hover { color: var(--text); background: var(--surface); }
+.wk-kind.is-active {
+  color: var(--accent-deep); background: var(--surface);
+  border-color: var(--border-strong); box-shadow: var(--shadow-1);
+}
+.wk-kind-count {
+  min-width: 24px; padding: 1px 7px; border-radius: 999px;
+  background: var(--surface-soft); color: var(--muted); font-size: 11px; font-weight: 700;
+}
+.wk-kind.is-active .wk-kind-count { background: var(--accent-soft); color: var(--accent-deep); }
+
+.wk-intro {
+  display: flex; gap: 18px; align-items: flex-start; padding: 16px 20px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-1); margin-bottom: 14px;
+}
+.wk-intro-main { flex: 1 1 auto; min-width: 0; }
+.wk-intro-main h2 { margin: 0 0 6px; font-size: 18px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.wk-intro-main h2 span { font-size: 12px; font-weight: 500; color: var(--muted); }
+.wk-intro-desc { margin: 0; font-size: 13px; line-height: 1.65; }
+.wk-intro-rule { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.wk-intro-rule b {
+  display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-deep); font-weight: 700;
+}
+.wk-intro-stats { display: flex; gap: 12px; flex: 0 0 auto; }
+.wk-intro-stats > div {
+  display: flex; flex-direction: column; align-items: center; min-width: 66px;
+  padding: 8px 10px; background: var(--surface-soft); border-radius: var(--radius-sm);
+}
+.wk-intro-stats b { font-size: 20px; color: var(--accent-deep); }
+.wk-intro-stats span { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
 /* 看完板数字点进来的下钻提示：明确当前是哪一个口径的明细 */
 .works-drill {
   display: flex;

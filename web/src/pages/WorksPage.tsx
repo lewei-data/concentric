@@ -5,6 +5,7 @@ import type { Work } from "../types";
 import { SancaiBadge, SancaiChips } from "../components/SancaiBadge";
 import { workStageSancai } from "../sancai";
 import { siteUrl } from "../lib/siteUrl";
+import { WORK_KINDS, KIND_BY_KEY, type WorkKind } from "../workKinds";
 
 // 档案正文是 Markdown，按需加载渲染器，避免拖大首屏
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
@@ -52,7 +53,7 @@ function WorkDetailPage({ id }: { id: string }) {
     <section className="page works-detail-page">
       <div className="work-back-row">
         <button type="button" className="btn btn-ghost" onClick={() => navigate("/works")}>
-          ← 返回作品列表
+          ← 返回成品仓库
         </button>
       </div>
 
@@ -159,7 +160,7 @@ function WorkDetailPage({ id }: { id: string }) {
                     rel="noopener noreferrer"
                     title={file.exists ? `${file.label} · ${Math.round(file.size / 1024)} KB` : `${file.label} 未生成`}
                   >
-                    <span>{file.exists ? "✓" : "×"}</span>
+                    <span>{!file.exists ? "×" : file.key === "audio" ? "♪" : "✓"}</span>
                     {file.label}
                   </a>
                 ))}
@@ -260,7 +261,7 @@ function WorkDetailPage({ id }: { id: string }) {
 type ViewMode = "list" | "grid";
 // 与总览看板 KPI 一一对应；metric 的具体判断在后端 works.py::_match_metric
 const METRIC_LABELS: Record<string, string> = {
-  total: "作品总数",
+  total: "成品总数",
   today: "当天出厂",
   doing: "生产中",
   shipped: "已出厂",
@@ -293,6 +294,7 @@ function WorksListPage() {
       sancai: params.get("sancai") || "",
       sort: params.get("sort") || "updated",
       metric: params.get("metric") || "",
+      kind: (params.get("kind") || "all") as WorkKind,
       view: (paramView === "grid" || paramView === "list" ? paramView : saved) as ViewMode,
     };
   }, []);
@@ -304,6 +306,7 @@ function WorksListPage() {
   const [sancai, setSancai] = useState(boot.sancai);
   const [sort, setSort] = useState(boot.sort);
   const [metric, setMetric] = useState(boot.metric);
+  const [kind, setKind] = useState<WorkKind>(boot.kind);
   const [view, setView] = useState<ViewMode>(boot.view);
   const [page, setPage] = useState(1);
 
@@ -313,6 +316,7 @@ function WorksListPage() {
   if (status) filters.push({ field: "status", operator: "eq", value: status });
   if (sancai) filters.push({ field: "sancai", operator: "eq", value: sancai });
   if (metric) filters.push({ field: "metric", operator: "eq", value: metric });
+  if (kind && kind !== "all") filters.push({ field: "kind", operator: "eq", value: kind });
   if (sort !== "updated") filters.push({ field: "sort", operator: "eq", value: sort });
 
   const list = useList<Work>({
@@ -325,6 +329,12 @@ function WorksListPage() {
   const items = list.data?.data ?? [];
   const total = list.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const facets = list.data?.meta?.facets as
+    | { byKind?: Record<string, number>; byStatus?: Record<string, number>;
+        withFinal?: number; withReview?: number; total?: number }
+    | undefined;
+  const byKind = facets?.byKind ?? {};
+  const kindDef = KIND_BY_KEY[kind] ?? KIND_BY_KEY.all;
 
   const resetPage = () => setPage(1);
   const switchView = (next: ViewMode) => {
@@ -342,8 +352,8 @@ function WorksListPage() {
         <div>
           <h1>成品仓库</h1>
           <p className="muted home-sub">
-            以加工厂过程库为准的成品仓库：只收录经 CCO 审批进厂（有流水号）的作品，
-            阶段/状态随工厂生命周期（生产中 → 质检审核通过出厂），每一步进展与车间数据一致。
+            加工厂所有要素成品的统一入库、检验与归档中心：视频成片、文案文稿、封面图、配音音频与素材原料，
+            按要素分类入库，状态与加工厂生命周期一致。
           </p>
         </div>
         <form
@@ -362,6 +372,39 @@ function WorksListPage() {
           />
           <button type="submit" className="btn">搜索</button>
         </form>
+      </div>
+
+      {/* 二级导航：按要素成品类型切换仓库分区 */}
+      <nav className="wk-kinds" role="tablist" aria-label="成品分类导航">
+        {WORK_KINDS.map((k) => (
+          <button
+            key={k.key}
+            type="button"
+            role="tab"
+            aria-selected={kind === k.key}
+            className={`wk-kind${kind === k.key ? " is-active" : ""}`}
+            onClick={() => { setKind(k.key); resetPage(); }}
+            title={k.subtitle}
+          >
+            <b>{k.label}</b>
+            <span className="wk-kind-count">{byKind[k.key] ?? 0}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* 当前分区定义：收录什么、入库口径、库存概览 */}
+      <div className="wk-intro">
+        <div className="wk-intro-main">
+          <h2>{kindDef.label}<span>{kindDef.subtitle}</span></h2>
+          <p className="wk-intro-desc">{kindDef.desc}</p>
+          <p className="wk-intro-rule"><b>入库口径</b>{kindDef.rule}</p>
+        </div>
+        <div className="wk-intro-stats">
+          <div><b>{byKind[kind] ?? 0}</b><span>本区成品</span></div>
+          <div><b>{facets?.total ?? 0}</b><span>全库在档</span></div>
+          <div><b>{facets?.withFinal ?? 0}</b><span>已有成片</span></div>
+          <div><b>{facets?.withReview ?? 0}</b><span>已评审</span></div>
+        </div>
       </div>
 
       {metric && (
@@ -467,7 +510,7 @@ function WorksListPage() {
           ) : list.isError ? (
             <p className="error">加载失败</p>
           ) : items.length === 0 ? (
-            <p className="muted">暂无作品</p>
+            <p className="muted">{kindDef.empty}</p>
           ) : view === "grid" ? (
             <div className="works-cards">
               {items.map((item) => {
@@ -570,7 +613,7 @@ function WorksListPage() {
               上一页
             </button>
             <span className="muted">
-              第 {page} / {totalPages} 页 · 共 {total} 件作品
+              第 {page} / {totalPages} 页 · 本区共 {total} 件成品
             </span>
             <button
               type="button"

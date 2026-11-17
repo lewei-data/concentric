@@ -15,6 +15,7 @@ interface ListResponse<T> {
   page: number;
   size: number;
   items: T[];
+  facets?: Record<string, unknown>;
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -30,9 +31,10 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-// 后端列表接口支持 q / project / stage / status / sort / category / tag / sancai，
-// metric 为总览看板数字下钻口径（today/doing/shipped/interrupted/failing），这里按字段名透传
-const LIST_FIELDS = ["q", "project", "stage", "status", "sort", "category", "tag", "sancai", "metric"];
+// 后端列表接口支持 q / project / stage / status / sort / category / tag / sancai / kind，
+// metric 为总览看板数字下钻口径（today/doing/shipped/interrupted/failing），
+// kind 为成品仓库要素分类（video/article/image/audio/material），这里按字段名透传
+const LIST_FIELDS = ["q", "project", "stage", "status", "sort", "category", "tag", "sancai", "metric", "kind"];
 
 function extractFilters(filters: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -67,6 +69,7 @@ async function getList<TData extends BaseRecord = BaseRecord>({
   return {
     data: (json.items ?? []) as unknown as TData[],
     total: json.total ?? 0,
+    meta: json.facets ? { facets: json.facets } : undefined,
   };
 }
 

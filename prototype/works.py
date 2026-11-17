@@ -264,6 +264,24 @@ def _build(folder, trace, sub, approvals=None, factory=None, step_status=None, d
     files = []
     for key, name, label in STEPS:
         files.append(_file_entry(folder, key, name, label, trace, sub))
+    # 声音成品：主清单只列固定文件名，音频在 _render/narr*.wav（TTS 旁白）。
+    # 取一个代表作为归档入口，避免把几百个 wav 全列出来；成品仓库据此识别声音要素。
+    render_dir = os.path.join(folder, "_render")
+    if os.path.isdir(render_dir):
+        try:
+            wavs = sorted(n for n in os.listdir(render_dir)
+                          if n.lower().endswith(".wav")
+                          and os.path.isfile(os.path.join(render_dir, n)))
+            if wavs:
+                pick = next((n for n in wavs if n.lower().startswith("narr")), wavs[0])
+                fp = os.path.join(render_dir, pick)
+                files.append({
+                    "key": "audio", "label": "配音音频", "exists": True,
+                    "size": os.path.getsize(fp), "at": _iso(os.path.getmtime(fp)),
+                    "url": f"{URL_PREFIX}/{trace}/{sub}/_render/{pick}",
+                })
+        except OSError:
+            pass
     asset_dir = os.path.join(folder, "assets")
     asset_count = 0
     if os.path.isdir(asset_dir):
@@ -416,13 +434,48 @@ def scan(approvals=None, factory=None, step_status=None, db=None):
     return items
 
 
+def _work_kinds(it):
+    """一件作品包含哪些要素成品类型（视频/图片/文章/声音/原料），供成品仓库分类。
+
+    完全基于现有 files/hasFinal 字段推导，不新增数据结构：
+      - video  : 05-final / 05-preview / 05-sample-reel 任一存在
+      - image  : 04-cover.png 存在
+      - article: 任一 .md 文稿存在（选题/文案/分镜/评估/评审）
+      - audio  : _render/narr*.wav 的代表条目（_build 注入 key=audio），或 url 为音频扩展名
+      - material: 插图配置 10-illustrations.json 或 assetCount>0 的素材件
+    """
+    files = it.get("files") or []
+    have = {f.get("key") for f in files if f.get("exists")}
+    kinds = set()
+    if it.get("hasFinal") or {"preview", "sample_reel"} & have:
+        kinds.add("video")
+    if "cover" in have:
+        kinds.add("image")
+    if {"topic", "copy", "storyboard", "assessment", "review"} & have:
+        kinds.add("article")
+    if "audio" in have:
+        kinds.add("audio")
+    if "illustrations" in have or (it.get("assetCount") or 0) > 0:
+        kinds.add("material")
+    return kinds
+
+
+def _match_kind(kind, it):
+    if not kind or kind == "all":
+        return True
+    return kind in _work_kinds(it)
+
+
 def _facets(items):
     by_status, by_project, by_sancai = {}, {}, {"tian": 0, "di": 0, "ren": 0}
+    by_kind = {"all": len(items), "video": 0, "article": 0, "image": 0, "audio": 0, "material": 0}
     for it in items:
         by_status[it["status"]] = by_status.get(it["status"], 0) + 1
         by_project[it["projectName"]] = by_project.get(it["projectName"], 0) + 1
         key = it.get("sancai") or SC.work_stage_of(it.get("stage"))
         by_sancai[key] = by_sancai.get(key, 0) + 1
+        for k in _work_kinds(it):
+            by_kind[k] = by_kind.get(k, 0) + 1
     # 看板 KPI 的统一计数口径：与 ?metric= 下钻共用 _match_metric，
     # 保证「点数字看到的条数」永远等于「数字本身」（不受 100 条分页截断影响）
     by_metric = {
@@ -435,6 +488,7 @@ def _facets(items):
         "byProject": by_project,
         "bySancai": by_sancai,
         "byMetric": by_metric,
+        "byKind": by_kind,
         "withFinal": sum(1 for it in items if it["hasFinal"]),
         "withReview": sum(1 for it in items if it["reviewNote"]),
     }
@@ -495,6 +549,7 @@ def page(query_params, approvals=None, factory=None, step_status=None, db=None):
     sancai = one("sancai").lower()
     sort = one("sort", "updated")
     metric = one("metric")
+    kind = one("kind")
 
     items = scan(approvals, factory, step_status)
     # 三才：作品默认属「人」；有 stage 的按阶段映射，显式标注优先
@@ -518,6 +573,8 @@ def page(query_params, approvals=None, factory=None, step_status=None, db=None):
         items = [it for it in items if it.get("sancai") == sancai]
     if metric:
         items = [it for it in items if _match_metric(metric, it)]
+    if kind:
+        items = [it for it in items if _match_kind(kind, it)]
     if sort == "name":
         items.sort(key=lambda it: str(it.get("title") or ""))
     elif sort == "created":
