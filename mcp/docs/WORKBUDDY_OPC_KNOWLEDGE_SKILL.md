@@ -1,6 +1,6 @@
 ---
 name: opc-knowledge
-description: 当用户提到「知识库、知识管理、OPC、同心圆、知识图谱、图数据库」等词，或要检索公司内部资料、基于资料问答、查看/上传/导出素材时，使用本技能通过已配置的 OPC MCP（连接器名 opc-kb）完成。触发词：知识库、知识管理、OPC、同心圆、知识图谱、图数据库、kb、素材、内化、资料检索。
+description: 当用户提到「知识库、知识管理、OPC、同心圆、知识图谱、图数据库、共享资料、公开下载、热点」等词，或要检索公司内部资料、基于资料问答、查看/上传/导出素材、看本人手机号下资源或全局共享内容时，使用本技能通过已配置的 OPC MCP（连接器名 opc-kb）完成。触发词：知识库、知识管理、OPC、同心圆、知识图谱、图数据库、共享资料、公开下载、热点、kb、素材、内化、资料检索、资源互通。
 ---
 
 # OPC 知识库（opc-knowledge）
@@ -34,7 +34,7 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 | 列出 OPC 资源 | `opc_resource_list(kind=knowledge/reports/contents/messages/approvals/vault)` |
 | 列出全局共享 | `opc_resource_list(kind=shared_knowledge/shared_materials/shared_hotspots/downloads)` |
 | 读取单个资源 | `opc_resource_read(ref=knowledge:kb_xxx / vault:相对路径 / shared_knowledge:<id> / shared_material:<id> / shared_download:<文件名>)` |
-| 综合问答 | `ask(text, wait_sec=60)` |
+| 综合问答 | `ask(text 或 question, wait_sec=60)` |
 | 路由兜底 | `opc_route(query)` |
 | 看素材列表 | `material_list(limit=50)` |
 | 导出素材 | `material_download(material_id, dest?)` |

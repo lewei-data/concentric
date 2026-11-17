@@ -308,9 +308,11 @@ def write_entry(k, dry=False):
     md = KB_DIR / f"{date}-{safe}-{k['id']}.md"
     lines = [f"---", f"kb_id: {k['id']}", f"title: {k['title']}",
              "project: 全公司", f"category: {k['category']}", f"sancai: {k['sancai']}",
-             f"tags: {'、'.join(k['tags'])}", "trace:", f"archived: {now}", "---", "",
-             f"> 出处：`{k['path']}`（vault 内化条目，原文件为真源，本条是检索摘要）", ""]
-    lines += [k["summary"], ""]
+             f"tags: {'、'.join(k['tags'])}", "trace:", f"archived: {now}", "---", ""]
+    # 摘要必须紧随 frontmatter：deliverables / kb_graph 都取首段可读行做预览，
+    # 「> 出处」元信息放摘要之后，避免重载时把真摘要覆盖成路径提示
+    lines += [k["summary"], "",
+              f"> 出处：`{k['path']}`（vault 内化条目，原文件为真源，本条是检索摘要）", ""]
     if k.get("sections"):
         lines += ["## 章节", *[f"- {s}" for s in k["sections"]], ""]
     if k.get("members"):

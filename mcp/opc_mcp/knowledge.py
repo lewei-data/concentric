@@ -325,6 +325,22 @@ def analyze_material(store, phone, material_id):
     mat = store.material(material_id)
     if not mat:
         raise ValueError("素材不存在：%s" % material_id)
+    # 内容化钩子：图片/影音在本模块会被跳过像素分析，统一交给工作台内容化引擎
+    # （OCR / ASR → 知识卡片 → 知识库 + 知识图谱 → 评分 → 小秘书/飞书汇报）。
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _root = str(_Path(__file__).resolve().parents[2])
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        _proto = str(_Path(_root) / "prototype")
+        if _proto not in _sys.path:
+            _sys.path.insert(0, _proto)
+        import material_content as _MC
+        _MC.enqueue(mat["path"], filename=mat["filename"], source="mcp",
+                    phone=phone, sha256=mat.get("sha256") or "", note="MCP 上传")
+    except Exception as _e:                                  # 内容化不可用不影响 MCP 原流程
+        print("[knowledge] 内容化入队失败：%s: %s" % (type(_e).__name__, _e), flush=True)
     store.set_material_status(material_id, "running")
     text, reason = extract_text(mat["path"])
     if not text:

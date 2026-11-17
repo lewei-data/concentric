@@ -1,9 +1,9 @@
 {
- "updated": "2026-11-17T05:22:12.211224+08:00",
+ "updated": "2026-11-18T01:57:15.380742+08:00",
  "grades": {
-  "优质": 153,
-  "可用": 1236,
-  "待观察": 510
+  "优质": 157,
+  "可用": 1243,
+  "待观察": 507
  },
  "items": {
   "card:rust-subset-report": {},
@@ -1904,6 +1904,14 @@
   "/mnt/sefs/conring/users/18911789286/obsidian/素材/背景音乐/07-压迫悬疑/07-压迫悬疑-Stripped Bare-Ahjay Stelino-1m42s-2026-11-06.mp3": {},
   "/mnt/sefs/conring/users/18911789286/obsidian/素材/背景音乐/07-压迫悬疑/07-压迫悬疑-Vertigo-Eugenio Mininni-3m11s-2026-11-06.mp3": {},
   "/mnt/sefs/conring/users/18911789286/obsidian/素材/背景音乐/08-改造版/08-改造版-I Wont surrender-开智感0.9x-2026-11-06.mp3": {},
-  "/mnt/sefs/conring/users/18911789286/obsidian/素材/背景音乐/08-改造版/08-改造版-Stripped Bare-囚笼感0.88x降调-2026-11-06.mp3": {}
+  "/mnt/sefs/conring/users/18911789286/obsidian/素材/背景音乐/08-改造版/08-改造版-Stripped Bare-囚笼感0.88x降调-2026-11-06.mp3": {},
+  "kb_vault_mat_b2df78300c": {},
+  "kb_vault_mat_3d189d5c8d": {},
+  "kb_vault_mat_cd80ae2b7a": {},
+  "kb_vault_mat_7135456c56": {},
+  "kb_vault_mat_4f5264dcaa": {},
+  "kb_vault_mat_cf0eddd3a2": {},
+  "kb_vault_mat_d903f75bc4": {},
+  "kb_vault_mat_52012f8079": {}
  }
 }

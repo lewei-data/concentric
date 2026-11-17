@@ -531,7 +531,9 @@ def load_knowledge(limit=40):
                 # 报告：跳过元信息列表/引用/分隔线与短小标题，取第一段可读正文
                 if raw.startswith(("-", ">", "---")) or len(s) < 16:
                     continue
-            elif raw.startswith("-"):
+            elif raw.startswith(("-", ">")):
+                # vault 内化条目的首行是「> 出处：...」元信息，不能当摘要
+                # （否则内核重启重载 md 时会把真摘要覆盖成路径提示）
                 continue
             summary = s[:120]
             break

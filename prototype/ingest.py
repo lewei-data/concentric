@@ -9,11 +9,18 @@
 import glob
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 import db as DB
+
+# 飞书适配器把已下载的媒体路径写进消息正文占位符：
+# [Image attached at: /path] / [User sent audio: /path] / [saved at: /path ...]
+_MEDIA_HINT = re.compile(r"\[[^\]\n]*(?:attached at|User sent|saved at)[^\]\n]*\]", re.I)
+_PATH_IN = re.compile(r"(/[^\]\s\"'（）]+)")
 
 PROFILES_DIR = os.environ.get("OPC_HERMES_PROFILES", "/opt/sefs/hermes/profiles")
 DISPATCH_DB = os.environ.get("OPC_DISPATCH_DB", "/opt/sefs/hermes/dispatch/dispatch.db")
@@ -58,6 +65,29 @@ _NOISE_PREFIXES = (
 def _is_internal_noise(text):
     head = str(text or "").strip().lower()[:40]
     return any(head.startswith(p) for p in _NOISE_PREFIXES)
+
+
+def _enqueue_feishu_media(content, profile=""):
+    """飞书消息里的图片/音频/视频/文件本地路径 → 素材内容化队列（幂等去重）。"""
+    n = 0
+    try:
+        import material_content as MC
+    except Exception as e:
+        _log(f"内容化模块加载失败：{type(e).__name__}: {e}")
+        return 0
+    for hint in _MEDIA_HINT.findall(str(content or "")):
+        for cand in _PATH_IN.findall(hint):
+            p = Path(cand.rstrip(".,;:）)"))
+            try:
+                if not p.is_file():
+                    continue
+                res = MC.enqueue(str(p), filename=p.name, source="feishu",
+                                 note=f"飞书/{profile}")
+                if res.get("ok") and not res.get("duplicate"):
+                    n += 1
+            except Exception as e:
+                _log(f"飞书素材入队失败：{type(e).__name__}: {e}")
+    return n
 
 
 def _modality_of(text):
@@ -121,6 +151,11 @@ def pull_feishu(store, on_event=None, full=False):
                     created = DB.ts_to_iso(r["timestamp"]) or DB.now_iso()
                     is_user = r["role"] == "user"
                     content = r["content"] or ""
+                    if is_user:
+                        try:
+                            _enqueue_feishu_media(content, profile)
+                        except Exception as e:
+                            _log(f"飞书素材内容化入队异常：{type(e).__name__}: {e}")
                     if _is_internal_noise(content):
                         last_id = mid          # 噪音：推进游标但不入库
                         continue
@@ -302,7 +337,8 @@ def pull_mcp(store, on_event=None, full=False):
         phone = str(_row(r, "phone") or "")
         masked = _mask_phone(phone)
         thread = f"mcp:{phone}"
-        created = str(_row(r, "created_at") or DB.now_iso())
+        # MCP 源库存的是 epoch 秒，直接写浮点串会让消息中心按 ISO 切片显示成乱码
+        created = DB.ts_to_iso(_row(r, "created_at")) or DB.now_iso()
         role = str(_row(r, "role") or "")
         inbound = role == "user"
         sender_id = "agent" if inbound else "opc"

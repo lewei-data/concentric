@@ -437,7 +437,7 @@ def write_report(scored, now, retire_ready):
     return report
 
 
-def run(apply=False, as_json=False, quiet=False):
+def run(apply=False, as_json=False, quiet=False, return_scored=False):
     now = datetime.now(TZ)
     now_ts = now.timestamp()
     subs = subjects()
@@ -508,7 +508,7 @@ def run(apply=False, as_json=False, quiet=False):
         print(f"[asset-score] dry-run 共 {len(scored)} 项，分布 "
               f"{json.dumps(ops, ensure_ascii=False)}；淘汰待批候选 "
               f"{len(retire_ready)} 项（--apply 落地）")
-    return 0
+    return scored if return_scored else 0
 
 
 if __name__ == "__main__":

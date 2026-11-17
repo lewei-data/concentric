@@ -2446,8 +2446,8 @@ class Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _notify_boss(self, text, level="info", source="ops"):
-        """内部紧急通知：写入小秘书线程 + TTS 语音 + SSE 推送（老板精灵面板/APP 播放）。
+    def _notify_boss(self, text, level="info", source="ops", voice=True):
+        """内部通知：写入小秘书线程 + SSE 推送；voice=True 时额外 TTS 语音播报。
 
         只给本机调用方（CTO 巡检、cron、运维脚本）用；不对公网开放（非回环需登录）。
         返回 spoken=False 表示 TTS 失败，调用方应降级为纯邮件。
@@ -2469,15 +2469,16 @@ class Handler(BaseHTTPRequestHandler):
             spoken = TN.speech(text, db)
         except Exception:                      # noqa: BLE001
             pass
-        try:
-            wav = voice_bridge.tts_synthesize(
-                spoken[:300], os.path.join(
-                    self._chat_dir(), f"{datetime.now(TZ).strftime('%Y%m%d-%H%M%S')}-alert.wav"))
-            if wav:
-                audio = f"/chat-files/{os.path.basename(wav)}"
-        except Exception as e:  # noqa: BLE001
-            err = f"{type(e).__name__}: {e}"
-            print(f"[notify] TTS 失败：{err}", flush=True)
+        if voice:
+            try:
+                wav = voice_bridge.tts_synthesize(
+                    spoken[:300], os.path.join(
+                        self._chat_dir(), f"{datetime.now(TZ).strftime('%Y%m%d-%H%M%S')}-alert.wav"))
+                if wav:
+                    audio = f"/chat-files/{os.path.basename(wav)}"
+            except Exception as e:  # noqa: BLE001
+                err = f"{type(e).__name__}: {e}"
+                print(f"[notify] TTS 失败：{err}", flush=True)
         secret = k.agents.get("secretary", {}).get("name", "小秘书")
         body = f"【{level.upper()}】{spoken}"
         db.chat_insert({"thread_id": tid, "source": "web",
@@ -2492,6 +2493,18 @@ class Handler(BaseHTTPRequestHandler):
                                     "audio": audio, "alert": 1, "level": level})
         return {"threadId": tid, "audio": audio, "spoken": bool(audio),
                 "level": level, "source": source}
+
+    def _content_enqueue(self, full, name, source, preset_text=""):
+        """附件/语音 → 素材内容化队列。入队失败绝不影响原上传/聊天流程。"""
+        try:
+            import material_content as MC
+            phone = str((self._session_user() or {}).get("phone") or "")
+            res = MC.enqueue(full, filename=name, source=source, phone=phone,
+                             preset_text=preset_text)
+            if res.get("ok"):
+                MC.kick()
+        except Exception as e:  # noqa: BLE001
+            print(f"[content] 入队失败：{type(e).__name__}: {e}", flush=True)
 
     def _chat_file(self, name):
         """读取 workspace/chat 下老板自己的聊天附件（realpath 防目录穿越）。"""
@@ -2569,6 +2582,9 @@ class Handler(BaseHTTPRequestHandler):
                 # APP 语音模式：先单独识别（/api/asr），拿到文字后让老板决定发文字还是发语音，
                 # 发语音时把已识别的文字一起带回来（text=...），整条链路只做一次 ASR。
                 preset = (qs.get("text") or [""])[0].strip()
+                if path == "/api/chat/voice":
+                    self._content_enqueue(os.path.join(self._chat_dir(), fname),
+                                          fname, "web-voice", preset)
                 transcript = preset
                 if not transcript:
                     try:
@@ -2599,6 +2615,7 @@ class Handler(BaseHTTPRequestHandler):
                 fname = f"{stamp}-file.bin"
             with open(os.path.join(self._chat_dir(), fname), "wb") as f:
                 f.write(blob)
+            self._content_enqueue(os.path.join(self._chat_dir(), fname), name, "web-file")
             tid = self._chat_put_inbound(k.db, modality="file", content=f"发来文件：{name}",
                                          content_kind="file",
                                          meta={"file": f"/chat-files/{fname}", "name": name,
@@ -2958,7 +2975,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "text 不能为空"}, 400)
             try:
                 res = self._notify_boss(text, str(body.get("level") or "info"),
-                                        str(body.get("source") or "ops"))
+                                        str(body.get("source") or "ops"),
+                                        voice=bool(body.get("voice", True)))
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
             except Exception as e:  # noqa: BLE001
@@ -3637,6 +3655,11 @@ def main():
     if args.host not in LOOPBACK and args.host != "localhost" and not AUTH_USER:
         print("警告：绑定到非回环地址且未设置 OPC_BASIC_USER / OPC_BASIC_PASS，局域网内任何人可访问与审批")
     USERS.session_load_all()   # 会话已落库，重启后老 cookie 依然有效
+    try:                       # 素材内容化常驻 worker（Web/MCP/飞书 入队后 20s 内处理）
+        import material_content as MC
+        MC.kick()
+    except Exception as e:     # noqa: BLE001
+        print(f"[content] worker 启动失败：{type(e).__name__}: {e}", flush=True)
     srv = OpcHTTPServer((args.host, args.port), Handler)
     srv.daemon_threads = True
     auth = f"auth=Basic({AUTH_USER})" if AUTH_USER else "auth=off"
