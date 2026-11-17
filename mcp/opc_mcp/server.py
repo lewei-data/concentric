@@ -45,20 +45,24 @@ def _safe_name(name):
 TOOLS = [
     {
         "name": "opc_init",
-        "description": "用手机号初始化 OPC 会话。已登记手机号直接返回 session_token；"
-                       "未登记或未传手机号时返回 need_input/need_registration，告知外部 agent 还需用户提供什么。",
+        "description": "用个人 API key 初始化 OPC 会话（推荐外网直接配请求头 X-Mail-Agent，通常不用本工具）。"
+                       "只给 key 即可，key 自带手机号；手机号只在网页申请 key 或密码登录时使用。"
+                       "只传手机号返回 need_secret，什么都不传也返回 need_secret（带申请地址）。",
         "inputSchema": {"type": "object", "properties": {
-            "phone": {"type": "string", "description": "11 位手机号；不传则返回需要的输入项"}},
+            "key": {"type": "string", "description": "个人 API key；外网接入只需这一项"},
+            "phone": {"type": "string", "description": "可选/已弃用：仅密码登录或旧版全局 key 时才需要"},
+            "password": {"type": "string", "description": "可选/不推荐：密码登录需同时带 phone"}},
             "required": []},
     },
     {
         "name": "opc_login",
-        "description": "手机号 + 密码（或 API key）完成初始化，返回 session_token。",
+        "description": "个人 API key 单独即可换 session_token（手机号从 key 解析）；"
+                       "只有密码登录或旧版全局 key 才需要 phone。",
         "inputSchema": {"type": "object", "properties": {
-            "phone": {"type": "string"},
-            "password": {"type": "string", "description": "登录密码"},
-            "key": {"type": "string", "description": "API key（password 的替代）"}},
-            "required": ["phone"]},
+            "key": {"type": "string", "description": "个人 API key（推荐，单独使用即可）"},
+            "phone": {"type": "string", "description": "仅密码登录/旧版全局 key 需要"},
+            "password": {"type": "string", "description": "登录密码；需同时带 phone"}},
+            "required": []},
     },
     {
         "name": "opc_whoami",
@@ -217,7 +221,12 @@ class OpcServer:
         degraded, error = False, None
         try:
             answer = llm.chat(messages, max_tokens=1400)
-        except llm.LLMError as e:
+            if not answer:
+                error = "LLM 首次返回空内容，已重试一次"
+                answer = llm.chat(messages, max_tokens=1400, temperature=0.1)
+            if not answer:
+                raise llm.LLMError("模型未返回内容（重试后仍为空）")
+        except Exception as e:
             degraded, error = True, str(e)[:300]
             if citations:
                 answer = "（LLM 通道不可用，先给知识库命中）\n" + "\n".join(
@@ -407,13 +416,18 @@ class OpcServer:
         phone = user["phone"]
         by_status = {r["status"]: r["n"] for r in self.store.all(
             "SELECT status, COUNT(*) n FROM materials WHERE phone=? GROUP BY status", (phone,))}
+        total = sum(by_status.values())
+        content_ids = {r["material_id"] for r in self.store.all(
+            "SELECT DISTINCT material_id FROM chunks WHERE phone=? AND material_id IS NOT NULL", (phone,))}
         chunks = self.store.one("SELECT COUNT(*) n FROM chunks WHERE phone=?", (phone,))
         cards = self.store.one("SELECT COUNT(*) n FROM cards WHERE phone=?", (phone,))
         ok, detail = llm.probe()
         return _json({
             "user": {"phone": phone, "name": user["name"], "role": user["role"]},
             "workspace": str(config.DATA_DIR / "users" / phone),
-            "materials": {"total": sum(by_status.values()), "by_status": by_status},
+            "materials": {"total": total, "by_status": by_status,
+                          "content_bearing": len(content_ids),
+                          "archived_only": max(0, total - len(content_ids))},
             "chunks": chunks["n"], "cards": cards["n"],
             "recent_jobs": [{"job_id": j["id"], "kind": j["kind"], "status": j["status"],
                              "error": j["error"]} for j in self.store.jobs(phone, limit=5)],
@@ -477,8 +491,9 @@ class OpcServer:
             return fn(args or {})
         except auth.AuthError as e:
             return _err(str(e), status="need_auth",
-                        next="外网客户端配置请求头 X-Mail-Agent=<个人 API key>；"
-                             "或调用 opc_init(phone, key=...) 获取 session_token")
+                        next="未领取 key：打开 %s 登录后自助生成；" % config.KEY_APPLY_URL
+                             + "已领取：配置请求头 X-Mail-Agent=<个人 API key>，"
+                               "或只调用 opc_init(key=...) 获取 session_token（不需要手机号）")
         except Exception as e:
             log("工具 %s 异常：%r" % (name, e))
             return _err("%s: %s" % (type(e).__name__, e))

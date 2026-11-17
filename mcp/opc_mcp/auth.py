@@ -84,31 +84,39 @@ def _key_ok(key):
 
 
 def init(store, phone=None, password=None, key=None):
-    """手机号只是身份；外部部署必须带个人 key（或密码）才发会话。"""
+    """外部接入只要 key；手机号只在网页申请 key 或密码登录时需要。"""
+    if key:
+        return login(store, phone, password=password, key=key)
+
     phone = normalize_phone(phone)
+    if password and len(phone) != 11:
+        return {"status": "need_input", "required": {"phone": "11 位手机号"},
+                "message": "密码登录需要手机号；个人 key 登录不需要。",
+                "next": "带 phone + password 调用 opc_init，或只用 key 调用 opc_init(key=...)。"}
+
     if not phone:
         return {
-            "status": "need_input",
-            "required": {"phone": "11 位手机号"},
-            "message": "请提供手机号以初始化 OPC 会话。",
-            "next": "带 phone 和 key 重新调用 opc_init(phone, key=...)；key 由管理员按手机号发放。",
+            "status": "need_secret",
+            "required": {"key": "个人 API key"},
+            "message": "外部接入只需个人 API key；手机号只在申请 key 时使用。",
+            "next": "打开 %s 登录后生成 key，然后配置请求头 X-Mail-Agent=<个人 key>；"
+                    % config.KEY_APPLY_URL
+                    + "手写客户端也可调用 opc_init(key=...)，不需要 phone。",
         }
     if len(phone) != 11:
         return {"status": "need_input", "required": {"phone": "11 位手机号"},
                 "message": "手机号格式不对：%s" % phone,
-                "next": "请提供 11 位中国大陆手机号后重调 opc_init(phone, key=...)。"}
-
-    if key or password:
-        return login(store, phone, password=password, key=key)
+                "next": "请提供 11 位手机号，或直接只用 key 调用 opc_init(key=...)。"}
 
     row = lookup(phone)
     known = store.one("SELECT * FROM users WHERE phone=?", (phone,))
     if not row and not known:
         return {
             "status": "need_registration",
-            "required": {"phone": phone, "key": "管理员发放的个人 API key"},
-            "message": "手机号 %s 未登记，请管理员先执行 opc_mcp.admin add 发放个人 key。" % phone,
-            "next": "拿到 key 后调用 opc_init(phone, key=...)，或由网关在请求头中自动注入。",
+            "required": {"phone": phone, "key": "个人 API key"},
+            "message": "手机号 %s 未登记/未领取 key，请登录工作台自助申请。" % phone,
+            "next": "打开 %s 登录后按手机号生成 key；" % config.KEY_APPLY_URL
+                    + "拿到后调用 opc_init(key=...) 即可，不必再传 phone。",
         }
 
     if config.PHONE_ONLY:
@@ -121,29 +129,32 @@ def init(store, phone=None, password=None, key=None):
         "status": "need_secret",
         "required": {"key": "个人 API key（推荐）", "password": "或不填 key 改用密码"},
         "message": "手机号 %s 已登记，但仅凭手机号不能登录；请提供个人 API key。" % phone,
-        "next": "调用 opc_init(phone, key=...)；外部客户端把 key 配在 MCP 请求头即可，无需在对话里出现。",
+        "next": "未领取请登录 %s 自助生成；" % config.KEY_APPLY_URL
+                + "已有 key 则调用 opc_init(key=...)，或由网关在请求头注入。",
     }
 
 
-def login(store, phone, password=None, key=None):
-    phone = normalize_phone(phone)
-    if len(phone) != 11:
-        raise AuthError("手机号需为 11 位：%s" % phone)
-
-    row = lookup(phone)
-    known = store.one("SELECT * FROM users WHERE phone=?", (phone,))
+def login(store, phone=None, password=None, key=None):
+    """个人 key 自包含手机号；只有密码登录/旧版全局 key 才需要 phone。"""
     if key:
         user = store.api_key_user(hash_key(key))
-        if user and user["phone"] == phone:
-            return _issue(store, phone)
-        if user and user["phone"] != phone:
-            raise AuthError("该 API key 属于其他手机号，不能用于当前手机号")
-        if _key_ok(key):  # 兼容旧版全局 OPC_MCP_API_KEYS；新部署应删掉该环境变量
-            _upsert_user(store, phone, (row or {}).get("用户名") or "key-user",
-                         (row or {}).get("角色") or "key", (row or {}).get("邮箱") or "", "legacy-key")
-            return _issue(store, phone)
-        raise AuthError("key 无效、已撤销或不属于该手机号")
+        if user:
+            return _issue(store, user["phone"])
 
+    phone = normalize_phone(phone)
+    if key and _key_ok(key):  # 旧版全局 key 没有绑定手机号，仍需显式给 phone
+        if len(phone) != 11:
+            raise AuthError("旧版全局 key 需要同时提供 11 位手机号；个人 key 不需要")
+        row = lookup(phone)
+        _upsert_user(store, phone, (row or {}).get("用户名") or "key-user",
+                     (row or {}).get("角色") or "key", (row or {}).get("邮箱") or "", "legacy-key")
+        return _issue(store, phone)
+    if key:
+        raise AuthError("key 无效、已撤销；请到 %s 登录后重新生成" % config.KEY_APPLY_URL)
+
+    if len(phone) != 11:
+        raise AuthError("密码登录需要 11 位手机号；个人 key 登录不需要")
+    row = lookup(phone)
     if not row:
         raise AuthError("手机号未登记，且未提供个人 API key")
     if not password:
@@ -161,14 +172,15 @@ def authenticate(store, token=None, api_key=None):
     if api_key:
         user = store.api_key_user(hash_key(api_key))
         if not user:
-            raise AuthError("个人 API key 无效或已撤销，请管理员重新发放")
+            raise AuthError("个人 API key 无效或已撤销；请到 %s 登录后重新生成" % config.KEY_APPLY_URL)
         return user
     if token:
         user = store.session_user(token)
         if not user:
-            raise AuthError("会话无效或已过期：重新调用 opc_init(phone, key=...)")
+            raise AuthError("会话无效或已过期：重新调用 opc_init(key=...)，或直接使用请求头 X-Mail-Agent")
         return user
-    raise AuthError("缺少身份凭据：外网客户端请配置个人 API key（请求头 X-Mail-Agent）")
+    raise AuthError("缺少身份凭据：请到 %s 登录后领取个人 API key，" % config.KEY_APPLY_URL
+                    + "再配置到 MCP 请求头 X-Mail-Agent")
 
 
 def resolve(store, args):

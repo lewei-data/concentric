@@ -17,6 +17,7 @@ import db as DB
 
 PROFILES_DIR = os.environ.get("OPC_HERMES_PROFILES", "/opt/sefs/hermes/profiles")
 DISPATCH_DB = os.environ.get("OPC_DISPATCH_DB", "/opt/sefs/hermes/dispatch/dispatch.db")
+MCP_DB = os.environ.get("OPC_MCP_DB", "/opt/sefs/opc-workbench/mcp/data/opc.db")
 INTERVAL = int(os.environ.get("OPC_INGEST_INTERVAL", "8"))
 BATCH = 500
 VOICE_MARK = "voice message could not be transcribed"
@@ -37,6 +38,13 @@ def _row(r, key, default=None):
         return r[key]
     except (IndexError, KeyError, TypeError):
         return default
+
+
+def _int(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # hermes 内部注入的消息（后台进程完成、工具结果、系统提醒）不是对话内容，
@@ -254,6 +262,78 @@ def pull_dispatch(store, on_event=None, full=False):
         conn.close()
 
 
+# ---------------------------------------------------------------- MCP 外部 Agent 消息
+def _mask_phone(phone):
+    p = str(phone or "")
+    return (p[:3] + "****" + p[-4:]) if len(p) >= 7 else (p or "未知号码")
+
+
+def pull_mcp(store, on_event=None, full=False):
+    """把外部 Agent 经 MCP 的对话从 mcp 只读库摄取到消息中心（owner opc.db）。
+
+    mcp/data/opc.db::messages 是只读源；水位线存 ingest_cursor('mcp','messages')。
+    线程按手机号隔离：mcp:<phone>；role=user 为外部提问（inbound），
+    role=assistant 为 OPC 回复（outbound）。origin_id 用源库自增 id，天然幂等。
+    """
+    if not os.path.isfile(MCP_DB):
+        return 0
+    last = 0 if full else _int(store.get_cursor("mcp", "messages"))
+    try:
+        conn = _ro(MCP_DB)
+    except sqlite3.Error as e:
+        _log(f"打开 MCP 库失败：{e}")
+        return 0
+    total = 0
+    try:
+        rows = conn.execute(
+            "SELECT id, phone, role, content, created_at FROM messages "
+            "WHERE id>? ORDER BY id LIMIT ?", (last, BATCH)).fetchall()
+    except sqlite3.Error as e:
+        _log(f"MCP 摄取失败：{e}")
+        rows = []
+    finally:
+        conn.close()
+    for r in rows:
+        mid = _int(_row(r, "id", 0))
+        last = mid
+        content = str(_row(r, "content") or "").strip()
+        if not content:
+            continue
+        phone = str(_row(r, "phone") or "")
+        masked = _mask_phone(phone)
+        thread = f"mcp:{phone}"
+        created = str(_row(r, "created_at") or DB.now_iso())
+        role = str(_row(r, "role") or "")
+        inbound = role == "user"
+        sender_id = "agent" if inbound else "opc"
+        sender_name = f"外部 Agent · {masked}" if inbound else "OPC MCP"
+        try:
+            store.chat_upsert_thread(
+                thread, "mcp", f"MCP · {masked}",
+                [{"id": "agent", "name": sender_name}, {"id": "opc", "name": "OPC MCP"}],
+                created, created)
+            msg = {
+                "thread_id": thread, "source": "mcp", "modality": "text",
+                "direction": "inbound" if inbound else "outbound",
+                "sender_id": sender_id, "sender_name": sender_name,
+                "content": content[:4000], "content_kind": "mcp.ask" if inbound else "mcp.answer",
+                "origin_table": "opc.mcp", "origin_id": f"msg_{mid}",
+                "meta": {"mcpMessageId": mid, "phone": phone, "role": role},
+                "created_at": created,
+            }
+            inserted = store.chat_insert(msg)
+        except Exception as e:
+            _log(f"MCP 消息写库失败：{type(e).__name__}: {e}")
+            continue
+        total += 1 if inserted else 0
+        _emit(on_event, thread, msg, inserted)
+    try:
+        store.set_cursor("mcp", "messages", last)
+    except Exception as e:
+        _log(f"MCP 水位线写入失败：{type(e).__name__}: {e}")
+    return total
+
+
 # ---------------------------------------------------------------- 调度
 class Ingestor:
     def __init__(self, store, on_event=None, interval=INTERVAL):
@@ -271,7 +351,8 @@ class Ingestor:
     def _loop(self):
         _log(f"已启动，间隔 {self.interval}s")
         while not self._stop.is_set():
-            for name, fn in (("feishu", pull_feishu), ("dispatch", pull_dispatch)):
+            for name, fn in (("feishu", pull_feishu), ("dispatch", pull_dispatch),
+                             ("mcp", pull_mcp)):
                 try:
                     n = fn(self.store, self.on_event)
                     if n:

@@ -29,9 +29,10 @@ def chat(messages, temperature=0.3, max_tokens=1200, timeout=None):
     except Exception as e:
         raise LLMError("LLM 不可达（%s）：%s" % (url, e)) from e
     try:
-        return body["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError) as e:
-        raise LLMError("LLM 响应缺 choices：%s" % str(body)[:300]) from e
+        content = body["choices"][0]["message"].get("content")
+        return (content or "").strip()
+    except (KeyError, IndexError, TypeError, AttributeError) as e:
+        raise LLMError("LLM 响应缺 choices/content：%s" % str(body)[:300]) from e
 
 
 def chat_json(messages, **kwargs):

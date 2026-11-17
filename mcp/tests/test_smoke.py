@@ -41,9 +41,9 @@ def main():
     print("cred     =", config.CRED_TABLE, "exists=", config.CRED_TABLE.exists())
     store = Store(config.DB_PATH)
 
-    # 1. 初始化三态
+    # 1. 初始化三态：外部接入只要 key，手机号只用于申请/密码登录
     r = auth.init(store)
-    check("无手机号 → need_input", r["status"] == "need_input" and "phone" in r["required"], r)
+    check("无 key 无手机号 → need_secret", r["status"] == "need_secret" and "key" in r["required"], r)
 
     r = auth.init(store, "123")
     check("手机号格式错 → need_input", r["status"] == "need_input", r)
@@ -86,11 +86,11 @@ def main():
     store.add_api_key(PHONE, auth.hash_key(personal), "smoke")
     check("个人 key 直接解析用户", auth.resolve(store, {"client_key": personal})["phone"] == PHONE)
     check("个人 key 登录发会话", auth.login(store, PHONE, key=personal)["status"] == "ready")
-    try:
-        auth.login(store, "13900000000", key=personal)
-        check("key 不能跨手机号使用", False)
-    except auth.AuthError:
-        check("key 不能跨手机号使用", True)
+    check("opc_init 只要 key（无手机号）", auth.init(store, key=personal)["status"] == "ready")
+    check("opc_login 只要 key（无手机号）", auth.login(store, key=personal)["status"] == "ready")
+    wrong_phone = auth.login(store, "13900000000", key=personal)
+    check("key 自带手机号，忽略误传 phone",
+          wrong_phone["status"] == "ready" and wrong_phone["user"]["phone"] == PHONE, wrong_phone)
     srv0 = OpcServer()
     who = eval_content(srv0.dispatch("opc_whoami", {"client_key": personal}))
     check("opc_whoami 走网关注入 key", who["phone"] == PHONE, who)

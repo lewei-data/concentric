@@ -1105,6 +1105,11 @@ class Handler(BaseHTTPRequestHandler):
                     (qs.get("traceId") or qs.get("trace") or [""])[0])})
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        # ---------- 外部 Agent key 自助领取（登录后） ----------
+        if path == "/mcp-key":
+            return self._web_dist("mcp-key.html")
+        if path == "/api/mcp-key":
+            return self._mcp_key_get()
         # ---------- 用户中心 ----------
         if path == "/api/account":
             user = self._session_user() or {}
@@ -2110,6 +2115,71 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 502)
 
+    # ---------- 外部 Agent 个人 API key：登录后按手机号自助领取 ----------
+    def _mcp_key_context(self):
+        phone = str((self._session_user() or {}).get("phone") or "").strip()
+        if not re.fullmatch(r"1[3-9]\d{9}", phone):
+            return None, self._json({"ok": False,
+                                     "error": "当前账号未绑定手机号，无法领取 MCP key"}, 400)
+        mcp_dir = os.path.normpath(os.path.join(BASE_DIR, "..", "mcp"))
+        if mcp_dir not in sys.path:
+            sys.path.insert(0, mcp_dir)
+        from opc_mcp import auth as m_auth, config as m_config
+        from opc_mcp.store import Store as McpStore
+        return (phone, m_auth, m_config, McpStore(m_config.DB_PATH)), None
+
+    def _mcp_key_get(self):
+        ctx, err = self._mcp_key_context()
+        if err:
+            return err
+        phone, _auth, m_conf, store = ctx
+        try:
+            rows = [r for r in store.api_keys(phone) if not r["revoked"]]
+            row = rows[-1] if rows else None
+            return self._json({
+                "ok": True, "phone": phone, "configured": bool(row),
+                "key_id": row["id"] if row else None,
+                "label": row["label"] if row else "",
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["created_at"]))
+                              if row else None,
+                "last_used": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["last_used"]))
+                             if row and row["last_used"] else None,
+                "note": "key 只存哈希，页面无法回显；如忘记请点“重新生成”",
+                "mcp_url": "https://ai.boraydata.com/mcp",
+                "upload_url": "https://ai.boraydata.com/conring/upload/",
+                "apply_url": m_conf.KEY_APPLY_URL,
+            })
+        finally:
+            store.db.close()
+
+    def _mcp_key_post(self, body):
+        ctx, err = self._mcp_key_context()
+        if err:
+            return err
+        phone, m_auth, m_conf, store = ctx
+        try:
+            action = str(body.get("action") or "create").lower()
+            if action not in ("create", "rotate", "revoke"):
+                return self._json({"ok": False, "error": "action 需为 create/rotate/revoke"}, 400)
+            store.revoke_api_key(phone=phone)
+            if action == "revoke":
+                return self._json({"ok": True, "phone": phone, "configured": False,
+                                   "revoked": True})
+            key = "opc_" + secrets.token_urlsafe(32)
+            label = str(body.get("label") or "工作台自助领取")[:40]
+            row = store.add_api_key(phone, m_auth.hash_key(key), label)
+            return self._json({
+                "ok": True, "phone": phone, "configured": True, "revoked": False,
+                "key": key, "key_id": row["id"],
+                "mcp_url": "https://ai.boraydata.com/mcp",
+                "header": "X-Mail-Agent: " + key,
+                "doubao_url": "https://ai.boraydata.com/conring/opc/%s/mcp" % key,
+                "note": "key 只显示这一次，请立即复制并配置到客户端；泄漏后回到本页点“撤销”。",
+                "apply_url": m_conf.KEY_APPLY_URL,
+            })
+        finally:
+            store.db.close()
+
     # ---------- 用户中心：基本信息 / 参数设置 / 数据资产导出与导入 ----------
 
     _ASSET_LABELS = {
@@ -2273,8 +2343,8 @@ class Handler(BaseHTTPRequestHandler):
         return d
 
     # 统一消息通道的来源：Web 桌面精灵 / APP 语音模式共用同一套线程与流水线
-    _CHAT_SOURCE_TITLES = {"web": "Web · 小秘书", "app": "APP · 小秘书"}
-    _CHAT_SOURCE_LABELS = {"web": "Web 消息中心", "app": "APP 语音模式"}
+    _CHAT_SOURCE_TITLES = {"web": "Web · 小秘书", "app": "APP · 小秘书", "mcp": "MCP · 外部 Agent"}
+    _CHAT_SOURCE_LABELS = {"web": "Web 消息中心", "app": "APP 语音模式", "mcp": "MCP 外部 Agent"}
 
     def _chat_source(self, qs):
         """query 里的 source（web / app），非法值一律按 web 处理。"""
@@ -3140,6 +3210,8 @@ class Handler(BaseHTTPRequestHandler):
         user = self._session_user()
         if not user:
             return self._json({"error": "unauthorized", "login": "/login"}, 401)
+        if path == "/api/mcp-key":
+            return self._mcp_key_post(body)
         # ---------- 组织配置写入（仅老板） ----------
         if path.startswith("/api/org/"):
             if user.get("role") != "老板":

@@ -43,6 +43,7 @@ const SOURCES = [
   { value: "hermes", label: "Hermes 任务" },
   { value: "factory", label: "加工厂" },
   { value: "llm", label: "大模型" },
+  { value: "mcp", label: "MCP 外部 Agent" },
 ];
 
 const DIRECTIONS = [
@@ -327,7 +328,7 @@ export function MessagesPage() {
         <div>
           <h1>消息中心</h1>
           <p className="muted home-sub">
-            飞书 / APP / Web + Hermes 任务 / 加工厂 / 大模型调用统一只读视图 · 新消息实时推送
+            飞书 / APP / Web / MCP 外部 Agent + Hermes 任务 / 加工厂 / 大模型调用统一只读视图 · 新消息实时推送
           </p>
         </div>
         <div className="chat-actions">
