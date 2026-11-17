@@ -11,8 +11,12 @@ DB_PATH = DATA_DIR / "opc.db"
 VAULT = Path(os.environ.get("OPC_VAULT") or "/mnt/sefs/conring/users/18911789286/obsidian")
 CRED_TABLE = Path(os.environ.get("OPC_CRED_TABLE") or (VAULT / "公司" / "登录凭据.md"))
 
-SESSION_TTL_SEC = int(os.environ.get("OPC_MCP_SESSION_TTL", 30 * 86400))
+SESSION_TTL_SEC = int(os.environ.get("OPC_MCP_SESSION_TTL", 7 * 86400))
+# 外部部署默认关掉「仅凭手机号发会话」；本机历史客户端可用 OPC_MCP_PHONE_ONLY=1 兼容
+PHONE_ONLY = os.environ.get("OPC_MCP_PHONE_ONLY", "0") == "1"
 API_KEYS = [k.strip() for k in (os.environ.get("OPC_MCP_API_KEYS") or "").split(",") if k.strip()]
+# 本机 stdio 客户端可用环境变量绑定个人身份，等价于 HTTP 网关注入的 client_key
+CLIENT_KEY = os.environ.get("OPC_MCP_CLIENT_KEY", "")
 
 # LLM：默认走本机 LiteLLM 免费通道（与 prototype/llm_registry.py 的 auto-free 一致）
 LLM_BASE_URL = os.environ.get("OPC_MCP_LLM_BASE_URL", "http://192.168.21.208:8000/v1")

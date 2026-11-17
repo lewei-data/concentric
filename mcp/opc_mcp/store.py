@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS users(
 CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY, phone TEXT NOT NULL, created_at REAL, expires_at REAL);
 
+CREATE TABLE IF NOT EXISTS api_keys(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL, key_hash TEXT NOT NULL UNIQUE, label TEXT,
+  created_at REAL, last_used REAL, revoked INTEGER DEFAULT 0);
+CREATE INDEX IF NOT EXISTS idx_api_keys_phone ON api_keys(phone);
+
 CREATE TABLE IF NOT EXISTS materials(
   id TEXT PRIMARY KEY, phone TEXT NOT NULL, filename TEXT, path TEXT, size INTEGER,
   sha256 TEXT, mime TEXT, status TEXT, reason TEXT, created_at REAL);
@@ -37,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_phone ON jobs(phone, created_at DESC);
 CREATE TABLE IF NOT EXISTS uploads(
   id TEXT PRIMARY KEY, phone TEXT NOT NULL, filename TEXT, size INTEGER,
   offset INTEGER, sha256 TEXT, path TEXT, status TEXT, material_id TEXT,
-  created_at REAL, updated_at REAL);
+  chunk_size INTEGER DEFAULT 0, created_at REAL, updated_at REAL);
 CREATE INDEX IF NOT EXISTS idx_uploads_phone ON uploads(phone, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS messages(
@@ -66,6 +72,9 @@ class Store:
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(jobs)").fetchall()}
         if "owner" not in cols:
             self.db.execute("ALTER TABLE jobs ADD COLUMN owner TEXT")
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(uploads)").fetchall()}
+        if "chunk_size" not in cols:
+            self.db.execute("ALTER TABLE uploads ADD COLUMN chunk_size INTEGER DEFAULT 0")
 
     def exec(self, sql, params=()):
         with self._lock:
@@ -98,6 +107,43 @@ class Store:
 
     def drop_session(self, token):
         self.exec("DELETE FROM sessions WHERE token=?", (token,))
+
+    # ---------------------------------------------------------------- 个人 API key
+    def add_api_key(self, phone, key_hash, label=None):
+        self.exec("INSERT INTO api_keys(phone, key_hash, label, created_at) VALUES(?,?,?,?)",
+                  (phone, key_hash, label, time.time()))
+        return self.one("SELECT * FROM api_keys WHERE key_hash=?", (key_hash,))
+
+    def api_key_user(self, key_hash):
+        row = self.one("SELECT * FROM api_keys WHERE key_hash=? AND revoked=0", (key_hash,))
+        if not row:
+            return None
+        self.exec("UPDATE api_keys SET last_used=? WHERE id=?", (time.time(), row["id"]))
+        return self.one("SELECT * FROM users WHERE phone=?", (row["phone"],))
+
+    def api_keys(self, phone=None):
+        if phone:
+            return self.all("SELECT id, phone, label, created_at, last_used, revoked"
+                            " FROM api_keys WHERE phone=? ORDER BY id", (phone,))
+        return self.all("SELECT id, phone, label, created_at, last_used, revoked"
+                        " FROM api_keys ORDER BY id")
+
+    def revoke_api_key(self, key_id=None, key_hash=None, phone=None):
+        clauses, params = [], []
+        if key_id is not None:
+            clauses.append("id=?")
+            params.append(int(key_id))
+        if key_hash is not None:
+            clauses.append("key_hash=?")
+            params.append(key_hash)
+        if phone:
+            clauses.append("phone=?")
+            params.append(phone)
+        if not clauses:
+            return 0
+        cur = self.exec("UPDATE api_keys SET revoked=1 WHERE %s" % " AND ".join(clauses),
+                        tuple(params))
+        return cur.rowcount
 
     # ---------------------------------------------------------------- 素材
     def add_material(self, phone, filename, path, size, sha256, mime):
@@ -185,11 +231,11 @@ class Store:
         return cur.rowcount
 
     # ---------------------------------------------------------------- 上传单
-    def add_upload(self, upload_id, phone, filename, size, path):
+    def add_upload(self, upload_id, phone, filename, size, path, chunk_size=0):
         now = time.time()
-        self.exec("INSERT INTO uploads(id, phone, filename, size, offset, path, status, created_at, updated_at)"
-                  " VALUES(?,?,?,?,0,?, 'uploading', ?, ?)",
-                  (upload_id, phone, filename, size, str(path), now, now))
+        self.exec("INSERT INTO uploads(id, phone, filename, size, offset, path, status, chunk_size,"
+                  " created_at, updated_at) VALUES(?,?,?,?,0,?, 'uploading', ?, ?, ?)",
+                  (upload_id, phone, filename, size, str(path), int(chunk_size or 0), now, now))
 
     def upload(self, upload_id):
         return self.one("SELECT * FROM uploads WHERE id=?", (upload_id,))

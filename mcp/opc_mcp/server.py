@@ -61,6 +61,11 @@ TOOLS = [
             "required": ["phone"]},
     },
     {
+        "name": "opc_whoami",
+        "description": "确认当前网关注入的个人 API key 对应的手机号与工作区；不需要传 token。",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "material_upload",
         "description": "上传素材文件并自动排队分析、内化进知识库。path 方式上限 2GB（服务端本地文件，流式拷贝）；"
                        "content_base64 上限 100MB。zip/pdf/doc/docx/xls/ppt/pptx 均可解析；"
@@ -74,14 +79,16 @@ TOOLS = [
     },
     {
         "name": "upload_begin",
-        "description": "大文件分片续传建单（支持 zip/pdf/doc 等，单文件最大 2GB）。返回 upload_id 与 HTTP 端点："
-                       "PUT {put_url}?offset=<已传字节> 追加分片（Content-Length 必填，可带 Content-Range: bytes s-e/total），"
-                       "GET {progress_url} 查进度（percent/已传/剩余/速率/ETA），"
-                       "POST .../complete 完成入库并自动分析。断电/断网后重新 GET progress_url 拿 offset 续传即可。",
+        "description": "大文件分片续传建单（zip/pdf/doc 等，单文件最大 2GB）。兼容四种协议："
+                       "①PUT ?offset=N；②Content-Range: bytes s-e/total（bytes */* 查状态）；"
+                       "③片号 ?part=N（建单带 chunk_size）；④Tus 1.0：POST /files + HEAD/PATCH /files/{id}。"
+                       "返回 put_url/part_put_url/tus_url/tus_create_url/progress_url/complete_url。"
+                       "进度接口含 percent/已传/剩余/速率/ETA；断电后 GET progress_url 取 offset 续传。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"},
             "filename": {"type": "string", "description": "含扩展名的文件名，如 资料.zip、合同.pdf"},
-            "size": {"type": "integer", "description": "文件总字节数（必须精确）"}},
+            "size": {"type": "integer", "description": "文件总字节数（必须精确）"},
+            "chunk_size": {"type": "integer", "description": "可选：片号模式的分片字节数，需固定"}},
             "required": ["token", "filename", "size"]},
     },
     {
@@ -164,6 +171,16 @@ TOOLS = [
     },
 ]
 
+# 外部网关会把个人 API key 注入 client_key；模型不需要也不应该手写 token/key。
+for _tool in TOOLS:
+    _schema = _tool["inputSchema"]
+    _props = _schema.setdefault("properties", {})
+    if _tool["name"] not in ("opc_init", "opc_login", "opc_whoami"):
+        _props.setdefault("client_key", {
+            "type": "string",
+            "description": "个人 API key；外网客户端由 MCP 网关按请求头自动注入，无需手写"})
+        _schema["required"] = [r for r in _schema.get("required", []) if r != "token"]
+
 
 class OpcServer:
     def __init__(self):
@@ -220,13 +237,19 @@ class OpcServer:
         return d
 
     def tool_opc_init(self, args):
-        return _json(auth.init(self.store, args.get("phone")))
+        return _json(auth.init(self.store, args.get("phone"),
+                               args.get("password"), args.get("key")))
 
     def tool_opc_login(self, args):
         return _json(auth.login(self.store, args.get("phone"), args.get("password"), args.get("key")))
 
+    def tool_opc_whoami(self, args):
+        user = auth.resolve(self.store, args)
+        return _json({"phone": user["phone"], "name": user["name"], "role": user["role"],
+                      "workspace": str(config.DATA_DIR / "users" / user["phone"])})
+
     def tool_material_upload(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         phone = user["phone"]
         if args.get("content_base64"):
             try:
@@ -285,7 +308,7 @@ class OpcServer:
                       "note": "已在后台分析并内化，可轮询 job_get"})
 
     def tool_upload_begin(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         phone = user["phone"]
         filename = _safe_name(args.get("filename") or "upload.bin")
         try:
@@ -296,27 +319,38 @@ class OpcServer:
             return _err("size 必须为正整数")
         if size > config.UPLOAD_MAX_MB * 1024 * 1024:
             return _err("文件超过上限 %sMB" % config.UPLOAD_MAX_MB)
+        try:
+            chunk_size = int(args.get("chunk_size") or 0)
+        except (TypeError, ValueError):
+            return _err("chunk_size 必须是整数")
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         upload_id = "up_" + secrets.token_hex(8)
         path = config.UPLOAD_DIR / (upload_id + ".part")
         path.write_bytes(b"")
-        self.store.add_upload(upload_id, phone, filename, size, path)
+        self.store.add_upload(upload_id, phone, filename, size, path, chunk_size)
         base = config.PUBLIC_UPLOAD_BASE
         return _json({
             "upload_id": upload_id, "filename": filename, "size": size, "offset": 0,
-            "chunk_size_hint": config.UPLOAD_CHUNK_HINT,
-            "auth": "Authorization: Bearer <token>（复用本工具传入的 session_token）",
-            "put_url": "%s/v1/uploads/%s" % (base, upload_id),
+            "chunk_size_hint": config.UPLOAD_CHUNK_HINT, "chunk_size": chunk_size,
+            "protocols": ["native-offset", "content-range", "chunk-index", "tus-1.0"],
+            "auth": "Authorization: Bearer <个人 API key 换来的 session_token>，或用 ?token=/X-OPC-Token",
+            "put_url": "%s/v1/uploads/%s?offset=0" % (base, upload_id),
+            "part_put_url": "%s/v1/uploads/%s?part={part}" % (base, upload_id),
             "head_url": "%s/v1/uploads/%s" % (base, upload_id),
             "progress_url": "%s/v1/uploads/%s/progress" % (base, upload_id),
             "complete_url": "%s/v1/uploads/%s/complete" % (base, upload_id),
             "delete_url": "%s/v1/uploads/%s" % (base, upload_id),
+            "tus_create_url": "%s/files" % base,
+            "tus_url": "%s/files/%s" % (base, upload_id),
+            "offset_headers": ["Upload-Offset", "X-Upload-Offset"],
             "local_base": config.LOCAL_UPLOAD_BASE,
-            "next": "PUT 每次带 ?offset=<已传字节>，服务端返回新 offset；中断后 GET 该 URL 取 offset 续传；"
-                    "传满后 POST complete_url（可带 X-Content-SHA256），返回 material_id 与 job_id。"})
+            "next": "四种任选：①PUT ?offset=N；②PUT 带 Content-Range: bytes s-e/total；"
+                    "③建单带 chunk_size 后 PUT ?part=N；④Tus: POST /files -> HEAD/PATCH /files/{id}。"
+                    "中断后 GET progress_url 取 offset 续传；传满后 POST complete_url 入库。"
+                    "Tus 最后一片会自动 complete。"})
 
     def tool_material_list(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         rows = self.store.materials(user["phone"], int(args.get("limit") or 50))
         return _json({"count": len(rows), "items": [
             {"material_id": r["id"], "filename": r["filename"], "size": r["size"],
@@ -324,7 +358,7 @@ class OpcServer:
              "created_at": _ts(r["created_at"])} for r in rows]})
 
     def tool_material_download(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         mat = self.store.material(str(args.get("material_id") or ""))
         if not mat or mat["phone"] != user["phone"]:
             return _err("素材不存在或不属于当前账号")
@@ -348,7 +382,7 @@ class OpcServer:
         return _json(out)
 
     def tool_material_analyze(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         target = str(args.get("material_id") or "")
         if target == "all":
             ids = [m["id"] for m in self.store.pending_materials(user["phone"])]
@@ -363,13 +397,13 @@ class OpcServer:
         return _json({"job_id": job["job_id"], "status": "queued", "count": len(ids)})
 
     def tool_job_get(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         job = self.runner.wait(str(args.get("job_id") or ""), user["phone"],
                                float(args.get("wait_sec") or 0))
         return _json(job) if job else _err("作业不存在")
 
     def tool_kb_status(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         phone = user["phone"]
         by_status = {r["status"]: r["n"] for r in self.store.all(
             "SELECT status, COUNT(*) n FROM materials WHERE phone=? GROUP BY status", (phone,))}
@@ -389,7 +423,7 @@ class OpcServer:
         })
 
     def tool_kb_search(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         query = str(args.get("query") or "")
         hits = knowledge.search(self.store, user["phone"], query, int(args.get("k") or 6))
         for h in hits:
@@ -397,7 +431,7 @@ class OpcServer:
         return _json({"query": query, "count": len(hits), "hits": hits})
 
     def tool_ask(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         text = str(args.get("text") or "").strip()
         if not text:
             return _err("text 不能为空")
@@ -408,7 +442,7 @@ class OpcServer:
         return _json(job)
 
     def tool_tts(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         out_dir = self._dir(user["phone"], "audio")
         try:
             res = media.tts(str(args.get("text") or ""), out_dir,
@@ -420,7 +454,7 @@ class OpcServer:
         return _json(res)
 
     def tool_image(self, args):
-        user = auth.authenticate(self.store, args.get("token"))
+        user = auth.resolve(self.store, args)
         out_dir = self._dir(user["phone"], "images")
         try:
             res = media.image(str(args.get("prompt") or ""), out_dir,
@@ -442,8 +476,9 @@ class OpcServer:
         try:
             return fn(args or {})
         except auth.AuthError as e:
-            return _err(str(e), status="need_init",
-                        next="先调用 opc_init(phone)；未登记则 opc_login(phone, password|key)")
+            return _err(str(e), status="need_auth",
+                        next="外网客户端配置请求头 X-Mail-Agent=<个人 API key>；"
+                             "或调用 opc_init(phone, key=...) 获取 session_token")
         except Exception as e:
             log("工具 %s 异常：%r" % (name, e))
             return _err("%s: %s" % (type(e).__name__, e))

@@ -16,6 +16,8 @@ from pathlib import Path
 TMP = tempfile.mkdtemp(prefix="opc-mcp-test-")
 os.environ["OPC_MCP_DATA_DIR"] = TMP
 os.environ["OPC_MCP_API_KEYS"] = os.environ.get("OPC_MCP_API_KEYS") or "testkey-123"
+# 历史用例沿用本机 phone-only；外部部署默认关闭，见下方 need_secret 检查
+os.environ["OPC_MCP_PHONE_ONLY"] = "1"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -79,13 +81,31 @@ def main():
     check("有效 token 可鉴权", auth.authenticate(store, token)["phone"] == PHONE)
     check("key 登录会话可用", auth.authenticate(store, key_token)["phone"] == "13900000000")
 
+    # 2b. 个人 key：手机号只是身份，key 才发会话；网关注入 client_key 不需要 token
+    personal = "opc_test_personal_key"
+    store.add_api_key(PHONE, auth.hash_key(personal), "smoke")
+    check("个人 key 直接解析用户", auth.resolve(store, {"client_key": personal})["phone"] == PHONE)
+    check("个人 key 登录发会话", auth.login(store, PHONE, key=personal)["status"] == "ready")
+    try:
+        auth.login(store, "13900000000", key=personal)
+        check("key 不能跨手机号使用", False)
+    except auth.AuthError:
+        check("key 不能跨手机号使用", True)
+    srv0 = OpcServer()
+    who = eval_content(srv0.dispatch("opc_whoami", {"client_key": personal}))
+    check("opc_whoami 走网关注入 key", who["phone"] == PHONE, who)
+    config.PHONE_ONLY = False
+    need = eval_content(srv0.dispatch("opc_init", {"phone": PHONE}))
+    check("外部模式仅手机号 → need_secret", need["status"] == "need_secret", need)
+    config.PHONE_ONLY = True
+
     # 3. MCP 服务：上传 → 后台分析 → 检索 → 问答
     srv = OpcServer()
 
     r = eval_content(srv.dispatch("opc_init", {"phone": PHONE}))
     check("工具 opc_init 走 MCP 结果封装", r["status"] == "ready", r)
     r = eval_content(srv.dispatch("opc_login", {"phone": PHONE, "password": "x"}))
-    check("工具 opc_login 错误密码 → need_init", r.get("status") == "need_init", r)
+    check("工具 opc_login 错误密码 → need_auth", r.get("status") == "need_auth", r)
 
     src = Path(TMP) / "物料说明.md"
     src.write_text("# 天狗大陆 素材清单\n\n"
@@ -105,7 +125,9 @@ def main():
     ub = eval_content(srv.dispatch("upload_begin", {"token": token,
                                                    "filename": "资料.zip", "size": 1024}))
     check("upload_begin 返回 upload_id/put_url",
-          ub.get("upload_id", "").startswith("up_") and ub.get("put_url", "").endswith(ub["upload_id"]), ub)
+          ub.get("upload_id", "").startswith("up_")
+          and ub["upload_id"] in ub.get("put_url", "")
+          and "tus_url" in ub and "part_put_url" in ub, ub)
     check("upload_begin 记录在 uploads 表", store.upload(ub["upload_id"])["size"] == 1024, ub)
     bad = srv.dispatch("upload_begin", {"token": token, "filename": "big.zip",
                                         "size": int(config.UPLOAD_MAX_MB * 1024 * 1024) + 1})
@@ -136,9 +158,9 @@ def main():
     check("kb_status 统计正确", status.get("materials", {}).get("total") == 1
           and status.get("chunks", 0) > 0, status)
 
-    # 4. 未带 token 访问 → need_init 指引
+    # 4. 未带 token 访问 → need_auth 指引
     err = srv.dispatch("ask", {"text": "hi"})
-    check("缺 token → need_init", err.get("isError") and "need_init" in err["content"][0]["text"],
+    check("缺 token → need_auth", err.get("isError") and "need_auth" in err["content"][0]["text"],
           err["content"][0]["text"][:200])
 
     # 5. 非文本素材 → 归档跳过

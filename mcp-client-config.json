@@ -14,6 +14,13 @@
     "asr": {
       "type": "streamable-http",
       "url": "http://192.168.31.206:9102/mcp"
+    },
+    "opc-kb": {
+      "type": "streamable-http",
+      "url": "https://ai.boraydata.com/mcp",
+      "headers": {
+        "X-Mail-Agent": "<管理员按手机号发放的个人 API key>"
+      }
     }
   }
 }
