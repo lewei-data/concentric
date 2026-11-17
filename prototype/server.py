@@ -801,10 +801,15 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return self._json({"ok": False, "login": "/login"}, 401)
             return self._json({"ok": True, "user": user})
-        # 健康检查公开可查：落地页「服务健康状态」按钮不要求登录，内容仅版本/引擎/时间
+        # 健康检查公开可查，按访问方式协商：
+        #   浏览器页面（Accept 含 text/html）→ health.html 可视化页（风格同落地页）
+        #   API/CLI（含 ?format=json 覆盖）→ 精简 JSON，仅 ok / version / time
         if path == "/api/health":
-            return self._json({"ok": True, "version": "3.0", "engine": MODE,
-                               "hermes": HERMES.stats(), "time": iso_now()})
+            fmt = (parse_qs(urlparse(self.path).query).get("format") or [""])[0]
+            wants_html = "text/html" in (self.headers.get("Accept") or "") and fmt != "json"
+            if wants_html:
+                return self._health_page()
+            return self._json({"ok": True, "version": "3.0", "time": iso_now()})
         # 根路径下发「同心圆知识管理体系」落地页（公开）；OPC_HOME_LEGACY=1 时
         # 放行走后面的旧版控制台分支，/app 新版工作台入口不受影响
         if path == "/" and not HOME_LEGACY:
@@ -1280,6 +1285,35 @@ class Handler(BaseHTTPRequestHandler):
 
     def _index(self):
         return self._static("index.html", "text/html; charset=utf-8")
+
+    def _health_page(self):
+        """健康页：读 health.html 模板并服务端注入实时数值（风格跟随落地页）。"""
+        h = HERMES.stats()
+        vals = {
+            "{{OK}}": "ok",
+            "{{VERSION}}": "3.0",
+            "{{TIME}}": iso_now(),
+            "{{ENGINE}}": str(MODE),
+            "{{MODEL}}": str(h.get("model") or "-"),
+            "{{WORKERS}}": str(h.get("workers", "-")),
+            "{{CALLS}}": str(h.get("calls", 0)),
+            "{{FAILURES}}": str(h.get("failures", 0)),
+            "{{FAIL_CLS}}": "" if not h.get("failures") else "warn",
+            "{{AVG_LATENCY}}": str(h.get("avgLatencyMs", 0)),
+        }
+        try:
+            html = open(os.path.join(BASE_DIR, "health.html"), encoding="utf-8").read()
+        except FileNotFoundError:
+            return self._json({"error": "health.html missing"}, 404)
+        for k, v in vals.items():
+            html = html.replace(k, v)
+        body = html.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _static(self, rel, ctype):
         """白名单静态文件：仅 index.html / office3d.html / meeting3d.html / vendor 下的 three.js"""

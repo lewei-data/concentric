@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>服务健康状态 · 同心圆知识管理体系</title>
+<meta http-equiv="refresh" content="30">
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #070c17;
+    --panel: #0e1626;
+    --line: #22304a;
+    --text: #e9effc;
+    --muted: #93a1bd;
+    --blue: #4c8dff;
+    --blue-2: #2f6fe0;
+    --mint: #7ce0c3;
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background:
+      radial-gradient(1000px 560px at 12% -12%, rgba(76, 141, 255, 0.22), transparent 62%),
+      radial-gradient(820px 460px at 100% 4%, rgba(124, 224, 195, 0.12), transparent 58%),
+      var(--bg);
+    display: flex; flex-direction: column; min-height: 100vh;
+  }
+  .grid {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0.35;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(700px 480px at 50% 18%, #000 0%, transparent 78%);
+  }
+  .nav {
+    position: relative; z-index: 2;
+    max-width: 980px; width: 100%; margin: 0 auto;
+    padding: 22px 24px 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: 0.6px; }
+  .nav .brand svg { width: 28px; height: 28px; border-radius: 8px; }
+  .nav .links { display: flex; gap: 20px; font-size: 13.5px; }
+  .nav a { color: var(--muted); text-decoration: none; transition: color 0.15s ease; }
+  .nav a:hover { color: var(--text); }
+  main {
+    position: relative; z-index: 1;
+    flex: 1;
+    max-width: 980px; width: 100%;
+    margin: 0 auto;
+    padding: 48px 24px 48px;
+  }
+  .head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; animation: rise 0.5s ease both; }
+  .head h1 { margin: 0; font-size: clamp(22px, 3.2vw, 32px); font-weight: 800; letter-spacing: -0.3px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 16px; border-radius: 999px;
+    font-size: 13.5px; font-weight: 750;
+    background: rgba(124, 224, 195, 0.12);
+    border: 1px solid rgba(124, 224, 195, 0.4);
+    color: var(--mint);
+  }
+  .badge .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--mint);
+    box-shadow: 0 0 12px rgba(124, 224, 195, 0.9);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .updated { margin-top: 12px; font-size: 12.5px; color: var(--muted); animation: rise 0.5s 0.05s ease both; }
+  .cards {
+    margin-top: 28px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    animation: rise 0.5s 0.1s ease both;
+  }
+  .card {
+    padding: 20px 18px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+    min-width: 0;
+  }
+  .card h3 { margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: 2px; color: #8fb8ff; text-transform: uppercase; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 13px; }
+  .kv + .kv { border-top: 1px solid rgba(255, 255, 255, 0.05); }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-weight: 650; text-align: right; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; }
+  .kv .v.good { color: var(--mint); }
+  .kv .v.warn { color: #f2b87b; }
+  .big { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+  .actions { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; animation: rise 0.5s 0.15s ease both; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 20px; border-radius: 11px;
+    font-size: 14px; font-weight: 700; text-decoration: none;
+    color: #fff; background: var(--blue);
+    box-shadow: 0 10px 28px rgba(76, 141, 255, 0.28);
+    transition: transform 0.08s ease, background 0.15s ease;
+  }
+  .btn:hover { background: var(--blue-2); transform: translateY(-1px); }
+  .btn.ghost { background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); color: var(--text); box-shadow: none; }
+  .btn.ghost:hover { background: rgba(255, 255, 255, 0.08); }
+  .api-hint {
+    margin-top: 26px; padding: 14px 16px;
+    border: 1px dashed var(--line); border-radius: 12px;
+    font-size: 12.5px; color: var(--muted); line-height: 1.7;
+    animation: rise 0.5s 0.2s ease both;
+  }
+  .api-hint code {
+    color: #a8bde0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px;
+    background: rgba(255, 255, 255, 0.05); padding: 1px 6px; border-radius: 6px;
+  }
+  footer {
+    position: relative; z-index: 1;
+    max-width: 980px; width: 100%; margin: 0 auto;
+    padding: 20px 24px 26px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    color: #6f7f9d; font-size: 12px;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  @media (max-width: 820px) { .cards { grid-template-columns: repeat(2, 1fr); } .nav .links { display: none; } }
+  @media (max-width: 520px) { .cards { grid-template-columns: 1fr; } main { padding-top: 32px; } }
+  @media (prefers-reduced-motion: reduce) { .badge .dot, .head, .updated, .cards, .actions, .api-hint { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+
+<nav class="nav">
+  <div class="brand">
+    <svg viewBox="0 0 128 128" aria-hidden="true">
+      <defs>
+        <linearGradient id="navg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1F6FEB"/><stop offset="1" stop-color="#0B3D91"/>
+        </linearGradient>
+      </defs>
+      <rect width="128" height="128" rx="28" fill="url(#navg)"/>
+      <circle cx="64" cy="64" r="40" fill="none" stroke="#E8F0FF" stroke-width="6" opacity=".75"/>
+      <circle cx="64" cy="64" r="26" fill="none" stroke="#8FB8FF" stroke-width="5"/>
+      <circle cx="64" cy="64" r="11" fill="#7CE0C3"/>
+    </svg>
+    <span>同心圆知识管理体系</span>
+  </div>
+  <div class="links">
+    <a href="/app">进入工作台</a>
+    <a href="/login">申请 Token</a>
+    <a href="/">首页</a>
+  </div>
+</nav>
+
+<main>
+  <div class="head">
+    <h1>服务健康状态</h1>
+    <span class="badge"><span class="dot"></span>运行中 · {{OK}}</span>
+  </div>
+  <div class="updated">检查时间 {{TIME}} · 页面每 30 秒自动刷新</div>
+
+  <section class="cards">
+    <div class="card">
+      <h3>服务</h3>
+      <div class="kv"><span class="k">状态</span><span class="v good">{{OK}}</span></div>
+      <div class="kv"><span class="k">版本</span><span class="v">{{VERSION}}</span></div>
+      <div class="kv"><span class="k">检查时间</span><span class="v">{{TIME}}</span></div>
+    </div>
+    <div class="card">
+      <h3>引擎</h3>
+      <div class="kv"><span class="k">执行模式</span><span class="v">{{ENGINE}}</span></div>
+      <div class="kv"><span class="k">模型</span><span class="v">{{MODEL}}</span></div>
+      <div class="kv"><span class="k">并发工人</span><span class="v">{{WORKERS}}</span></div>
+    </div>
+    <div class="card">
+      <h3>Hermes 调用</h3>
+      <div class="kv"><span class="k">累计调用</span><span class="v big">{{CALLS}}</span></div>
+      <div class="kv"><span class="k">失败</span><span class="v big {{FAIL_CLS}}">{{FAILURES}}</span></div>
+      <div class="kv"><span class="k">平均时延</span><span class="v">{{AVG_LATENCY}} ms</span></div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <a class="btn ghost" href="/">返回首页</a>
+    <a class="btn ghost" href="/app">进入工作台</a>
+    <a class="btn ghost" href="/api/health?format=json">JSON 视图</a>
+  </div>
+
+  <div class="api-hint">
+    程序化探活请使用 API 视图（返回 <code>{ok, version, time}</code> 精简 JSON）：
+    <code>curl https://ai.boraydata.com/api/health</code>；浏览器访问本页（<code>Accept: text/html</code>）时返回此可视化页面。
+  </div>
+</main>
+
+<footer>同心圆知识管理体系 · OPC Workbench</footer>
+</body>
+</html>

@@ -130,6 +130,22 @@ function fmtTime(ts: string) {
 }
 
 export default function AssistantWidget() {
+  // 落地页「申请访问 Token」→ 登录后跳 /app?intent=token：
+  // 纯规则流程（不经 LLM、不语音播报 Token）——跳过出场特效，主动弹对话框展示 Token 与保密提醒
+  const [tokenIntent] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (q.get("intent") !== "token") return false;
+      q.delete("intent");
+      const qs2 = q.toString();
+      window.history.replaceState(null, "",
+        window.location.pathname + (qs2 ? `?${qs2}` : "") + window.location.hash);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  const [tokenNotice, setTokenNotice] = useState<ChatMsg | null>(null);
   const [open, setOpen] = useState(false);
   const [greet, setGreet] = useState("");
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
@@ -177,6 +193,8 @@ export default function AssistantWidget() {
   const [introPos, setIntroPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
+    // Token 申请入口：不走出场特效，直接由下方规则弹框
+    if (tokenIntent) return;
     // 每次登录 / 刷新页面（文档加载）都放一次出场特效；站内路由切换不重放
     let alive = true;
     const timers: number[] = [];
@@ -228,6 +246,28 @@ export default function AssistantWidget() {
       timers.forEach((t) => window.clearTimeout(t));
     };
   }, []);
+
+  // —— Token 申请（规则流程）：取本人 privateToken，主动弹出对话框提醒保密 ——
+  useEffect(() => {
+    if (!tokenIntent) return;
+    let alive = true;
+    (async () => {
+      const d = await getJson<{ user?: { privateToken?: string } }>("/api/account");
+      if (!alive) return;
+      const tk = d?.user?.privateToken;
+      setTokenNotice({
+        direction: "outbound", senderId: "secretary", senderName: "小秘书",
+        modality: "text",
+        content: tk
+          ? `您申请的私有资料 Token：\n${tk}\n\n⚠️ Token 等同密码，只对本人资料有效。请妥善保管：不要发给他人、不要贴进群聊、不要提交到公开仓库。可随时在「账号」页查看与复制。`
+          : "未取到您的私有 Token，请到「账号」页查看；若仍没有，请联系管理员开通。",
+        createdAt: new Date().toISOString(),
+      });
+      openDialog();
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenIntent]);
 
   function skipIntro() {
     setIntro(null);
@@ -306,7 +346,7 @@ export default function AssistantWidget() {
   // —— 自动滚动 / 自动播报最后一条新回复 / 小秘书指挥整页跳转（MPA） ——
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [msgs]);
+  }, [msgs, tokenNotice]);
 
   useEffect(() => {
     const last = msgs[msgs.length - 1];
@@ -462,11 +502,8 @@ export default function AssistantWidget() {
       if (posRef.current) localStorage.setItem(POS_KEY, JSON.stringify(posRef.current));
     }
   }
-  function onSpriteClick() {
-    if (dragMovedRef.current) { dragMovedRef.current = false; return; }  // 拖拽结束不当作点击
+  function openDialog() {
     setGreet("");
-    // 再点一次头像 → 收起对话框（开/关都走这个入口）
-    if (open) { setOpen(false); return; }
     setOpen(true);
     // 对话框锚定在精灵旁边（精灵在右半屏→往左弹，否则往右弹；记住用户手动调整过的大小）
     setPanel((p) => {
@@ -490,6 +527,12 @@ export default function AssistantWidget() {
       y = Math.max(8, Math.min(y, Math.max(8, vh - h - 8)));
       return { x, y, w, h };
     });
+  }
+  function onSpriteClick() {
+    if (dragMovedRef.current) { dragMovedRef.current = false; return; }  // 拖拽结束不当作点击
+    // 再点一次头像 → 收起对话框（开/关都走这个入口）
+    if (open) { setOpen(false); return; }
+    openDialog();
   }
 
   // —— 对话框拖动（表头）与改变大小（右下角手柄） ——
@@ -619,10 +662,10 @@ export default function AssistantWidget() {
           </div>
           <div className="sec-tip">文字 / 按住🎤说话 / 📎传文件；APP 发来的语音指令也会同步显示在这里。</div>
           <div className="sec-list" ref={listRef}>
-            {msgs.length === 0 && (
+            {msgs.length === 0 && !tokenNotice && (
               <div className="sec-empty">还没有对话。打个招呼，或直接吩咐一件事吧。</div>
             )}
-            {msgs.map((m, i) => (
+            {(tokenNotice ? [...msgs, tokenNotice] : msgs).map((m, i) => (
               <div key={i} className={`sec-msg ${m.direction === "inbound" ? "me" : "bot"}`}>
                 <div className="sec-meta">
                   {m.senderName || (m.direction === "inbound" ? "老板" : "小秘书")}

@@ -29,7 +29,10 @@ description: Operate the ai.boraydata.com nginx gateway on 192.168.31.208 that p
                    ├─ /conring/dispatch-ws/      → 192.168.21.206:9121 (WebSocket)
                    ├─ /mcp、/conring/mcp          → 192.168.21.206:9104（opc-mcp）
                    ├─ /conring/upload/           → 192.168.21.206:9105（opc 大文件分片续传）
-                   └─ 其余（含 /conring/ 本身）   → 127.0.0.1:8765（208 本机 sefs-mcp，负责 /token 与 401）
+                   ├─ /workbench/                → 192.168.21.206:8848（sub_filter 补 /workbench 前缀）
+                   ├─ /、/login、/app、/api/*     → 192.168.21.206:8848（workbench-root.conf，根路径免改写）
+                   ├─ /token                     → 127.0.0.1:8765（208 本机 sefs-mcp）
+                   └─ 其余 /conring/* 未匹配路径  → 127.0.0.1:8765（sefs-mcp 401 兜底）
 ```
 
 ## 文件职责
@@ -37,11 +40,12 @@ description: Operate the ai.boraydata.com nginx gateway on 192.168.31.208 that p
 | 路径（208） | 作用 |
 |---|---|
 | `/etc/nginx/snippets/conring-mcp.conf` | **唯一的 /conring 路由表**，被下面两个 server 同时 include |
-| `/etc/nginx/conf.d/proxy_8001.conf` | 443 server，certbot 证书，`/` → 127.0.0.1:8765 |
+| `/etc/nginx/snippets/workbench-root.conf` | 根路径路由：`/` → 206:8848（同心圆落地页/工作台），`/token` 与未匹配 `/conring/*` 兜底 → 8765 |
+| `/etc/nginx/conf.d/proxy_8001.conf` | 443 server，certbot 证书，include 上面两个 snippet |
 | `/etc/nginx/conf.d/sefs-mcp.conf` | 80 default_server，同样 include 上面的 snippet |
 | `/etc/nginx/conf.d/gzip.conf` | http 级 gzip，只压 json 与 m3u8（不能压 SSE） |
 
-改路由**只改 snippet**；两个 server 块里的 `location /`、证书、`client_max_body_size` 不要重复添加。
+改路由**只改 snippet**；两个 server 块里不再直接写 `location /`（已收进 workbench-root.conf），证书、`client_max_body_size` 不要重复添加。
 
 ## 当前路由（2026-11-17 实测）
 
@@ -59,6 +63,9 @@ description: Operate the ai.boraydata.com nginx gateway on 192.168.31.208 that p
 | `/conring/media/v1/assets/intro/<id>.mp4` | 9200 | 200（支持 Range/206） |
 | `/conring/media/files/*` | — | 404（nginx 直接拦，不转发） |
 | `/conring/`、`/conring/nope/` | 208:8765 | 401 `realm="sefs-mcp"` |
+| `/` | 206:8848 | 200 落地页「同心圆知识管理体系」（workbench-root.conf） |
+| `/login`、`/app`、`/api/health` | 206:8848 | 200（工作台页面公开，数据接口按会话 401） |
+| `/token` | 208:8765 | 200（sefs-mcp token 申请页，保留） |
 
 ## 改配置的固定流程
 
@@ -112,7 +119,7 @@ WebSocket 路由把 `Connection` 换成 `"upgrade"`，并加 `proxy_set_header U
 ## 坑与判定规则
 
 - **`proxy_pass` 尾斜杠** 决定是否剥离前缀。带尾斜杠：`/conring/asr/mcp` → `http://206:9102/mcp`。去掉尾斜杠，206 会收到完整的 `/conring/asr/mcp` 并 404。
-- **401 不是 nginx 产生的**。nginx 里没有任何 `auth_request`/`auth_basic`；401 的 JSON 与 `WWW-Authenticate: Bearer realm="sefs-mcp"` 都来自 208:8765。看到 401 说明该路径**没有匹配到专属 location**。
+- **401 不是 nginx 产生的**。nginx 里没有任何 `auth_request`/`auth_basic`；`WWW-Authenticate: Bearer realm="sefs-mcp"` 的 401 来自 208:8765（现在只有未匹配的 `/conring/*` 与 `/token` 会落到那里）；workbench 侧的 401/302 来自 206:8848 的会话校验。看到 401 先分清是哪一层的。
 - **502** = 206 上服务没监听、只绑了回环，或者 208 到 `192.168.21.206` 这条万兆链路断了。dispatch 的 `DISPATCH_HOST` 默认就是回环，必须显式 `0.0.0.0`（见 `/opt/sefs/hermes/dispatch/start.sh` 顶部注释）。先 `ssh boray@192.168.31.208 curl -s -o /dev/null -w '%{http_code}' http://192.168.21.206:<port>/health` 判断是链路还是进程。
 - **curl 返回 000** = 连接建立后被上游断开，常见于对目录路径发 GET（如 `/conring/tts/`、`/conring/asr/assets/`），用具体文件或 `/mcp` 验证。
 - **MCP 端点没有 nginx 层 token 校验**：带假 token 访问 `/conring/asr/mcp` 仍返回 400，说明鉴权在 206 服务内部，安全边界不在 208。
