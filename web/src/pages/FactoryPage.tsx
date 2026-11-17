@@ -1,8 +1,11 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useGetIdentity } from "@refinedev/core";
 import type { OpcUser } from "../types";
 import { appRoot } from "../appRoot";
 import { FactoryShotsPanel } from "../components/FactoryShots";
+import { FactoryLinePanel } from "../components/FactoryLinePanel";
+import { FACTORY_LINES, LINE_BY_KEY, type LineKey } from "../factoryLines";
 
 const MarkdownBody = lazy(() => import("../components/MarkdownBody"));
 
@@ -127,6 +130,12 @@ async function factoryGet<T>(url: string): Promise<T> {
 export function FactoryPage() {
   const { data: identity } = useGetIdentity<OpcUser>();
   const isBoss = String(identity?.role ?? "").includes("老板");
+
+  // 二级导航：按要素类型切换车间（URL ?line= 可深链）
+  const [searchParams, setSearchParams] = useSearchParams();
+  const paramLine = searchParams.get("line") as LineKey;
+  const activeLine: LineKey = paramLine && LINE_BY_KEY[paramLine] ? paramLine : "all";
+  const selectLine = (key: LineKey) => setSearchParams(key === "all" ? {} : { line: key });
 
   const [data, setData] = useState<FactoryData | null>(null);
   const [loadErr, setLoadErr] = useState("");
@@ -253,13 +262,10 @@ export function FactoryPage() {
     <section className="page fac-page">
       <div className="page-head">
         <div>
-          <h1>制片工厂</h1>
+          <h1>加工厂</h1>
           <p className="muted home-sub">
-            全厂 13 个车间对应 OpenMontage 的 13 类工艺；每个工艺有各自的工序序列与名称
-            （CCO 审批定工艺时即定格）。流水线生命周期：内容单经 CCO 审批通过发放流水号
-            （WO-YYYYMMDD-NNN）进厂，按所属工艺的工序逐站加工；流水结束（出厂 / 完工 / 受阻终止）
-            即转入下方「历史产品」，当前监控只显示在制流水线；进厂前的选题调度与出厂后的
-            发布/归档由 hermes 编排，不属工厂工序。
+            所有要素统一处理的车间总和：文章、声音、图片、视频及其它原料，按要素类型分车间加工、标准化流程出厂。
+            用下方二级导航切换各要素车间；进厂前的选题调度与出厂后的发布/归档由 hermes 编排，不属车间工序。
           </p>
         </div>
         <div className="fac-meta">
@@ -272,10 +278,29 @@ export function FactoryPage() {
         </div>
       </div>
 
+      {/* 二级导航：按要素类型切换车间，统一管理 */}
+      <nav className="fac-lines" role="tablist" aria-label="要素车间导航">
+        {FACTORY_LINES.map((l) => (
+          <button
+            key={l.key}
+            type="button"
+            role="tab"
+            aria-selected={activeLine === l.key}
+            className={`fac-line-tab${activeLine === l.key ? " is-active" : ""}`}
+            onClick={() => selectLine(l.key)}
+            title={l.subtitle}
+          >
+            {l.label}
+          </button>
+        ))}
+      </nav>
+
       {loadErr && <div className="fac-error">监控数据加载失败：{loadErr}</div>}
       {resumeMsg && <div className="fac-note">{resumeMsg}</div>}
 
-      {/* 顶部：流水线监控（横向工艺轴） */}
+      {activeLine === "all" ? (
+        <>
+          {/* 顶部：流水线监控（横向工艺轴） */}
       <div className="fac-monitors">
         <div className="fac-section-head">
           <h2>
@@ -692,7 +717,10 @@ export function FactoryPage() {
           );
         })}
       </div>
-
+        </>
+      ) : (
+        <FactoryLinePanel line={LINE_BY_KEY[activeLine]} products={products} />
+      )}
     </section>
   );
 }

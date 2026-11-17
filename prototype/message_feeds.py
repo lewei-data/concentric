@@ -1,4 +1,4 @@
-"""消息中心 · 三源埋点（Hermes 任务 / 制片工厂 / 大模型调用）。
+"""消息中心 · 三源埋点（Hermes 任务 / 加工厂 / 大模型调用）。
 
 只做「写会话线程 + 写消息 + 推 SSE」，不参与任何业务判断；异常只打日志，
 绝不阻断流水线。线程约定：
@@ -16,7 +16,7 @@ import task_names as TN
 # 来源 → (默认会话标题, 参与者)
 SOURCE_TITLES = {
     "hermes": ("Hermes · 任务调度", [{"id": "hermes", "name": "Hermes"}]),
-    "factory": ("制片工厂 · 车间流水线", [{"id": "factory", "name": "制片工厂"}]),
+    "factory": ("加工厂 · 车间流水线", [{"id": "factory", "name": "加工厂"}]),
     "llm": ("大模型 · 调用账本", [{"id": "llm", "name": "大模型"}]),
 }
 
@@ -141,8 +141,8 @@ def factory_step(db, emit, trace, title, stage_name, status, products=()):
             head += f" 工序：{ '、'.join(steps) }"
         lines.append(head)
     lines.append(f"任务：{_task(db, trace, title)}")
-    return _post(db, emit, "factory", factory_thread(trace), f"制片工厂 · {_thread_title(db, trace, title)}",
-                 "制片工厂", "\n".join(lines), "workshop", trace,
+    return _post(db, emit, "factory", factory_thread(trace), f"加工厂 · {_thread_title(db, trace, title)}",
+                 "加工厂", "\n".join(lines), "workshop", trace,
                  {"stage": stage_name, "status": status, "products": len(products)})
 
 

@@ -1173,7 +1173,7 @@ a:hover {
   color: #ffffff;
 }
 
-/* ---------- 作品档案 ---------- */
+/* ---------- 成品仓库 ---------- */
 .works-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1188,7 +1188,7 @@ a:hover {
   gap: 8px;
 }
 
-/* ---------- 作品档案详情页：左侧文字介绍，右侧手机比例播放 ---------- */
+/* ---------- 成品仓库详情页：左侧文字介绍，右侧手机比例播放 ---------- */
 .work-back-row { margin-bottom: 12px; }
 
 .works-detail-page .work-detail-head { align-items: flex-start; }
@@ -1331,7 +1331,7 @@ a:hover {
   background: #6b7280;
 }
 
-/* 工厂生命周期状态（作品档案与制片工厂一致） */
+/* 工厂生命周期状态（成品仓库与加工厂一致） */
 .status-shipped,
 .status-pill.status-shipped {
   background: #f5f3ff;
@@ -4064,7 +4064,7 @@ a:hover {
   .ops-nodes-meta { gap: 10px; }
 }
 
-/* ============ 制片工厂（车间监控/控制） ============ */
+/* ============ 加工厂（车间监控/控制） ============ */
 .fac-page .fac-meta { display: flex; align-items: center; gap: 14px; }
 .fac-error {
   margin: 10px 0; padding: 10px 14px; border-radius: var(--radius-sm);
@@ -4074,6 +4074,130 @@ a:hover {
   margin: 10px 0; padding: 10px 14px; border-radius: var(--radius-sm);
   background: var(--accent-soft); color: var(--accent-deep); border: 1px solid #cfddff; font-size: 13px;
 }
+
+/* 二级导航：要素车间切换 */
+.fac-lines {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px;
+  padding: 6px; background: var(--surface-soft); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow-x: auto;
+}
+.fac-line-tab {
+  flex: 1 0 auto; min-width: 104px; padding: 9px 14px; border: 1px solid transparent;
+  border-radius: var(--radius-sm); background: transparent; color: var(--muted);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-align: center;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+  white-space: nowrap;
+}
+.fac-line-tab:hover { color: var(--text); background: var(--surface); }
+.fac-line-tab.is-active {
+  color: var(--accent-deep); background: var(--surface); border-color: var(--border-strong);
+  box-shadow: var(--shadow-1);
+}
+
+/* 要素车间面板 */
+.fac-line { display: flex; flex-direction: column; gap: 14px; }
+.fac-line-intro {
+  display: flex; gap: 18px; align-items: flex-start; padding: 18px 20px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+}
+.fac-line-mark {
+  flex: 0 0 auto; width: 60px; height: 60px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent-deep);
+  font-size: 20px; font-weight: 800;
+}
+.fac-line-intro-main { flex: 1 1 auto; min-width: 0; }
+.fac-line-intro-main h2 { margin: 0 0 6px; font-size: 19px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.fac-line-sub { font-size: 12px; font-weight: 500; color: var(--muted); }
+.fac-line-desc { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text); }
+.fac-line-stats { display: flex; gap: 16px; flex: 0 0 auto; }
+.fac-line-stats > div {
+  display: flex; flex-direction: column; align-items: center; min-width: 64px;
+  padding: 8px 10px; background: var(--surface-soft); border-radius: var(--radius-sm);
+}
+.fac-line-stats b { font-size: 20px; color: var(--accent-deep); }
+.fac-line-stats span { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.fac-line-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 20px 20px; box-shadow: var(--shadow-1);
+}
+.fac-line-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; padding-bottom: 10px; margin-bottom: 12px;
+  border-bottom: 1px dashed var(--border-strong);
+}
+.fac-line-card-head h3 { margin: 0; font-size: 16px; }
+.fac-line-card-head .muted { font-size: 12px; }
+
+.fac-flow { display: flex; flex-wrap: wrap; gap: 6px; }
+.fac-flow-item {
+  flex: 1 1 150px; position: relative; padding: 12px 14px 12px 48px;
+  background: var(--surface-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  min-height: 96px;
+}
+.fac-flow-num {
+  position: absolute; left: 12px; top: 12px; width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent-deep);
+  border-radius: 50%; font-size: 13px; font-weight: 800;
+}
+.fac-flow-body b { font-size: 13px; }
+.fac-flow-body p { margin: 5px 0 0; font-size: 12px; line-height: 1.55; color: var(--muted); }
+.fac-flow-arrow {
+  position: absolute; right: -11px; top: 50%; transform: translateY(-50%);
+  color: var(--border-strong); font-size: 16px; font-weight: 700; z-index: 1;
+}
+
+.fac-ch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.fac-ch { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.fac-ch.is-ok { border-left: 3px solid var(--ok, #2e9e6b); }
+.fac-ch.is-off { border-left: 3px solid var(--danger); opacity: 0.9; }
+.fac-ch-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fac-ch-head b { font-size: 13px; }
+.fac-ch-state { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); }
+.fac-ch.is-ok .fac-ch-state { color: var(--ok, #2e9e6b); }
+.fac-ch.is-off .fac-ch-state { color: var(--danger); }
+.fac-ch-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.fac-ch-meta code { background: var(--surface); padding: 1px 6px; border-radius: 4px; }
+.fac-ch-notes { margin: 8px 0 0; font-size: 12px; line-height: 1.55; }
+.fac-ch-reason { margin: 6px 0 0; font-size: 11px; color: var(--danger); }
+
+.fac-job-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fac-job {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft);
+}
+.fac-job-preview {
+  flex: 0 0 52px; width: 52px; height: 52px; border-radius: 6px; overflow: hidden;
+  background: var(--surface); display: flex; align-items: center; justify-content: center;
+  position: relative; color: var(--muted);
+}
+.fac-job-preview img, .fac-job-preview video { width: 100%; height: 100%; object-fit: cover; }
+.fac-job-audio { font-size: 22px; color: var(--accent-deep); }
+.fac-job-pct { font-size: 11px; font-weight: 700; color: var(--accent-deep); }
+.fac-job-x { font-size: 20px; }
+.fac-job-main { flex: 1 1 auto; min-width: 0; }
+.fac-job-prompt { margin: 0 0 4px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fac-job-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--muted); }
+.fac-job-pill { padding: 1px 8px; border-radius: 999px; background: var(--surface); font-weight: 600; }
+.fac-job-pill.s-done { color: var(--ok, #2e9e6b); }
+.fac-job-pill.s-failed { color: var(--danger); }
+.fac-job-pill.s-running, .fac-job-pill.s-queued { color: var(--accent-deep); }
+.fac-job-bar { margin-top: 5px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.fac-job-bar i { display: block; height: 100%; background: var(--accent); }
+.fac-job-error { margin: 4px 0 0; font-size: 11px; color: var(--danger); }
+.fac-job-open { flex: 0 0 auto; font-size: 12px; color: var(--accent-deep); text-decoration: none; }
+
+.fac-rel-list { display: flex; flex-direction: column; gap: 6px; }
+.fac-rel { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; }
+.fac-rel .muted { font-size: 11px; }
+
+.fac-out-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.fac-out { padding: 5px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-deep); font-size: 12px; font-weight: 600; }
+.fac-line-note { margin: 12px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.fac-line-actions { display: flex; justify-content: flex-end; }
 
 /* 顶部：流水线监控 */
 .fac-monitors {
@@ -5921,7 +6045,7 @@ a:hover > .comfy-thumb { border-color: var(--accent); }
   .kb-dim-axis { flex-basis: 44px; font-size: 12px; }
 }
 
-/* ===== 总览看板数字下钻 + 作品档案缩略图视图 ===== */
+/* ===== 总览看板数字下钻 + 成品仓库缩略图视图 ===== */
 /* KPI 卡片整体可点，右上角箭头提示这是入口 */
 .ceo-kpi-link {
   color: inherit;

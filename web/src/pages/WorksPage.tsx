@@ -16,7 +16,7 @@ const PROJECTS = [
   { id: "gou", name: "产品二组" },
   { id: "tongxinyuan", name: "产品三组" },
 ];
-/* 状态与制片工厂生命周期一致：出厂=质检审核通过 */
+/* 状态与加工厂生命周期一致：出厂=质检审核通过 */
 const STATUSES = ["", "生产中", "已出厂", "已完工", "已中断"];
 const DOC_ORDER = ["topic", "copy", "storyboard", "assessment", "review"];
 
@@ -340,9 +340,9 @@ function WorksListPage() {
     <section className="page">
       <div className="page-head">
         <div>
-          <h1>作品档案</h1>
+          <h1>成品仓库</h1>
           <p className="muted home-sub">
-            以制片工厂过程库为准的作品档案：只收录经 CCO 审批进厂（有流水号）的作品，
+            以加工厂过程库为准的成品仓库：只收录经 CCO 审批进厂（有流水号）的作品，
             阶段/状态随工厂生命周期（生产中 → 质检审核通过出厂），每一步进展与车间数据一致。
           </p>
         </div>

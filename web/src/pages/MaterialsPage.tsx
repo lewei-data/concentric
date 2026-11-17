@@ -581,7 +581,7 @@ export function MaterialsPage() {
         <div>
           <h1>素材</h1>
           <p className="mat-sub">
-            原料层：外部采集、对标原片、音视频与图文素材。成品请到「作品档案」，结论请到「知识库」
+            原料层：外部采集、对标原片、音视频与图文素材。成品请到「成品仓库」，结论请到「知识库」
           </p>
         </div>
         <div className="mat-head-meta">

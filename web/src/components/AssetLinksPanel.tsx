@@ -60,7 +60,7 @@ export function AssetLinksPanel({ kbId }: { kbId: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  // 候选值：原料取发布清单，成品取作品档案编号
+  // 候选值：原料取发布清单，成品取成品仓库编号
   useEffect(() => {
     fetch("/api/materials", { credentials: "include" })
       .then((r) => r.json())

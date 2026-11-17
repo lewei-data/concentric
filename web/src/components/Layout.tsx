@@ -7,14 +7,14 @@ import type { OpcUser } from "../types";
 import AssistantWidget from "./AssistantWidget";
 import { WuxingBadge, WuxingLogo, WuxingWordmark } from "./WuxingLogo";
 
-// 主导航顺序：总览 → 热点 → 素材 → 制片工厂 → 作品档案 → 知识库 → 消息中心 → 运维监控
+// 主导航顺序：总览 → 热点 → 素材 → 加工厂 → 成品仓库 → 知识库 → 消息中心 → 运维监控
 // 消息中心与运维监控在末尾动态追加（前者仅老板可见）
 const PRIMARY_NAV = [
   { to: "/", label: "总览", end: true },
   { to: "/hotspots", label: "热点" },
   { to: "/materials", label: "素材" },
-  { to: "/factory", label: "制片工厂" },
-  { to: "/works", label: "作品档案" },
+  { to: "/factory", label: "加工厂" },
+  { to: "/works", label: "成品仓库" },
   { to: "/knowledge", label: "知识库" },
 ];
 

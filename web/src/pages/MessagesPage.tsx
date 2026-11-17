@@ -41,7 +41,7 @@ const SOURCES = [
   { value: "app", label: "APP" },
   { value: "web", label: "Web" },
   { value: "hermes", label: "Hermes 任务" },
-  { value: "factory", label: "制片工厂" },
+  { value: "factory", label: "加工厂" },
   { value: "llm", label: "大模型" },
 ];
 
@@ -63,7 +63,7 @@ const SOURCE_LABEL: Record<string, string> = {
   app: "APP",
   web: "Web",
   hermes: "Hermes",
-  factory: "制片工厂",
+  factory: "加工厂",
   llm: "大模型",
 };
 const MODALITY_LABEL: Record<string, string> = { text: "文字", voice: "语音", video: "视频" };
@@ -327,7 +327,7 @@ export function MessagesPage() {
         <div>
           <h1>消息中心</h1>
           <p className="muted home-sub">
-            飞书 / APP / Web + Hermes 任务 / 制片工厂 / 大模型调用统一只读视图 · 新消息实时推送
+            飞书 / APP / Web + Hermes 任务 / 加工厂 / 大模型调用统一只读视图 · 新消息实时推送
           </p>
         </div>
         <div className="chat-actions">

@@ -78,7 +78,7 @@ export const STAGE_SANCAI: Record<string, SanCai> = {
   archive: "di", report: "tian",
 };
 
-/** 作品档案自身阶段 → 才位 */
+/** 成品仓库自身阶段 → 才位 */
 export const WORK_STAGE_SANCAI: Record<string, SanCai> = {
   topic: "tian", copy: "ren", video: "ren", factory: "ren", review: "ren", archive: "di",
 };

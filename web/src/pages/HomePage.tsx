@@ -55,7 +55,7 @@ type OpsResp = {
   };
   alerts?: { id: string; level: string; title: string; detail: string; source?: string }[];
 };
-/* 制片工厂流水线（出厂后流程监控用） */
+/* 加工厂流水线（出厂后流程监控用） */
 type FactoryProduct = {
   itemId: string;
   traceId: string;
@@ -314,7 +314,7 @@ export function HomePage() {
   // +08:00 时区每天的 0-8 点会把「今天」算成昨天，当天出厂/完成等按日统计全为 0。
   const today = new Date().toLocaleDateString("sv-SE");
 
-  // 指标统一用工厂口径（与制片工厂/作品档案一致的生命周期）：
+  // 指标统一用工厂口径（与加工厂/成品仓库一致的生命周期）：
   // 进厂=CCO 审批发流水号 → 生产中 → 质检审核通过出厂
   const metrics = useMemo(() => {
     // 优先用后端 byMetric（全量、与下钻同一套判断）；老服务没这个字段时退回原有前端算法
@@ -487,7 +487,7 @@ export function HomePage() {
   };
 
   // 每个数字都带下钻地址：口径由后端 metric 复用同一套判断，点进去看到的清单就是这里统计出的那批作品。
-  // 成片类（总数/当天出厂/已出厂）默认走缩略图，其余默认列表，用户仍可在作品档案页自由切换。
+  // 成片类（总数/当天出厂/已出厂）默认走缩略图，其余默认列表，用户仍可在成品仓库页自由切换。
   const kpis = [
     { key: "total", label: "作品总数", value: metrics.totalWorks, hint: `${facets?.withFinal ?? 0} 件已成片`, tone: "", to: "/works?view=grid" },
     { key: "done", label: "当天出厂", value: metrics.doneToday, hint: "今天质检通过", tone: "ok", to: "/works?metric=today&view=grid" },
@@ -567,7 +567,7 @@ export function HomePage() {
               <h2>热门作品 · 上线表现</h2>
               <p className="muted">已出厂作品按质检结论与出厂时间排序</p>
             </div>
-            <Link to="/works" className="ceo-more">作品档案 →</Link>
+            <Link to="/works" className="ceo-more">成品仓库 →</Link>
           </div>
           {hotWorks.length === 0 ? (
             <p className="muted">暂无已出厂作品，流水线质检通过后转入这里。</p>
@@ -628,7 +628,7 @@ export function HomePage() {
         <div className="block-head">
           <div>
             <h2>创作流水线</h2>
-            <p className="muted">创意池 → CCO 审批进厂 → 生产中 → 已出厂 的当前分布（与制片工厂一致）</p>
+            <p className="muted">创意池 → CCO 审批进厂 → 生产中 → 已出厂 的当前分布（与加工厂一致）</p>
           </div>
           <span className="pill-count">共 {metrics.totalWorks} 件在管</span>
         </div>
@@ -893,7 +893,7 @@ export function HomePage() {
       </section>
 
       <p className="ceo-note muted">
-        说明：作品档案暂未接入平台播放量，热门/滞销以「上线状态 + 评审结论 + 完整度 + 停滞天数」等真实信号排序，未做播放数据臆造。
+        说明：成品仓库暂未接入平台播放量，热门/滞销以「上线状态 + 评审结论 + 完整度 + 停滞天数」等真实信号排序，未做播放数据臆造。
       </p>
     </section>
   );
