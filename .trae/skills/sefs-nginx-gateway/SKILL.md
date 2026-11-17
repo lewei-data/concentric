@@ -27,6 +27,8 @@ description: Operate the ai.boraydata.com nginx gateway on 192.168.31.208 that p
                    ├─ /conring/media/            → 192.168.21.206:9200（/files/* 固定 404）
                    ├─ /conring/dispatch/         → 192.168.21.206:9120
                    ├─ /conring/dispatch-ws/      → 192.168.21.206:9121 (WebSocket)
+                   ├─ /mcp、/conring/mcp          → 192.168.21.206:9104（opc-mcp）
+                   ├─ /conring/upload/           → 192.168.21.206:9105（opc 大文件分片续传）
                    └─ 其余（含 /conring/ 本身）   → 127.0.0.1:8765（208 本机 sefs-mcp，负责 /token 与 401）
 ```
 
@@ -41,10 +43,11 @@ description: Operate the ai.boraydata.com nginx gateway on 192.168.31.208 that p
 
 改路由**只改 snippet**；两个 server 块里的 `location /`、证书、`client_max_body_size` 不要重复添加。
 
-## 当前路由（2026-11-11 实测）
+## 当前路由（2026-11-17 实测）
 
 | 公网路径 | 上游（206） | 无 token 期望 |
 |---|---|---|
+| `/mcp`、`/conring/mcp` | 9104（opc-mcp） | 200（MCP initialize，鉴权在 opc-mcp 内部） |
 | `/conring/asr/mcp` | 9102 | 400 `Missing session ID` |
 | `/conring/tts/mcp` | 9101 | 400 |
 | `/conring/mail/ceo/mcp` | 9100 | 400 |
