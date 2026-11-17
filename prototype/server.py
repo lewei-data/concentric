@@ -801,14 +801,14 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return self._json({"ok": False, "login": "/login"}, 401)
             return self._json({"ok": True, "user": user})
-        # 根路径默认进入新版工作台；OPC_HOME_LEGACY=1 时放行走后面的旧版分支
+        # 健康检查公开可查：落地页「服务健康状态」按钮不要求登录，内容仅版本/引擎/时间
+        if path == "/api/health":
+            return self._json({"ok": True, "version": "3.0", "engine": MODE,
+                               "hermes": HERMES.stats(), "time": iso_now()})
+        # 根路径下发「同心圆知识管理体系」落地页（公开）；OPC_HOME_LEGACY=1 时
+        # 放行走后面的旧版控制台分支，/app 新版工作台入口不受影响
         if path == "/" and not HOME_LEGACY:
-            self.send_response(302)
-            self.send_header("Location", "/app")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
+            return self._static("landing.html", "text/html; charset=utf-8")
         # 静态资源与交付物不拦登录（交付链接要能在外部浏览器直接打开）
         # 旧版控制台 / 登录页 / 3D 页未显式声明 icon，浏览器会请求 /favicon.ico；
         # 以前返回 404，控制台出现「Failed to load resource」被误判为 3D 加载失败。
@@ -958,9 +958,6 @@ class Handler(BaseHTTPRequestHandler):
         # 其余页面与接口一律要求登录
         if not self._need_login(path):
             return
-        if path == "/api/health":
-            return self._json({"ok": True, "version": "3.0", "engine": MODE,
-                               "hermes": HERMES.stats(), "time": iso_now()})
         # /legacy 始终可用：新版顶栏与 /app/legacy 用它回退旧控制台
         if path in ("/", "/legacy", "/index.html"):
             return self._index()

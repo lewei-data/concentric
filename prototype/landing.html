@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>同心圆知识管理体系</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #070c17;
+    --panel: #0e1626;
+    --line: #22304a;
+    --text: #e9effc;
+    --muted: #93a1bd;
+    --blue: #4c8dff;
+    --blue-2: #2f6fe0;
+    --mint: #7ce0c3;
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background:
+      radial-gradient(1000px 560px at 12% -12%, rgba(76, 141, 255, 0.22), transparent 62%),
+      radial-gradient(820px 460px at 100% 4%, rgba(124, 224, 195, 0.12), transparent 58%),
+      var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  .grid {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0.35;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(700px 480px at 50% 18%, #000 0%, transparent 78%);
+  }
+  .nav {
+    position: relative; z-index: 2;
+    max-width: 1080px; width: 100%; margin: 0 auto;
+    padding: 22px 24px 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: 0.6px; }
+  .nav .brand svg { width: 28px; height: 28px; border-radius: 8px; }
+  .nav .links { display: flex; gap: 20px; font-size: 13.5px; }
+  .nav a { color: var(--muted); text-decoration: none; transition: color 0.15s ease; }
+  .nav a:hover { color: var(--text); }
+  main {
+    position: relative; z-index: 1;
+    flex: 1;
+    max-width: 1080px; width: 100%;
+    margin: 0 auto;
+    padding: 64px 24px 48px;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+  }
+  .logo {
+    width: 108px; height: 108px; border-radius: 26px;
+    box-shadow: 0 24px 70px rgba(31, 111, 235, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    animation: rise 0.6s ease both;
+  }
+  .eyebrow {
+    margin-top: 28px;
+    font-size: 12px; font-weight: 700; letter-spacing: 3.4px;
+    color: #8fb8ff; text-transform: uppercase;
+    animation: rise 0.6s 0.05s ease both;
+  }
+  h1 {
+    margin: 16px 0 0;
+    font-size: clamp(25px, 3.8vw, 40px);
+    line-height: 1.28;
+    letter-spacing: -0.4px;
+    font-weight: 800;
+    max-width: 860px;
+    animation: rise 0.6s 0.18s ease both;
+  }
+  h1 .accent {
+    background: linear-gradient(100deg, #6fa8ff 0%, #7ce0c3 55%, #a8f0dc 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .positioning {
+    position: relative;
+    margin-top: 22px;
+    display: flex; flex-direction: column; align-items: center;
+    animation: rise 0.7s 0.08s ease both;
+  }
+  .twin-glow {
+    position: absolute; left: 50%; top: 46%;
+    width: clamp(260px, 46vw, 560px); height: clamp(110px, 18vw, 190px);
+    transform: translate(-50%, -50%);
+    background: radial-gradient(closest-side, rgba(124, 224, 195, 0.28), rgba(76, 141, 255, 0.16) 55%, transparent 78%);
+    filter: blur(26px);
+    pointer-events: none;
+    animation: glowPulse 4.5s ease-in-out infinite;
+  }
+  .twin-word {
+    position: relative;
+    display: inline-flex; align-items: center;
+    gap: clamp(8px, 1vw, 14px);
+    font-size: clamp(46px, 8vw, 82px);
+  }
+  .twin-cn {
+    font-size: 1em;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: clamp(4px, 0.9vw, 10px);
+    background: linear-gradient(100deg, #e6f8ff 0%, #7ce0c3 26%, #6fa8ff 50%, #e6f8ff 74%, #7ce0c3 100%);
+    background-size: 220% auto;
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 22px rgba(124, 224, 195, 0.32));
+    animation: shimmer 6s linear infinite;
+  }
+  .cursor {
+    width: 0.055em; height: 0.66em; border-radius: 0.03em;
+    background: var(--mint);
+    box-shadow: 0 0 16px rgba(124, 224, 195, 0.9);
+    animation: blink 1.15s steps(1, end) infinite;
+  }
+  .twin-en {
+    position: relative;
+    margin-top: 12px;
+    display: flex; align-items: center; gap: 14px;
+    font-size: clamp(10px, 1.2vw, 13px);
+    font-weight: 700; text-transform: uppercase;
+    letter-spacing: clamp(3.5px, 0.8vw, 8px);
+    color: #8fb8ff;
+    animation: rise 0.7s 0.16s ease both;
+  }
+  .twin-en::before, .twin-en::after {
+    content: ""; width: clamp(26px, 5vw, 64px); height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(124, 224, 195, 0.75));
+  }
+  .twin-en::after { transform: scaleX(-1); }
+  @keyframes shimmer { 0% { background-position: 0% center; } 100% { background-position: 220% center; } }
+  @keyframes glowPulse {
+    0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(0.94); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+  }
+  @keyframes blink { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0.1; } }
+  .sub {
+    margin: 20px 0 0;
+    font-size: clamp(14px, 1.7vw, 17px);
+    color: var(--muted);
+    line-height: 1.8;
+    max-width: 680px;
+    animation: rise 0.6s 0.24s ease both;
+  }
+  .actions {
+    display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+    margin-top: 32px;
+    animation: rise 0.6s 0.2s ease both;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 22px; border-radius: 11px;
+    font-size: 14.5px; font-weight: 700; text-decoration: none;
+    color: #fff; background: var(--blue);
+    box-shadow: 0 10px 28px rgba(76, 141, 255, 0.28);
+    transition: transform 0.08s ease, background 0.15s ease;
+  }
+  .btn:hover { background: var(--blue-2); transform: translateY(-1px); }
+  .btn.ghost {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--line);
+    color: var(--text);
+    box-shadow: none;
+  }
+  .btn.ghost:hover { background: rgba(255, 255, 255, 0.08); }
+  .features {
+    margin-top: 64px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    width: 100%;
+    animation: rise 0.6s 0.25s ease both;
+  }
+  .feature {
+    padding: 20px 18px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+    text-align: left;
+    min-width: 0;
+  }
+  .feature h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
+  .feature p { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--muted); }
+  .feature .dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 7px;
+    background: var(--mint); box-shadow: 0 0 12px rgba(124, 224, 195, 0.7);
+  }
+  footer {
+    position: relative; z-index: 1;
+    max-width: 1080px; width: 100%;
+    margin: 0 auto;
+    padding: 20px 24px 26px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    color: #6f7f9d; font-size: 12px;
+  }
+  footer code {
+    color: #a8bde0;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12px;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (max-width: 860px) {
+    .features { grid-template-columns: repeat(2, 1fr); }
+    .nav .links { display: none; }
+  }
+  @media (max-width: 520px) {
+    main { padding-top: 44px; }
+    .logo { width: 86px; height: 86px; border-radius: 22px; }
+    .features { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .positioning, .twin-cn, .twin-glow, .cursor, .twin-en, .eyebrow, h1, .sub, .actions, .features {
+      animation: none !important;
+    }
+    .twin-glow { opacity: 0.7; }
+  }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+
+<nav class="nav">
+  <div class="brand">
+    <svg viewBox="0 0 128 128" aria-hidden="true">
+      <defs>
+        <linearGradient id="navg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1F6FEB"/><stop offset="1" stop-color="#0B3D91"/>
+        </linearGradient>
+      </defs>
+      <rect width="128" height="128" rx="28" fill="url(#navg)"/>
+      <circle cx="64" cy="64" r="40" fill="none" stroke="#E8F0FF" stroke-width="6" opacity=".75"/>
+      <circle cx="64" cy="64" r="26" fill="none" stroke="#8FB8FF" stroke-width="5"/>
+      <circle cx="64" cy="64" r="11" fill="#7CE0C3"/>
+    </svg>
+    <span>同心圆知识管理体系</span>
+  </div>
+  <div class="links">
+    <a href="/app">进入工作台</a>
+    <a href="/login">申请 Token</a>
+    <a href="/api/health">健康状态</a>
+  </div>
+</nav>
+
+<main>
+  <svg class="logo" viewBox="0 0 128 128" role="img" aria-label="同心圆 logo">
+    <defs>
+      <linearGradient id="herog" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#1F6FEB"/><stop offset="1" stop-color="#0B3D91"/>
+      </linearGradient>
+    </defs>
+    <rect width="128" height="128" rx="28" fill="url(#herog)"/>
+    <circle cx="64" cy="64" r="40" fill="none" stroke="#E8F0FF" stroke-width="6" opacity=".75"/>
+    <circle cx="64" cy="64" r="26" fill="none" stroke="#8FB8FF" stroke-width="5"/>
+    <circle cx="64" cy="64" r="11" fill="#7CE0C3"/>
+  </svg>
+
+  <div class="eyebrow">Make Knowledge Native to Every Agent</div>
+  <div class="positioning">
+    <div class="twin-glow" aria-hidden="true"></div>
+    <div class="twin-word">
+      <span class="twin-cn">同心圆</span>
+      <span class="cursor" aria-hidden="true"></span>
+    </div>
+    <div class="twin-en">Concentric Knowledge System</div>
+  </div>
+  <h1>把<span class="accent">资料</span>变成可检索、可问答、可再生产的<span class="accent">知识</span></h1>
+  <p class="sub">
+    素材上传续传、文档解析内化、语义检索问答与语音图像生成，
+    封装成一套标准 MCP 工具，让智能体与工作台共同管理您的知识资产。
+  </p>
+
+  <div class="actions">
+    <a class="btn" href="/login">申请访问 Token</a>
+    <a class="btn ghost" href="/app">进入工作台</a>
+    <a class="btn ghost" href="/api/health">查看服务健康状态</a>
+  </div>
+
+  <section class="features">
+    <div class="feature">
+      <h3><span class="dot"></span>素材上传与断点续传</h3>
+      <p>分片续传单文件最大 2GB，断网断电按 offset 续传；zip/pdf/doc/xls/ppt 均可解析入库。</p>
+    </div>
+    <div class="feature">
+      <h3><span class="dot"></span>知识库自动内化</h3>
+      <p>解析后自动切块、生成知识卡片，按用户隔离，后台排队分析，进度随时可查。</p>
+    </div>
+    <div class="feature">
+      <h3><span class="dot"></span>检索与知识问答</h3>
+      <p>关键词检索命中片段与出处；问答结合知识库生成，资料不足明确说缺什么，不编造。</p>
+    </div>
+    <div class="feature">
+      <h3><span class="dot"></span>语音与图像生成</h3>
+      <p>TTS 合成 wav（CosyVoice / Qwen3 双引擎），文生图出图，产物直接落盘可下载。</p>
+    </div>
+    <div class="feature">
+      <h3><span class="dot"></span>标准 MCP 接入</h3>
+      <p>Streamable HTTP 暴露 13 个工具，手机号即可初始化会话，外部 agent 免改造直连。</p>
+    </div>
+    <div class="feature">
+      <h3><span class="dot"></span>工作台一体化</h3>
+      <p>素材、知识库、创意灵感、运维监控同库同源，网页工作台与 MCP 工具共享同一份数据。</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>同心圆知识管理体系 · opc-mcp v0.1.0 · OPC Workbench</span>
+  <span>MCP 端点：<code id="mcpEndpoint">/mcp</code></span>
+</footer>
+
+<script>
+  document.getElementById("mcpEndpoint").textContent = window.location.origin + "/mcp";
+</script>
+</body>
+</html>

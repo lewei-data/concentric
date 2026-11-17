@@ -101,6 +101,18 @@ def main():
     up2 = srv.dispatch("material_upload", {"token": token, "path": str(src)})
     check("重复上传去重", eval_content(up2).get("duplicate") is True, eval_content(up2))
 
+    # 3b. 大文件分片续传建单
+    ub = eval_content(srv.dispatch("upload_begin", {"token": token,
+                                                   "filename": "资料.zip", "size": 1024}))
+    check("upload_begin 返回 upload_id/put_url",
+          ub.get("upload_id", "").startswith("up_") and ub.get("put_url", "").endswith(ub["upload_id"]), ub)
+    check("upload_begin 记录在 uploads 表", store.upload(ub["upload_id"])["size"] == 1024, ub)
+    bad = srv.dispatch("upload_begin", {"token": token, "filename": "big.zip",
+                                        "size": int(config.UPLOAD_MAX_MB * 1024 * 1024) + 1})
+    check("upload_begin 超上限报错", bad.get("isError") is True, bad["content"][0]["text"][:120])
+    bad2 = srv.dispatch("upload_begin", {"token": token, "filename": "zero.zip", "size": 0})
+    check("upload_begin size=0 报错", bad2.get("isError") is True, bad2["content"][0]["text"][:120])
+
     job = srv.dispatch("job_get", {"token": token, "job_id": body["job_id"], "wait_sec": 120})
     job_body = eval_content(job)
     check("分析作业完成", job_body.get("status") == "succeeded", job_body)

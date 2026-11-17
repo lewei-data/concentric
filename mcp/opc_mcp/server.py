@@ -1,4 +1,4 @@
-"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材/知识库/对话/TTS/图像共 12 个工具。"""
+"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材/分片续传/知识库/对话/TTS/图像共 13 个工具。"""
 
 import base64
 import binascii
@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import secrets
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -61,8 +62,9 @@ TOOLS = [
     },
     {
         "name": "material_upload",
-        "description": "上传素材文件（本地路径或 base64，单文件上限 100MB），落盘后自动排队做后台分析并内化进知识库。"
-                       "zip/pdf/doc/docx/xls/ppt/pptx 等可直接上传；超过 100MB 或需要断点续传时改用 upload_begin。",
+        "description": "上传素材文件并自动排队分析、内化进知识库。path 方式上限 2GB（服务端本地文件，流式拷贝）；"
+                       "content_base64 上限 100MB。zip/pdf/doc/docx/xls/ppt/pptx 均可解析；"
+                       "需要跨网络断点续传时改用 upload_begin。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"},
             "path": {"type": "string", "description": "服务端可读的本地文件路径"},
@@ -73,8 +75,9 @@ TOOLS = [
     {
         "name": "upload_begin",
         "description": "大文件分片续传建单（支持 zip/pdf/doc 等，单文件最大 2GB）。返回 upload_id 与 HTTP 端点："
-                       "PUT {put_url}&offset=<已传字节> 追加分片（Content-Length 必填，可带 Content-Range: bytes s-e/total），"
-                       "HEAD/GET 查进度，POST .../complete 完成入库并自动分析。断电/断网后重新 GET 拿 offset 续传即可。",
+                       "PUT {put_url}?offset=<已传字节> 追加分片（Content-Length 必填，可带 Content-Range: bytes s-e/total），"
+                       "GET {progress_url} 查进度（percent/已传/剩余/速率/ETA），"
+                       "POST .../complete 完成入库并自动分析。断电/断网后重新 GET progress_url 拿 offset 续传即可。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"},
             "filename": {"type": "string", "description": "含扩展名的文件名，如 资料.zip、合同.pdf"},
@@ -231,31 +234,53 @@ class OpcServer:
             except (binascii.Error, ValueError) as e:
                 return _err("content_base64 解码失败：%s" % e)
             filename = _safe_name(args.get("filename") or "upload.bin")
-        elif args.get("path"):
+            if len(raw) > config.MAX_UPLOAD_MB * 1024 * 1024:
+                return _err("base64 上传超过上限 %sMB，请改用 upload_begin 分片续传"
+                            % config.MAX_UPLOAD_MB)
+            return self._ingest_bytes(phone, filename, raw)
+        if args.get("path"):
             src = Path(str(args["path"])).expanduser()
             if not src.is_file():
                 return _err("文件不存在或不是普通文件：%s" % src)
-            raw = src.read_bytes()
             filename = _safe_name(args.get("filename") or src.name)
-        else:
-            return _err("需要 path 或 content_base64")
+            size = src.stat().st_size
+            if size > config.UPLOAD_MAX_MB * 1024 * 1024:
+                return _err("文件超过上限 %sMB" % config.UPLOAD_MAX_MB)
+            sha = hashlib.sha256()
+            with open(src, "rb") as f:
+                for buf in iter(lambda: f.read(4 << 20), b""):
+                    sha.update(buf)
+            digest = sha.hexdigest()
+            dup = self.store.one("SELECT * FROM materials WHERE phone=? AND sha256=?",
+                                 (phone, digest))
+            if dup:
+                return _json({"material_id": dup["id"], "filename": dup["filename"],
+                              "duplicate": True, "status": dup["status"],
+                              "note": "相同内容已入库，未重复分析"})
+            dst = self._dir(phone, "materials") / filename
+            if dst.exists():
+                dst = dst.with_name("%s_%s%s" % (dst.stem, digest[:6], dst.suffix))
+            shutil.copyfile(src, dst)
+            return self._queue(phone, filename, dst, size, digest)
+        return _err("需要 path 或 content_base64")
 
-        if len(raw) > config.MAX_UPLOAD_MB * 1024 * 1024:
-            return _err("文件超过上限 %sMB" % config.MAX_UPLOAD_MB)
+    def _ingest_bytes(self, phone, filename, raw):
         sha = hashlib.sha256(raw).hexdigest()
         dup = self.store.one("SELECT * FROM materials WHERE phone=? AND sha256=?", (phone, sha))
         if dup:
             return _json({"material_id": dup["id"], "filename": dup["filename"],
                           "duplicate": True, "status": dup["status"],
                           "note": "相同内容已入库，未重复分析"})
-
         dst = self._dir(phone, "materials") / filename
         if dst.exists():
             dst = dst.with_name("%s_%s%s" % (dst.stem, sha[:6], dst.suffix))
         dst.write_bytes(raw)
-        mid = self.store.add_material(phone, filename, dst, len(raw), sha, _guess_mime(filename))
+        return self._queue(phone, filename, dst, len(raw), sha)
+
+    def _queue(self, phone, filename, dst, size, digest):
+        mid = self.store.add_material(phone, filename, dst, size, digest, _guess_mime(filename))
         job = self.runner.submit(phone, "analyze", {"material_id": mid})
-        return _json({"material_id": mid, "filename": filename, "size": len(raw),
+        return _json({"material_id": mid, "filename": filename, "size": size,
                       "path": str(dst), "job_id": job["job_id"], "status": "queued",
                       "note": "已在后台分析并内化，可轮询 job_get"})
 
@@ -283,6 +308,7 @@ class OpcServer:
             "auth": "Authorization: Bearer <token>（复用本工具传入的 session_token）",
             "put_url": "%s/v1/uploads/%s" % (base, upload_id),
             "head_url": "%s/v1/uploads/%s" % (base, upload_id),
+            "progress_url": "%s/v1/uploads/%s/progress" % (base, upload_id),
             "complete_url": "%s/v1/uploads/%s/complete" % (base, upload_id),
             "delete_url": "%s/v1/uploads/%s" % (base, upload_id),
             "local_base": config.LOCAL_UPLOAD_BASE,

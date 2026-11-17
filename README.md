@@ -83,7 +83,7 @@ chmod +x opc.sh
 
 | 路径 | 说明 |
 | --- | --- |
-| `/` | **默认 302 → `/app`**（新版工作台）；设 `OPC_HOME_LEGACY=1` 并重启可直接回退为旧版控制台 |
+| `/` | **「同心圆知识管理体系」落地页**（`prototype/landing.html`，公开免登录；原 ai.boraydata.com 首页迁移改名，链接指向 `/login`、`/api/health`、`/app`）；设 `OPC_HOME_LEGACY=1` 并重启可回退为旧版控制台 |
 | `/legacy`、`/index.html`、`/app/legacy` | 旧版工作台控制台（需登录）；新版顶栏「旧版控制台」与 `/app/legacy` 都指向 `/legacy`，旧版右上角「新版界面 →」回 `/app` |
 | `/app` | 新版界面（React + Refine，页面公开、数据接口需登录）：总览 / 创意灵感 / 作品档案 / 热点 / 知识库 / 消息中心 / 组织配置 / 运维监控 / Office 3D / Meeting 3D；SPA 深链回退 `web/dist/index.html` |
 | `/app/inspiration` | 创意灵感（CCO 视角）：热点分析 / 视频分析 / 蒸馏启发三类线索，可筛选、搜索、展开要点、跳原文 |

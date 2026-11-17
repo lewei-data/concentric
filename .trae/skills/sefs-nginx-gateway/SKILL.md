@@ -48,6 +48,7 @@ description: Operate the ai.boraydata.com nginx gateway on 192.168.31.208 that p
 | 公网路径 | 上游（206） | 无 token 期望 |
 |---|---|---|
 | `/mcp`、`/conring/mcp` | 9104（opc-mcp） | 200（MCP initialize，鉴权在 opc-mcp 内部） |
+| `/conring/upload/*` | 9105（opc-upload 分片续传） | 200 `{"ok":true,"service":"opc-upload"}`（`/healthz`） |
 | `/conring/asr/mcp` | 9102 | 400 `Missing session ID` |
 | `/conring/tts/mcp` | 9101 | 400 |
 | `/conring/mail/ceo/mcp` | 9100 | 400 |

@@ -3,8 +3,9 @@
 协议（纯 HTTP，可断点续传，客户端只需记住 upload_id 与本地已发字节数）：
 
   POST   /v1/uploads            建单  {filename,size}        -> 201 {upload_id,offset,size,...}
-  HEAD   /v1/uploads/{id}       查进度（响应头 X-Upload-Offset / X-Upload-Size / X-Upload-Status）
-  GET    /v1/uploads/{id}       查进度（JSON）
+  HEAD   /v1/uploads/{id}       查进度（响应头 X-Upload-Offset / X-Upload-Size / X-Upload-Status / X-Upload-Percent）
+  GET    /v1/uploads/{id}       查详情（JSON，含进度字段）
+  GET    /v1/uploads/{id}/progress  进度查询：percent / remaining / 速率 / ETA / 状态
   PUT    /v1/uploads/{id}?offset=N   追加分片（body 为原始字节，支持 Content-Range）
   POST   /v1/uploads/{id}/complete   完成：校验大小 → sha256 → 去重 → 入库 → 排队分析
   DELETE /v1/uploads/{id}       取消并删除临时文件
@@ -14,6 +15,13 @@
 鉴权：Authorization: Bearer <session_token>（也可用 ?token=）。
 
 中断后客户端重新 HEAD/GET 拿 offset，从该偏移继续 PUT 即可，不需要重传已完成部分。
+
+服务端分片/续传语义：
+  * PUT 必须带 Content-Length；offset 必须等于当前偏移，否则 409 并返回 offset=当前值
+  * body 没读满（客户端断开）时按实际写入字节推进 offset，下次从断点继续，不会丢数据
+  * 同一分片重复提交：若已写入，409 里的 offset 已前进，客户端按该值跳过即为幂等
+  * 分片写入逐片 fsync，进程崩溃后 offset 与文件长度一致
+  * offset 始终以服务端为准；本地只需记住 upload_id（状态文件非必需）
 """
 
 import hashlib
@@ -50,6 +58,23 @@ def guess_mime(filename):
     return mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
 
+def iso_ts(ts):
+    try:
+        return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(float(ts)))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def human_speed(bps):
+    """字节/秒 → 人类可读，如 2.5 MB/s。"""
+    if not bps or bps <= 0:
+        return None
+    for unit, scale in (("GB/s", 1 << 30), ("MB/s", 1 << 20), ("KB/s", 1 << 10)):
+        if bps >= scale:
+            return "%.1f %s" % (bps / scale, unit)
+    return "%d B/s" % bps
+
+
 def user_materials_dir(phone):
     d = config.DATA_DIR / "users" / phone / "materials" / time.strftime("%Y-%m-%d")
     d.mkdir(parents=True, exist_ok=True)
@@ -65,6 +90,8 @@ class App:
         self.runner.register("analyze", self._job_analyze)
         self._locks = {}
         self._locks_guard = threading.Lock()
+        self._samples = {}                                # upload_id -> (ts, offset)，用于瞬时速率
+        self._samples_guard = threading.Lock()
         self._cleanup_stale()
 
     # ------------------------------------------------------------ 作业
@@ -96,24 +123,76 @@ class App:
         row = self.store.upload(upload_id)
         return self.view(row)
 
-    def view(self, row, extra=None):
+    def _forget(self, upload_id):
+        with self._samples_guard:
+            self._samples.pop(upload_id, None)
+
+    def _urls(self, row):
         base = config.PUBLIC_UPLOAD_BASE
+        off = int(row["offset"] or 0)
+        return {
+            "public_base": config.PUBLIC_UPLOAD_BASE,
+            "local_base": config.LOCAL_UPLOAD_BASE,
+            "progress_url": "%s/v1/uploads/%s/progress" % (base, row["id"]),
+            "head_url": "%s/v1/uploads/%s" % (base, row["id"]),
+            "put_url": "%s/v1/uploads/%s?offset=%d" % (base, row["id"], off),
+            "complete_url": "%s/v1/uploads/%s/complete" % (base, row["id"]),
+        }
+
+    def _rate(self, row, offset, now):
+        """瞬时速率（服务进程内的最近一次写入样本）；无样本返回 None。"""
+        with self._samples_guard:
+            prev = self._samples.get(row["id"])
+        if not prev:
+            return None
+        ts0, off0 = prev
+        dt = now - ts0
+        if dt <= 0 or offset <= off0:
+            return None
+        return (offset - off0) / dt
+
+    def progress(self, row):
+        """上传进度：已传/总量/百分比/速率/预计剩余时间。"""
+        size = int(row["size"] or 0)
+        off = int(row["offset"] or 0)
+        now = time.time()
+        created = float(row["created_at"] or now)
+        elapsed = max(0.0, now - created)
+        avg = (off / elapsed) if elapsed > 0.5 and off > 0 else None
+        inst = self._rate(row, off, now) if row["status"] == "uploading" else None
+        speed = inst or avg
+        remaining = max(0, size - off)
+        eta = None
+        if remaining == 0:
+            eta = 0
+        elif speed and speed > 0:
+            eta = int(round(remaining / speed))
         out = {
             "upload_id": row["id"],
             "filename": row["filename"],
-            "size": row["size"],
-            "offset": row["offset"],
-            "remaining": max(0, (row["size"] or 0) - (row["offset"] or 0)),
             "status": row["status"],
+            "size": size,
+            "offset": off,
+            "uploaded": off,
+            "remaining": remaining,
+            "percent": round(off * 100.0 / size, 2) if size else 0.0,
+            "done": row["status"] == "done" or (size > 0 and off >= size),
+            "elapsed_sec": round(elapsed, 1),
+            "speed_bps": int(speed) if speed else None,
+            "speed_human": human_speed(speed),
+            "speed_source": "instant" if inst else ("average" if avg else None),
+            "eta_sec": eta,
+            "started_at": iso_ts(created),
+            "updated_at": iso_ts(row["updated_at"]),
             "sha256": row["sha256"],
             "material_id": row["material_id"],
             "chunk_size_hint": config.UPLOAD_CHUNK_HINT,
-            "public_base": config.PUBLIC_UPLOAD_BASE,
-            "local_base": config.LOCAL_UPLOAD_BASE,
-            "head_url": "%s/v1/uploads/%s" % (base, row["id"]),
-            "put_url": "%s/v1/uploads/%s?offset=%d" % (base, row["id"], row["offset"] or 0),
-            "complete_url": "%s/v1/uploads/%s/complete" % (base, row["id"]),
         }
+        out.update(self._urls(row))
+        return out
+
+    def view(self, row, extra=None):
+        out = self.progress(row)
         if extra:
             out.update(extra)
         return out
@@ -132,6 +211,11 @@ class App:
             if cur + length > row["size"]:
                 raise ApiError(413, "写入超出声明大小 %d" % row["size"], offset=cur)
             path = Path(row["path"])
+            if not path.exists():
+                self.store.update_upload(row["id"], status="missing")
+                raise ApiError(410, "临时文件已丢失，请重新建单上传")
+            with self._samples_guard:                     # 记录写入起点，供进度接口算瞬时速率
+                self._samples[row["id"]] = (time.time(), cur)
             with open(path, "ab") as f:
                 left = length
                 while left > 0:
@@ -178,6 +262,7 @@ class App:
         if dup:
             path.unlink(missing_ok=True)
             self.store.update_upload(row_id, status="done", sha256=digest, material_id=dup["id"])
+            self._forget(row_id)
             return self.view(self.store.upload(row_id), {
                 "duplicate": True, "material_id": dup["id"],
                 "note": "相同内容已入库，未重复分析"})
@@ -189,6 +274,7 @@ class App:
         mid = self.store.add_material(user["phone"], row["filename"], dst, int(row["size"]),
                                       digest, guess_mime(row["filename"]))
         self.store.update_upload(row_id, status="done", sha256=digest, material_id=mid)
+        self._forget(row_id)
         job = self.runner.submit(user["phone"], "analyze", {"material_id": mid})
         return self.view(self.store.upload(row_id), {
             "duplicate": False, "material_id": mid, "job_id": job["job_id"],
@@ -204,6 +290,7 @@ class App:
             raise ApiError(409, "已完成的素材不能取消")
         Path(row["path"]).unlink(missing_ok=True)
         self.store.update_upload(row_id, status="canceled")
+        self._forget(row_id)
         return self.view(self.store.upload(row_id))
 
     def cleanup(self):
@@ -213,6 +300,7 @@ class App:
         for row in self.store.stale_uploads(deadline):
             Path(row["path"]).unlink(missing_ok=True)
             self.store.update_upload(row["id"], status="expired")
+            self._forget(row["id"])
             n += 1
         return n
 
@@ -325,9 +413,11 @@ class Handler(BaseHTTPRequestHandler):
                                         "SELECT id FROM uploads WHERE status='uploading'"))})
         if path == "/v1/uploads":
             user = self._user()
-            return self._send(200, {"ok": True, "items": [
-                self.app.view(r) for r in self.app.store.uploads(user["phone"])]})
-        m = re.match(r"^/v1/uploads/(up_[0-9a-f]{16})$", path)
+            rows = self.app.store.uploads(user["phone"])
+            return self._send(200, {"ok": True, "count": len(rows),
+                                    "active": sum(1 for r in rows if r["status"] == "uploading"),
+                                    "items": [self.app.view(r) for r in rows]})
+        m = re.match(r"^/v1/uploads/(up_[0-9a-f]{16})(/progress)?$", path)
         if m:
             user = self._user()
             row = self.app.store.upload(m.group(1))
@@ -335,6 +425,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(404, "上传单不存在")
             if row["phone"] != user["phone"]:
                 raise ApiError(403, "无权查看该上传单")
+            if m.group(2):
+                return self._send(200, dict({"ok": True}, **self.app.progress(row)))
             return self._send(200, self.app.view(row))
         raise ApiError(404, "未知路径 %s" % path)
 
@@ -351,6 +443,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Upload-Offset", str(row["offset"] or 0))
         self.send_header("X-Upload-Size", str(row["size"] or 0))
         self.send_header("X-Upload-Status", str(row["status"]))
+        self.send_header("X-Upload-Percent", "%.2f" % self.app.progress(row)["percent"])
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -410,12 +503,14 @@ class Handler(BaseHTTPRequestHandler):
             offset = int(row["offset"] or 0)
 
         new_offset, size, written = self.app.append(row, offset, self.rfile, length)
+        percent = round(new_offset * 100.0 / size, 2) if size else 0.0
         self._send(200, {"ok": True, "upload_id": row["id"], "offset": new_offset,
-                         "size": size, "written": written,
+                         "size": size, "written": written, "percent": percent,
                          "remaining": max(0, size - new_offset),
                          "done": new_offset >= size},
                    headers={"X-Upload-Offset": new_offset,
-                            "X-Upload-Size": size})
+                            "X-Upload-Size": size,
+                            "X-Upload-Percent": "%.2f" % percent})
 
     def _delete(self):
         path = self._path()
