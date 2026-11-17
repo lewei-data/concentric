@@ -52,9 +52,26 @@ const TABS = [
   { key: "personal", label: "个人 Obsidian" },
   { key: "idea", label: "创意灵感" },
   { key: "factory", label: "工厂专区" },
+  { key: "mcp", label: "MCP 专区" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 type RootKey = "vault" | "published" | "downloads" | "private" | "collect" | "factory";
+
+/** MCP client 上传的素材（mcp/data/opc.db::materials，按当前会话手机号过滤） */
+type McpMaterial = {
+  id: string;
+  filename: string;
+  size: number;
+  mime: string;
+  status: string;
+  reason: string;
+  day: string;
+  createdAt: string;
+  url: string;
+};
+const MCP_STATUS: Record<string, string> = {
+  pending: "待分析", running: "分析中", analyzed: "已内容化", skipped: "仅归档",
+};
 
 /** 评分档位（prototype/asset_score.py 五行五维模型），筛选条与卡片徽章共用一套色。 */
 const GRADE_DEFS = [
@@ -261,6 +278,14 @@ function shortDate(ts: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function mcpDayLabel(day: string): string {
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const now = new Date();
+  if (day === fmt(now)) return `今天 · ${day}`;
+  if (day === fmt(new Date(now.getTime() - 86400000))) return `昨天 · ${day}`;
+  return day;
+}
+
 export function MaterialsPage() {
   // 支持深链 /materials?tab=browse&path=工具箱/2026-11-15/图片
   // 工具箱出片后直接跳到这里，省得用户自己在目录里翻
@@ -286,6 +311,11 @@ export function MaterialsPage() {
   const [sortBy, setSortBy] = useState<SortKey>("default");
   const [updated, setUpdated] = useState("");
   const [indexErr, setIndexErr] = useState("");
+
+  // MCP 专区：外部 client 上传的素材，按日期分组
+  const [mcpItems, setMcpItems] = useState<McpMaterial[]>([]);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [mcpErr, setMcpErr] = useState("");
 
   const [root, setRoot] = useState<RootKey>(boot.root);
   const [path, setPath] = useState(
@@ -339,6 +369,23 @@ export function MaterialsPage() {
   useEffect(() => {
     if (tab === "browse" || tab === "personal" || tab === "collect" || tab === "factory") void loadBrowse(effRoot, path);
   }, [tab, effRoot, path, loadBrowse]);
+
+  useEffect(() => {
+    if (tab !== "mcp") return;
+    let alive = true;
+    setMcpLoading(true);
+    setMcpErr("");
+    fetch(siteUrl("/api/materials/mcp"), { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { ok?: boolean; items?: McpMaterial[]; error?: string }) => {
+        if (!alive) return;
+        if (!d.ok && d.error) setMcpErr(d.error);
+        setMcpItems(Array.isArray(d.items) ? d.items : []);
+      })
+      .catch(() => { if (alive) setMcpErr("MCP 素材读取失败"); })
+      .finally(() => { if (alive) setMcpLoading(false); });
+    return () => { alive = false; };
+  }, [tab]);
 
   // 目录监听：在服务器上直接增删改文件（同步盘、scp、命令行 rm）时页面自己跟上。
   // 走长轮询——没变化时服务端挂着不返回，一变就在 1 秒内回。
@@ -464,6 +511,15 @@ export function MaterialsPage() {
     () => (browse?.files ?? []).filter((f) => kind === "all" || kindOf(f.name, f.ext) === kind),
     [browse?.files, kind],
   );
+
+  const mcpGroups = useMemo(() => {
+    const m = new Map<string, McpMaterial[]>();
+    for (const it of mcpItems) {
+      const list = m.get(it.day);
+      if (list) list.push(it); else m.set(it.day, [it]);
+    }
+    return [...m.entries()];
+  }, [mcpItems]);
 
   // 缩略图地址：照片墙一次铺几十上百张，原图太大，交给服务端压到 420px 宽
   const thumbUrl = useCallback(
@@ -1086,6 +1142,38 @@ export function MaterialsPage() {
             <button type="button" className="btn btn-ghost" onClick={() => setNotice(null)}>知道了</button>
           </div>
         </AnchoredPanel>
+      )}
+
+      {tab === "mcp" && (
+        <section className="mat-section">
+          <p className="tg-hint">通过 MCP client 上传的素材（本人，按上传日期分组，最多 500 条）。点卡片可查看或下载原件。</p>
+          {mcpErr && <p className="tg-empty">{mcpErr}</p>}
+          {mcpLoading && !mcpItems.length && <p className="tg-empty">读取中…</p>}
+          {!mcpLoading && !mcpErr && !mcpItems.length && (
+            <p className="tg-empty">还没有通过 MCP 上传的素材。</p>
+          )}
+          {mcpGroups.map(([day, list]) => (
+            <div className="tg-group" key={day}>
+              <h3 className="tg-day">{mcpDayLabel(day)} · {list.length} 份</h3>
+              <div className="tg-grid">
+                {list.map((m) => (
+                  <a className="tg-card" key={m.id} href={siteUrl(m.url)}
+                     target="_blank" rel="noreferrer" title={m.filename}>
+                    <div className="tg-kind">{(m.filename.split(".").pop() || "文件").toUpperCase()}</div>
+                    <div className="tg-body">
+                      <div className="tg-note">{m.filename}</div>
+                      <div className="tg-meta">
+                        {humanSize(m.size)} · {MCP_STATUS[m.status] || m.status || "待分析"}
+                        {m.createdAt && ` · ${m.createdAt.slice(11, 16)}`}
+                      </div>
+                      {m.reason && <div className="tg-err" title={m.reason}>{m.reason.slice(0, 90)}</div>}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
       )}
 
       {tab === "idea" && <InspirationPage embedded />}

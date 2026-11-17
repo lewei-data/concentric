@@ -1,7 +1,9 @@
 # WorkBuddy 接入 OPC MCP — 外部用户首次使用说明
 
-适用对象：第一次使用、尚未接触过 OPC 内部环境、**本机操作系统/路径未知**的外部用户。
+适用对象：第一次使用、尚未接触过 OPC 内部环境、**本机操作系统/路径未知**的 WorkBuddy 外部用户。
 你只需要在 WorkBuddy 里填一个 URL 和一串个人 key，不需要安装 Python、不需要任何本地脚本、不需要填手机号。
+
+> 用**豆包**而不是 WorkBuddy？请看同目录 `DOUBAO_MCP_CLIENT_SKILL.md`——豆包走插件平台/本地 mcpServers，且没有 `SKILL.md` 文件机制，触发词写在智能体提示词里。
 
 ---
 

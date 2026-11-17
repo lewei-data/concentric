@@ -469,7 +469,7 @@ class OpcServer:
             "SELECT DISTINCT material_id FROM chunks WHERE phone=? AND material_id IS NOT NULL", (phone,))}
         chunks = self.store.one("SELECT COUNT(*) n FROM chunks WHERE phone=?", (phone,))
         cards = self.store.one("SELECT COUNT(*) n FROM cards WHERE phone=?", (phone,))
-        ok, detail = llm.probe()
+        ok, detail, probe_info = llm.probe()
         rc = resources.counts(phone, self.store)
         return _json({
             "user": {"phone": phone, "name": user["name"], "role": user["role"]},
@@ -485,7 +485,7 @@ class OpcServer:
             "recent_jobs": [{"job_id": j["id"], "kind": j["kind"], "status": j["status"],
                              "error": j["error"]} for j in self.store.jobs(phone, limit=5)],
             "llm": {"ok": ok, "base_url": config.LLM_BASE_URL, "model": config.LLM_MODEL,
-                    "detail": None if ok else detail},
+                    "detail": None if ok else detail, "probe": probe_info},
             "media": media.health(),
         })
 
@@ -536,8 +536,11 @@ class OpcServer:
              "看素材/片段/卡片数与 LLM 状态"),
             (("上传", "导入", "传文件", "upload"), "upload_begin",
              "大文件走 upload_begin 分片；<100MB 可用 material_upload"),
-            (("列出", "我的素材", "下载", "导出", "list", "download"), "material_list",
-             "先 list 拿 material_id 再 download"),
+            (("共享", "公开", "公共", "下载区", "全局", "shared", "downloads"),
+             "opc_resource_list",
+             "全局共享走 opc_resource_list(kind=shared_materials 或 downloads)"),
+            (("列出", "我的素材", "我的下载", "导出", "list", "download"), "material_list",
+             "本人素材用 material_list：先 list 拿 material_id 再 download"),
             (("重新分析", "再分析", "analyze"), "material_analyze",
              "提交分析后用 job_get 等结果"),
             (("语音", "朗读", "配音", "tts"), "tts", "文本转语音"),
@@ -551,6 +554,10 @@ class OpcServer:
         for words, tool, why in rules:
             if any(w.lower() in low for w in words):
                 matched.append((tool, why))
+        # 「共享/公开下载区」与「本人素材」是两条互斥路径：前者命中后不再推 material_list，
+        # 除非用户同时明确说了「我的素材」。
+        if any(t == "opc_resource_list" for t, _ in matched) and "我的素材" not in low:
+            matched = [x for x in matched if x[0] not in ("material_list", "material_download")]
         if not matched:
             matched = [("kb_search", "关键词检索拿片段与出处"),
                        ("ask", "带引用的综合问答（参数名 text）")]
@@ -572,6 +579,8 @@ class OpcServer:
             "kb_search": 'kb_search(query="<关键词>", k=6)',
             "ask": 'ask(text="<你的问题>", wait_sec=60)',
             "material_list": "material_list(limit=50)",
+            "opc_resource_list": 'opc_resource_list(kind="shared_materials", limit=20)｜'
+                                 '公开下载区用 opc_resource_list(kind="downloads", limit=20)',
             "material_download": 'material_download(material_id="<mat_id>")',
             "material_upload": 'material_upload(path="<本地文件路径>")',
             "upload_begin": 'upload_begin(filename="<名称>", size=<字节数>, chunk_size=8388608)',

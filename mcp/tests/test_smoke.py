@@ -107,6 +107,17 @@ def main():
     rt2 = eval_content(srv0.dispatch("opc_route", {"query": "我要上传一个大文件"}))
     check("opc_route 非知识类先 whoami",
           rt2["steps"][0] == "opc_whoami" and "upload_begin" in rt2["steps"], rt2)
+    rt_shared = eval_content(srv0.dispatch(
+        "opc_route", {"query": "公司共享的资料和公开下载区"}))
+    check("opc_route 共享资料 → opc_resource_list 而非 material_list",
+          "opc_resource_list" in rt_shared["steps"]
+          and "material_list" not in rt_shared["steps"]
+          and 'kind="shared_materials"' in rt_shared["templates"].get("opc_resource_list", "")
+          and 'kind="downloads"' in rt_shared["templates"].get("opc_resource_list", ""),
+          rt_shared)
+    rt_own = eval_content(srv0.dispatch("opc_route", {"query": "列出我的素材并下载"}))
+    check("opc_route 本人素材仍走 material_list",
+          "material_list" in rt_own["steps"], rt_own)
     check("opc_route 无需鉴权",
           srv0.dispatch("opc_route", {"query": "OPC"}).get("isError") is False)
     config.PHONE_ONLY = False
@@ -243,7 +254,7 @@ def main():
     hits = eval_content(srv.dispatch("kb_search", {"token": token, "query": "立绘 验收标准"}))
     check("知识库检索命中", hits.get("count", 0) > 0, hits)
 
-    ok, detail = llm.probe(timeout=5)
+    ok, detail, _probe_info = llm.probe(timeout=5)
     ans = eval_content(srv.dispatch("ask", {"token": token,
                                             "text": "本批素材的验收标准是什么？", "wait_sec": 120}))
     check("问答作业返回答案", bool(ans.get("result", {}).get("answer")), ans)
@@ -260,6 +271,11 @@ def main():
     status = eval_content(srv.dispatch("kb_status", {"token": token}))
     check("kb_status 统计正确", status.get("materials", {}).get("total") == 1
           and status.get("chunks", 0) > 0, status)
+    probe_info = status.get("llm", {}).get("probe") or {}
+    check("kb_status 的 LLM 探活走真实 chat 且带冷却字段",
+          probe_info.get("method") == "chat"
+          and "status" in probe_info and "retry_after_sec" in probe_info,
+          status.get("llm"))
 
     # 4. 未带 token 访问 → need_auth 指引
     err = srv.dispatch("ask", {"text": "hi"})

@@ -1,8 +1,8 @@
 {
- "updated": "2026-11-18T01:57:15.380742+08:00",
+ "updated": "2026-11-18T02:47:54.988679+08:00",
  "grades": {
-  "优质": 157,
-  "可用": 1243,
+  "优质": 160,
+  "可用": 1261,
   "待观察": 507
  },
  "items": {
@@ -1912,6 +1912,27 @@
   "kb_vault_mat_4f5264dcaa": {},
   "kb_vault_mat_cf0eddd3a2": {},
   "kb_vault_mat_d903f75bc4": {},
-  "kb_vault_mat_52012f8079": {}
+  "kb_vault_mat_52012f8079": {},
+  "kb_vault_mat_d54acff1f6": {},
+  "kb_vault_mat_4c397c5603": {},
+  "kb_vault_mat_bb4edaec4d": {},
+  "kb_vault_mat_476b7061de": {},
+  "kb_vault_mat_a47db4b09b": {},
+  "kb_vault_mat_81edd0d20e": {},
+  "kb_vault_mat_6febd0f6a8": {},
+  "kb_vault_mat_33f88345de": {},
+  "kb_vault_mat_2b5daf71c2": {},
+  "kb_vault_mat_c4063c98cb": {},
+  "kb_vault_mat_c15df03bee": {},
+  "kb_vault_mat_8374f69310": {},
+  "kb_vault_mat_c9f1a2c1d0": {},
+  "kb_vault_mat_f308bb3dfe": {},
+  "kb_vault_mat_374f54b7da": {},
+  "kb_vault_mat_eabb45fc60": {},
+  "kb_vault_mat_0b1c8c28d9": {},
+  "kb_vault_mat_fdb2ac232e": {},
+  "kb_vault_mat_2c764bc4db": {},
+  "kb_vault_mat_1f6c732195": {},
+  "kb_vault_mat_91d4320c71": {}
  }
 }

@@ -875,6 +875,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._material(path[len("/materials/"):])
         if path == "/api/materials":
             return self._json(self._materials_index())
+        if path == "/api/materials/mcp":
+            # MCP client 上传的素材在独立库里，只按当前会话手机号放行
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            return self._json(self._materials_mcp_index())
         if path == "/api/materials/browse":
             # 两个互不相通的根：published=服务端发布目录，vault=Obsidian 素材目录
             # 会暴露真实目录结构，比静态发布更敏感，要求登录会话
@@ -1531,6 +1536,49 @@ class Handler(BaseHTTPRequestHandler):
             return root, "", "目录不存在"
         return root, full, ""
 
+    def _materials_mcp_index(self):
+        """MCP client 上传的素材：只读 mcp/data/opc.db，按当前会话手机号隔离。
+
+        与 materials.json 的「素材清单」是两条数据线：这里列的是外部 Agent
+        经 MCP 上传的原始文件；前端按 day 字段分组展示。
+        """
+        phone = str((self._session_user() or {}).get("phone") or "").strip()
+        if not re.fullmatch(r"1[3-9]\d{9}", phone):
+            return {"ok": False, "error": "需要登录", "items": []}
+        db_path = os.environ.get("OPC_MCP_DB", "/opt/sefs/opc-workbench/mcp/data/opc.db")
+        if not os.path.isfile(db_path):
+            return {"ok": True, "phone": phone, "items": [], "error": "MCP 素材库尚未建立"}
+        try:
+            import sqlite3
+            con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=3)
+            con.row_factory = sqlite3.Row
+            try:
+                rows = con.execute(
+                    "SELECT id, filename, size, mime, status, reason, created_at "
+                    "FROM materials WHERE phone=? ORDER BY created_at DESC LIMIT 500",
+                    (phone,)).fetchall()
+            finally:
+                con.close()
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": f"读取 MCP 素材失败：{type(e).__name__}: {e}",
+                    "items": []}
+        tz = timezone(timedelta(hours=8))
+        items = []
+        for r in rows:
+            try:
+                dt = datetime.fromtimestamp(float(r["created_at"] or 0), tz)
+            except (TypeError, ValueError, OSError):
+                dt = None
+            items.append({
+                "id": r["id"], "filename": r["filename"] or r["id"],
+                "size": int(r["size"] or 0), "mime": r["mime"] or "",
+                "status": r["status"] or "", "reason": r["reason"] or "",
+                "day": dt.strftime("%Y-%m-%d") if dt else "未知日期",
+                "createdAt": dt.isoformat(timespec="seconds") if dt else "",
+                "url": f"/materials/mcp/{r['id']}",
+            })
+        return {"ok": True, "phone": phone, "items": items}
+
     def _materials_browse(self, query):
         """素材目录浏览（只列直接子项，不递归、不读文件内容）。
 
@@ -1831,6 +1879,36 @@ class Handler(BaseHTTPRequestHandler):
         om/ 前缀透传：/materials/om/<slug>/<rel> → OpenMontage projects/<slug>/<rel>，
         「工厂专区」入口（素材页卡片预览用）；OM 是内部制作工作区，比静态发布严一档——要求登录。
         """
+        if rel.startswith("mcp/"):
+            # MCP client 上传的原始文件：按 material_id 反查路径，只给上传者本人
+            mid = rel[len("mcp/"):].strip("/")
+            user = self._session_user()
+            if not user or not re.fullmatch(r"[A-Za-z0-9_-]+", mid):
+                return self._json({"error": "not found"}, 404)
+            phone = str(user.get("phone") or "").strip()
+            db_path = os.environ.get("OPC_MCP_DB", "/opt/sefs/opc-workbench/mcp/data/opc.db")
+            try:
+                import sqlite3
+                con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=3)
+                con.row_factory = sqlite3.Row
+                try:
+                    row = con.execute(
+                        "SELECT phone, path, mime FROM materials WHERE id=?", (mid,)).fetchone()
+                finally:
+                    con.close()
+            except Exception:
+                return self._json({"error": "not found"}, 404)
+            if not row or row["phone"] != phone:
+                return self._json({"error": "not found"}, 404)
+            user_root = os.environ.get("OPC_USER_ROOT", USERS_DIR)
+            allowed = os.path.realpath(os.path.join(user_root, phone, "mcp", "materials"))
+            full = os.path.realpath(str(row["path"] or ""))
+            if not full.startswith(allowed + os.sep) or not os.path.isfile(full):
+                return self._json({"error": "not found"}, 404)
+            if any(p.startswith(".") for p in os.path.relpath(full, allowed).split(os.sep)):
+                return self._json({"error": "not found"}, 404)
+            ctype = FILE_MIME.get(os.path.splitext(full)[1].lower()) or row["mime"]
+            return self._serve_media(full, ctype)
         if rel.startswith("om/"):
             if not self._session_user():
                 return self._json({"error": "not found"}, 404)
