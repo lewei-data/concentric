@@ -536,8 +536,8 @@ class Kernel:
         return ops.meeting_detail(self, mid)
 
     # ---------- 调用模型 ----------
-    def call_agent(self, aid, task, context="", extra="", schema=None, kb=None):
-        """调用员工。kb 控制知识库召回条数（0=不注入，None=默认上限）。"""
+    def call_agent(self, aid, task, context="", extra="", schema=None, kb=None, preferred=""):
+        """调用员工。kb 控制知识库召回条数（0=不注入，None=默认上限）；preferred 指定首选通道 id/name。"""
         a = self.agents[aid]
         self.set_agent(aid, "working", task[:40])
         n = KB_INJECT_LIMIT if kb is None else _to_int(kb, 0)
@@ -550,7 +550,7 @@ class Kernel:
                 print(f"[kb] 召回失败，跳过注入：{type(e).__name__}: {e}", flush=True)
             if block:
                 context = f"{context}\n\n{block}" if context else block
-        data, meta = HERMES.ask(a, task, context, extra, schema)
+        data, meta = HERMES.ask(a, task, context, extra, schema, preferred=preferred)
         self.record_usage(aid, meta)
         self.set_agent(aid, "done", "已交付" if data else "降级交付")
         return data, meta

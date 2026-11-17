@@ -311,7 +311,8 @@ def _stage_topic_meeting(kn, c):
         "额外 JSON 字段：final(数组，条数由议题数决定，每条 {projectId,title,angle,form,durationSec,reason,knowledgeRefs}，"
         "所有 title 必须主题各异、每个议题只出现一次)；"
         "excluded(数组，未采用的认知 {title, projectId, reason})；minutes(会议纪要 Markdown ≤800 字)。",
-        "summary, evidence, confidence, tools, final, excluded, minutes")
+        "summary, evidence, confidence, tools, final, excluded, minutes",
+        preferred="qwen38-local")
     data = data or kn._deg("cco", "知识库选题")
     c.final = kn._coerce_cco_topics(data, kb)
     c.selected = {pid: list(v) for pid, v in c.final.items()}

@@ -78,7 +78,7 @@ LLM_DEFAULTS = [
         "note": "OpenCode Go · GLM-5.3-Flash（多模态/1M 上下文）",
     },
     {
-        # 本地推理通道（LiteLLM 网关，OpenAI 兼容）：无时间要求任务的优先通道
+        # 本地推理通道（LiteLLM → 208 的 llama.cpp）：非实时/定时分析整理类优先
         "id": "qwen38-local",
         "name": "local-qwen3.8-flash",
         "url": os.environ.get("OPC_LLM_LOCAL_BASE_URL", "http://192.168.31.208/llm/v1"),
@@ -88,7 +88,7 @@ LLM_DEFAULTS = [
         "priority": 50,
         "provider": "custom",
         "apiKey": "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a",
-        "note": "本地推理通道（LiteLLM @ 192.168.31.208/llm，2026-11-13 自 llama.cpp 直连迁移）",
+        "note": "本地推理通道（208 llama.cpp Qwen3-30B-A3B-2507 / 256K 单槽；非实时、定时分析整理类优先，2026-11-18 按 PERF-USAGE-GUIDE 更新）",
     },
 ]
 

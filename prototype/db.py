@@ -1540,9 +1540,10 @@ class Store:
         return ""
 
     def llm_pick(self, preferred=""):
-        """挑选可用大模型通道：preferred → 时段调度 → 默认模型 → priority 升序故障转移。
+        """挑选可用大模型通道：显式 preferred → 时段调度 → 默认模型 → priority 升序故障转移。
         返回 (通道行|None, 拦截原因)。
 
+        - preferred：仅由非实时/定时分析整理类任务传入，命中可用通道时压过时段调度；
         - 时段调度：查 llm_schedule 表，当前时段有匹配规则且对应通道可用时优先选用；
         - 默认模型：llm_models.is_default=1 的通道（模型管理页可设置，全局唯一）；
         - 注册表为空 / 查询故障 → 返回默认兜底通道（沿用内置 MODEL 直调，不拦截业务）；
@@ -1556,7 +1557,12 @@ class Store:
             return fallback, ""
         if not rows:
             return fallback, ""     # 未登记任何模型：向后兼容，直调默认模型
-        # 时段调度优先：当前时段有匹配规则且对应通道可用时，直接选用
+        # 显式首选（非实时/定时分析类任务）优先于时段调度；不可用时回落原有时段/默认/优先级
+        for m in rows:
+            if preferred and preferred in (m.get("name"), m.get("id")) \
+                    and not self._llm_unavailable(m):
+                return m, ""
+        # 时段调度：当前时段有匹配规则且对应通道可用时，直接选用
         sched_id = self._llm_schedule_model_id()
         if sched_id:
             for m in rows:
@@ -1565,10 +1571,6 @@ class Store:
         # 全局默认模型（模型管理页「设为默认」），无时段规则命中时生效
         for m in rows:
             if _int(m.get("is_default")) and not self._llm_unavailable(m):
-                return m, ""
-        for m in rows:
-            if preferred and preferred in (m.get("name"), m.get("id")) \
-                    and not self._llm_unavailable(m):
                 return m, ""
         for m in rows:              # 首选通道不可用 → 按优先级故障转移
             if not self._llm_unavailable(m):

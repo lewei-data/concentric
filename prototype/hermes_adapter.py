@@ -90,10 +90,10 @@ class HermesAdapter:
                     "allocated quota exceeded", "quota exceeded", "go usage limit", "额度耗尽")
         return any(p in low for p in patterns)
 
-    def _defer(self, retry_at, agent, task, context, extra, schema, tried):
+    def _defer(self, retry_at, agent, task, context, extra, schema, tried, preferred=""):
         """把限流失败的调用放进重跑队列，等冷却结束/排队下降后由 drain_deferred 拉起。"""
         with self.deferred_lock:
-            self.deferred.append((retry_at, agent["id"], task, context, extra, schema, list(tried)))
+            self.deferred.append((retry_at, agent["id"], task, context, extra, schema, list(tried), preferred))
 
     def drain_deferred(self, agent_lookup):
         """后台定时调用：把到期的推迟任务重新提交到线程池（每次最多 8 条，避免瞬间冲击）。
@@ -105,11 +105,11 @@ class HermesAdapter:
             for item in self.deferred:
                 (ready if item[0] <= now else keep).append(item)
             self.deferred = keep
-        for retry_at, aid, task, context, extra, schema, tried in ready[:8]:
+        for retry_at, aid, task, context, extra, schema, tried, preferred in ready[:8]:
             agent = agent_lookup(aid)
             if not agent:
                 continue
-            self.pool.submit(self.ask, agent, task, context, extra, schema, tried)
+            self.pool.submit(self.ask, agent, task, context, extra, schema, tried, preferred=preferred)
         # 未取走的放回队首，下轮再试
         if len(ready) > 8:
             with self.deferred_lock:
@@ -217,7 +217,7 @@ class HermesAdapter:
             f"只输出一个 JSON 对象（不要代码块、不要解释），字段：{fields}。"
         )
 
-    def ask(self, agent, task, context="", extra="", schema=None, _tried=None):
+    def ask(self, agent, task, context="", extra="", schema=None, _tried=None, preferred=""):
         """调用一次大模型：按通道并发闸门排队，429 熔断换通道；全部限流时有界同步等待后内联重试。
 
         - 并发满：按通道上限排队等待 queue_wait_ms，超时换其它通道；
@@ -225,7 +225,7 @@ class HermesAdapter:
           原调用者能直接拿到成功结果（这是「排队下降后自动重跑」的主路径）；
         - 超过同步预算（OPC_LLM_SYNC_WAIT_SEC，默认 60s）才转后台 deferred 兜底，
           后台在冷却结束/并发下降后自动重跑（极端情况，结果不再回传原调用者）。
-        _tried 为重跑时已试过的通道 id（内部参数，外部不要传）。
+        _tried 为重跑时已试过的通道 id（内部参数，外部不要传）；preferred 为任务指定的首选通道 id/name。
         """
         if not self.available():
             return None, {"engine": "rule", "latencyMs": 0, "profile": agent["id"], "usage": {}}
@@ -244,7 +244,7 @@ class HermesAdapter:
             retryable = False       # 本轮是否遇到可恢复失败（429 / 并发排队超时）
             # 最多轮 3 个不同通道：拿到可用通道 → 过并发闸门 → 调用；429 则熔断并换下一个
             for round_no in range(3):
-                channel, gate_reason = (st.llm_pick() if st else (None, ""))
+                channel, gate_reason = (st.llm_pick(preferred) if st else (None, ""))
                 if channel is None:
                     reason = gate_reason or "通道全部限流"
                     break
@@ -301,7 +301,7 @@ class HermesAdapter:
             wait_needed = max(0.0, retry_at - time.time())
             remaining = max_wait - waited
             if not retryable or remaining <= 0 or wait_needed > remaining:
-                self._defer(retry_at, agent, task, context, extra, schema, tried)
+                self._defer(retry_at, agent, task, context, extra, schema, tried, preferred)
                 with self.lock:
                     self.failures += 1
                 print(f"[hermes] {agent['id']} 全通道失败（{reason}），已推迟到 {retry_at:.0f} 重跑",

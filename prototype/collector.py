@@ -357,7 +357,8 @@ def run_task(data_dir, phone, task_id, kernel_getter, manual=False):
                 aid, _analyze_prompt(task, _manifest_text(out_dir, collected), day),
                 "参考这批素材，给出能直接进入选题的灵感；没有支撑就不要写。",
                 "ideas 每条还要带 knowledgeRefs（引用了知识库哪条）。",
-                "summary, evidence, confidence, tools, ideas")
+                "summary, evidence, confidence, tools, ideas",
+                preferred="qwen38-local")
             alist = (adata or {}).get("ideas") if isinstance(adata, dict) else None
             for i, it in enumerate((alist or [])[:8]):
                 if not isinstance(it, dict) or not str(it.get("title") or "").strip():
