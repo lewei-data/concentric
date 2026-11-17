@@ -1321,6 +1321,9 @@ class Kernel:
     def factory_channels(self):
         return factory.factory_channels(self)
 
+    def voice_preview(self, channel, voice, text=""):
+        return factory.voice_preview(self, channel, voice, text)
+
 
     def toolbox_save_frame(self, raw):
         return factory.toolbox_save_frame(self, raw)

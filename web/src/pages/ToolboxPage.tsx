@@ -230,7 +230,9 @@ export function ToolboxPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [groups, setGroups] = useState<GroupMeta[]>([]);
   const [cap, setCap] = useState(0);
-  const [modes, setModes] = useState<{ i2v: boolean; i2vReason: string }>({ i2v: false, i2vReason: "" });
+  const [modes, setModes] = useState<{
+    i2v: boolean; i2vReason: string; i2i: boolean; i2iReason: string;
+  }>({ i2v: false, i2vReason: "", i2i: false, i2iReason: "" });
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState("");
 
@@ -239,7 +241,7 @@ export function ToolboxPage() {
   const [prompt, setPrompt] = useState("");
   const [line, setLine] = useState("");
   const [sec, setSec] = useState(3);
-  const [mode, setMode] = useState<"t2v" | "i2v">("t2v");
+  const [mode, setMode] = useState<"t2i" | "i2i" | "t2v" | "i2v">("t2i");
   const [frame, setFrame] = useState<{ name: string; url: string } | null>(null);
   const [frameBusy, setFrameBusy] = useState(false);
   const [vals, setVals] = useState<Record<string, unknown>>({});
@@ -299,9 +301,11 @@ export function ToolboxPage() {
       }));
   }, [kindChans, groups]);
 
-  // 图生视频要「全局有可用渠道」且「当前渠道自己支持 i2v」
+  // 图生视频/图生图都要「全局有可用渠道」且「当前渠道自己支持」
   const chanI2v = !!active?.modes?.includes("i2v");
   const canI2v = modes.i2v && chanI2v;
+  const chanI2i = !!active?.modes?.includes("i2i");
+  const canI2i = modes.i2i && chanI2i;
 
   const loadChannels = useCallback(async () => {
     setLoading(true);
@@ -311,7 +315,7 @@ export function ToolboxPage() {
       const r = await fetch("/api/toolbox/channels", { credentials: "include" });
       const d = await r.json() as {
         ok?: boolean; error?: string; channels?: Channel[]; groups?: GroupMeta[]; maxSec?: number;
-        modes?: { i2v: boolean; i2vReason: string };
+        modes?: { i2v: boolean; i2vReason: string; i2i: boolean; i2iReason: string };
       };
       if (!r.ok || !d.ok) { setFatal(d.error || "渠道清单读取失败"); return; }
       setChannels(d.channels || []);
@@ -354,8 +358,13 @@ export function ToolboxPage() {
 
   useEffect(() => {
     if (active) setVals(defaultsOf(active));
-    // 换到不支持首帧的渠道时别把「图生视频」留在选中态，否则用户以为能出片
-    if (active && !(active.modes || []).includes("i2v")) setMode("t2v");
+    // 换到不支持参考图的渠道时别把 i2i/i2v 留在选中态，否则用户以为能上传图
+    if (active) {
+      const ms = active.modes || [];
+      if (!ms.includes("i2v") && !ms.includes("i2i")) setMode(kind === "image" ? "t2i" : "t2v");
+      else if (mode === "i2v" && !ms.includes("i2v")) setMode(ms.includes("i2i") ? "i2i" : "t2i");
+      else if (mode === "i2i" && !ms.includes("i2i")) setMode(ms.includes("i2v") ? "i2v" : "t2v");
+    }
   }, [active?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -374,6 +383,10 @@ export function ToolboxPage() {
       if (!chanI2v) { setErr(modes.i2vReason || "当前渠道不支持图生视频"); return; }
       if (!frame) { setErr("图生视频需要先选一张首帧图"); return; }
     }
+    if (mode === "i2i") {
+      if (!chanI2i) { setErr(modes.i2iReason || "当前渠道不支持图生图"); return; }
+      if (!frame) { setErr("图生图需要先上传一张参考图"); return; }
+    }
     setBusy(true);
     try {
       const r = await fetch("/api/toolbox/jobs", {
@@ -387,7 +400,7 @@ export function ToolboxPage() {
           line: kind === "audio" ? line : "",
           sec: kind === "video" ? sec : 0,
           params: { [active.name]: vals },
-          frame: kind === "video" && mode === "i2v" && frame ? frame.name : "",
+          frame: (mode === "i2v" || mode === "i2i") && frame ? frame.name : "",
         }),
       });
       const d = await r.json() as { ok?: boolean; error?: string; note?: string; warnings?: string[] };
@@ -404,7 +417,8 @@ export function ToolboxPage() {
 
   const canSubmit = !busy && !!active && active.available
     && (kind === "audio" ? !!line.trim() : !!prompt.trim())
-    && (kind !== "video" || mode === "t2v" || (canI2v && !!frame));
+    && (kind !== "video" || mode === "t2v" || (canI2v && !!frame))
+    && (kind !== "image" || mode === "t2i" || (canI2i && !!frame));
 
   /** 首帧上传：直传二进制，后端落 .cache/frames，提交时只带文件名 */
   const uploadFrame = async (file: File) => {
@@ -712,6 +726,31 @@ export function ToolboxPage() {
             ))}
             {kindChans.length === 0 && <p className="muted">该类型暂无渠道</p>}
 
+            {kind === "image" && (
+              <div className="tb-modes">
+                <button
+                  type="button"
+                  className={`tb-mode ${mode === "t2i" ? "active" : ""}`}
+                  onClick={() => setMode("t2i")}
+                >
+                  文生图
+                </button>
+                <button
+                  type="button"
+                  className={`tb-mode ${mode === "i2i" ? "active" : ""}`}
+                  disabled={!canI2i}
+                  title={chanI2i ? modes.i2iReason : "当前渠道没有参考图输入能力"}
+                  onClick={() => { if (canI2i) setMode("i2i"); }}
+                >
+                  图生图（参考图）
+                </button>
+                {!canI2i && (
+                  <span className="tb-mode-note">
+                    当前渠道只做文生图；可切到「ComfyUI · 192.168.21.157 · Qwen-Image」或「阿里云百炼 · Qwen-Image-3.0-Pro」
+                  </span>
+                )}
+              </div>
+            )}
             {kind === "video" && (
               <div className="tb-modes">
                 <button
@@ -738,10 +777,11 @@ export function ToolboxPage() {
               </div>
 
             )}
-            {kind === "video" && mode === "i2v" && canI2v && (
+            {((kind === "video" && mode === "i2v" && canI2v)
+              || (kind === "image" && mode === "i2i" && canI2i)) && (
               <div className="tb-frame">
                 {frame ? (
-                  <img className="tb-frame-img" src={frame.url} alt="首帧" />
+                  <img className="tb-frame-img" src={frame.url} alt={kind === "image" ? "参考图" : "首帧"} />
                 ) : (
                   <div className="tb-frame-img tb-frame-img--empty">未选</div>
                 )}
@@ -756,11 +796,14 @@ export function ToolboxPage() {
                         e.target.value = "";
                       }}
                     />
-                    <span>{frameBusy ? "上传中…" : frame ? "更换首帧" : "选择首帧图"}</span>
+                    <span>{frameBusy ? "上传中…" : frame
+                      ? (kind === "image" ? "更换参考图" : "更换首帧")
+                      : (kind === "image" ? "选择参考图" : "选择首帧图")}</span>
                   </label>
                   <small className="tb-hint">
-                    首帧决定构图、人物和画幅，视频第一帧就是它。PNG / JPG / WebP，≤ 8MB；
-                    建议先用「图片生成」出一张满意的大图再拿来当首帧
+                    {kind === "image"
+                      ? "参考图决定人物/构图，提示词写「保留主体、换背景」更稳。PNG / JPG / WebP，≤ 8MB。"
+                      : "首帧决定构图、人物和画幅，视频第一帧就是它。PNG / JPG / WebP，≤ 8MB；建议先用「图片生成」出一张满意的大图再拿来当首帧"}
                   </small>
                 </div>
               </div>

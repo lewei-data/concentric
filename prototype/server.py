@@ -1086,6 +1086,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **self._kernel().factory_channels()})
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/factory/voice/preview":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                wav = self._kernel().voice_preview(
+                    (qs.get("channel") or [""])[0], (qs.get("voice") or [""])[0],
+                    (qs.get("text") or [""])[0])
+                return self._send_audio(wav)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/factory/shots":
             qs = parse_qs(urlparse(self.path).query)
             try:

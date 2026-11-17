@@ -82,7 +82,7 @@ export const FACTORY_LINES: FactoryLine[] = [
     subtitle: "台词 / TTS / 配音 / 音色 / BGM —— 听觉要素的加工线",
     desc:
       "把文案车间产出的台词加工为可交付音频：台词提取、音色选定、TTS 合成、克隆音色微调、BGM 配乐与混音。" +
-      "渠道注册表中 kind=audio 的 Qwen3-TTS、CosyVoice 等均归本车间统一管理。",
+      "渠道注册表中 kind=audio 的 Qwen3-TTS、CosyVoice、阿里云百炼（云服务）等均归本车间统一管理。",
     jobKind: "audio",
     channelKind: "audio",
     steps: [
@@ -93,28 +93,31 @@ export const FACTORY_LINES: FactoryLine[] = [
       { name: "混音交付", desc: "对白/旁白与 BGM 混音，交付给小样与成片车间复用" },
     ],
     outputs: ["逐镜对白 wav", "旁白 wav", "克隆音色", "BGM 混音轨"],
-    note: "TTS/ASR 后端为 9311/9312，MCP 445/9101/9102 对外；音色克隆写入即生效，无需重启引擎。",
+    note: "TTS/ASR 后端为 9311/9312，MCP 445/9101/9102 对外；音色克隆写入即生效，无需重启引擎。" +
+      "阿里云百炼 Qwen-Audio-3.0-TTS-Plus 走云服务，按字符计费，不占本机算力。",
     entry: { label: "音色与试听", href: "/app/toolbox" },
   },
   {
     key: "image",
     label: "图片车间",
     short: "图片",
-    subtitle: "文生图 / 插图 / 封面 / 关键帧 —— 视觉静态要素的加工线",
+    subtitle: "文生图 / 图生图 / 插图 / 封面 / 关键帧 —— 视觉静态要素的加工线",
     desc:
-      "把逐镜画面描述加工为图像：文生图（ComfyUI SD2.1 / SD1.5 写实）、插图规格化、封面设计、分镜关键帧与 PIL 合成卡兜底。" +
-      "渠道注册表中 kind=image 的渠道归本车间统一管理。",
+      "把逐镜画面描述加工为图像：文生图与图生图（ComfyUI 157 的 Qwen-Image、阿里云百炼 qwen-image-3.0-pro）、" +
+      "ComfyUI SD2.1、media-gen SD1.5 写实、插图规格化、封面设计与分镜关键帧。" +
+      "渠道注册表中 kind=image 的渠道归本车间统一管理，每个渠道的规格红线与画质档位在设置框里可见。",
     jobKind: "image",
     channelKind: "image",
     steps: [
-      { name: "提示词上料", desc: "取分镜「画面」为提示词，标注锁定镜与纯音频镜（跳过）" },
-      { name: "文生图", desc: "按渠道并发提交，ComfyUI 单队列串行、media-gen 可并发，进度实时可见" },
-      { name: "规格裁剪", desc: "按 9:16 竖屏 / 封面比例裁剪，长边与采样步数按模型能力约束" },
-      { name: "关键帧/插图", desc: "插图优先复用已有图，其次 ComfyUI，最后 PIL 合成卡兜底" },
-      { name: "素材登记", desc: "成品落交付目录并登记素材库，参与五行五维评分" },
+      { name: "提示词上料", desc: "取分镜「画面」为提示词，一行一条；图生图时每行是对参考图的编辑指令" },
+      { name: "生图模式", desc: "选文生图或图生图；图生图需上传参考图，只有支持的渠道可切换" },
+      { name: "规格裁剪", desc: "一键画质档位填入安全参数，再按渠道红线微调尺寸/步数/CFG" },
+      { name: "关键帧/插图", desc: "核对渠道规格红线与当前参数，避免越界导致画质塌方" },
+      { name: "素材登记", desc: "确认后批量提交，成品落交付目录并参与五行五维评分" },
     ],
     outputs: ["分镜关键帧", "封面图", "插图", "品牌 KV / 形象图"],
-    note: "ComfyUI 为远程 192.168.21.157 纯 CPU 推理，单张约 1–3 分钟；排队数在渠道卡片上可见。",
+    note: "ComfyUI（含 192.168.21.157 的 Qwen-Image）为远程纯 CPU 推理，单张约 1–3 分钟；" +
+      "百炼图像是云服务按量计费，图片 URL 及时下载。排队数在渠道卡片上可见。",
     entry: { label: "手工出图", href: "/app/toolbox" },
   },
   {

@@ -4188,7 +4188,102 @@ a:hover {
 .fac-job-bar { margin-top: 5px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .fac-job-bar i { display: block; height: 100%; background: var(--accent); }
 .fac-job-error { margin: 4px 0 0; font-size: 11px; color: var(--danger); }
-.fac-job-open { flex: 0 0 auto; font-size: 12px; color: var(--accent-deep); text-decoration: none; }
+.fac-job-open {
+  flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--accent-deep); font: inherit; font-size: 12px;
+  text-decoration: none; cursor: pointer;
+}
+.fac-job-open:hover { border-color: var(--accent); }
+
+/* 车间：可点击渠道卡片 / 流程步骤 */
+.fac-ch, .fac-flow-item { font: inherit; color: inherit; text-align: left; }
+button.fac-ch, button.fac-flow-item { cursor: pointer; }
+button.fac-ch:hover, button.fac-flow-item:hover { border-color: var(--accent); }
+button.fac-flow-item.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.fac-ch-tip {
+  display: block; margin-top: 8px; font-size: 11px; color: var(--accent-deep); font-weight: 600;
+}
+.fac-flow-edit {
+  position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--accent-deep);
+}
+
+/* 就近设置框：渠道参数 / 流程步骤 */
+.fac-set-panel { width: min(440px, calc(100vw - 24px)); }
+.fac-set-title {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  padding: 10px 14px; border-bottom: 1px dashed var(--border-strong); font-size: 13px;
+}
+.fac-set-title b { font-size: 14px; }
+.fac-set-title .muted { font-size: 11px; }
+.fac-set-ok { color: var(--ok, #2e9e6b); font-size: 11px; }
+.fac-set-off { color: var(--danger); font-size: 11px; }
+.fac-set-inner {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px;
+  max-height: min(58vh, 520px); overflow-y: auto;
+}
+.fac-set-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 10px 14px; border-top: 1px dashed var(--border-strong);
+}
+.fac-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.fac-field-label { font-weight: 600; }
+.fac-field-control { display: flex; align-items: center; gap: 6px; }
+.fac-field-control select, .fac-field-control input { flex: 1 1 auto; min-width: 0; }
+.fac-field select, .fac-field input[type="number"], .fac-field input[type="text"], .fac-textarea {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 12px;
+}
+.fac-textarea { resize: vertical; line-height: 1.6; }
+.fac-field-hint { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.fac-btn-mini {
+  flex: 0 0 auto; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--accent-deep); font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+.fac-btn-mini:hover { border-color: var(--accent); }
+.fac-btn-mini:disabled { opacity: 0.55; cursor: not-allowed; }
+.fac-set-error { margin: 0; font-size: 11px; color: var(--danger); }
+.fac-preview-audio { width: 100%; height: 34px; }
+.fac-spec {
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.fac-spec-title { display: block; margin-bottom: 6px; font-size: 12px; color: var(--accent-deep); }
+.fac-spec-list { margin: 0; padding-left: 18px; }
+.fac-spec-list li { margin: 3px 0; font-size: 11px; line-height: 1.6; color: var(--text); }
+.fac-spec-current {
+  margin: 8px 0 0; padding-top: 6px; border-top: 1px dashed var(--border-strong);
+  font-size: 11px; color: var(--muted); word-break: break-all;
+}
+.fac-mode-btn {
+  flex: 0 0 auto; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+}
+.fac-mode-btn.is-active {
+  border-color: var(--accent); background: var(--accent-soft); color: var(--accent-deep); font-weight: 600;
+}
+.fac-mode-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.fac-init-preview {
+  display: block; max-width: 100%; max-height: 160px; object-fit: contain;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface-soft);
+}
+.fac-preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.fac-set-summary {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  background: var(--surface-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.fac-set-summary > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.fac-set-summary span { color: var(--muted); }
+.fac-set-summary b { text-align: right; font-weight: 600; }
+.fac-set-start { width: 100%; margin-top: 2px; }
+.fac-confirm {
+  padding: 12px; border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--accent-soft); font-size: 12px;
+}
+.fac-confirm p { margin: 0 0 6px; line-height: 1.6; }
+.fac-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+button.fac-job-preview { border: 1px solid var(--border); }
+button.fac-job-preview:disabled { cursor: default; }
 
 .fac-rel-list { display: flex; flex-direction: column; gap: 6px; }
 .fac-rel { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; }

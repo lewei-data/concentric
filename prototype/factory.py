@@ -489,6 +489,13 @@ def toolbox_voice_ref(kn, vid):
     return MEDIA.clone_ref_path(vid)
 
 
+def voice_preview(kn, channel, voice, text=""):
+    """车间音色试听：按渠道+音色合成固定短句，服务端缓存。"""
+    if MEDIA is None:
+        raise ValueError(MEDIA_UNAVAILABLE)
+    return MEDIA.voice_preview(channel, voice, text)
+
+
 def toolbox_channels(kn):
     """渠道注册表（分组/端点/能力）+ 图生视频可用性。"""
     if MEDIA is None:
@@ -496,10 +503,15 @@ def toolbox_channels(kn):
     chans, cap = MEDIA.channels(force=True)
     i2v = [c["name"] for c in chans
            if "i2v" in (c.get("modes") or []) and c.get("available")]
+    i2i = [c["name"] for c in chans
+           if "i2i" in (c.get("modes") or []) and c.get("available")]
     return {"channels": chans, "groups": MEDIA.groups(), "maxSec": cap,
             "modes": {"i2v": bool(i2v), "i2vChannels": i2v,
                       "i2vReason": "" if i2v else
-                      "当前没有可用的图生视频渠道（Wan2.2 TI2V 的视频端点 8189 不可达）"}}
+                      "当前没有可用的图生视频渠道（Wan2.2 TI2V 的视频端点 8189 不可达）",
+                      "i2i": bool(i2i), "i2iChannels": i2i,
+                      "i2iReason": "" if i2i else
+                      "当前没有可用的图生图渠道（ComfyUI 或百炼图像未就绪）"}}
 
 
 def toolbox_run(kn, kind, channels, prompt="", line="", sec=0.0, params=None,
@@ -525,11 +537,12 @@ def toolbox_run(kn, kind, channels, prompt="", line="", sec=0.0, params=None,
     if frame:
         fp = os.path.join(MEDIA.frame_dir(), frame)
         if not os.path.isfile(fp):
-            raise ValueError("首帧图片不存在或已被清理，请重新上传")
-        # 只往支持 i2v 的视频渠道挂首帧，其它渠道忽略（不静默改变语义）
+            raise ValueError("参考图片不存在或已被清理，请重新上传")
+        # 只往支持 i2v（视频首帧）或 i2i（图片参考图）的渠道挂输入图，其它渠道忽略
         for name in chans:
             ch = MEDIA.CHANNELS.get(name) or {}
-            if "i2v" in (ch.get("modes") or []):
+            modes = ch.get("modes") or []
+            if "i2v" in modes or "i2i" in modes:
                 params[name] = dict(params.get(name) or {}, frame=frame)
     trace_id = "tb-" + os.urandom(4).hex()
     day = time.strftime("%Y-%m-%d")

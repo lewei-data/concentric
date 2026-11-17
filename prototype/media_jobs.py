@@ -15,8 +15,10 @@
   - 存储：独立 SQLite（默认 <工作区>/media_jobs.db，WAL），不与过程库 opc.db 抢写锁。
   - 只做「生成 + 取回」，不写业务状态；状态落库、事件由调用方（kernel）负责。
 """
+import base64
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -53,9 +55,26 @@ CLONE_PREFIX = "clone-"
 CLONE_MAX_SEC = 20.0
 CLONE_MIN_SEC = 1.5
 
+# 云服务：阿里云百炼 Token Plan 语音合成（qwen-audio-3.0-tts-plus）。
+# 与 llm_registry.py 里的百炼 LLM 共用同一把 sk-sp-* Token Plan Key，不另存凭据；
+# 需要单独一把 Key 时用 OPC_BAILIAN_TTS_API_KEY 覆盖。
+BAILIAN_TTS_BASE = os.environ.get(
+    "OPC_BAILIAN_TTS_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com").rstrip("/")
+BAILIAN_TTS_PATH = "/api/v1/services/audio/tts/SpeechSynthesizer"
+BAILIAN_TTS_MODEL = os.environ.get("OPC_BAILIAN_TTS_MODEL", "qwen-audio-3.0-tts-plus")
+BAILIAN_TTS_KEY = (os.environ.get("OPC_BAILIAN_TTS_API_KEY")
+                   or os.environ.get("OPC_LLM_QWEN37PLUS_API_KEY")
+                   or os.environ.get("OPC_LLM_QWEN38FLASH_API_KEY") or "")
+# 云服务：阿里云百炼 Token Plan 图像生成（qwen-image-3.0-pro，文生图 + 图生图）
+BAILIAN_IMAGE_BASE = os.environ.get(
+    "OPC_BAILIAN_IMAGE_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com").rstrip("/")
+BAILIAN_IMAGE_PATH = "/api/v1/services/aigc/multimodal-generation/generation"
+BAILIAN_IMAGE_MODEL = os.environ.get("OPC_BAILIAN_IMAGE_MODEL", "qwen-image-3.0-pro")
+
 KINDS = ("image", "video", "audio")
 LANE_LIMITS = {"comfyui": 1, "comfyui_video": 1, "sd15": 1, "wan21": 1,
-               "minimax_h3": 1, "qwen": 2, "cosyvoice": 2}
+               "minimax_h3": 1, "qwen": 2, "cosyvoice": 2, "bailian": 2,
+               "comfyui_157": 1, "bailian_image": 2}
 
 
 # ---------------------------------------------------------------- 基础工具
@@ -80,14 +99,28 @@ def _http(url, timeout=15, data=None, method=None, headers=None):
         return r.read()
 
 
-def _http_json(url, timeout=15, data=None, method=None):
+def _http_json(url, timeout=15, data=None, method=None, headers=None):
     body = None
-    headers = {}
+    headers = dict(headers or {})
     if data is not None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
     raw = _http(url, timeout=timeout, data=body, method=method, headers=headers)
     return json.loads(raw.decode("utf-8")) if raw else {}
+
+
+def _bailian_api_key():
+    """百炼 Token Plan Key：显式环境变量优先，否则复用百炼 LLM 通道那把 sk-sp-*。"""
+    if BAILIAN_TTS_KEY:
+        return BAILIAN_TTS_KEY
+    try:
+        from llm_registry import LLM_DEFAULTS
+        for m in LLM_DEFAULTS:
+            if str(m.get("id") or "").endswith("-bailian") and m.get("apiKey"):
+                return m["apiKey"]
+    except Exception:  # noqa: BLE001 - 取不到就走「未配置」，不吞掉真实合成时的报错
+        pass
+    return ""
 
 
 # ---------------------------------------------------------------- 渠道注册表
@@ -99,6 +132,9 @@ GROUPS = [
              "纯 CPU 推理，单队列串行，排队看得见"},
     {"key": "lan", "label": "局域网媒体服务（192.168.21.206）",
      "desc": "media-gen 出图出片 + media-engine 语音，服务端自己排队，可并发"},
+    {"key": "bailian", "label": "阿里云百炼（云服务）",
+     "desc": "DashScope Token Plan 云端语音合成 / 图像生成，按量计费、不占本机算力；"
+             "Key 复用百炼 LLM 通道的 sk-sp-*（可用 OPC_BAILIAN_TTS_API_KEY 单独覆盖）"},
 ]
 
 CHANNELS = {
@@ -108,8 +144,25 @@ CHANNELS = {
         "endpoint": "comfy:8188",
         "notes": "ComfyUI 原生 KSampler 工作流（SD2.1 768），API 格式与 hermes comfyui 技能一致；"
                  "单队列，CPU 单张约 1–3 分钟",
-        "modes": ["t2i"],
+        "modes": ["t2i", "i2i"],
+        "spec": {
+            "title": "SD2.1 出图规格红线",
+            "limits": [
+                "底模 v2-1_768-ema-pruned 按 768 训练：长边 ≤1024，超了容易重复人脸/肢体",
+                "宽高按 64 对齐（8 的倍数由系统强制）；推荐 768×1024 竖屏 / 1024×768 横屏 / 768×768 方图",
+                "steps 20–30：<12 细节没长出来，>40 只变慢不提质",
+                "CFG 7–8：<5 跑题，>12 色彩过饱和、画面发硬",
+                "图生图输出尺寸跟随输入图；本页面宽高只对文生图生效",
+            ],
+            "presets": [
+                {"name": "竖屏封面 768×1024", "values": {"width": 768, "height": 1024, "steps": 25, "cfg": 7.5}},
+                {"name": "方图 768×768", "values": {"width": 768, "height": 768, "steps": 20, "cfg": 7.5}},
+                {"name": "横屏 1024×768", "values": {"width": 1024, "height": 768, "steps": 25, "cfg": 7.5}},
+            ],
+        },
         "params": [
+            _p("denoise", "图生图重绘幅度", "float", 0.55, min=0.1, max=1.0, step=0.05,
+               hint="仅图生图生效：0.4–0.7 保留原图构图，接近 1.0 等于重新画；过高会把参考图改得面目全非"),
             _p("width", "宽", "int", 768, min=256, max=1024, step=64, multiple=8,
                hint="SD2.1 按 768 训练：长边别超 1024，否则容易出现重复人脸/肢体。"
                     "竖屏封面用 768×1024，方图 768×768，横屏 1024×768"),
@@ -162,7 +215,22 @@ CHANNELS = {
         "kind": "image", "group": "lan",
         "label": "media-gen · SD1.5 写实",
         "endpoint": "media-gen:9103",
-        "notes": "media-gen SD15（Realistic Vision V5.1），CPU 串行队列，人像写实稳",
+        "notes": "media-gen SD15（Realistic Vision V5.1），CPU 串行队列，人像写实稳；服务端只做文生图，不支持图生图",
+        "spec": {
+            "title": "SD1.5 出图规格红线",
+            "limits": [
+                "Realistic Vision V5.1 在 512–768 最稳；长边 >832 容易出两个头/双脸",
+                "宽高必须是 8 的倍数；推荐 640×832 竖屏 / 832×512 横屏 / 640×640 方图",
+                "steps 20–30；>35 收益很小，只增加排队时间",
+                "CFG 6–7 写实人像最自然；>9 皮肤塑料感、明暗过硬",
+                "服务端是文生图管道，上传参考图不会生效，请改用 ComfyUI 或百炼渠道做图生图",
+            ],
+            "presets": [
+                {"name": "竖屏 640×832", "values": {"width": 640, "height": 832, "steps": 25, "cfg": 6.0}},
+                {"name": "方图 640×640", "values": {"width": 640, "height": 640, "steps": 20, "cfg": 6.0}},
+                {"name": "横屏 832×512", "values": {"width": 832, "height": 512, "steps": 25, "cfg": 6.0}},
+            ],
+        },
         "modes": ["t2i"],
         "params": [
             _p("width", "宽", "int", 640, min=256, max=1024, step=8, multiple=8,
@@ -177,6 +245,90 @@ CHANNELS = {
                hint="-1 随机；固定种子可复现，便于同一人物微调"),
             _p("negative_prompt", "反向提示词", "text", "低质量, 模糊, 水印",
                hint="写实向可加：卡通, 插画, 3D渲染, 变形手, 多余手指"),
+        ],
+    },
+    "comfyui_157": {
+        "kind": "image", "group": "comfy",
+        "label": "ComfyUI · 192.168.21.157 · Qwen-Image",
+        "endpoint": "192.168.21.157:8188",
+        "notes": "157 工作站 Qwen-Image-2.1-Turbo（UNET + qwen3vl-8b CLIP + 专用 VAE），"
+                 "8 步出图；支持文生图与图生图（参考图走 VAEEncode）",
+        "modes": ["t2i", "i2i"],
+        "spec": {
+            "title": "Qwen-Image-2.1-Turbo 规格红线",
+            "limits": [
+                "turbo 底模 8 步就够：steps >20 耗时翻倍但几乎不提质；CFG 保持 1.0 左右，>3 结构会崩",
+                "文生图宽高按 64 对齐，范围 512–1536；推荐 1024×1024 方图 / 768×1024 竖屏",
+                "图生图输出尺寸跟随输入图，页面上的宽/高只对文生图生效；参考图最短边建议 ≥384px",
+                "图生图 denoise 0.4–0.7 保留原构图；接近 1.0 等于重画，容易丢掉参考图特征",
+                "与 SD2.1 共用 157 的 8188 单队列，CPU 单张约 1–3 分钟，排队数见渠道卡片",
+            ],
+            "presets": [
+                {"name": "方图 1024×1024 · 8步", "values": {"width": 1024, "height": 1024, "steps": 8, "cfg": 1.0}},
+                {"name": "竖屏 768×1024 · 8步", "values": {"width": 768, "height": 1024, "steps": 8, "cfg": 1.0}},
+                {"name": "横屏 1024×768 · 8步", "values": {"width": 1024, "height": 768, "steps": 8, "cfg": 1.0}},
+            ],
+        },
+        "params": [
+            _p("width", "宽", "int", 1024, min=512, max=1536, step=64, multiple=64,
+               hint="文生图用；turbo 原生 1024 档，别超过 1536。图生图时该值不生效"),
+            _p("height", "高", "int", 1024, min=512, max=1536, step=64, multiple=64,
+               hint="文生图用；竖屏 768×1024，横屏 1024×768。图生图时该值不生效"),
+            _p("steps", "采样步数", "int", 8, min=4, max=20,
+               hint="turbo 模型 8 步即可，20 步耗时翻倍、画质几乎不变"),
+            _p("cfg", "提示词权重 CFG", "float", 1.0, min=0.5, max=5.0, step=0.1,
+               hint="qwen-image turbo 用 1.0；调到 3 以上会出现过饱和和结构崩坏"),
+            _p("denoise", "图生图重绘幅度", "float", 0.55, min=0.1, max=1.0, step=0.05,
+               hint="仅图生图生效：0.4–0.7 保留原图构图与主体；1.0 等于重新画"),
+            _p("seed", "随机种子", "int", -1, min=-1, max=2147483647,
+               hint="-1 每次随机；固定值便于同图对比提示词"),
+            _p("negative", "反向提示词", "text", "blurry, low quality, watermark, extra limbs",
+               hint="写要避免的英文标签；qwen-image 对中文反向词理解弱于英文"),
+        ],
+    },
+    "bailian_image": {
+        "kind": "image", "group": "bailian",
+        "label": "阿里云百炼 · Qwen-Image-3.0-Pro",
+        "endpoint": "token-plan.cn-beijing.maas.aliyuncs.com",
+        "notes": "云服务 qwen-image-3.0-pro：multimodal-generation/generation 同步返回 PNG URL 后立即下载；"
+                 "支持文生图与图生图（参考图内联 base64），按量计费",
+        "modes": ["t2i", "i2i"],
+        "spec": {
+            "title": "qwen-image-3.0-pro 规格红线",
+            "limits": [
+                "输出 PNG；面积必须在 512×512 ~ 2048×2048 之间，长宽比 1:8–8:1；size 用「宽*高」星号格式",
+                "推荐 1024*1024 方图 / 768*1024 竖屏 / 1024*768 横屏；2048*2048 耗时与费用都高",
+                "图生图参考图 1–3 张（当前渠道传 1 张）：JPG/PNG/WEBP 等，单图 ≤10MB，1–8000px，长短边 ≤10:1",
+                "图生图输出尺寸由 size 决定，不会自动跟随参考图；提示词写清「保留人物/换背景」更稳",
+                "图片 URL 有效 24 小时，生成后立即下载；prompt_extend 开启对复杂描述更稳",
+            ],
+            "presets": [
+                {"name": "方图 1024*1024", "values": {"size": "1024*1024", "n": 1}},
+                {"name": "竖屏 768*1024", "values": {"size": "768*1024", "n": 1}},
+                {"name": "横屏 1024*768", "values": {"size": "1024*768", "n": 1}},
+            ],
+        },
+        "params": [
+            _p("size", "输出尺寸", "select", "1024*1024",
+               options=["512*512", "768*1024", "1024*768", "1024*1024", "1536*1024", "1024*1536", "2048*2048"],
+               optionLabels={
+                   "512*512": "512×512 · 最快，适合草稿/头像",
+                   "768*1024": "768×1024 · 竖屏封面/短剧关键帧",
+                   "1024*768": "1024×768 · 横屏插图",
+                   "1024*1024": "1024×1024 · 方图默认（推荐）",
+                   "1536*1024": "1536×1024 · 高清横图，耗时较高",
+                   "1024*1536": "1024×1536 · 高清长图，耗时较高",
+                   "2048*2048": "2048×2048 · 最大档，谨慎使用",
+               },
+               hint="面积需在 512²–2048²、长宽比 1:8–8:1；格式为「宽*高」（星号，不是 x）"),
+            _p("n", "出图张数", "int", 1, min=1, max=4,
+               hint="一次返回几张候选；多张会按张数计费，先用 1 张试提示词"),
+            _p("prompt_extend", "提示词扩写", "select", "true", options=["true", "false"],
+               optionLabels={"true": "开启（推荐）", "false": "关闭（严格按原文）"},
+               hint="短提示词建议开启；已经写得很细的提示词可关闭"),
+            _p("watermark", "图片水印", "select", "false", options=["false", "true"],
+               optionLabels={"false": "不加水印（推荐）", "true": "加百炼水印"},
+               hint="交付物默认不加水印"),
         ],
     },
     "wan21": {
@@ -230,8 +382,19 @@ CHANNELS = {
             _p("speaker", "音色", "select", "Vivian",
                options=["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan",
                         "Aiden", "Ono_Anna", "Sohee"],
-               hint="Vivian/Serena 女声偏年轻，Uncle_Fu/Dylan/Eric 男声，"
-                    "Ono_Anna/Sohee 女声偏温柔；音色名对不上会回退到第一个"),
+               optionLabels={
+                   "Vivian": "Vivian · 明亮年轻女声（中文，默认）",
+                   "Serena": "Serena · 温暖柔和年轻女声（中文）",
+                   "Uncle_Fu": "Uncle_Fu · 低沉醇厚成熟男声（中文）",
+                   "Dylan": "Dylan · 清亮自然北京青年男声（北京话）",
+                   "Eric": "Eric · 活泼带沙哑的成都男声（四川话）",
+                   "Ryan": "Ryan · 节奏感强的动感男声（英语）",
+                   "Aiden": "Aiden · 阳光清晰的中频美音男声（英语）",
+                   "Ono_Anna": "Ono_Anna · 俏皮灵动日语女声（日语）",
+                   "Sohee": "Sohee · 情感丰富的温暖韩语女声（韩语）",
+               },
+               hint="按官方 Qwen3-TTS 音色描述标注；建议用该音色的母语，音质最好。"
+                    "音色名对不上会回退到第一个"),
             _p("language", "语言", "select", "zh",
                options=["zh", "en", "ja", "ko"],
                hint="中文台词填 zh；中英混读也用 zh，模型会自动切换"),
@@ -258,6 +421,35 @@ CHANNELS = {
                     "列表会跟随 media-engine 实际音色表刷新"),
             _p("speed", "语速", "float", 1.0, min=0.5, max=2.0, step=0.1,
                hint="1.0 正常；0.9 更稳更适合口播；1.3 以上会有机械感"),
+        ],
+    },
+    "bailian": {
+        "kind": "audio", "group": "bailian",
+        "label": "阿里云百炼 · Qwen-Audio-3.0-TTS-Plus",
+        "endpoint": "token-plan.cn-beijing.maas.aliyuncs.com",
+        "notes": "云服务模式：POST /api/v1/services/audio/tts/SpeechSynthesizer，"
+                 "同步返回音频 URL 后立即下载（URL 有时效）。模型固定 "
+                 "qwen-audio-3.0-tts-plus（可用 OPC_BAILIAN_TTS_MODEL 改），"
+                 "按字符计费；情绪/语速等细粒度控制按官方说明写在文本标签里",
+        "modes": ["tts"],
+        "params": [
+            _p("voice", "音色", "select", "longanhuan_v3.6",
+               options=["longanhuan_v3.6", "longanyang_v3.6", "longjielidou_v3.6",
+                        "longpaopao_v3.6", "longhuohuo_v3.6", "longchuanshu_v3.6"],
+               optionLabels={
+                   "longanhuan_v3.6": "龙安欢 · 活力欢快女声（默认）",
+                   "longanyang_v3.6": "龙安阳 · 阳光友好年轻男声",
+                   "longjielidou_v3.6": "龙杰力豆 · 天真男童声",
+                   "longpaopao_v3.6": "龙泡泡 · 软糯可爱女童声",
+                   "longhuohuo_v3.6": "龙火火 · 顽皮少年音",
+                   "longchuanshu_v3.6": "龙川叔 · 川普大叔音",
+               },
+               hint="按阿里云「Qwen-Audio-TTS 音色列表」标注；完整列表以官方为准"),
+            _p("format", "音频格式", "select", "mp3",
+               options=["mp3", "wav", "pcm", "opus"],
+               hint="mp3 体积小、网页可直接播；wav 无损但大；pcm/opus 供二次处理"),
+            _p("sample_rate", "采样率", "int", 22050, min=8000, max=48000, step=50,
+               hint="默认 22050；要更高清可填 44100/48000（以模型实际支持为准）"),
         ],
     },
 }
@@ -412,32 +604,47 @@ def _probe_media_engine():
                 "reason": f"media-engine 不可达（{MEDIAENGINE}）：{type(e).__name__}: {e}"}
 
 
+def _probe_bailian():
+    """百炼是云服务：有 Key 即视为可用，不额外打真实合成（避免烧额度）。"""
+    if not _bailian_api_key():
+        return {"available": False,
+                "reason": "未配置百炼 API Key：设置 OPC_BAILIAN_TTS_API_KEY（或复用百炼 LLM Key）"}
+    return {"available": True, "reason": "云服务 · 按量计费", "endpoint": BAILIAN_TTS_BASE}
+
+
 def channels(force=False):
     """渠道视图：参数规格 + 实时可用性（探测结果缓存 30s）。"""
     with _PROBE_LOCK:
         if force or time.time() - _PROBE["at"] > PROBE_TTL or not _PROBE["data"]:
             mg = _probe_media_gen()
             me = _probe_media_engine()
+            bailian = _probe_bailian()
             _PROBE["data"] = {
                 "comfyui": _probe_comfy("comfyui"),
+                "comfyui_157": _probe_comfy("comfyui_157"),
                 "comfyui_video": _probe_comfy("comfyui_video"),
                 "sd15": mg.get("sd15") or {"available": False, "reason": "media-gen 未登记 sd15"},
                 "wan21": mg.get("wan21") or {"available": False, "reason": "media-gen 未登记 wan21"},
                 "minimax_h3": mg.get("minimax_h3") or {"available": False,
                                                        "reason": "media-gen 未登记 minimax_h3"},
-                "qwen": me, "cosyvoice": dict(me),
+                "qwen": me, "cosyvoice": dict(me), "bailian": bailian,
+                "bailian_image": dict(bailian, endpoint=BAILIAN_IMAGE_BASE),
             }
             _PROBE["at"] = time.time()
         probe = dict(_PROBE["data"])
     # 克隆音色是运行期新增的，音色下拉必须按 voices.json 实际内容渲染
-    opts = voice_options()
+    voice_items = (voices_list() or {}).get("voices") or []
+    opts = [v["id"] for v in voice_items]
+    vlabels = {v["id"]: (f"{v['id']} · {v['description']}" if v.get("description") else v["id"])
+               for v in voice_items}
     out = []
     for name, ch in CHANNELS.items():
         st = probe.get(name) or {}
         cap = ch.get("max_sec")
         params = ch["params"]
         if name == "cosyvoice" and opts:
-            params = [dict(p, options=opts) if p["key"] == "voice" else p for p in params]
+            params = [dict(p, options=opts, optionLabels=vlabels)
+                      if p["key"] == "voice" else p for p in params]
         out.append({
             "name": name, "kind": ch["kind"], "label": ch["label"], "notes": ch["notes"],
             "group": ch.get("group") or "lan",
@@ -447,7 +654,7 @@ def channels(force=False):
             "concurrency": LANE_LIMITS.get(name, 1),
             "queue": int(st.get("queue") or 0),
             "available": bool(st.get("available")), "reason": st.get("reason") or "",
-            "params": params,
+            "params": params, "spec": ch.get("spec"),
         })
     return out, SHOT_MAX_SEC
 
@@ -948,8 +1155,11 @@ def _run_job_inner(mgr, job_id):
         with lane:
             _canceling(job_id)
             if row["kind"] == "image":
-                result = (_comfy_image if row["channel"] == "comfyui"
-                          else _mediagen_image)(mgr, row, params, on_progress)
+                image_worker = {
+                    "comfyui": _comfy_image, "comfyui_157": _comfy_image,
+                    "bailian_image": _bailian_image,
+                }.get(row["channel"]) or _mediagen_image
+                result = image_worker(mgr, row, params, on_progress)
             elif row["kind"] == "video":
                 result = (_comfy_video if row["channel"] == "comfyui_video"
                           else _mediagen_video)(mgr, row, params, on_progress)
@@ -1290,38 +1500,105 @@ def _to_mp4(src):
 
 
 def _comfy_image(mgr, row, params, on_progress):
+    """SD2.1（comfyui）与 157 的 Qwen-Image（comfyui_157）共用提交/轮询。
+
+    i2i：params.frame 指定的图片先上传到 ComfyUI input，再走
+    LoadImage → VAEEncode → KSampler(denoise<1)；t2i 走 EmptyLatentImage。
+    """
     import asset_fill
+    qwen = row["channel"] == "comfyui_157"
     url = asset_fill._comfy_image_url()
-    ckpt = asset_fill._pick_checkpoint(url)
+    frame = str(params.get("frame") or "").strip()
+    steps = int(params.get("steps") or (8 if qwen else 20))
+    if qwen:
+        # 依赖模型名以 157 的 /object_info 为准，缺哪个就明确报错，不猜文件名
+        info = _http_json(url + "/object_info", timeout=15)
+
+        def _pick_model(node, field, keyword):
+            v = (((info.get(node) or {}).get("input") or {}).get("required") or {}).get(field)
+            cand = []
+            if isinstance(v, list) and v:
+                cand = v[0] if isinstance(v[0], list) else v
+            names = [str(x) for x in cand if isinstance(x, str)]
+            hit = next((n for n in names if keyword in n.lower()), "")
+            if not hit:
+                raise RuntimeError(f"ComfyUI 缺 {node}.{field}（需含 {keyword}），现有：{names[:5]}")
+            return hit
+
+        unet = _pick_model("UNETLoader", "unet_name", "qwen_image")
+        clip = _pick_model("CLIPLoader", "clip_name", "qwen3vl_8b")
+        vae = _pick_model("VAELoader", "vae_name", "qwen_image")
+        vae_ref = ["3", 0]
+        ks_id, save_id = "6", "8"
+        graph = {
+            "1": {"class_type": "UNETLoader",
+                  "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+            "2": {"class_type": "CLIPLoader",
+                  "inputs": {"clip_name": clip, "type": "qwen_image"}},
+            "3": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+            "4": {"class_type": "TextEncodeQwenImage21",
+                  "inputs": {"clip": ["2", 0], "prompt": row["prompt"],
+                             "negative_prompt": params.get("negative")
+                             or "blurry, low quality, watermark, extra limbs",
+                             "resolution": 0}},
+            ks_id: {"class_type": "KSampler",
+                    "inputs": {"model": ["1", 0], "positive": ["4", 0], "negative": ["4", 0],
+                               "seed": _seed_of(params), "steps": steps,
+                               "cfg": float(params.get("cfg") or 1.0),
+                               "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0,
+                               "latent_image": ["5", 0]}},
+            "7": {"class_type": "VAEDecode", "inputs": {"samples": [ks_id, 0], "vae": vae_ref}},
+            save_id: {"class_type": "SaveImage",
+                      "inputs": {"images": ["7", 0], "filename_prefix": "om_qwen"}},
+        }
+        note_name = f"Qwen-Image {unet}"
+    else:
+        ckpt = asset_fill._pick_checkpoint(url)
+        vae_ref = ["1", 2]
+        ks_id, save_id = "5", "7"
+        graph = {
+            "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": ckpt}},
+            "2": {"class_type": "CLIPTextEncode",
+                  "inputs": {"text": row["prompt"], "clip": ["1", 1]}},
+            "3": {"class_type": "CLIPTextEncode",
+                  "inputs": {"text": params.get("negative") or "低质量, 模糊, 水印, 变形",
+                             "clip": ["1", 1]}},
+            "4": {"class_type": "EmptyLatentImage",
+                  "inputs": {"width": int(params.get("width") or 768),
+                             "height": int(params.get("height") or 1024), "batch_size": 1}},
+            ks_id: {"class_type": "KSampler",
+                    "inputs": {"seed": _seed_of(params), "steps": steps,
+                               "cfg": float(params.get("cfg") or 7.5),
+                               "sampler_name": params.get("sampler") or "euler",
+                               "scheduler": params.get("scheduler") or "normal", "denoise": 1.0,
+                               "model": ["1", 0], "positive": ["2", 0],
+                               "negative": ["3", 0], "latent_image": ["4", 0]}},
+            "6": {"class_type": "VAEDecode", "inputs": {"samples": [ks_id, 0], "vae": vae_ref}},
+            save_id: {"class_type": "SaveImage",
+                      "inputs": {"images": ["6", 0], "filename_prefix": "opc-material"}},
+        }
+        note_name = f"ComfyUI {ckpt}"
+    i2i = ""
+    if frame:
+        name = _comfy_upload_image(url, _safe_frame_path(frame))
+        denoise = min(1.0, max(0.1, float(params.get("denoise") or 0.55)))
+        graph["9"] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        graph["10"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["9", 0], "vae": vae_ref}}
+        graph[ks_id]["inputs"]["latent_image"] = ["10", 0]
+        graph[ks_id]["inputs"]["denoise"] = denoise
+        graph.pop("4" if not qwen else "5", None)   # 空 latent 节点不再需要
+        i2i = f" · i2i {name} denoise={denoise}"
+    elif qwen:
+        graph["5"] = {"class_type": "EmptySD3LatentImage",
+                      "inputs": {"width": int(params.get("width") or 1024),
+                                 "height": int(params.get("height") or 1024),
+                                 "batch_size": 1}}
     port = urllib.parse.urlsplit(url).port or 8188
-    client_id = f"opc-ops-{port}"
-    steps = int(params.get("steps") or 20)
-    graph = {
-        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": ckpt}},
-        "2": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": row["prompt"], "clip": ["1", 1]}},
-        "3": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": params.get("negative") or "低质量, 模糊, 水印, 变形",
-                         "clip": ["1", 1]}},
-        "4": {"class_type": "EmptyLatentImage",
-              "inputs": {"width": int(params.get("width") or 768),
-                         "height": int(params.get("height") or 1024), "batch_size": 1}},
-        "5": {"class_type": "KSampler",
-              "inputs": {"seed": _seed_of(params),
-                         "steps": steps, "cfg": float(params.get("cfg") or 7.5),
-                         "sampler_name": params.get("sampler") or "euler",
-                         "scheduler": params.get("scheduler") or "normal", "denoise": 1.0,
-                         "model": ["1", 0], "positive": ["2", 0],
-                         "negative": ["3", 0], "latent_image": ["4", 0]}},
-        "6": {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
-        "7": {"class_type": "SaveImage",
-              "inputs": {"images": ["6", 0], "filename_prefix": "opc-material"}},
-    }
     resp = _http_json(url + "/prompt", timeout=20,
-                      data={"prompt": graph, "client_id": client_id})
+                      data={"prompt": graph, "client_id": f"opc-ops-{port}"})
     pid = resp.get("prompt_id")
     if not pid:
-        raise RuntimeError(f"ComfyUI 拒绝作业：{resp}")
+        raise RuntimeError(f"ComfyUI 拒绝作业：{resp.get('node_errors') or resp}")
     mgr._set(row["id"], remote_id=pid)
     on_progress(15)
     t0 = time.time()
@@ -1334,7 +1611,7 @@ def _comfy_image(mgr, row, params, on_progress):
         entry = hist.get(pid) or {}
         if entry.get("status", {}).get("status_str") == "error":
             raise RuntimeError("ComfyUI 作业执行失败（详见 ComfyUI 日志）")
-        outs = (entry.get("outputs") or {}).get("7") or {}
+        outs = (entry.get("outputs") or {}).get(save_id) or {}
         imgs = outs.get("images") or []
         if imgs:
             q = urllib.parse.urlencode({"filename": imgs[0]["filename"],
@@ -1347,7 +1624,7 @@ def _comfy_image(mgr, row, params, on_progress):
                 f.write(blob)
             on_progress(95)
             return {"path": tmp, "remote_id": pid,
-                    "note": f"ComfyUI {ckpt} · {round(time.time() - t0, 1)}s"}
+                    "note": f"{note_name} · {round(time.time() - t0, 1)}s{i2i}"}
         on_progress(15 + int(min(75, max(0.0, (time.time() - t0) / expect) * 75)))
         time.sleep(2)
     # 超时：尽量中断远端执行，避免占着 ComfyUI 队列
@@ -1451,6 +1728,64 @@ def _comfy_video(mgr, row, params, on_progress):
     except Exception:
         pass
     raise TimeoutError("ComfyUI 视频超时（CPU 推理较慢，可在 8189 日志看进度）")
+
+
+def _bailian_image(mgr, row, params, on_progress):
+    """百炼 qwen-image-3.0-pro：DashScope multimodal-generation，同步返回 PNG URL 后下载。
+
+    图生图把 params.frame 的图片读成 data URI 内联进 messages（服务端是内网，
+    给公网 URL 反而不可达）；最多 3 张参考图，这里传 1 张。
+    """
+    key = _bailian_api_key()
+    if not key:
+        raise RuntimeError("百炼 API Key 未配置（OPC_BAILIAN_TTS_API_KEY）")
+    content = []
+    frame = str(params.get("frame") or "").strip()
+    if frame:
+        path = _safe_frame_path(frame)
+        ext = os.path.splitext(path)[1].lower().lstrip(".") or "png"
+        if ext == "jpg":
+            ext = "jpeg"
+        if ext not in ("png", "jpeg", "webp", "bmp", "tiff", "gif"):
+            raise ValueError(f"百炼不支持的图片格式：{ext}")
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        content.append({"image": f"data:image/{ext};base64,{b64}"})
+    content.append({"text": row["prompt"]})
+    body = {
+        "model": BAILIAN_IMAGE_MODEL,
+        "input": {"messages": [{"role": "user", "content": content}]},
+        "parameters": {
+            "size": str(params.get("size") or "1024*1024"),
+            "n": int(params.get("n") or 1),
+            "prompt_extend": str(params.get("prompt_extend") or "true").lower() == "true",
+            "watermark": str(params.get("watermark") or "false").lower() == "true",
+        },
+    }
+    on_progress(20)
+    res = _http_json(BAILIAN_IMAGE_BASE + BAILIAN_IMAGE_PATH, timeout=300, data=body,
+                     headers={"Authorization": "Bearer " + key})
+    if not isinstance(res, dict):
+        raise RuntimeError("百炼图像返回格式异常")
+    choices = ((res.get("output") or {}).get("choices") or [])
+    parts = ((choices[0].get("message") or {}).get("content") or []) if choices else []
+    url = ""
+    for part in parts:
+        if isinstance(part, dict) and part.get("image"):
+            url = str(part["image"])
+            break
+    if not url:
+        raise RuntimeError(f"百炼图像未返回图片 URL：{str(res)[:200]}")
+    on_progress(70)
+    tmp = os.path.join(BASE_DIR, ".cache", "media", f"{row['id']}.png")
+    os.makedirs(os.path.dirname(tmp), exist_ok=True)
+    with open(tmp, "wb") as f:
+        f.write(_http(url, timeout=180))
+    on_progress(95)
+    return {"path": tmp, "duration": 0.0,
+            "remote_id": str(res.get("request_id") or ""),
+            "note": f"阿里云百炼 · {BAILIAN_IMAGE_MODEL} · {body['parameters']['size']}"
+                    + (" · i2i" if frame else "")}
 
 
 def _mediagen_image(mgr, row, params, on_progress):
@@ -2048,7 +2383,85 @@ def clone_ref_path(vid):
     return wav
 
 
+# 试听：固定短句、按 (渠道, 音色, 文本) 缓存，避免反复烧本机算力 / 百炼额度
+PREVIEW_TEXT = "大家好，这是音色试听。愿每一句话，都恰到好处。"
+VOICE_PREVIEW_DIR = os.path.join(BASE_DIR, ".cache", "voice-preview")
+
+
+def voice_preview(channel, voice, text=""):
+    """按渠道+音色合成一小段 wav 试听音频，返回可 inline 播放的本地路径。"""
+    name = str(channel or "")
+    ch = CHANNELS.get(name)
+    if not ch or ch.get("kind") != "audio":
+        raise ValueError("不是可用的语音加工渠道")
+    vid = str(voice or "").strip()
+    if not vid:
+        raise ValueError("请选择音色")
+    specs = {p["key"]: p for p in (ch.get("params") or [])}
+    vkey = "speaker" if "speaker" in specs else ("voice" if "voice" in specs else "")
+    if not vkey:
+        raise ValueError("该渠道没有音色参数")
+    if name != "cosyvoice":
+        opts = specs[vkey].get("options") or []
+        if opts and vid not in opts:
+            raise ValueError(f"音色 {vid} 不属于渠道 {name}")
+    text = (text or PREVIEW_TEXT)[:100]
+    digest = hashlib.md5(f"{name}|{vid}|{text}".encode("utf-8")).hexdigest()[:16]
+    path = os.path.join(VOICE_PREVIEW_DIR, f"{name}-{digest}.wav")
+    if os.path.isfile(path) and os.path.getsize(path) > 1024:
+        return path
+    params = {p["key"]: p.get("default") for p in (ch.get("params") or [])}
+    params[vkey] = vid
+    if name == "bailian":
+        params["format"] = "wav"  # 试听接口固定 inline wav，别让 mp3 走 audio/wav 头
+    row = {"id": f"preview-{digest}", "prompt": text, "channel": name, "kind": "audio"}
+    res = _tts(None, row, params, lambda _p: None)
+    os.makedirs(VOICE_PREVIEW_DIR, exist_ok=True)
+    shutil.copyfile(res["path"], path)
+    return path
+
+
+def _tts_bailian(mgr, row, params, on_progress):
+    """阿里云百炼 Token Plan 语音合成（云服务，同步返回音频 URL 后立即下载）。
+
+    POST <base>/api/v1/services/audio/tts/SpeechSynthesizer
+      {"model": ..., "input": {"text", "voice", "format", "sample_rate"}}
+    -> {"output": {"audio": {"url": ..., "expires_at": ...}}, "usage": {...}}
+    音频 URL 有时效，拿到立刻下载；Key 只走请求头，不落库、不写日志。
+    """
+    key = _bailian_api_key()
+    if not key:
+        raise RuntimeError("百炼 API Key 未配置（OPC_BAILIAN_TTS_API_KEY）")
+    fmt = str(params.get("format") or "mp3").lower()
+    if fmt not in ("mp3", "wav", "pcm", "opus"):
+        fmt = "mp3"
+    voice = str(params.get("voice") or "longanhuan_v3.6")
+    body = {"model": BAILIAN_TTS_MODEL,
+            "input": {"text": row["prompt"], "voice": voice, "format": fmt,
+                      "sample_rate": int(float(params.get("sample_rate") or 22050))}}
+    on_progress(20)
+    res = _http_json(BAILIAN_TTS_BASE + BAILIAN_TTS_PATH, timeout=180, data=body,
+                     headers={"Authorization": "Bearer " + key})
+    if not isinstance(res, dict):
+        raise RuntimeError("百炼 TTS 返回格式异常")
+    audio = ((res.get("output") or {}).get("audio") or {}) if isinstance(res.get("output"), dict) else {}
+    url = str(audio.get("url") or "")
+    if not url:
+        raise RuntimeError(f"百炼 TTS 未返回音频 URL：{str(res)[:200]}")
+    on_progress(70)
+    tmp = os.path.join(BASE_DIR, ".cache", "media", f"{row['id']}.{fmt}")
+    os.makedirs(os.path.dirname(tmp), exist_ok=True)
+    with open(tmp, "wb") as f:
+        f.write(_http(url, timeout=180))
+    on_progress(95)
+    return {"path": tmp, "duration": float(audio.get("duration") or 0),
+            "remote_id": str(res.get("request_id") or ""),
+            "note": f"阿里云百炼 · {BAILIAN_TTS_MODEL} · {voice}"}
+
+
 def _tts(mgr, row, params, on_progress):
+    if row["channel"] == "bailian":
+        return _tts_bailian(mgr, row, params, on_progress)
     engine = "qwen3" if row["channel"] == "qwen" else "cosyvoice"
     body = {"text": row["prompt"], "engine": engine, "mode": "sync", "format": "json",
             "speed": float(params.get("speed") or 1.0)}
