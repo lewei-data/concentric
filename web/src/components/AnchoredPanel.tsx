@@ -9,6 +9,8 @@ type Props = {
   ariaLabel?: string;
   /** 拖动条上显示的短标题（可选） */
   anchorLabel?: string;
+  /** false = 合成中锁窗：Esc 与遮罩点击都不关闭 */
+  dismissible?: boolean;
   children: ReactNode;
 };
 
@@ -33,6 +35,7 @@ export function AnchoredPanel({
   className = "",
   ariaLabel,
   anchorLabel,
+  dismissible = true,
   children,
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -108,11 +111,11 @@ export function AnchoredPanel({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && dismissible) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, dismissible]);
 
   // 拖动时临时禁用选中，避免拖过文字时一片高亮
   useEffect(() => {
@@ -144,7 +147,7 @@ export function AnchoredPanel({
   };
 
   return createPortal(
-    <div className="pop-backdrop" onClick={onClose} role="presentation">
+    <div className="pop-backdrop" onClick={() => { if (dismissible) onClose(); }} role="presentation">
       <div
         ref={ref}
         className={`pop-panel${dragging ? " is-dragging" : ""} ${className}`.trim()}

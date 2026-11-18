@@ -7,11 +7,16 @@ kernel 单向依赖本模块（委托调用），因此不成环。
 projects / tone / DL / _stage_queue / _stage_thread / stage_launches，
 以及实例方法 emit / send / items_emit / resume_pipeline。
 """
+import contextlib
+import hashlib
 import json
 import os
 import queue
+import shutil
+import subprocess
 import threading
 import time
+import uuid
 
 import company_config as CC
 import task_names as TN
@@ -822,5 +827,228 @@ def factory_stage_runs(kn, trace_id):
     return {"runs": list(reversed(runs)), "current": current,
             "activeTrace": kn.active_trace,
             "stages": [{"stage": k, "label": v} for k, v in STAGE_BUTTONS.items()]}
+
+
+# ---------- 声音车间：同步配音 / BGM / 混音交付（在线等待，不进异步队列） ----------
+def _ws_dir(kn):
+    d = os.path.join(kn.data_dir, ".cache", "voice-workshop")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _ws_index(kn):
+    fp = os.path.join(_ws_dir(kn), "index.json")
+    try:
+        with open(fp, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _ws_put(kn, entry):
+    with kn.lock:
+        idx = _ws_index(kn)
+        idx[entry["id"]] = entry
+        fp = os.path.join(_ws_dir(kn), "index.json")
+        tmp = fp + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(idx, f, ensure_ascii=False)
+        os.replace(tmp, fp)
+
+
+def _ws_get(kn, wid):
+    return _ws_index(kn).get(str(wid or "")) or None
+
+
+def _ws_ff():
+    return OMR._ff() if OMR else (shutil.which("ffmpeg") or "ffmpeg")
+
+
+def _ws_sec(path):
+    try:
+        return round(float(MEDIA._audio_sec(path))) if MEDIA else 0.0
+    except Exception:
+        return 0.0
+
+
+def _ws_run(cmd, timeout=300):
+    p = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    if p.returncode:
+        raise RuntimeError((p.stderr or b"").decode("utf-8", "replace")[-500:])
+
+
+def workshop_tts_sync(kn, channel, voice, text, params=None):
+    """同步配音：逐行合成后拼成一条 wav。长请求由前端在线等待，不进队列。"""
+    if MEDIA is None:
+        raise ValueError(MEDIA_UNAVAILABLE)
+    name = str(channel or "")
+    ch = MEDIA.CHANNELS.get(name)
+    if not ch or ch.get("kind") != "audio":
+        raise ValueError("不是可用的语音加工渠道")
+    lines = [s.strip() for s in str(text or "").splitlines() if s.strip()]
+    if not lines:
+        raise ValueError("台词不能为空")
+    if sum(len(s) for s in lines) > 1500:
+        raise ValueError("台词过长（上限 1500 字）")
+    vspec = next((p for p in (ch.get("params") or [])
+                  if p["key"] in ("voice", "speaker")), None)
+    merged = {p["key"]: p.get("default") for p in (ch.get("params") or [])}
+    if isinstance(params, dict):
+        merged.update(params)
+    if vspec and voice:
+        merged[vspec["key"]] = voice
+    parts = []
+    note = ""
+    for i, line in enumerate(lines):
+        row = {"id": f"ws-{uuid.uuid4().hex[:12]}-{i}", "prompt": line,
+               "channel": name, "kind": "audio"}
+        res = MEDIA._tts(None, row, merged, lambda _p: None)
+        parts.append(res["path"])
+        note = res.get("note") or ""
+    wid = "tts-" + uuid.uuid4().hex[:12]
+    out = os.path.join(_ws_dir(kn), wid + ".wav")
+    if len(parts) == 1:
+        shutil.copyfile(parts[0], out)
+    else:
+        lst = out + ".txt"
+        with open(lst, "w", encoding="utf-8") as f:
+            for p in parts:
+                f.write("file '%s'\n" % p.replace("'", "'\\''"))
+        try:
+            _ws_run([_ws_ff(), "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                     "-i", lst, "-c:a", "copy", out])
+        finally:
+            with contextlib.suppress(OSError):
+                os.remove(lst)
+    entry = {"id": wid, "kind": "tts", "path": out, "name": os.path.basename(out),
+             "channel": name,
+             "voice": str(voice or (merged.get(vspec["key"]) if vspec else "")),
+             "text": "\n".join(lines)[:500], "duration": _ws_sec(out),
+             "confirmed": False, "createdAt": iso_now(), "note": note}
+    _ws_put(kn, entry)
+    return {"id": wid, "url": f"/api/factory/workshop/audio?id={wid}",
+            "name": entry["name"], "duration": entry["duration"], "note": note}
+
+
+def workshop_tts_confirm(kn, wid):
+    e = _ws_get(kn, wid)
+    if not e or e.get("kind") != "tts":
+        raise ValueError("配音不存在")
+    e["confirmed"] = True
+    _ws_put(kn, e)
+    return {"ok": True, "id": wid, "name": e["name"], "url": f"/api/factory/workshop/audio?id={wid}"}
+
+
+_BGM_DIR = os.environ.get("OPC_BGM_DIR", "/opt/sefs/opc-workbench/deliverables/小秘书宣传片")
+_BGM_EXT = (".mp3", ".wav", ".m4a", ".aac", ".flac")
+
+
+def _ws_bgm_items():
+    out = []
+    if not os.path.isdir(_BGM_DIR):
+        return out
+    for f in sorted(os.listdir(_BGM_DIR)):
+        if not f.lower().endswith(_BGM_EXT):
+            continue
+        p = os.path.join(_BGM_DIR, f)
+        if not os.path.isfile(p) or os.path.getsize(p) < 1024:
+            continue
+        bid = hashlib.md5(p.encode("utf-8")).hexdigest()[:12]
+        out.append({"id": bid, "name": f,
+                    "ext": os.path.splitext(f)[1].lower().lstrip("."),
+                    "size": os.path.getsize(p), "sec": _ws_sec(p),
+                    "url": f"/api/factory/bgm/audio?id={bid}"})
+    return out
+
+
+def workshop_bgm_list(kn):
+    return {"items": _ws_bgm_items(), "dir": _BGM_DIR}
+
+
+def workshop_bgm_path(bid):
+    for item in _ws_bgm_items():
+        if item["id"] == str(bid or ""):
+            return os.path.join(_BGM_DIR, item["name"])
+    return ""
+
+
+def workshop_bgm_select(kn, bid, volume=0.16):
+    items = {i["id"]: i for i in _ws_bgm_items()}
+    item = items.get(str(bid or ""))
+    if not item:
+        raise ValueError("背景音乐不存在")
+    entry = {"id": "sel-bgm", "kind": "bgm", "bgmId": item["id"], "name": item["name"],
+             "volume": min(1.0, max(0.0, float(volume or 0.16))), "confirmed": True}
+    _ws_put(kn, entry)
+    return {"ok": True, **entry, "url": item["url"]}
+
+
+def workshop_mix_sync(kn, voice_id, bgm_id, volume=None):
+    """同步混音：确认过的配音 + 选中的 BGM → mp3，在线等待。"""
+    ve = _ws_get(kn, voice_id)
+    if not ve or ve.get("kind") != "tts" or not ve.get("confirmed"):
+        raise ValueError("请先在 TTS 合成步骤确认保存配音")
+    bp = workshop_bgm_path(bgm_id)
+    if not bp:
+        raise ValueError("请先选择背景音乐")
+    vol = min(1.0, max(0.0, float(volume if volume is not None else 0.16)))
+    wid = "mix-" + uuid.uuid4().hex[:12]
+    out = os.path.join(_ws_dir(kn), wid + ".mp3")
+    flt = (f"[1:a]volume={vol},afade=t=in:st=0:d=1.2[bg];"
+           "[0:a][bg]amix=inputs=2:duration=first:dropout_transition=0[a]")
+    cmd = [_ws_ff(), "-y", "-v", "error", "-i", ve["path"], "-stream_loop", "-1",
+           "-i", bp, "-filter_complex", flt, "-map", "[a]",
+           "-c:a", "libmp3lame", "-q:a", "4", out]
+    _ws_run(cmd, timeout=300)
+    entry = {"id": wid, "kind": "mix", "path": out, "name": os.path.basename(out),
+             "duration": _ws_sec(out), "confirmed": False, "createdAt": iso_now(),
+             "meta": {"voiceFile": ve["name"], "bgmFile": os.path.basename(bp),
+                      "volume": vol, "channel": ve.get("channel", ""),
+                      "voice": ve.get("voice", "")}}
+    _ws_put(kn, entry)
+    return {"id": wid, "url": f"/api/factory/workshop/audio?id={wid}",
+            "name": entry["name"], "duration": entry["duration"], "meta": entry["meta"]}
+
+
+def workshop_mix_confirm(kn, wid):
+    e = _ws_get(kn, wid)
+    if not e or e.get("kind") != "mix":
+        raise ValueError("混音结果不存在")
+    root = os.path.join(kn.vault_dir or VAULT, "OPC", "交付物", "声音车间",
+                        time.strftime("%Y-%m-%d"))
+    os.makedirs(root, exist_ok=True)
+    dest = os.path.join(root, e["name"])
+    shutil.copyfile(e["path"], dest)
+    with open(dest + ".json", "w", encoding="utf-8") as f:
+        json.dump({"id": wid, "name": e["name"], "createdAt": iso_now(),
+                   **(e.get("meta") or {})}, f, ensure_ascii=False, indent=2)
+    e.update(confirmed=True, delivered=dest)
+    _ws_put(kn, e)
+    return {"ok": True, "id": wid, "name": e["name"],
+            "delivered": dest, "url": f"/api/factory/workshop/audio?id={wid}"}
+
+
+def workshop_state(kn):
+    idx = _ws_index(kn)
+    tts = next((v for v in sorted(idx.values(), key=lambda x: x.get("createdAt") or "")
+                if v.get("kind") == "tts" and v.get("confirmed")), None)
+    mix = next((v for v in sorted(idx.values(), key=lambda x: x.get("createdAt") or "")
+                if v.get("kind") == "mix" and v.get("confirmed")), None)
+    bgm = idx.get("sel-bgm")
+    def _view(e):
+        if not e:
+            return None
+        return {"id": e["id"], "name": e.get("name", ""),
+                "url": f"/api/factory/workshop/audio?id={e['id']}",
+                "meta": e.get("meta") or {}, "duration": e.get("duration") or 0}
+    return {"tts": _view(tts), "bgm": bgm, "mix": _view(mix)}
+
+
+def workshop_audio_path(kn, wid):
+    e = _ws_get(kn, wid)
+    if not e:
+        raise ValueError("音频不存在")
+    return e["path"]
 
 

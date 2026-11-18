@@ -37,6 +37,30 @@ interface ChannelSpec {
   presets?: { name: string; values: Record<string, unknown> }[];
 }
 
+interface WorkshopClip {
+  id: string;
+  name: string;
+  url: string;
+  duration?: number;
+  note?: string;
+  meta?: Record<string, unknown>;
+}
+
+interface BgmItem {
+  id: string;
+  name: string;
+  ext: string;
+  size: number;
+  sec: number;
+  url: string;
+}
+
+interface WorkshopState {
+  tts: WorkshopClip | null;
+  bgm: { bgmId: string; name: string; volume: number } | null;
+  mix: WorkshopClip | null;
+}
+
 interface Channel {
   name: string;
   label: string;
@@ -245,6 +269,13 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
   const [toast, setToast] = useState("");
   const [submitErr, setSubmitErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // 声音车间同步工作流：配音 → BGM → 混音交付
+  const [wsBusy, setWsBusy] = useState<"" | "tts" | "mix">("");
+  const [wsTts, setWsTts] = useState<WorkshopClip | null>(null);
+  const [wsBgm, setWsBgm] = useState<WorkshopState["bgm"]>(null);
+  const [bgmItems, setBgmItems] = useState<BgmItem[]>([]);
+  const [wsMix, setWsMix] = useState<WorkshopClip | null>(null);
 
   const load = useCallback(async () => {
     const tasks: Promise<unknown>[] = [];
@@ -478,6 +509,119 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
     setToast(`已选用 ${labelOf(spec, vid)}`);
   };
 
+  const loadWorkshopState = useCallback(async () => {
+    try {
+      const d = await getJson<{ ok?: boolean } & WorkshopState>("/api/factory/workshop/state");
+      setWsTts(d.tts || null);
+      setWsBgm(d.bgm || null);
+      setWsMix(d.mix || null);
+    } catch {
+      // 首次访问或会话失效，保持空状态即可
+    }
+  }, []);
+
+  const loadBgm = useCallback(async () => {
+    try {
+      const d = await getJson<{ ok?: boolean; items?: BgmItem[] }>("/api/factory/bgm/list");
+      setBgmItems(d.items || []);
+    } catch (e) {
+      setSubmitErr(`背景音乐加载失败：${(e as Error).message || e}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAudio) {
+      void loadWorkshopState();
+      void loadBgm();
+    }
+  }, [isAudio, loadWorkshopState, loadBgm]);
+
+  const wsPost = async (url: string, payload: Record<string, unknown>) => {
+    const r = await fetch(url, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const d = await r.json() as {
+      ok?: boolean; error?: string; id?: string; name?: string; url?: string;
+      duration?: number; volume?: number; bgmId?: string;
+    };
+    if (!r.ok || !d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    return d;
+  };
+
+  const startTts = async () => {
+    if (!wf.text.trim()) { setSubmitErr("请先在第 1 步填写台词"); return; }
+    setWsBusy("tts");
+    setSubmitErr("");
+    try {
+      const d = await wsPost("/api/factory/workshop/tts", {
+        channel: wf.channel, voice: wf.voice, text: wf.text, params: wf.params,
+      }) as WorkshopClip;
+      setWsTts(d);
+      setToast("配音同步合成完成，试听后点「确认保存」");
+    } catch (e) {
+      setSubmitErr(`配音合成失败：${(e as Error).message || e}`);
+    } finally {
+      setWsBusy("");
+    }
+  };
+
+  const confirmTts = async () => {
+    if (!wsTts) return;
+    setSubmitErr("");
+    try {
+      const d = await wsPost("/api/factory/workshop/tts/confirm", { id: wsTts.id });
+      setWsTts((prev) => prev ? { ...prev, name: d.name || prev.name, url: d.url || prev.url } : prev);
+      setToast("配音已确认保存，可进入配乐与交付");
+    } catch (e) {
+      setSubmitErr(`保存失败：${(e as Error).message || e}`);
+    }
+  };
+
+  const selectBgm = async (item: BgmItem) => {
+    setSubmitErr("");
+    try {
+      const d = await wsPost("/api/factory/workshop/bgm/select",
+        { id: item.id, volume: wf.volume }) as WorkshopState["bgm"];
+      setWsBgm(d);
+      setWf((prev) => ({ ...prev, bgm: item.name }));
+      setToast(`已选择配乐：${item.name}`);
+    } catch (e) {
+      setSubmitErr(`选择失败：${(e as Error).message || e}`);
+    }
+  };
+
+  const startMix = async () => {
+    if (!wsTts) { setSubmitErr("请先在 TTS 合成步骤确认保存配音"); return; }
+    if (!wsBgm) { setSubmitErr("请先在 BGM 配乐步骤选择配乐"); return; }
+    setWsBusy("mix");
+    setSubmitErr("");
+    try {
+      const d = await wsPost("/api/factory/workshop/mix", {
+        voiceId: wsTts.id, bgmId: wsBgm.bgmId, volume: wf.volume,
+      }) as WorkshopClip;
+      setWsMix(d);
+      setToast("混音同步完成，试听后点「保存交付」");
+    } catch (e) {
+      setSubmitErr(`混音失败：${(e as Error).message || e}`);
+    } finally {
+      setWsBusy("");
+    }
+  };
+
+  const saveDelivery = async () => {
+    if (!wsMix) return;
+    setSubmitErr("");
+    try {
+      const d = await wsPost("/api/factory/workshop/mix/confirm", { id: wsMix.id });
+      setWsMix((prev) => prev ? { ...prev, name: d.name || prev.name, url: d.url || prev.url } : prev);
+      setToast(`已保存交付：${d.name || wsMix.name}`);
+      closeStep();
+    } catch (e) {
+      setSubmitErr(`保存交付失败：${(e as Error).message || e}`);
+    }
+  };
+
   const submitWorkflow = async () => {
     if (!line.jobKind) { setSubmitErr("该车间暂未开放在线加工提交"); return; }
     if (!activeChannel) { setSubmitErr("请先在流程里选定加工渠道"); return; }
@@ -662,6 +806,38 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
     finalStep,
   ];
 
+  const audioFinalStep = () => (
+    <>
+      <div className="fac-set-summary">
+        <div><span>配音文件</span><b>{wsTts?.name || "未合成"}</b></div>
+        <div><span>配乐文件</span><b>{wsBgm?.name || "未选择"}</b></div>
+        <div><span>加工渠道</span><b>{activeChannel?.label || "-"}</b></div>
+        <div><span>当前音色</span><b>{labelOf(voice, wf.voice)}</b></div>
+        <div><span>配乐音量</span><b>{wf.volume}</b></div>
+        {["format", "sample_rate"].map((k) => (
+          wf.params[k] !== undefined
+            ? <div key={k}><span>{k}</span><b>{String(wf.params[k])}</b></div> : null
+        ))}
+        <div><span>混音模式</span><b>同步 · 在线等待</b></div>
+      </div>
+      {wsMix && (
+        <div className="fac-ws-result">
+          <b>{wsMix.name}</b>
+          <span>{wsMix.duration ? `${Number(wsMix.duration).toFixed(1)}s` : ""}</span>
+          <audio controls src={siteUrl(wsMix.url)} />
+          <button type="button" className="fac-btn-mini" onClick={() => { void saveDelivery(); }}>
+            保存交付
+          </button>
+        </div>
+      )}
+      {submitErr && <p className="fac-set-error">{submitErr}</p>}
+      <button type="button" className="btn btn-primary fac-set-start" disabled={!!wsBusy}
+        onClick={() => { void startMix(); }}>
+        {wsBusy === "mix" ? "在线混音中，请勿关闭…" : "开始合成"}
+      </button>
+    </>
+  );
+
   const audioSteps: ((ch: Channel | null) => ReactNode)[] = [
     () => (
       <>
@@ -700,33 +876,83 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
         ) : <p className="fac-field-hint">该渠道没有音色参数，直接下一步设置加工参数。</p>}
       </>
     ),
-    (ch) => ch ? (
-      <>
-        {ch.params.map((p) => (
-          <ParamField key={p.key} spec={p} value={wf.params[p.key]}
-            onChange={(v) => setWf((prev) => ({ ...prev, params: { ...prev.params, [p.key]: v } }))}
-            onPreview={(p.key === "voice" || p.key === "speaker")
-              ? () => openVoiceLibrary(wf.channel) : undefined} />
-        ))}
-      </>
-    ) : <p className="fac-field-hint">请先在第 2 步选定加工渠道。</p>,
     () => (
       <>
+        <div className="fac-ws-current">
+          <div><span>当前渠道</span><b>{activeChannel?.label || "未选"}</b></div>
+          <div><span>当前音色</span><b>{labelOf(voice, wf.voice)}</b></div>
+        </div>
+        {voice && (
+          <label className="fac-field">
+            <span className="fac-field-label">临时调整音色（本次合成生效）</span>
+            <span className="fac-field-control">
+              <select value={wf.voice} onChange={(e) => setVoice(e.target.value)}>
+                {(voice.options || []).map((o) => (
+                  <option key={o} value={o}>{voice.optionLabels?.[o] || o}</option>
+                ))}
+              </select>
+              <button type="button" className="fac-btn-mini"
+                onClick={(e) => { openVoiceLibrary(wf.channel); e.stopPropagation(); }}>
+                试听全部音色
+              </button>
+            </span>
+          </label>
+        )}
         <label className="fac-field">
-          <span className="fac-field-label">配乐素材（名称或路径）</span>
-          <input type="text" value={wf.bgm} placeholder="例：deliverables/小秘书宣传片/片头曲.mp3"
-            onChange={(e) => setWf((p) => ({ ...p, bgm: e.target.value }))} />
-          <small className="fac-field-hint">作为本批工单的配乐备注随任务记录，混音在出厂工序完成。</small>
+          <span className="fac-field-label">本次合成台词（一行一条，同步拼接为一条配音）</span>
+          <textarea className="fac-textarea" rows={4} value={wf.text}
+            onChange={(e) => setWf((p) => ({ ...p, text: e.target.value }))} />
         </label>
+        {wsTts && (
+          <div className="fac-ws-result">
+            <b>{wsTts.name}</b>
+            <span>{wsTts.duration ? `${Number(wsTts.duration).toFixed(1)}s` : ""}</span>
+            <audio controls src={siteUrl(wsTts.url)} />
+            <button type="button" className="fac-btn-mini" onClick={() => { void confirmTts(); }}>
+              确认保存
+            </button>
+          </div>
+        )}
+        {submitErr && <p className="fac-set-error">{submitErr}</p>}
+        <button type="button" className="btn btn-primary fac-set-start" disabled={!!wsBusy}
+          onClick={() => { void startTts(); }}>
+          {wsBusy === "tts" ? "在线合成中，请勿关闭…" : "开始合成"}
+        </button>
+      </>
+    ),
+    () => (
+      <>
+        <p className="fac-field-hint">
+          背景音乐库（{bgmItems.length} 首）：点播放器试听，选好后点「选用」。
+        </p>
+        <div className="fac-bgm-list">
+          {bgmItems.map((b) => (
+            <div className={`fac-bgm-row ${wsBgm?.bgmId === b.id ? "is-selected" : ""}`} key={b.id}>
+              <audio controls preload="none" src={siteUrl(b.url)} />
+              <span className="fac-bgm-info">
+                <b>{b.name}</b>
+                <small>{b.ext.toUpperCase()} · {b.sec}s · {(b.size / 1048576).toFixed(1)}MB</small>
+              </span>
+              <button type="button" className="fac-btn-mini" onClick={() => { void selectBgm(b); }}>
+                {wsBgm?.bgmId === b.id ? "已选用" : "选用"}
+              </button>
+            </div>
+          ))}
+          {bgmItems.length === 0 && (
+            <p className="fac-field-hint">没有可用背景音乐（检查 OPC_BGM_DIR 目录）</p>
+          )}
+        </div>
         <label className="fac-field">
           <span className="fac-field-label">配乐音量</span>
           <input type="number" min={0} max={1} step={0.01} value={wf.volume}
             onChange={(e) => setWf((p) => ({ ...p, volume: Number(e.target.value) }))} />
           <small className="fac-field-hint">0.16 左右为人声打底，超过 0.3 容易盖过台词。</small>
         </label>
+        {wsBgm && <p className="fac-ws-note">已选配乐：{wsBgm.name} · 音量 {wsBgm.volume}</p>}
+        {submitErr && <p className="fac-set-error">{submitErr}</p>}
       </>
     ),
-    finalStep,
+    audioFinalStep,
   ];
 
   const genericSteps: ((ch: Channel | null) => ReactNode)[] = [
@@ -800,6 +1026,14 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
       {playNote && <p className="fac-voice-note">{playNote}</p>}
       <audio ref={audioRef} className="fac-preview-audio" controls />
     </>
+  );
+
+  const wsWaitView = (
+    <div className="fac-ws-wait" role="status" aria-live="polite">
+      <div className="fac-ws-spinner" />
+      <b>{wsBusy === "tts" ? "正在同步合成配音…" : "正在同步混音…"}</b>
+      <p>在线等待中，请勿关闭窗口或刷新页面</p>
+    </div>
   );
 
   return (
@@ -1056,11 +1290,13 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
       )}
 
       {stepIndex !== null && stepAnchor && (
-        <AnchoredPanel anchor={stepAnchor} onClose={closeStep}
+        <AnchoredPanel anchor={stepAnchor}
+          onClose={() => { if (!wsBusy) closeStep(); }}
+          dismissible={!wsBusy}
           className={`fac-set-panel fac-step-panel ${voiceLibOpen ? "fac-voice-lib" : ""}`}
           ariaLabel={`流程步骤 ${stepIndex + 1}：${line.steps[stepIndex].name}`}
           anchorLabel={`流程 ${stepIndex + 1} · ${line.steps[stepIndex].name}`}>
-          {voiceLibOpen ? voiceLibraryBody : (
+          {wsBusy ? wsWaitView : voiceLibOpen ? voiceLibraryBody : (
             <>
               <div className="fac-set-title">
                 <b>{stepIndex + 1}. {line.steps[stepIndex].name}</b>

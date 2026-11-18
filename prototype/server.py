@@ -1114,6 +1114,41 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
             except Exception as e:  # noqa: BLE001
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/factory/bgm/list":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            try:
+                return self._json({"ok": True, **self._kernel().workshop_bgm_list()})
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path in ("/api/factory/bgm/audio", "/api/factory/workshop/audio"):
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            qs = parse_qs(urlparse(self.path).query)
+            wid = (qs.get("id") or [""])[0]
+            try:
+                if path == "/api/factory/bgm/audio":
+                    import factory as _factory
+                    p = _factory.workshop_bgm_path(wid)
+                    if not p:
+                        return self._json({"ok": False, "error": "背景音乐不存在"}, 404)
+                    ctype = ("audio/mpeg" if p.lower().endswith(".mp3")
+                             else "audio/mp4" if p.lower().endswith(".m4a") else "audio/wav")
+                else:
+                    p = self._kernel().workshop_audio_path(wid)
+                    ctype = "audio/mpeg" if p.lower().endswith(".mp3") else "audio/wav"
+                return self._send_audio(p, content_type=ctype)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 404)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/factory/workshop/state":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            try:
+                return self._json({"ok": True, **self._kernel().workshop_state()})
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/factory/shots":
             qs = parse_qs(urlparse(self.path).query)
             try:
@@ -2768,11 +2803,11 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             shutil.copyfileobj(f, self.wfile, 256 * 1024)
 
-    def _send_audio(self, path, extra_headers=None):
-        """试听用：inline 返回 wav，不弹下载框。"""
+    def _send_audio(self, path, extra_headers=None, content_type="audio/wav"):
+        """试听用：inline 返回音频，不弹下载框。"""
         size = os.path.getsize(path)
         self.send_response(200)
-        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(size))
         self.send_header("Cache-Control", "no-store")
         for k, v in (extra_headers or {}).items():
@@ -3254,6 +3289,33 @@ class Handler(BaseHTTPRequestHandler):
                                            "origin_ref": str(body.get("origin_ref") or "")})
             kern.db.flush()
             return self._json({"ok": True, "id": qid})
+        # 声音车间：同步配音 / BGM 选择 / 同步混音（前端在线等待，不进队列）
+        if path in ("/api/factory/workshop/tts", "/api/factory/workshop/tts/confirm",
+                    "/api/factory/workshop/bgm/select", "/api/factory/workshop/mix",
+                    "/api/factory/workshop/mix/confirm"):
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            kern = self._kernel()
+            try:
+                if path == "/api/factory/workshop/tts":
+                    res = kern.workshop_tts_sync(
+                        body.get("channel") or "", body.get("voice") or "",
+                        body.get("text") or "", body.get("params"))
+                elif path == "/api/factory/workshop/tts/confirm":
+                    res = kern.workshop_tts_confirm(body.get("id") or "")
+                elif path == "/api/factory/workshop/bgm/select":
+                    res = kern.workshop_bgm_select(body.get("id") or "",
+                                                   body.get("volume") if body.get("volume") is not None else 0.16)
+                elif path == "/api/factory/workshop/mix":
+                    res = kern.workshop_mix_sync(body.get("voiceId") or "",
+                                                 body.get("bgmId") or "", body.get("volume"))
+                else:
+                    res = kern.workshop_mix_confirm(body.get("id") or "")
+                return self._json({"ok": True, **res})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         # 工具箱：手工提交单技能任务，进 media_jobs 队列，成品落个人空间 工具箱/（私有）
         if path == "/api/toolbox/jobs":
             try:

@@ -1327,6 +1327,30 @@ class Kernel:
     def voice_sample(self, channel, voice):
         return factory.voice_sample(self, channel, voice)
 
+    def workshop_tts_sync(self, channel, voice, text, params=None):
+        return factory.workshop_tts_sync(self, channel, voice, text, params)
+
+    def workshop_tts_confirm(self, wid):
+        return factory.workshop_tts_confirm(self, wid)
+
+    def workshop_bgm_list(self):
+        return factory.workshop_bgm_list(self)
+
+    def workshop_bgm_select(self, bid, volume=0.16):
+        return factory.workshop_bgm_select(self, bid, volume)
+
+    def workshop_mix_sync(self, voice_id, bgm_id, volume=None):
+        return factory.workshop_mix_sync(self, voice_id, bgm_id, volume)
+
+    def workshop_mix_confirm(self, wid):
+        return factory.workshop_mix_confirm(self, wid)
+
+    def workshop_state(self):
+        return factory.workshop_state(self)
+
+    def workshop_audio_path(self, wid):
+        return factory.workshop_audio_path(self, wid)
+
 
     def toolbox_save_frame(self, raw):
         return factory.toolbox_save_frame(self, raw)
