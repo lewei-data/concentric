@@ -1,0 +1,102 @@
+# 《同心圆 OPC 知识图谱宣传片 v2（语音讲解版）》制作流程
+
+> 数据源：`D:\obsidian仓库\OPC公司基础信息\OPC公司基础信息`（40 md / 269 双链；人员姓名以 2026-11-18 改名后的新名册为准）
+> 成片：`同心圆OPC知识图谱宣传片-v2-口播版.mp4`（**86.6s** / 1280×720 / 24fps / H.264+AAC）
+> 特点：**语音驱动时间轴** —— 每段动画时长 = 对应口播实测时长；当前节点始终居中并高亮。
+
+## 一、v2 分镜口径（用户指定）
+
+| 段 | 节点 | 口播 | 动画速度 |
+|---|---|---|---|
+| 开场 | OPC公司 | 「同心圆成立了。」（语速 -25%，2.95s） | 慢速居中推近 |
+| 老板 | 蒿瑟莫 | 「老板，蒿瑟莫。」 | 慢速居中 |
+| 小秘书 | 苏小满 | 「小秘书，苏小满。老板的影子分身。」 | 慢速居中 |
+| 管理层 3 人 | 范玛士 CEO / 牛盒码 CTO / 沈如意 CCO | 逐人介绍 | 慢速居中 |
+| 员工 16 人 | 产品经理 / 配音 / 视频制作 / 中台 5 岗 | 逐人介绍 | 慢速居中 |
+| 制度文件 20 篇 | 00-索引…风险与应急 | **无口播** | 0.28s/个快放 |
+| 结尾 | 全图 | 「同心圆OPC欢迎您。」+ 金色标语 | 拉远全景 |
+
+## 二、流水线（一键复跑）
+
+```
+gen_vo.py         edge-tts（zh-CN-YunxiNeural）生成 21 段口播 → vo/vo_XX.mp3 + manifest.json（实测时长）
+build_timeline.js 用实测时长生成 timeline.js（41 段 / 86.6s）+ 静态布局（取 v1 末帧收敛坐标）
+build_audio.py    按 voiceAt 精确落位口播 + BGM 循环垫底（口播段自动压低）→ voice_mix.wav
+render_cdp.js     CDP 单浏览器：window.seek(f) + Page.captureScreenshot → frames2/（约 2.5 帧/s）
+ffmpeg            2079 PNG + voice_mix.wav → H.264/AAC 成片
+```
+
+```bash
+python gen_vo.py
+node build_timeline.js
+python build_audio.py
+node render_cdp.js
+ffmpeg -y -framerate 24 -i frames2/f%04d.png -i voice_mix.wav \
+  -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest \
+  -movflags +faststart "同心圆OPC知识图谱宣传片-v2-口播版.mp4"
+```
+
+## 三、关键实现点
+
+1. **语音驱动**：段时长直接取 edge-tts 实测 mp3 时长（ffprobe），+0.12s 起播偏移、+0.35s 段间隔；口播轨按 `voiceAt` 样本级落位，字幕与语音同步。
+2. **节点居中**：`frame2.html` 的 `camera(t, seg)` 把当前节点坐标插值映射到屏幕中心 (640,360)，口播段 0.55s 平滑过渡、制度段 0.18s 快速掠过；缩放 1.55（口播）/1.15（制度）/1.0（结尾全景）。
+3. **当前节点高亮**：金色圆环 + 放大 1.35× + 金色名字标签；已出现的员工保留小标签，制度节点只显线条。
+4. **CDP 快速渲染**：启动一次 Chrome（`--remote-debugging-port=9333`），Node 原生 WebSocket 逐帧 `Runtime.evaluate('window.seek(f)')` + `Page.captureScreenshot`，比逐帧启 Chrome 快 ~50 倍；`Emulation.setDeviceMetricsOverride` 设 1280×720 规避 v1 视口矮 100px 问题。
+5. **姓名口径**：2026-11-18 改名后 CEO=范玛士（原陆清安）、CTO=牛盒码（原扶频）、CCO=沈如意（原沈青禾）、老板=蒿瑟莫（原蒿色莫）。
+
+## 四、产物
+
+| 文件 | 说明 |
+|---|---|
+| 同心圆OPC知识图谱宣传片-v3-照片口播版.mp4 | 主交付（84.2s，阿里云百炼音色 + 19 人半身照同步） |
+| 同心圆OPC知识图谱宣传片-v2-口播版.mp4 | v2（86.6s Edge TTS 口播版）保留 |
+| 同心圆OPC知识图谱宣传片.mp4 | v1 无声/BGM 版（12.5s）保留 |
+| vo2/ | 21 段百炼口播 mp3 + manifest.json（时长驱动时间轴） |
+| photos/ · photos_1024/ · photos.js | 19 人半身照（工号命名）+ 19 张 1024 形象照 + 内嵌数据 |
+| timeline.js / voice_mix_v3.wav / frames3/ | 时间轴 / 音轨 / 2022 帧 |
+| mcp_call.py / fetch_photos.py / gen_vo_bailian.py | 原生 MCP 直调 / 照片下载 / 百炼口播生成 |
+| build_timeline.js / build_audio.py / frame2.html / render_cdp.js | 时间轴 / 音轨 / 渲染器 / CDP 批量渲染 |
+
+合规：BGM「开智小曲」对外投放需正版授权；口播为阿里云百炼 Qwen-Audio-3.0-TTS-Plus 合成音色（龙湘曦筝 · 温柔活泼音），非真人声纹克隆。
+
+## 五、v3 关键变更（照片 + 新音色）
+
+1. **照片**：`staff_photos` MCP 工具（本地工具索引未暴露，用 `mcp_call.py` 原生 JSON-RPC 直调服务端）列出 39 张共享照片；下载 19 人半身照（`photos/<工号>.png`，512×512）与 1024 形象照；`photos.js` 内嵌 base64 供 Canvas 同步绘制。渲染器在员工口播段右侧绘制照片卡（姓名 + 岗位，0.35s 淡入 / 0.3s 淡出），镜头目标偏左 x=430 避让；OPC 开场与制度快放段不展示照片。
+2. **音色**：本地 TTS 工具 schema 缓存未开放 `bailian` 渠道，同样走原生 JSON-RPC：`channel=bailian, voice=qwen-audio-3.0-tts-plus-longxiangxizheng, format=mp3, speed=0.95`（开场 0.78 慢速）。21 段语音由服务端返回 `download_url`，用同一把 key 下载；`ffprobe` 实测时长驱动时间轴，动画与语音严格对齐。
+3. **鉴权**：旧 MCP key 在 23:46 被撤销，通过工作台 `/workbench/mcp-key` 登录后重新生成（有效期 1 天）；新 key 写入 `mcp_call.py` 与 `gen_vo_bailian.py`，过期后需重新领取并替换。
+4. **姓名映射**：照片按工号命名，渲染器用 `PHOTO_DATA` 映射到最新姓名（2026-11-18 改名快照：CEO 范玛士 / CTO 牛盒码 / CCO 沈如意 等）。
+
+---
+
+## 六、v4 关键变更（新开场 + 制度汇总 + 提速 + 竖屏）
+
+用户四点要求，逐条落实：
+
+1. **新开场**：口播改为「大家好，我是OPC小秘书，我来介绍下公司人员。」；开场同步展示小秘书半身照（渲染器对 `intro` 段特殊取 `苏小满` 照片），中心仍为金色 OPC 枢纽。
+2. **制度汇总**：20 个制度节点不再是静默 0.28s 快放，而是一段 16.8s 的汇总口播「我们知识库中有这些规章制度：体系总纲、任务定位八步法、…共二十项制度文件。」；时间轴把 20 节点均分到该段（每节点 ~0.82s）依次点亮，画面中当前制度节点套金圈 + 金色大字标签，字幕框上方再标「◆ 当前制度名」，三处同步。字幕改为自动折行 + 缩小字号，避免溢出/重叠。
+3. **提速**：员工语速 0.95→1.08，段间隔 GAP 0.35→0.18，镜头转场 0.55→0.40；总时长 84.2s→90.3s（因新增开场长句 + 制度口播，但节奏更紧凑）。
+4. **竖屏抖音版**：新增 `frame_v4.html? MODE=vertical`（1080×1920），图谱布局经 `mapPoint()` 映射到上半屏，照片卡放大居中置于中段，字幕底部自动折行、结尾口号居中；与宽屏共用时间轴/音轨，仅视口与布局不同。渲染器 `render_v4.js` 以 `MODE=wide|vertical` 切换。
+
+复跑命令：
+
+```bash
+NODE=/c/Users/boraydata/.workbuddy/binaries/node/versions/22.22.2-6/node.exe
+python gen_vo_v4.py                 # vo3/ 口播（新音色、新文案）
+$NODE build_timeline_v4.js          # timeline_v4.js
+python build_audio_v4.py            # voice_mix_v4.wav
+$NODE render_v4.js                  # frames4/（宽屏）
+MODE=vertical $NODE render_v4.js    # frames4v/（竖屏）
+# 合成宽屏 / 竖屏（见下）
+ffmpeg -framerate 24 -i frames4/f%04d.png  -i voice_mix_v4.wav -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart 同心圆OPC知识图谱宣传片-v4-宽屏.mp4
+ffmpeg -framerate 24 -i frames4v/f%04d.png -i voice_mix_v4.wav -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart 同心圆OPC知识图谱宣传片-v4-竖屏抖音版.mp4
+```
+
+v4 新增文件：`gen_vo_v4.py` / `vo3/` / `build_timeline_v4.js` / `build_audio_v4.py` / `frame_v4.html` / `render_v4.js` / `timeline_v4.js` / `voice_mix_v4.wav` / `frames4/` / `frames4v/`。
+
+---
+
+## 附：v1（12.5s 无声版）制作流程存档
+
+数据源同上。链路：`parse_graph.js` → `animate.js`（300 帧力导向预计算）→ `frame.html` + Chrome headless 逐帧截图 → ffmpeg 合成。
+
+v1 踩坑：① headless=new 视口比窗口矮约 100px，须 `--window-size=1280,820` 再 crop 720（`vptest.html` 探针）；② 力模拟 ~140 帧后 NaN 发散，需速度限幅 ±2400 + 硬钳位；③ 逐帧截图 ~4.5s/帧，300 帧约 30 分钟（v2 已改用 CDP）。
