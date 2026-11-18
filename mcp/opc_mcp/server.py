@@ -1,4 +1,4 @@
-"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材/分片续传/知识库/跨源资源/路由/对话/TTS/图像共 18 个工具。"""
+"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材(含删除)/分片续传/知识库/跨源资源/路由/对话/TTS/图像共 19 个工具。"""
 
 import base64
 import binascii
@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, auth, config, knowledge, llm, media, resources
+from . import __version__, auth, config, graph_brief, knowledge, llm, media, resources
 from .jobs import JobRunner
 from .store import Store
 
@@ -112,6 +112,19 @@ TOOLS = [
             "required": ["token", "material_id"]},
     },
     {
+        "name": "material_delete",
+        "description": "删除本人上传的素材，并同步清掉它的切块与知识卡片，删除后 kb_search/ask 不再命中。"
+                       "只能删当前 key 所属账号的素材（先用 material_list 拿 material_id）；"
+                       "默认同时删磁盘原文件，仅当没有其他素材引用同一路径时才删。"
+                       "已内化进 OPC 知识库/vault 的条目不在 MCP 素材范围内，不会随之删除。",
+        "inputSchema": {"type": "object", "properties": {
+            "token": {"type": "string"},
+            "material_id": {"type": "string", "description": "要删除的素材 id"},
+            "remove_file": {"type": "boolean", "default": True,
+                            "description": "是否同时删除磁盘原文件，默认 true"}},
+            "required": ["token", "material_id"]},
+    },
+    {
         "name": "material_analyze",
         "description": "对指定素材（或 all=全部待处理）重新做后台分析，返回作业号。",
         "inputSchema": {"type": "object", "properties": {
@@ -147,12 +160,20 @@ TOOLS = [
         "name": "ask",
         "description": "文本问答：后台结合知识库内化内容调用 LLM 生成结果；wait_sec>0 可直接拿答案。"
                        "当用户提到知识库/知识管理/OPC/同心圆/知识图谱/图数据库，或要求总结/解释/对比/给结论并带引用时"
-                       "优先调用。问题内容用 text 或 question 任一传入即可（两者等价）。",
+                       "优先调用。问题内容用 text 或 question 任一传入即可（两者等价）。"
+                       "库内事实类问题建议 with_brief=true：自动注入按五行三才分组的知识图谱简报，"
+                       "有硬字符预算且不随知识库变大膨胀，可省掉先调 kb_search 的一轮；返回 knowledge_brief 元数据。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"},
             "text": {"type": "string", "description": "问题内容；与 question 二选一"},
             "question": {"type": "string", "description": "同 text，问题内容；二选一即可"},
-            "wait_sec": {"type": "number", "default": 0, "description": "0=只返回作业号"}},
+            "wait_sec": {"type": "number", "default": 0, "description": "0=只返回作业号"},
+            "with_brief": {"type": "boolean", "default": False,
+                           "description": "true=注入图谱简报并在结果里返回 knowledge_brief（含 text 全文）；默认 false 完全走原链路"},
+            "brief_level": {"type": "integer", "enum": [0, 1, 2], "default": 1,
+                            "description": "简报层级：0 只要种子；1 种子+一跳邻居；2 再加图扩展节点"},
+            "brief_chars": {"type": "integer", "default": 900,
+                            "description": "简报硬字符预算 200~2000，默认 900"}},
             "required": ["token"]},
     },
     {
@@ -251,11 +272,37 @@ class OpcServer:
 
     def _job_ask(self, store, phone, payload):
         question = payload["text"]
-        context = resources.context(store, phone, question)
+        public = bool(payload.get("with_brief"))       # 对外口径：结果里不留内网地址/服务端路径
+        brief = None
+        if public:
+            try:
+                brief = graph_brief.build(store, phone, question,
+                                          level=payload.get("brief_level"),
+                                          budget=payload.get("brief_chars"))
+            except Exception as e:                        # 简报只是增益，失败回退原链路
+                log("图谱简报异常（忽略）：%s: %s" % (type(e).__name__, e))
+                brief = None
+        if brief and brief.get("hit"):
+            context = graph_brief.merged_context(store, phone, brief)
+        else:
+            context = resources.context(store, phone, question)
+            if public:
+                context = graph_brief.public_text(context)
         hits = resources.search(store, phone, question, k=5)
-        citations = [{"source": h["source"], "id": h["id"], "title": h["title"],
-                      "score": h["score"], "path": h["path"]} for h in hits]
+        citations = [{"source": h["source"], "id": h["id"],
+                      "title": graph_brief.public_text(h["title"]) if public else h["title"],
+                      "score": h["score"],
+                      "path": graph_brief.public_text(h["path"]) if public else h["path"]}
+                     for h in hits]
+        if public:                                          # 素材绝对路径换成可调用的 ref
+            for c in citations:
+                if str(c["path"]).startswith("/"):
+                    c["path"] = ""
+                    c["ref"] = "%s:%s" % ("material" if c["source"] == "mcp.material" else "knowledge", c["id"])
         history = store.messages(phone, limit=8)
+        if public:
+            history = [{"role": m["role"], "content": graph_brief.public_text(m["content"])}
+                       for m in history]
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         if context:
             messages.append({"role": "system", "content": "知识库检索结果：\n" + context})
@@ -278,10 +325,21 @@ class OpcServer:
             else:
                 answer = "LLM 通道不可用，且知识库没有命中「%s」的内容。" % question
 
+        if public:
+            answer = graph_brief.public_text(answer)
+            error = graph_brief.public_text(error) if error else error
         store.add_message(phone, "user", question)
         store.add_message(phone, "assistant", answer)
-        return {"answer": answer, "degraded": degraded, "llm_error": error,
-                "citations": citations, "context_chars": len(context)}
+        out = {"answer": answer, "degraded": degraded, "llm_error": error,
+               "citations": citations, "context_chars": len(context)}
+        if public:
+            meta = {k: brief[k] for k in ("hit", "text", "chars", "level", "nodes", "edges",
+                                          "groups", "items", "budget", "mode", "reason")} if brief else {}
+            meta.setdefault("hit", False)
+            meta.setdefault("text", "")
+            meta.setdefault("reason", "简报不可用，已回退原链路")
+            out["knowledge_brief"] = meta
+        return out
 
     # ---------------------------------------------------------------- 工具实现
     def _dir(self, phone, sub):
@@ -438,6 +496,33 @@ class OpcServer:
                 out["content_base64"] = base64.b64encode(src.read_bytes()).decode()
         return _json(out)
 
+    def tool_material_delete(self, args):
+        user = auth.resolve(self.store, args)
+        mid = str(args.get("material_id") or "").strip()
+        if not mid:
+            return _err("请提供 material_id（先用 material_list 查看）")
+        deleted = self.store.delete_material(mid, user["phone"])
+        if not deleted:
+            return _err("素材不存在或不属于当前账号：%s" % mid)
+        src = Path(str(deleted.get("path") or ""))
+        file_removed, note = False, ""
+        if args.get("remove_file", True) and src.is_file():
+            refs = self.store.all("SELECT id FROM materials WHERE path=?", (str(src),))
+            if refs:
+                note = "磁盘文件仍被其他素材引用，未删除"
+            else:
+                try:
+                    src.unlink()
+                    file_removed = True
+                except OSError as e:
+                    note = "素材记录已删，但磁盘文件删除失败：%s" % e
+        return _json({
+            "material_id": mid, "filename": deleted["filename"], "deleted": True,
+            "deleted_chunks": deleted["deleted_chunks"], "deleted_cards": deleted["deleted_cards"],
+            "path": str(src), "file_removed": file_removed, "note": note,
+            "hint": "已内化进 OPC 知识库/vault 的条目不在 MCP 素材范围内，不会随之删除",
+        })
+
     def tool_material_analyze(self, args):
         user = auth.resolve(self.store, args)
         target = str(args.get("material_id") or "")
@@ -517,7 +602,18 @@ class OpcServer:
         text = str(args.get("text") or args.get("question") or "").strip()
         if not text:
             return _err("请提供问题内容：text 或 question 任填一项")
-        job = self.runner.submit(user["phone"], "ask", {"text": text})
+        try:
+            level = int(args["brief_level"]) if args.get("brief_level") is not None else None
+            chars = int(args["brief_chars"]) if args.get("brief_chars") is not None else None
+        except (TypeError, ValueError):
+            return _err("brief_level / brief_chars 必须是整数")
+        if level is not None:
+            level = max(0, min(2, level))
+        if chars is not None:
+            chars = max(200, min(config.BRIEF_HARD_MAX, chars))
+        job = self.runner.submit(user["phone"], "ask", {
+            "text": text, "with_brief": bool(args.get("with_brief")),
+            "brief_level": level, "brief_chars": chars})
         wait = float(args.get("wait_sec") or 0)
         if wait > 0:
             return _json(self.runner.wait(job["job_id"], user["phone"], wait))
@@ -541,6 +637,8 @@ class OpcServer:
              "全局共享走 opc_resource_list(kind=shared_materials 或 downloads)"),
             (("列出", "我的素材", "我的下载", "导出", "list", "download"), "material_list",
              "本人素材用 material_list：先 list 拿 material_id 再 download"),
+            (("删除", "删掉", "删素材", "移除", "delete"), "material_delete",
+             "先用 material_list 拿 material_id，再 material_delete 删除本人素材"),
             (("重新分析", "再分析", "analyze"), "material_analyze",
              "提交分析后用 job_get 等结果"),
             (("语音", "朗读", "配音", "tts"), "tts", "文本转语音"),
@@ -558,13 +656,18 @@ class OpcServer:
         # 除非用户同时明确说了「我的素材」。
         if any(t == "opc_resource_list" for t, _ in matched) and "我的素材" not in low:
             matched = [x for x in matched if x[0] not in ("material_list", "material_download")]
+        # "删除我上传的素材"会同时命中上传规则；删除优先，并补一步 list 拿 id。
+        if any(t == "material_delete" for t, _ in matched):
+            matched = [x for x in matched if x[0] not in ("material_upload", "upload_begin")]
+            if not any(t == "material_list" for t, _ in matched):
+                matched.insert(0, ("material_list", "先用 material_list 拿 material_id"))
         if not matched:
             matched = [("kb_search", "关键词检索拿片段与出处"),
                        ("ask", "带引用的综合问答（参数名 text）")]
 
         ordered = list(dict.fromkeys(t for t, _ in matched))
         non_kb = ("material_upload", "upload_begin", "material_list", "material_download",
-                  "tts", "image")
+                  "material_delete", "tts", "image")
         steps = []
         if not knowledge_related and ordered and ordered[0] in non_kb:
             steps.append("opc_whoami")
@@ -577,11 +680,12 @@ class OpcServer:
             "opc_whoami": "opc_whoami()",
             "kb_status": "kb_status()",
             "kb_search": 'kb_search(query="<关键词>", k=6)',
-            "ask": 'ask(text="<你的问题>", wait_sec=60)',
+            "ask": 'ask(text="<你的问题>", wait_sec=60)｜库内事实问题加 with_brief=true 可省掉 kb_search',
             "material_list": "material_list(limit=50)",
             "opc_resource_list": 'opc_resource_list(kind="shared_materials", limit=20)｜'
                                  '公开下载区用 opc_resource_list(kind="downloads", limit=20)',
             "material_download": 'material_download(material_id="<mat_id>")',
+            "material_delete": 'material_delete(material_id="<mat_id>")',
             "material_upload": 'material_upload(path="<本地文件路径>")',
             "upload_begin": 'upload_begin(filename="<名称>", size=<字节数>, chunk_size=8388608)',
             "material_analyze": 'material_analyze(material_id="<mat_id> 或 all>")',
@@ -596,6 +700,7 @@ class OpcServer:
             "steps": steps,
             "templates": {t: templates[t] for t in steps if t in templates},
             "notes": "身份由 key 自带，不要传 phone；ask 的问题内容用 text 或 question 均可；"
+                     "库内事实类问题直接 ask(with_brief=true)：自带五行三才图谱简报，有硬预算，不必先 kb_search；"
                      "检索不到要明确说明，不要用通用知识冒充公司内部资料。",
         })
 

@@ -149,10 +149,12 @@ process.stdin.on("data", async d => {
 不要把鉴权错误解读成「没有数据」。
 
 【标准流程（知识类问题）】
-1. opc_whoami（可选）：确认身份与 OPC 根目录。
+1. opc_whoami（可选）：确认身份与租户；不要向用户转述返回里的服务端路径字段。
 2. opc_resources（可选）：看这把 key 能访问哪些资源。
 3. kb_search(query=<关键词>, k=6)：跨源检索，命中带 source 字段（opc.*=本人手机号，mcp.material=本人上传，shared.*=全局共享）。
 4. ask(text=<问题>, wait_sec=60) 或 ask(question=<问题>, wait_sec=60)：综合问答（text 与 question 等价）。
+   库内事实类问题加 with_brief=true：自带五行三才图谱简报（有硬字符预算），不用先 kb_search；结果含 knowledge_brief。
+   该模式同时按对外口径净化内网地址/服务端路径；素材引用给 ref=material:<id>，不给服务端绝对路径。
 5. 不确定用哪个工具时先调 opc_route(query=<用户原话>) 拿推荐工具链。
 
 【资源边界】
@@ -179,7 +181,7 @@ process.stdin.on("data", async d => {
 
 > 调用 `opc_whoami`，告诉我当前身份和 OPC 根目录。
 
-正常会返回手机号、姓名、角色，以及 `dataDir: /mnt/sefs/conring/users/<你的手机号>`、`workspace: .../mcp`。能看到就说明 key、网络、连接器都通了。
+正常会返回手机号、姓名、角色，以及租户、个人工作区等标识字段。能看到就说明 key、网络、连接器都通了；这些字段里的服务端路径只用于确认连通，不要转述给用户。
 
 再测一次跨源检索：
 
@@ -199,6 +201,7 @@ process.stdin.on("data", async d => {
 | 列共享资料 | 「用 `opc_resource_list` 列 kind=shared_materials / downloads」 |
 | 读某条资料 | 「用 `opc_resource_read` 读 ref=shared_knowledge:kb_xxx」 |
 | 看/传素材 | 「用 `material_list` 列出我的素材」/「用 `upload_begin` 建单传 200MB zip」 |
+| 删除自己上传的素材 | 「用 `material_delete` 删掉 mat_xxx」（只删本账号素材，已内化的公司知识不受影响） |
 | 语音/图片 | 「用 `tts` 说欢迎词」/「用 `image` 画张图」 |
 
 ---
@@ -225,4 +228,5 @@ process.stdin.on("data", async d => {
 1. key 只在领 key 页显示一次，配置/提示词里保存的是明文——**不要把配置或本文件连同 key 发给别人**。
 2. 不要在豆包对话里粘贴 key；连接器已通过请求头注入，模型不需要看到它。
 3. 更换手机号、离职或怀疑泄漏时，立即回领 key 页按 id 撤销对应那把 key；其他设备的 key 不受影响。
+4. 对外回复只描述「资源是否可用、怎么通过工具访问」，不要转述服务端绝对路径、内网地址或端口；连接器只用公网入口。
 4. 每个手机号对应独立 OPC 数据空间；全局共享部分（全公司知识/共享素材/公开下载/热点）所有 key 可见，这是设计如此，不是越权。

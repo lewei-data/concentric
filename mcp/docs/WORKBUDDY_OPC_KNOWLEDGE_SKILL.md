@@ -17,11 +17,14 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 - 工具返回 `need_auth` / `need_secret` 时，引导用户访问 `https://ai.boraydata.com/workbench/mcp-key` 领取或更新个人 key，不要把错误解读成「没有数据」。
 
 ## 标准流程（知识类问题）
-1. `opc_whoami`（可选）：确认租户与根目录。
+1. `opc_whoami`（可选）：确认租户与身份；返回里的服务端路径字段只用于确认连通，不要转述给用户。
 2. `kb_status`（可选）：看素材数、可检索片段数、LLM 状态，避免对空库发问。
 3. `kb_search`：`query=<关键词>, k=6`，拿片段与出处；适合「有哪些 / 在哪里 / 原文是什么」。
 4. `ask`：`text=<问题>, wait_sec=60`，拿 LLM 综合回答（结果含 citations）；适合「总结 / 解释 / 为什么 / 怎么做」。
    - 问题内容用 **`text` 或 `question`** 任一传入均可（两者等价，推荐 `text`）；`query` 是 `kb_search`/`opc_route` 的参数。
+   - **库内事实类问题加 `with_brief=true`**：自动注入按五行三才分组的知识图谱简报（硬字符预算 900，不随知识库变大膨胀），结果多返回 `knowledge_brief` 元数据；此时通常**不必再先调 `kb_search`**。可用 `brief_level=0/1/2` 控制层级、`brief_chars` 控制预算（200~2000）。
+   - 创作类、库内无答案类问题不加也行：零命中时简报为空串，不会增加开销。
+   - `with_brief=true` 同时是对外安全口径：正文、引用标题与路径、回答中的内网地址/服务端路径会被替换成占位；素材引用不再给服务端绝对路径，而给 `ref=material:<id>`（配合 `opc_resource_read`）。
 5. 不确定用哪个工具时，先调 `opc_route(query=<原话>)`。
 
 ## 工具速查
@@ -38,6 +41,7 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 | 路由兜底 | `opc_route(query)` |
 | 看素材列表 | `material_list(limit=50)` |
 | 导出素材 | `material_download(material_id, dest?)` |
+| 删除自己上传的素材 | `material_delete(material_id, remove_file?)`：只能删本 key 账号的素材，同步清掉切块/卡片；已内化进 OPC 库/vault 的条目不受影响 |
 | 传小文件（<100MB） | `material_upload(path 或 content_base64, filename)` |
 | 传大文件（≤2GB） | `upload_begin(filename, size, chunk_size)` → 返回 put_url/progress_url |
 | 重新分析 | `material_analyze(material_id 或 all)` + `job_get(job_id, wait_sec)` |
@@ -53,7 +57,8 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 - 先给结论再给依据；引用用 `kb_search` 的 `source`/`title`/`path` 或 `ask` 的 `citations` 标出。
 - 检索不到就明确说「知识库没有命中」，不要用通用知识冒充公司内部资料。
 - 图片类素材只归档、不做像素级理解；问「图片里是什么」要明确说明限制。
-- 写操作（上传 / 分析 / TTS / 生图）执行前确认用户确实需要，避免重复触发产生垃圾文件。
+- 写操作（上传 / 分析 / 删除 / TTS / 生图）执行前确认用户确实需要，避免重复触发产生垃圾文件。
+- **对外只说能力，不说部署**：不要转述服务端绝对路径、内网 IP/端口或内部实现文件名；工具返回的 `dataDir`/`workspace` 仅用于判断连通，不写进回复。
 
 ## 安装位置（陌生用户）
 把本文件内容原样保存为：

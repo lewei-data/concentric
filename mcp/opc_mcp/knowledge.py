@@ -327,26 +327,29 @@ def analyze_material(store, phone, material_id):
         raise ValueError("素材不存在：%s" % material_id)
     # 内容化钩子：图片/影音在本模块会被跳过像素分析，统一交给工作台内容化引擎
     # （OCR / ASR → 知识卡片 → 知识库 + 知识图谱 → 评分 → 小秘书/飞书汇报）。
-    try:
-        import sys as _sys
-        from pathlib import Path as _Path
-        _root = str(_Path(__file__).resolve().parents[2])
-        if _root not in _sys.path:
-            _sys.path.insert(0, _root)
-        _proto = str(_Path(_root) / "prototype")
-        if _proto not in _sys.path:
-            _sys.path.insert(0, _proto)
-        import material_content as _MC
-        _MC.enqueue(mat["path"], filename=mat["filename"], source="mcp",
-                    phone=phone, sha256=mat.get("sha256") or "", note="MCP 上传")
-    except Exception as _e:                                  # 内容化不可用不影响 MCP 原流程
-        print("[knowledge] 内容化入队失败：%s: %s" % (type(_e).__name__, _e), flush=True)
+    if os.environ.get("OPC_MCP_SKIP_CONTENT_ENQUEUE") != "1":
+        try:
+            import sys as _sys
+            from pathlib import Path as _Path
+            _root = str(_Path(__file__).resolve().parents[2])
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            _proto = str(_Path(_root) / "prototype")
+            if _proto not in _sys.path:
+                _sys.path.insert(0, _proto)
+            import material_content as _MC
+            _MC.enqueue(mat["path"], filename=mat["filename"], source="mcp",
+                        phone=phone, sha256=mat.get("sha256") or "", note="MCP 上传")
+        except Exception as _e:                              # 内容化不可用不影响 MCP 原流程
+            print("[knowledge] 内容化入队失败：%s: %s" % (type(_e).__name__, _e), flush=True)
     store.set_material_status(material_id, "running")
     text, reason = extract_text(mat["path"])
     if not text:
         store.set_material_status(material_id, "skipped", reason)
         return {"material_id": material_id, "status": "skipped", "reason": reason}
 
+    if not store.material(material_id):                      # 分析期间被用户删除，别再写回切块
+        return {"material_id": material_id, "status": "canceled", "reason": "素材已删除"}
     chunks = chunk_text(text)
     n = store.replace_chunks(material_id, phone, chunks)
 
@@ -364,6 +367,8 @@ def analyze_material(store, phone, material_id):
         card = _fallback_card(mat["filename"], text)
         card["llm_error"] = str(e)[:200]
 
+    if not store.material(material_id):                      # LLM 生成卡片期间被删除
+        return {"material_id": material_id, "status": "canceled", "reason": "素材已删除"}
     store.add_card(material_id, phone, str(card.get("title") or mat["filename"]),
                    str(card.get("summary") or ""),
                    json.dumps(card.get("bullets") or [], ensure_ascii=False),

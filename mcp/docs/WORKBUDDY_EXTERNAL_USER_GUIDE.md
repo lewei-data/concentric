@@ -71,17 +71,9 @@
 
 在 WorkBuddy 对话里直接说：
 
-> 调用 `opc_whoami`，告诉我当前身份和 OPC 根目录。
+> 调用 `opc_whoami`，告诉我当前身份是否识别成功。
 
-正常情况下会返回你的手机号、姓名、角色，以及类似：
-
-```text
-tenant: 189****9286
-dataDir: /mnt/sefs/conring/users/<你的手机号>
-workspace: /mnt/sefs/conring/users/<你的手机号>/mcp
-```
-
-如果能看到这些，说明 key、网络、连接器都通了。
+正常情况下会返回手机号、姓名、角色，以及租户、个人工作区等标识字段。能看到这些就说明 key、网络、连接器都通了。返回里的 `dataDir` / `workspace` 是服务端内部路径，只用于确认连通，不需要也不应该转述给用户。
 
 ---
 
@@ -106,6 +98,7 @@ key 自带手机号，因此你能通过 MCP 访问**该手机号名下的全部
 - 敏感文件按 Web 同口径屏蔽：`公司/登录凭据.md`、隐藏目录、含「运维手册」的路径、文件名以「台账/凭据/拓扑」结尾的 md、下划线开头的文件——这些文件**用 `opc_resource_read` 会被拒绝**，不要尝试绕过。
 - 全局共享知识只暴露标记为「全公司」的条目（`project_id=全公司`），其他手机号/项目的私有条目不会泄漏。
 - vault 读取限定在自己的 vault 目录内，越界路径（如 `../`）会被拒绝。
+- **对外说明只用公网入口**：不要向用户转述服务端绝对路径、局域网 IP 或内部端口；这些地址对远程 agent 无效。工具里出现的 `dataDir` / `workspace` 只用于连通性自检。
 
 ---
 
@@ -118,11 +111,13 @@ key 自带手机号，因此你能通过 MCP 访问**该手机号名下的全部
 | 看这把 key 能访问什么 | 「调用 `opc_resources`，列出我手机号下所有资源」 |
 | 查公司知识库（含 OPC/Obsidian/Web 资料） | 「用 `kb_search` 查「分片上传的 offset 语义」」 |
 | 让 OPC 总结回答 | 「用 `ask` 的 text 参数问：大文件上限是多少？并给引用」 |
+| 查库内事实（省一轮检索） | 「用 `ask(..., with_brief=true)` 问：同心圆知识图谱是什么？」（自带五行三才图谱简报，不必先 kb_search） |
 | 列出 OPC 库条目 | 「用 `opc_resource_list` 列 kind=knowledge / reports / contents / vault」 |
 | 读某条资料原文 | 「用 `opc_resource_read` 读 ref=knowledge:kb_xxx 或 vault:OPC/知识库/a.md」 |
 | 看知识库状态 | 「调用 `kb_status`，告诉我素材数、OPC 库条目数和可检索片段数」 |
 | 看已有素材 | 「用 `material_list` 列出我的素材」 |
 | 导出某个素材 | 「用 `material_download` 把 mat_xxx 导出」 |
+| 删除自己上传的素材 | 「用 `material_delete` 删掉 mat_xxx」（只删本账号素材及其切块/卡片，不删已内化的公司知识） |
 | 生成语音/图片 | 「用 `tts` 说一句欢迎词」/「用 `image` 画一张图」 |
 | 传大文件 | 「用 `upload_begin` 建单，我要上传一个 200MB 的 zip」 |
 

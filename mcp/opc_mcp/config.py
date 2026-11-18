@@ -75,6 +75,15 @@ CHUNK_CHARS = int(os.environ.get("OPC_MCP_CHUNK_CHARS", "800"))
 CONTEXT_BUDGET = int(os.environ.get("OPC_MCP_CONTEXT_BUDGET", "4000"))
 JOB_WORKERS = max(1, int(os.environ.get("OPC_MCP_JOB_WORKERS", "2")))
 
+# ---------------- ask(with_brief=true) 的知识图谱简报 ----------------
+# 硬预算：无论库长到多大，简报正文都不超过这个字符数。
+BRIEF_BUDGET = max(200, int(os.environ.get("OPC_MCP_BRIEF_BUDGET", "900")))
+BRIEF_HARD_MAX = max(BRIEF_BUDGET, int(os.environ.get("OPC_MCP_BRIEF_HARD_MAX", "2000")))
+# 层级：0=只给种子；1=种子+一跳邻居短标题；2=再加图扩展节点。
+BRIEF_LEVEL = max(0, min(2, int(os.environ.get("OPC_MCP_BRIEF_LEVEL", "1"))))
+# 每个才位最多占多少种子，防止单行/单一分类把预算吃光。
+BRIEF_MAX_GROUP = max(1, int(os.environ.get("OPC_MCP_BRIEF_MAX_GROUP", "2")))
+
 # ---------------- 大文件分片续传（HTTP 旁路，端口 9105） ----------------
 UPLOAD_HOST = os.environ.get("OPC_MCP_UPLOAD_HOST", "0.0.0.0")
 UPLOAD_PORT = int(os.environ.get("OPC_MCP_UPLOAD_PORT", "9105"))

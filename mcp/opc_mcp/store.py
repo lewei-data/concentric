@@ -203,6 +203,23 @@ class Store:
         return self.all("SELECT * FROM materials WHERE phone=? AND status IN ('pending','failed')"
                         " ORDER BY created_at", (phone,))
 
+    def delete_material(self, material_id, phone):
+        """删除本人素材及其切块/卡片；非本人或不存在返回 None。"""
+        with self._lock:
+            row = self.db.execute(
+                "SELECT * FROM materials WHERE id=? AND phone=?", (material_id, phone)).fetchone()
+            if not row:
+                return None
+            mat = dict(row)
+            n_chunks = self.db.execute(
+                "DELETE FROM chunks WHERE material_id=? AND phone=?", (material_id, phone)).rowcount
+            n_cards = self.db.execute(
+                "DELETE FROM cards WHERE material_id=? AND phone=?", (material_id, phone)).rowcount
+            self.db.execute("DELETE FROM materials WHERE id=? AND phone=?", (material_id, phone))
+            self.db.commit()
+            return {"id": mat["id"], "path": mat["path"], "filename": mat["filename"],
+                    "size": mat["size"], "deleted_chunks": n_chunks, "deleted_cards": n_cards}
+
     # ---------------------------------------------------------------- 知识
     def replace_chunks(self, material_id, phone, chunks):
         self.exec("DELETE FROM chunks WHERE material_id=?", (material_id,))
