@@ -90,11 +90,79 @@ LLM_DEFAULTS = [
         "apiKey": "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a",
         "note": "本地推理通道（208 llama.cpp Qwen3-30B-A3B-2507 / 256K 单槽；非实时、定时分析整理类优先，2026-11-18 按 PERF-USAGE-GUIDE 更新）",
     },
+    {
+        # 加工厂·声音车间云服务：百炼 qwen-audio-3.0-tts-plus 的 Key 入口。
+        # protocol=media-api 只供加工厂读取凭据，不参与 Hermes 对话路由。
+        "id": "qwentts-bailian",
+        "name": "qwen-audio-3.0-tts-plus",
+        "url": "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+        "protocol": "media-api",
+        "totalTokens": 0,
+        "alias": "qwentts",
+        "priority": 60,
+        "provider": "custom",
+        "apiKey": "",   # 留空则复用百炼 LLM Key；在此页可直接设置专用 Key
+        "note": "加工厂·声音车间云服务（Qwen TTS）Key；仅加工厂读取，不参与对话路由",
+    },
+    {
+        # 加工厂·图片车间云服务：百炼 qwen-image-3.0-pro 的 Key 入口。
+        "id": "qwenimage-bailian",
+        "name": "qwen-image-3.0-pro",
+        "url": "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        "protocol": "media-api",
+        "totalTokens": 0,
+        "alias": "qwenimage",
+        "priority": 61,
+        "provider": "custom",
+        "apiKey": "",   # 留空则复用百炼 LLM Key；在此页可直接设置专用 Key
+        "note": "加工厂·图片车间云服务（Qwen Image）Key；仅加工厂读取，不参与对话路由",
+    },
 ]
 
 def _llm_store():
     """过程库单例（llm_models 所在）；未启用时返回 None。"""
     return DBX.store() if DBX else None
+
+def media_api_key(kind="tts"):
+    """加工厂云服务 Key：模型管理页专用条目优先，其次专用环境变量，最后复用百炼 LLM Key。
+
+    kind='tts' → qwentts-bailian / OPC_BAILIAN_TTS_API_KEY；
+    kind='image' → qwenimage-bailian / OPC_BAILIAN_IMAGE_API_KEY。
+    页面里留空时自动回落到百炼 LLM 的 sk-sp-*，不破坏既有部署。
+    """
+    kind = str(kind or "tts").lower()
+    dedicated_id = "qwenimage-bailian" if kind == "image" else "qwentts-bailian"
+    dedicated_env = "OPC_BAILIAN_IMAGE_API_KEY" if kind == "image" else "OPC_BAILIAN_TTS_API_KEY"
+    shared_ids = ("qwen37plus-bailian", "qwen38flash-bailian")
+
+    def _clean(v):
+        return str(v or "").strip()
+
+    st = _llm_store()
+    if st:
+        try:
+            rows = st.llm_models()
+            for r in rows:
+                if r.get("id") == dedicated_id and _clean(r.get("api_key")):
+                    return _clean(r["api_key"])
+            env_key = _clean(os.environ.get(dedicated_env))
+            if env_key:
+                return env_key
+            for r in rows:
+                if r.get("id") in shared_ids and _clean(r.get("api_key")):
+                    return _clean(r["api_key"])
+        except Exception:   # noqa: BLE001 - 读库失败继续走内置/环境回退
+            pass
+    for m in LLM_DEFAULTS:
+        if m.get("id") == dedicated_id and _clean(m.get("apiKey")):
+            return _clean(m["apiKey"])
+    env_key = _clean(os.environ.get(dedicated_env)) or _clean(os.environ.get("OPC_BAILIAN_TTS_API_KEY"))
+    if env_key:
+        return env_key
+    for m in LLM_DEFAULTS:
+        if m.get("id") in shared_ids and _clean(m.get("apiKey")):
+            return _clean(m["apiKey"])
+    return ""
 
 def _llm_consume(model, tokens):
     """调用成功后把本次 token 用量记到大模型注册表（扣额度/自动熔断）。"""
@@ -235,6 +303,9 @@ def _llm_alias_sync(row, remove=False, old_alias=""):
     """把通道别名 / 端点 / 凭据 / 上下文长度同步到主配置与全部员工 profile。
     采用「只重写 providers 与 model_aliases 两段」的文本级合并，保留其它注释与配置。
     """
+    # 媒体云服务条目只在加工厂读 Key，不写 hermes provider/别名（删除/改协议时仍允许清理旧别名）
+    if str(row.get("protocol") or "") == "media-api" and not remove:
+        return
     alias = str(old_alias or row.get("alias") or "").strip()
     if not alias:
         return

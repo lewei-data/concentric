@@ -157,13 +157,12 @@ function SpecBlock({ spec, current }: { spec?: ChannelSpec; current?: Record<str
 }
 
 function ParamField({
-  spec, value, onChange, onPreview, previewing,
+  spec, value, onChange, onPreview,
 }: {
   spec: ParamSpec;
   value: unknown;
   onChange: (v: unknown) => void;
-  onPreview?: () => void;
-  previewing?: boolean;
+  onPreview?: (el: HTMLElement) => void;
 }) {
   const hint = spec.hint ? <small className="fac-field-hint">{spec.hint}</small> : null;
   const isVoice = spec.key === "voice" || spec.key === "speaker";
@@ -190,8 +189,8 @@ function ParamField({
           <input type="text" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
         )}
         {isVoice && onPreview && (
-          <button type="button" className="fac-btn-mini" onClick={onPreview} disabled={previewing}>
-            {previewing ? "合成中…" : "试听"}
+          <button type="button" className="fac-btn-mini" onClick={(e) => onPreview(e.currentTarget)}>
+            试听全部音色
           </button>
         )}
       </span>
@@ -233,10 +232,14 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
   const [mode, setMode] = useState<"t2i" | "i2i">("t2i");
   const [initImage, setInitImage] = useState<{ name: string; url: string } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState("");
-  const [previewErr, setPreviewErr] = useState("");
-  const [previewing, setPreviewing] = useState(false);
-  const previewObjectUrl = useRef("");
+  // 试听 = 把当前设置框拉长成「音色库」：列出该渠道全部音色，逐个播已录制样本
+  const [voiceLibOpen, setVoiceLibOpen] = useState(false);
+  const [voiceLibChannel, setVoiceLibChannel] = useState("");
+  const [playingVoice, setPlayingVoice] = useState("");
+  const [playNote, setPlayNote] = useState("");
+  const [voiceFilter, setVoiceFilter] = useState("");
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const playObjectUrl = useRef("");
 
   const [viewer, setViewer] = useState<{ item: ViewerItem; anchor: HTMLElement | null } | null>(null);
   const [toast, setToast] = useState("");
@@ -295,7 +298,7 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
   }, [toast]);
 
   useEffect(() => () => {
-    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+    if (playObjectUrl.current) URL.revokeObjectURL(playObjectUrl.current);
   }, []);
 
   useEffect(() => () => {
@@ -386,8 +389,12 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
     setWf((prev) => ({ ...prev, voice: value, params: { ...prev.params, [voice.key]: value } }));
   };
 
-  const closeChannel = () => { setChannelAnchor(null); setChannelName(""); };
-  const closeStep = () => { setStepAnchor(null); setStepIndex(null); setConfirming(false); };
+  const closeChannel = () => {
+    setChannelAnchor(null); setChannelName(""); setVoiceLibOpen(false);
+  };
+  const closeStep = () => {
+    setStepAnchor(null); setStepIndex(null); setConfirming(false); setVoiceLibOpen(false);
+  };
 
   const openChannel = (ch: Channel, el: HTMLElement) => {
     setWf((prev) => {
@@ -413,30 +420,62 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
     closeChannel();
   };
 
-  const preview = async (chName: string, vid: string) => {
-    setPreviewing(true);
-    setPreviewErr("");
-    if (previewObjectUrl.current) {
-      URL.revokeObjectURL(previewObjectUrl.current);
-      previewObjectUrl.current = "";
-    }
-    setPreviewUrl("");
+  const openVoiceLibrary = (chName: string) => {
+    setVoiceLibChannel(chName);
+    setVoiceLibOpen(true);
+    setVoiceFilter("");
+    setPlayNote("");
+  };
+
+  /** 先读已录制/已缓存音源；确实没有才合成一次，之后再点都直接读文件 */
+  const playVoice = async (chName: string, vid: string) => {
+    setPlayingVoice(vid);
+    setPlayNote("读取音源…");
     try {
-      const url = `/api/factory/voice/preview?channel=${encodeURIComponent(chName)}`
-        + `&voice=${encodeURIComponent(vid)}&v=${Date.now()}`;
-      const r = await fetch(url, { credentials: "include" });
+      if (playObjectUrl.current) {
+        URL.revokeObjectURL(playObjectUrl.current);
+        playObjectUrl.current = "";
+      }
+      const q = `channel=${encodeURIComponent(chName)}&voice=${encodeURIComponent(vid)}`;
+      let r = await fetch(`/api/factory/voice/sample?${q}`, { credentials: "include" });
+      let source = r.headers.get("x-voice-source") || "cache";
+      if (r.status === 404) {
+        setPlayNote("没有预录样本，首次合成并缓存…");
+        r = await fetch(`/api/factory/voice/preview?${q}`, { credentials: "include" });
+        source = "synth";
+      }
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.error || `HTTP ${r.status}`);
       }
       const blob = await r.blob();
-      previewObjectUrl.current = URL.createObjectURL(blob);
-      setPreviewUrl(previewObjectUrl.current);
+      playObjectUrl.current = URL.createObjectURL(blob);
+      if (audioRef.current) {
+        audioRef.current.src = playObjectUrl.current;
+        void audioRef.current.play().catch(() => undefined);
+      }
+      setPlayNote(source === "prerecorded" ? "已录制样本 · 无需合成"
+        : source === "cache" ? "缓存样本 · 无需合成"
+          : "首次合成已落盘 · 再点无需合成");
     } catch (e) {
-      setPreviewErr(`试听失败：${(e as Error).message || e}`);
+      setPlayNote(`试听失败：${(e as Error).message || e}`);
     } finally {
-      setPreviewing(false);
+      setPlayingVoice("");
     }
+  };
+
+  const chooseVoice = (ch: Channel, vid: string) => {
+    const spec = voiceSpecOf(ch);
+    if (!spec) return;
+    if (ch.name === channelName) {
+      setForm((prev) => ({ ...prev, [spec.key]: vid }));
+    }
+    setWf((prev) => ({
+      ...prev, channel: ch.name, voice: vid,
+      params: { ...prev.params, [spec.key]: vid },
+    }));
+    setVoiceLibOpen(false);
+    setToast(`已选用 ${labelOf(spec, vid)}`);
   };
 
   const submitWorkflow = async () => {
@@ -648,15 +687,15 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
                     <option key={o} value={o}>{voice.optionLabels?.[o] || o}</option>
                   ))}
                 </select>
-                <button type="button" className="fac-btn-mini" disabled={previewing || !wf.voice}
-                  onClick={() => preview(wf.channel, wf.voice)}>
-                  {previewing ? "合成中…" : "试听"}
+                <button type="button" className="fac-btn-mini"
+                  onClick={(e) => { openVoiceLibrary(wf.channel); e.stopPropagation(); }}>
+                  试听全部音色
                 </button>
               </span>
-              <small className="fac-field-hint">试听用固定短句合成，同一渠道+音色会缓存，不重复计费。</small>
+              <small className="fac-field-hint">
+                拉长弹出框列出全部音色，优先播放已录制样本；没有样本的只合成一次后缓存。
+              </small>
             </label>
-            {previewErr && <p className="fac-set-error">{previewErr}</p>}
-            {previewUrl && <audio className="fac-preview-audio" controls autoPlay src={previewUrl} />}
           </>
         ) : <p className="fac-field-hint">该渠道没有音色参数，直接下一步设置加工参数。</p>}
       </>
@@ -667,11 +706,8 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
           <ParamField key={p.key} spec={p} value={wf.params[p.key]}
             onChange={(v) => setWf((prev) => ({ ...prev, params: { ...prev.params, [p.key]: v } }))}
             onPreview={(p.key === "voice" || p.key === "speaker")
-              ? () => preview(wf.channel, String(wf.params[p.key] ?? "")) : undefined}
-            previewing={previewing} />
+              ? () => openVoiceLibrary(wf.channel) : undefined} />
         ))}
-        {previewErr && <p className="fac-set-error">{previewErr}</p>}
-        {previewUrl && <audio className="fac-preview-audio" controls src={previewUrl} />}
       </>
     ) : <p className="fac-field-hint">请先在第 2 步选定加工渠道。</p>,
     () => (
@@ -716,6 +752,55 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
   ];
 
   const stepFields = isImage ? imageSteps : (isAudio ? audioSteps : genericSteps);
+
+  const libChannel = lineChannels.find((c) => c.name === voiceLibChannel) || null;
+  const libVoiceSpec = voiceSpecOf(libChannel);
+  const libOptions = libVoiceSpec?.options || [];
+  const libFiltered = voiceFilter.trim()
+    ? libOptions.filter((v) => {
+      const hay = `${v} ${labelOf(libVoiceSpec, v)}`.toLowerCase();
+      return hay.includes(voiceFilter.trim().toLowerCase());
+    })
+    : libOptions;
+  const voiceLibraryBody = (
+    <>
+      <div className="fac-voice-lib-head">
+        <b>{libChannel?.label || "音色库"}</b>
+        <button type="button" className="fac-btn-mini" onClick={() => setVoiceLibOpen(false)}>
+          ← 返回参数设置
+        </button>
+      </div>
+      <p className="fac-field-hint">
+        共 {libOptions.length} 个音色 · 已录制的直接播放；没有样本的只合成一次并缓存，之后再点不再合成。
+      </p>
+      <div className="fac-voice-search">
+        <input type="text" value={voiceFilter} placeholder="搜音色名 / 特质 / voice 参数，如：温暖、旗舰、longan"
+          onChange={(e) => setVoiceFilter(e.target.value)} />
+        <span>显示 {libFiltered.length} / {libOptions.length}</span>
+      </div>
+      <div className="fac-voice-list">
+        {libFiltered.map((v) => (
+          <div className={`fac-voice-row ${v === wf.voice ? "is-selected" : ""}`} key={v}>
+            <button type="button" className="fac-voice-play" disabled={playingVoice === v}
+              onClick={() => { void playVoice(voiceLibChannel, v); }}>
+              {playingVoice === v ? "…" : "▶"}
+            </button>
+            <span className="fac-voice-info">
+              <b>{labelOf(libVoiceSpec, v)}</b>
+              <code>{v}</code>
+            </span>
+            <button type="button" className="fac-btn-mini"
+              onClick={() => { if (libChannel) chooseVoice(libChannel, v); }}>
+              选用
+            </button>
+          </div>
+        ))}
+        {libFiltered.length === 0 && <p className="fac-field-hint">没有匹配的音色，换个关键词试试。</p>}
+      </div>
+      {playNote && <p className="fac-voice-note">{playNote}</p>}
+      <audio ref={audioRef} className="fac-preview-audio" controls />
+    </>
+  );
 
   return (
     <div className="fac-line">
@@ -927,61 +1012,67 @@ export function FactoryLinePanel({ line, products }: { line: FactoryLine; produc
 
       {formChannel && channelAnchor && (
         <AnchoredPanel anchor={channelAnchor} onClose={closeChannel}
-          className="fac-set-panel" ariaLabel={`${formChannel.label} 参数设置`}
+          className={`fac-set-panel ${voiceLibOpen ? "fac-voice-lib" : ""}`}
+          ariaLabel={`${formChannel.label} 参数设置`}
           anchorLabel={`渠道设置 · ${formChannel.label}`}>
-          <div className="fac-set-title">
-            <b>{formChannel.label}</b>
-            <span className={formChannel.available ? "fac-set-ok" : "fac-set-off"}>
-              {formChannel.available ? "可用" : formChannel.reason}
-            </span>
-          </div>
-          <SettingBody onSaved={saveChannel}>
-            {(formChannel.spec?.presets || []).length > 0 && (
-              <div className="fac-field">
-                <span className="fac-field-label">画质档位（一键填入安全参数）</span>
-                <span className="fac-preset-list">
-                  {formChannel.spec!.presets!.map((p) => (
-                    <button key={p.name} type="button" className="fac-btn-mini"
-                      onClick={() => setForm((prev) => ({ ...prev, ...p.values }))}>
-                      {p.name}
-                    </button>
-                  ))}
+          {voiceLibOpen ? voiceLibraryBody : (
+            <>
+              <div className="fac-set-title">
+                <b>{formChannel.label}</b>
+                <span className={formChannel.available ? "fac-set-ok" : "fac-set-off"}>
+                  {formChannel.available ? "可用" : formChannel.reason}
                 </span>
               </div>
-            )}
-            {formChannel.params.map((p) => (
-              <ParamField key={p.key} spec={p} value={form[p.key]}
-                onChange={(v) => setForm((prev) => ({ ...prev, [p.key]: v }))}
-                onPreview={(p.key === "voice" || p.key === "speaker")
-                  ? () => preview(formChannel.name, String(form[p.key] ?? "")) : undefined}
-                previewing={previewing} />
-            ))}
-            <SpecBlock spec={formChannel.spec} current={form} />
-            {isImage && (formChannel.modes || []).includes("i2i") && (
-              <p className="fac-field-hint">
-                本渠道支持图生图：在标准化流程第 2 步切「图生图」并上传参考图，参数会沿用这里保存的设置。
-              </p>
-            )}
-            {previewErr && <p className="fac-set-error">{previewErr}</p>}
-            {previewUrl && <audio className="fac-preview-audio" controls src={previewUrl} />}
-          </SettingBody>
+              <SettingBody onSaved={saveChannel}>
+                {(formChannel.spec?.presets || []).length > 0 && (
+                  <div className="fac-field">
+                    <span className="fac-field-label">画质档位（一键填入安全参数）</span>
+                    <span className="fac-preset-list">
+                      {formChannel.spec!.presets!.map((p) => (
+                        <button key={p.name} type="button" className="fac-btn-mini"
+                          onClick={() => setForm((prev) => ({ ...prev, ...p.values }))}>
+                          {p.name}
+                        </button>
+                      ))}
+                    </span>
+                  </div>
+                )}
+                {formChannel.params.map((p) => (
+                  <ParamField key={p.key} spec={p} value={form[p.key]}
+                    onChange={(v) => setForm((prev) => ({ ...prev, [p.key]: v }))}
+                    onPreview={(p.key === "voice" || p.key === "speaker")
+                      ? () => openVoiceLibrary(formChannel.name) : undefined} />
+                ))}
+                <SpecBlock spec={formChannel.spec} current={form} />
+                {isImage && (formChannel.modes || []).includes("i2i") && (
+                  <p className="fac-field-hint">
+                    本渠道支持图生图：在标准化流程第 2 步切「图生图」并上传参考图，参数会沿用这里保存的设置。
+                  </p>
+                )}
+              </SettingBody>
+            </>
+          )}
         </AnchoredPanel>
       )}
 
       {stepIndex !== null && stepAnchor && (
         <AnchoredPanel anchor={stepAnchor} onClose={closeStep}
-          className="fac-set-panel fac-step-panel"
+          className={`fac-set-panel fac-step-panel ${voiceLibOpen ? "fac-voice-lib" : ""}`}
           ariaLabel={`流程步骤 ${stepIndex + 1}：${line.steps[stepIndex].name}`}
           anchorLabel={`流程 ${stepIndex + 1} · ${line.steps[stepIndex].name}`}>
-          <div className="fac-set-title">
-            <b>{stepIndex + 1}. {line.steps[stepIndex].name}</b>
-            <span className="muted">{line.steps[stepIndex].desc}</span>
-          </div>
-          <div className="fac-set-inner">{stepFields[stepIndex](activeChannel)}</div>
-          {stepIndex < line.steps.length - 1 && (
-            <div className="fac-set-foot">
-              <button type="button" className="btn btn-primary fac-btn-mini" onClick={closeStep}>保存并关闭</button>
-            </div>
+          {voiceLibOpen ? voiceLibraryBody : (
+            <>
+              <div className="fac-set-title">
+                <b>{stepIndex + 1}. {line.steps[stepIndex].name}</b>
+                <span className="muted">{line.steps[stepIndex].desc}</span>
+              </div>
+              <div className="fac-set-inner">{stepFields[stepIndex](activeChannel)}</div>
+              {stepIndex < line.steps.length - 1 && (
+                <div className="fac-set-foot">
+                  <button type="button" className="btn btn-primary fac-btn-mini" onClick={closeStep}>保存并关闭</button>
+                </div>
+              )}
+            </>
           )}
         </AnchoredPanel>
       )}

@@ -4268,6 +4268,42 @@ button.fac-flow-item.is-active { border-color: var(--accent); background: var(--
   border: 1px solid var(--border); border-radius: 6px; background: var(--surface-soft);
 }
 .fac-preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 试听 = 把设置框拉长成音色库：全部音色逐个试听已录制样本 */
+.fac-set-panel.fac-voice-lib { width: min(680px, calc(100vw - 24px)); }
+.fac-voice-lib > .fac-field-hint { margin: 8px 14px 0; }
+.fac-voice-lib-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px dashed var(--border-strong); font-size: 13px;
+}
+.fac-voice-search { display: flex; align-items: center; gap: 8px; padding: 0 14px 8px; }
+.fac-voice-search input {
+  flex: 1 1 auto; min-width: 0; padding: 6px 9px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px;
+}
+.fac-voice-search span { flex: 0 0 auto; font-size: 11px; color: var(--muted); }
+.fac-voice-list {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 14px;
+  max-height: min(50vh, 480px); overflow-y: auto;
+}
+.fac-voice-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 9px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+}
+.fac-voice-row.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+.fac-voice-play {
+  flex: 0 0 auto; width: 36px; height: 28px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface-soft); color: var(--accent-deep);
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.fac-voice-play:hover { border-color: var(--accent); }
+.fac-voice-play:disabled { opacity: 0.5; cursor: wait; }
+.fac-voice-info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fac-voice-info b { font-size: 12px; font-weight: 600; }
+.fac-voice-info code { font-size: 10px; color: var(--muted); word-break: break-all; }
+.fac-voice-note { margin: 0; padding: 8px 14px 0; font-size: 11px; color: var(--accent-deep); }
+.fac-voice-lib .fac-preview-audio { width: calc(100% - 28px); margin: 8px 14px 12px; }
+
 .fac-set-summary {
   display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
   background: var(--surface-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);

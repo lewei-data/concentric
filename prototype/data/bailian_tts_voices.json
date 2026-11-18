@@ -1,0 +1,6000 @@
+{
+ "model": "qwen-audio-3.0-tts-plus",
+ "updated": "2026-11-18",
+ "source": "阿里云百炼官方 qwen-audio-3.0-tts-plus基础音色.xlsx；系统音色经生产 Key 实测校验",
+ "note": "原 6 个音色里只有 longanhuan_v3.6 在 plus 模型可用，其余 5 个属 flash 系列，实测报 411",
+ "system": [
+  {
+   "id": "longanhuan_v3.6",
+   "name": "龙安欢",
+   "label": "龙安欢 · 欢脱元气女声（中/英，官方精品音色，Key 实测可用）"
+  },
+  {
+   "id": "longanlingxin",
+   "name": "龙安灵心",
+   "label": "龙安灵心 · 知心温暖音（旗舰，25岁女，中/英，Key 实测可用）"
+  },
+  {
+   "id": "longanlufeng",
+   "name": "龙安鲁风",
+   "label": "龙安鲁风 · 明亮开朗音（旗舰，25岁男，中/英，Key 实测可用）"
+  },
+  {
+   "id": "longanlingxi",
+   "name": "龙安灵希",
+   "label": "龙安灵希 · 可爱甜美音（25岁女，中/英，Key 实测可用）"
+  }
+ ],
+ "voices": [
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcanzhuyue",
+   "name": "龙璨竹月",
+   "gender": "女",
+   "age": "26",
+   "trait": "平实质朴音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙璨竹月 · 平实质朴音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longrongzhihe",
+   "name": "龙蓉芷荷",
+   "gender": "女",
+   "age": "24",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蓉芷荷 · 电台质感音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanghongmo",
+   "name": "龙朗虹沫",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙朗虹沫 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengyueyao",
+   "name": "龙风月瑶",
+   "gender": "女",
+   "age": "28",
+   "trait": "直爽利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙风月瑶 · 直爽利落音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaoyuyue",
+   "name": "龙潇煜月",
+   "gender": "女",
+   "age": "25",
+   "trait": "惊奇讶异音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙潇煜月 · 惊奇讶异音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongxuxian",
+   "name": "龙彤旭弦",
+   "gender": "女",
+   "age": "24",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙彤旭弦 · 活泼灵动音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhiqingxi",
+   "name": "龙芷晴曦",
+   "gender": "女",
+   "age": "25",
+   "trait": "紧张不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙芷晴曦 · 紧张不安音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanbaixian",
+   "name": "龙嵐柏弦",
+   "gender": "女",
+   "age": "17",
+   "trait": "惊悚恐怖音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙嵐柏弦 · 惊悚恐怖音（女，17岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingsongliu",
+   "name": "龙莹松柳",
+   "gender": "男",
+   "age": "32",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莹松柳 · 爽朗利落音（男，32岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhengyaohe",
+   "name": "龙筝瑶鹤",
+   "gender": "男",
+   "age": "38",
+   "trait": "亢奋激昂音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙筝瑶鹤 · 亢奋激昂音（男，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanyufu",
+   "name": "龙岚煜芙",
+   "gender": "男",
+   "age": "22",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岚煜芙 · 温柔亲和音（男，22岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longnixiulian",
+   "name": "龙霓岫涟",
+   "gender": "男",
+   "age": "25",
+   "trait": "内敛含蓄音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霓岫涟 · 内敛含蓄音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxilingxuan",
+   "name": "龙溪凌璇",
+   "gender": "男",
+   "age": "28",
+   "trait": "不满犀利音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙溪凌璇 · 不满犀利音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengtaohui",
+   "name": "龙澄桃晦",
+   "gender": "男",
+   "age": "23",
+   "trait": "不满犀利音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄桃晦 · 不满犀利音（男，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxinruixuan",
+   "name": "龙昕蕊璇",
+   "gender": "男",
+   "age": "24",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙昕蕊璇 · 自然亲和音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqinheying",
+   "name": "龙琴鹤莹",
+   "gender": "男",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙琴鹤莹 · 温柔亲和音（男，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianshuohui",
+   "name": "龙弦朔晖",
+   "gender": "男",
+   "age": "68",
+   "trait": "激昂朗诵音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙弦朔晖 · 激昂朗诵音（男，68岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longliannirong",
+   "name": "龙涟霓蓉",
+   "gender": "男",
+   "age": "42",
+   "trait": "平稳陈述音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙涟霓蓉 · 平稳陈述音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longheweican",
+   "name": "龙鹤薇璨",
+   "gender": "男",
+   "age": "42",
+   "trait": "平稳陈述音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鹤薇璨 · 平稳陈述音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhishuoke",
+   "name": "龙芷朔珂",
+   "gender": "男",
+   "age": "45",
+   "trait": "平稳陈述音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙芷朔珂 · 平稳陈述音（男，45岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longruifengyu",
+   "name": "龙蕊风瑜",
+   "gender": "男",
+   "age": "42",
+   "trait": "平稳陈述音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蕊风瑜 · 平稳陈述音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluliuche",
+   "name": "龙露柳澈",
+   "gender": "男",
+   "age": "34",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙露柳澈 · 标准播音音（男，34岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longliuxulan",
+   "name": "龙柳旭澜",
+   "gender": "女",
+   "age": "25",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙柳旭澜 · 标准播音音（女，25岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjufuhe",
+   "name": "龙菊芙荷",
+   "gender": "女",
+   "age": "7",
+   "trait": "呆萌软糯音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙菊芙荷 · 呆萌软糯音（女，7岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiamuyan",
+   "name": "龙霞暮燕",
+   "gender": "男",
+   "age": "26",
+   "trait": "专业解说音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霞暮燕 · 专业解说音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuzhihe",
+   "name": "龙羽芷荷",
+   "gender": "男",
+   "age": "42",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙羽芷荷 · 客观冷静音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaolanshuang",
+   "name": "龙瑶岚霜",
+   "gender": "男",
+   "age": "27",
+   "trait": "鼓舞激励音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶岚霜 · 鼓舞激励音（男，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongyibai",
+   "name": "龙松熠柏",
+   "gender": "男",
+   "age": "27",
+   "trait": "鼓舞激励音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松熠柏 · 鼓舞激励音（男，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanhuilu",
+   "name": "龙燕辉露",
+   "gender": "男",
+   "age": "27",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙燕辉露 · 客观冷静音（男，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuifengyi",
+   "name": "龙辉峰漪",
+   "gender": "男",
+   "age": "26",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙辉峰漪 · 客观冷静音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuojizhu",
+   "name": "龙朔霁竹",
+   "gender": "男",
+   "age": "26",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙朔霁竹 · 标准播音音（男，26岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuiyanzhu",
+   "name": "龙晖妍竹",
+   "gender": "男",
+   "age": "26",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙晖妍竹 · 标准播音音（男，26岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaixiuyun",
+   "name": "龙柏岫云",
+   "gender": "男",
+   "age": "25",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙柏岫云 · 标准播音音（男，25岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaolanshan",
+   "name": "龙潇嵐杉",
+   "gender": "男",
+   "age": "28",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙潇嵐杉 · 标准播音音（男，28岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyilincan",
+   "name": "龙熠琳璨",
+   "gender": "男",
+   "age": "24",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙熠琳璨 · 标准播音音（男，24岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongyilan",
+   "name": "龙松翼嵐",
+   "gender": "男",
+   "age": "26",
+   "trait": "激动振奋音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松翼嵐 · 激动振奋音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuikeyuan",
+   "name": "龙辉珂渊",
+   "gender": "女",
+   "age": "28",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙辉珂渊 · 标准播音音（女，28岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyujunxuan",
+   "name": "龙羽珺萱",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙羽珺萱 · 温柔坚韧音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchexini",
+   "name": "龙澈溪霓",
+   "gender": "女",
+   "age": "23",
+   "trait": "科普讲解音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澈溪霓 · 科普讲解音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanlianlan",
+   "name": "龙嵐涟兰",
+   "gender": "女",
+   "age": "23",
+   "trait": "直播带货音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙嵐涟兰 · 直播带货音（女，23岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingtongfu",
+   "name": "龙凌桐芙",
+   "gender": "女",
+   "age": "28",
+   "trait": "直播带货音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙凌桐芙 · 直播带货音（女，28岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longliumolan",
+   "name": "龙柳沫岚",
+   "gender": "女",
+   "age": "24",
+   "trait": "直播带货音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙柳沫岚 · 直播带货音（女，24岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongjunfeng",
+   "name": "龙彤珺凤",
+   "gender": "女",
+   "age": "25",
+   "trait": "轻松闲聊音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙彤珺凤 · 轻松闲聊音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquetingqing",
+   "name": "龙鹊汀晴",
+   "gender": "女",
+   "age": "24",
+   "trait": "直播带货音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙鹊汀晴 · 直播带货音（女，24岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhiluyan",
+   "name": "龙芷露妍",
+   "gender": "女",
+   "age": "7",
+   "trait": "直播带货音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙芷露妍 · 直播带货音（女，7岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxizhiyun",
+   "name": "龙曦芷云",
+   "gender": "女",
+   "age": "25",
+   "trait": "直播带货音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙曦芷云 · 直播带货音（女，25岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longruiloufeng",
+   "name": "龙蕊露风",
+   "gender": "女",
+   "age": "23",
+   "trait": "轻松闲聊音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蕊露风 · 轻松闲聊音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquanxiangxuan",
+   "name": "龙泉湘萱",
+   "gender": "女",
+   "age": "25",
+   "trait": "直播带货音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙泉湘萱 · 直播带货音（女，25岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longronglinglin",
+   "name": "龙蓉岭麟",
+   "gender": "男",
+   "age": "24",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蓉岭麟 · 活泼灵动音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqinxinque",
+   "name": "龙琴昕雀",
+   "gender": "男",
+   "age": "26",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙琴昕雀 · 客观冷静音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinfengni",
+   "name": "龙麟峰霓",
+   "gender": "男",
+   "age": "38",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙麟峰霓 · 客观冷静音（男，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyufengni",
+   "name": "龙雨凤霓",
+   "gender": "男",
+   "age": "25",
+   "trait": "愤懑不平音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雨凤霓 · 愤懑不平音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longrongtaolian",
+   "name": "龙蓉桃涟",
+   "gender": "男",
+   "age": "34",
+   "trait": "冷静沉稳音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙蓉桃涟 · 冷静沉稳音（男，34岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanfengying",
+   "name": "龙燕枫莹",
+   "gender": "男",
+   "age": "24",
+   "trait": "冷静沉稳音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙燕枫莹 · 冷静沉稳音（男，24岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquanqueling",
+   "name": "龙泉鹊凌",
+   "gender": "女",
+   "age": "23",
+   "trait": "娇嗲甜腻音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙泉鹊凌 · 娇嗲甜腻音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxumoxiao",
+   "name": "龙旭沫晓",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙旭沫晓 · 温柔细腻音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtonglinyuan",
+   "name": "龙桐麟渊",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙桐麟渊 · 温柔细腻音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengyutong",
+   "name": "龙凤雨桐",
+   "gender": "女",
+   "age": "27",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙凤雨桐 · 标准播音音（女，27岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhongfuxiu",
+   "name": "龙鸿芙岫",
+   "gender": "女",
+   "age": "42",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙鸿芙岫 · 标准播音音（女，42岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiannixiao",
+   "name": "龙弦霓霄",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙弦霓霄 · 温柔细腻音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongtaoxuan",
+   "name": "龙松桃璇",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙松桃璇 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmuhongmo",
+   "name": "龙暮虹沫",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙暮虹沫 · 温柔细腻音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyushuangmu",
+   "name": "龙雨霜暮",
+   "gender": "女",
+   "age": "28",
+   "trait": "直播讲解音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙雨霜暮 · 直播讲解音（女，28岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxiangxi",
+   "name": "龙雨湘溪",
+   "gender": "女",
+   "age": "28",
+   "trait": "直播讲解音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙雨湘溪 · 直播讲解音（女，28岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluhuilang",
+   "name": "龙露辉朗",
+   "gender": "女",
+   "age": "25",
+   "trait": "直播讲解音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙露辉朗 · 直播讲解音（女，25岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengmeiche",
+   "name": "龙凤梅澈",
+   "gender": "女",
+   "age": "25",
+   "trait": "直播讲解音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙凤梅澈 · 直播讲解音（女，25岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuoxidie",
+   "name": "龙烁溪蝶",
+   "gender": "女",
+   "age": "26",
+   "trait": "直播讲解音",
+   "scene": "电商直播",
+   "language": "中文",
+   "label": "龙烁溪蝶 · 直播讲解音（女，26岁，中文，电商直播）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfuyingxuan",
+   "name": "龙芙樱暄",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙芙樱暄 · 温柔细腻音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanfuluan",
+   "name": "龙萱芙鸾",
+   "gender": "男",
+   "age": "28",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙萱芙鸾 · 温柔细腻音（男，28岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiuyulan",
+   "name": "龙岫瑜岚",
+   "gender": "男",
+   "age": "26",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岫瑜岚 · 温婉成熟音（男，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiushuoche",
+   "name": "龙岫烁澈",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岫烁澈 · 温柔坚韧音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianliuxiao",
+   "name": "龙涟柳潇",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙涟柳潇 · 温柔坚韧音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanlurong",
+   "name": "龙岚露蓉",
+   "gender": "女",
+   "age": "25",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岚露蓉 · 客观冷静音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaiquemo",
+   "name": "龙柏鹊沫",
+   "gender": "女",
+   "age": "23",
+   "trait": "委屈哀怨音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙柏鹊沫 · 委屈哀怨音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanxuyi",
+   "name": "龙焱旭漪",
+   "gender": "女",
+   "age": "24",
+   "trait": "急躁焦灼音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙焱旭漪 · 急躁焦灼音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxinzhenghe",
+   "name": "龙昕筝荷",
+   "gender": "女",
+   "age": "42",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙昕筝荷 · 温柔坚韧音（女，42岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhengxialing",
+   "name": "龙筝霞凌",
+   "gender": "女",
+   "age": "25",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙筝霞凌 · 客观冷静音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingshuocan",
+   "name": "龙樱朔璨",
+   "gender": "男",
+   "age": "25",
+   "trait": "温稳沉着音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙樱朔璨 · 温稳沉着音（男，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinghuiyan",
+   "name": "龙凌晦燕",
+   "gender": "男",
+   "age": "36",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙凌晦燕 · 客观冷静音（男，36岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhuquanwang",
+   "name": "龙竹泉望",
+   "gender": "女",
+   "age": "14",
+   "trait": "撒娇甜蜜音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙竹泉望 · 撒娇甜蜜音（女，14岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyimuling",
+   "name": "龙翼暮凌",
+   "gender": "男",
+   "age": "38",
+   "trait": "沉稳有力音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙翼暮凌 · 沉稳有力音（男，38岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanxuejun",
+   "name": "龙兰雪珺",
+   "gender": "女",
+   "age": "10",
+   "trait": "温柔活泼音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙兰雪珺 · 温柔活泼音（女，10岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingyingshuo",
+   "name": "龙翎樱朔",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙翎樱朔 · 温柔亲和音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingxiaolin",
+   "name": "龙翎霄麟",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙翎霄麟 · 温柔亲和音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanhongyue",
+   "name": "龙杉虹玥",
+   "gender": "女",
+   "age": "28",
+   "trait": "惊奇讶异音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙杉虹玥 · 惊奇讶异音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianzhenghe",
+   "name": "龙弦筝鹤",
+   "gender": "女",
+   "age": "25",
+   "trait": "激情澎湃音",
+   "scene": "体育解说",
+   "language": "中文",
+   "label": "龙弦筝鹤 · 激情澎湃音（女，25岁，中文，体育解说）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingzhixing",
+   "name": "龙岭芷杏",
+   "gender": "男",
+   "age": "68",
+   "trait": "浑厚沉稳音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙岭芷杏 · 浑厚沉稳音（男，68岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanjunrui",
+   "name": "龙岚珺蕊",
+   "gender": "男",
+   "age": "43",
+   "trait": "浑厚沉稳音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙岚珺蕊 · 浑厚沉稳音（男，43岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxintaofeng",
+   "name": "龙昕桃凤",
+   "gender": "男",
+   "age": "58",
+   "trait": "浑厚沉稳音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙昕桃凤 · 浑厚沉稳音（男，58岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluyinglan",
+   "name": "龙露莹岚",
+   "gender": "男",
+   "age": "45",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙露莹岚 · 惊恐不安音（男，45岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanglianyue",
+   "name": "龙朗涟玥",
+   "gender": "男",
+   "age": "55",
+   "trait": "浑厚沉稳音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙朗涟玥 · 浑厚沉稳音（男，55岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfushanmu",
+   "name": "龙芙杉暮",
+   "gender": "男",
+   "age": "56",
+   "trait": "浑厚沉稳音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙芙杉暮 · 浑厚沉稳音（男，56岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqueyuxiang",
+   "name": "龙雀煜湘",
+   "gender": "男",
+   "age": "24",
+   "trait": "撒娇甜蜜音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雀煜湘 · 撒娇甜蜜音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengtaolian",
+   "name": "龙澄桃莲",
+   "gender": "男",
+   "age": "70",
+   "trait": "灵动戏腔音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄桃莲 · 灵动戏腔音（男，70岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuntinglian",
+   "name": "龙云汀涟",
+   "gender": "女",
+   "age": "24",
+   "trait": "撒娇甜蜜音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙云汀涟 · 撒娇甜蜜音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuquelu",
+   "name": "龙羽雀露",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙羽雀露 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjilinxiao",
+   "name": "龙霁琳潇",
+   "gender": "女",
+   "age": "23",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙霁琳潇 · 温柔亲和音（女，23岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanchelin",
+   "name": "龙焱澈琳",
+   "gender": "男",
+   "age": "7",
+   "trait": "激动振奋音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙焱澈琳 · 激动振奋音（男，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinjinying",
+   "name": "龙琳瑾樱",
+   "gender": "女",
+   "age": "38",
+   "trait": "耐心温和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙琳瑾樱 · 耐心温和音（女，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaolanxuan",
+   "name": "龙瑶岚萱",
+   "gender": "男",
+   "age": "25",
+   "trait": "傲娇俏皮音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶岚萱 · 傲娇俏皮音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhixingju",
+   "name": "龙芷杏菊",
+   "gender": "女",
+   "age": "27",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙芷杏菊 · 智能助手音（女，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longronglingyan",
+   "name": "龙蓉岭焱",
+   "gender": "女",
+   "age": "26",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蓉岭焱 · 智能助手音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiudieyi",
+   "name": "龙岫蝶熠",
+   "gender": "女",
+   "age": "25",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岫蝶熠 · 智能助手音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongxianhong",
+   "name": "龙彤弦鸿",
+   "gender": "男",
+   "age": "26",
+   "trait": "二次元活力音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙彤弦鸿 · 二次元活力音（男，26岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longrongjuxu",
+   "name": "龙蓉菊旭",
+   "gender": "男",
+   "age": "25",
+   "trait": "二次元活力音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙蓉菊旭 · 二次元活力音（男，25岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanzhengyan",
+   "name": "龙岚筝燕",
+   "gender": "男",
+   "age": "24",
+   "trait": "二次元活力音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙岚筝燕 · 二次元活力音（男，24岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiantingfeng",
+   "name": "龙弦汀峰",
+   "gender": "男",
+   "age": "25",
+   "trait": "激动振奋音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙弦汀峰 · 激动振奋音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmeixiuhe",
+   "name": "龙梅岫荷",
+   "gender": "男",
+   "age": "21",
+   "trait": "二次元活力音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙梅岫荷 · 二次元活力音（男，21岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanyixiao",
+   "name": "龙暄漪霄",
+   "gender": "男",
+   "age": "7",
+   "trait": "二次元活力音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙暄漪霄 · 二次元活力音（男，7岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanqueyan",
+   "name": "龙岚鹊焱",
+   "gender": "女",
+   "age": "15",
+   "trait": "动漫风格音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岚鹊焱 · 动漫风格音（女，15岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtingyuanyi",
+   "name": "龙汀渊熠",
+   "gender": "女",
+   "age": "23",
+   "trait": "委屈哀怨音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙汀渊熠 · 委屈哀怨音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhesongrui",
+   "name": "龙荷松蕊",
+   "gender": "男",
+   "age": "44",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙荷松蕊 · 叙事沉浸音（男，44岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsonghuiliu",
+   "name": "龙松晦柳",
+   "gender": "男",
+   "age": "25",
+   "trait": "不满犀利音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松晦柳 · 不满犀利音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinyuemo",
+   "name": "龙麟玥沫",
+   "gender": "男",
+   "age": "28",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙麟玥沫 · 客观冷静音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuyingdie",
+   "name": "龙雨樱蝶",
+   "gender": "男",
+   "age": "28",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雨樱蝶 · 智能助手音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianxinglan",
+   "name": "龙弦星嵐",
+   "gender": "女",
+   "age": "28",
+   "trait": "自然聊天音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙弦星嵐 · 自然聊天音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchuanyunling",
+   "name": "龙川云翎",
+   "gender": "女",
+   "age": "8",
+   "trait": "搞怪逗趣音",
+   "scene": "娱乐搞笑",
+   "language": "中文",
+   "label": "龙川云翎 · 搞怪逗趣音（女，8岁，中文，娱乐搞笑）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longdielianxia",
+   "name": "龙蝶涟霞",
+   "gender": "女",
+   "age": "26",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蝶涟霞 · 智能助手音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuanzhiwei",
+   "name": "龙渊芷薇",
+   "gender": "男",
+   "age": "22",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙渊芷薇 · 智能助手音（男，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuehongyan",
+   "name": "龙月鸿妍",
+   "gender": "男",
+   "age": "7",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙月鸿妍 · 客观冷静音（男，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjitongfeng",
+   "name": "龙霁桐峰",
+   "gender": "男",
+   "age": "10",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霁桐峰 · 惊恐不安音（男，10岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluanxiche",
+   "name": "龙鸾曦澈",
+   "gender": "男",
+   "age": "8",
+   "trait": "不屑倨傲音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鸾曦澈 · 不屑倨傲音（男，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxihuiyan",
+   "name": "龙溪晖燕",
+   "gender": "男",
+   "age": "10",
+   "trait": "自信笃定音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙溪晖燕 · 自信笃定音（男，10岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengshuangfu",
+   "name": "龙枫霜芙",
+   "gender": "男",
+   "age": "27",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙枫霜芙 · 客观冷静音（男，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longliuxiuke",
+   "name": "龙柳岫珂",
+   "gender": "男",
+   "age": "8",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙柳岫珂 · 客观冷静音（男，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyinglandie",
+   "name": "龙莹岚蝶",
+   "gender": "男",
+   "age": "7",
+   "trait": "撒娇甜蜜音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莹岚蝶 · 撒娇甜蜜音（男，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingxingxia",
+   "name": "龙岭星霞",
+   "gender": "女",
+   "age": "23",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岭星霞 · 客观冷静音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanzhixu",
+   "name": "龙岚芷旭",
+   "gender": "女",
+   "age": "8",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岚芷旭 · 自然亲和音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanyuerong",
+   "name": "龙岚月蓉",
+   "gender": "女",
+   "age": "9",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岚月蓉 · 客观冷静音（女，9岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuosongxuan",
+   "name": "龙烁松萱",
+   "gender": "女",
+   "age": "7",
+   "trait": "欢乐明朗音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙烁松萱 · 欢乐明朗音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanzhuche",
+   "name": "龙暄竹澈",
+   "gender": "女",
+   "age": "7",
+   "trait": "欢乐明朗音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙暄竹澈 · 欢乐明朗音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianlianyi",
+   "name": "龙弦莲翼",
+   "gender": "女",
+   "age": "7",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙弦莲翼 · 惊恐不安音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaijunzheng",
+   "name": "龙柏珺筝",
+   "gender": "女",
+   "age": "7",
+   "trait": "伤感低回音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙柏珺筝 · 伤感低回音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongxingquan",
+   "name": "龙彤杏泉",
+   "gender": "男",
+   "age": "42",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙彤杏泉 · 叙事沉浸音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyirongzheng",
+   "name": "龙熠蓉筝",
+   "gender": "男",
+   "age": "8",
+   "trait": "动漫风格音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙熠蓉筝 · 动漫风格音（男，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuohuimei",
+   "name": "龙朔辉梅",
+   "gender": "男",
+   "age": "70",
+   "trait": "轻松闲聊音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙朔辉梅 · 轻松闲聊音（男，70岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluxiaohui",
+   "name": "龙露潇晖",
+   "gender": "男",
+   "age": "35",
+   "trait": "亲切客服音",
+   "scene": "智能客服",
+   "language": "中文",
+   "label": "龙露潇晖 · 亲切客服音（男，35岁，中文，智能客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanniting",
+   "name": "龙杉霓汀",
+   "gender": "男",
+   "age": "28",
+   "trait": "亲切客服音",
+   "scene": "智能客服",
+   "language": "中文",
+   "label": "龙杉霓汀 · 亲切客服音（男，28岁，中文，智能客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longnixiwei",
+   "name": "龙霓曦薇",
+   "gender": "男",
+   "age": "38",
+   "trait": "新闻联播音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霓曦薇 · 新闻联播音（男，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcheyanxuan",
+   "name": "龙澈焱暄",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙澈焱暄 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuelanke",
+   "name": "龙月澜珂",
+   "gender": "女",
+   "age": "24",
+   "trait": "期待向往音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙月澜珂 · 期待向往音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longliulingfu",
+   "name": "龙柳翎芙",
+   "gender": "女",
+   "age": "27",
+   "trait": "忧郁低回音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙柳翎芙 · 忧郁低回音（女，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuitongyuan",
+   "name": "龙晖彤渊",
+   "gender": "女",
+   "age": "8",
+   "trait": "娇嗲甜腻音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晖彤渊 · 娇嗲甜腻音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaoxuanzhi",
+   "name": "龙瑶璇芷",
+   "gender": "女",
+   "age": "24",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶璇芷 · 客观冷静音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunxinmu",
+   "name": "龙珺昕暮",
+   "gender": "女",
+   "age": "25",
+   "trait": "灵动好奇音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珺昕暮 · 灵动好奇音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingyilan",
+   "name": "龙凌漪岚",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙凌漪岚 · 温柔坚韧音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingxianxiu",
+   "name": "龙翎弦岫",
+   "gender": "女",
+   "age": "24",
+   "trait": "灵动好奇音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙翎弦岫 · 灵动好奇音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianruimei",
+   "name": "龙莲蕊梅",
+   "gender": "女",
+   "age": "24",
+   "trait": "循循善诱音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莲蕊梅 · 循循善诱音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyumeixia",
+   "name": "龙瑜梅霞",
+   "gender": "女",
+   "age": "24",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑜梅霞 · 叙事沉浸音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtaoliuhong",
+   "name": "龙桃柳虹",
+   "gender": "女",
+   "age": "24",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙桃柳虹 · 活泼灵动音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjixilan",
+   "name": "龙霁曦嵐",
+   "gender": "女",
+   "age": "25",
+   "trait": "铿锵有力音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霁曦嵐 · 铿锵有力音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqintaoxuan",
+   "name": "龙琴桃璇",
+   "gender": "女",
+   "age": "26",
+   "trait": "激动振奋音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙琴桃璇 · 激动振奋音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhengxiaocheng",
+   "name": "龙筝晓澄",
+   "gender": "女",
+   "age": "27",
+   "trait": "铿锵有力音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙筝晓澄 · 铿锵有力音（女，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchuanqueyan",
+   "name": "龙川鹊妍",
+   "gender": "女",
+   "age": "27",
+   "trait": "铿锵有力音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙川鹊妍 · 铿锵有力音（女，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianchuanzhu",
+   "name": "龙莲川竹",
+   "gender": "男",
+   "age": "42",
+   "trait": "忧郁深沉音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莲川竹 · 忧郁深沉音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengyuanquan",
+   "name": "龙凤渊泉",
+   "gender": "女",
+   "age": "24",
+   "trait": "甜萌可爱音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙凤渊泉 · 甜萌可爱音（女，24岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongchelin",
+   "name": "龙松澈琳",
+   "gender": "男",
+   "age": "40",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松澈琳 · 客观冷静音（男，40岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmeixiaolan",
+   "name": "龙梅霄嵐",
+   "gender": "男",
+   "age": "38",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙梅霄嵐 · 爽朗利落音（男，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtingheqing",
+   "name": "龙汀鹤晴",
+   "gender": "男",
+   "age": "25",
+   "trait": "不屑倨傲音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙汀鹤晴 · 不屑倨傲音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiyanjun",
+   "name": "龙曦燕珺",
+   "gender": "男",
+   "age": "27",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙曦燕珺 · 客观冷静音（男，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanhongqin",
+   "name": "龙焱虹琴",
+   "gender": "男",
+   "age": "28",
+   "trait": "犀利刻薄音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙焱虹琴 · 犀利刻薄音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiliufu",
+   "name": "龙熠柳芙",
+   "gender": "男",
+   "age": "28",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙熠柳芙 · 客观冷静音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaixuanshan",
+   "name": "龙柏萱杉",
+   "gender": "男",
+   "age": "32",
+   "trait": "鼓励认可音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙柏萱杉 · 鼓励认可音（男，32岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaiyunlin",
+   "name": "龙柏云麟",
+   "gender": "女",
+   "age": "23",
+   "trait": "不满犀利音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙柏云麟 · 不满犀利音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanfengrui",
+   "name": "龙璇风蕊",
+   "gender": "女",
+   "age": "15",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙璇风蕊 · 惊恐不安音（女，15岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longweijuquan",
+   "name": "龙薇菊泉",
+   "gender": "男",
+   "age": "40",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙薇菊泉 · 叙事沉浸音（男，40岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunhuixia",
+   "name": "龙珺辉霞",
+   "gender": "女",
+   "age": "24",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珺辉霞 · 自然亲和音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquemeifeng",
+   "name": "龙鹊梅峰",
+   "gender": "男",
+   "age": "38",
+   "trait": "谆谆劝导音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鹊梅峰 · 谆谆劝导音（男，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianfengwei",
+   "name": "龙弦凤薇",
+   "gender": "女",
+   "age": "26",
+   "trait": "亲切客服音",
+   "scene": "智能客服",
+   "language": "中文",
+   "label": "龙弦凤薇 · 亲切客服音（女，26岁，中文，智能客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquexihui",
+   "name": "龙鹊溪辉",
+   "gender": "女",
+   "age": "28",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鹊溪辉 · 智能助手音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaoruilang",
+   "name": "龙瑶蕊朗",
+   "gender": "女",
+   "age": "25",
+   "trait": "惋惜叹惋音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶蕊朗 · 惋惜叹惋音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanlangwei",
+   "name": "龙嵐朗薇",
+   "gender": "女",
+   "age": "24",
+   "trait": "轻松愉悦音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙嵐朗薇 · 轻松愉悦音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingfengmu",
+   "name": "龙莹枫暮",
+   "gender": "女",
+   "age": "28",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莹枫暮 · 客观冷静音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaolinglan",
+   "name": "龙瑶岭岚",
+   "gender": "女",
+   "age": "25",
+   "trait": "耐心温和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶岭岚 · 耐心温和音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longkexuanzheng",
+   "name": "龙珂暄筝",
+   "gender": "女",
+   "age": "24",
+   "trait": "激动振奋音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珂暄筝 · 激动振奋音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuelinwang",
+   "name": "龙玥麟望",
+   "gender": "女",
+   "age": "25",
+   "trait": "亲切客服音",
+   "scene": "智能客服",
+   "language": "中文",
+   "label": "龙玥麟望 · 亲切客服音（女，25岁，中文，智能客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtaotingyu",
+   "name": "龙桃汀羽",
+   "gender": "女",
+   "age": "27",
+   "trait": "亲切客服音",
+   "scene": "智能客服",
+   "language": "中文",
+   "label": "龙桃汀羽 · 亲切客服音（女，27岁，中文，智能客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianyuanmei",
+   "name": "龙弦渊梅",
+   "gender": "女",
+   "age": "34",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙弦渊梅 · 温柔亲和音（女，34岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuibaijun",
+   "name": "龙晦柏珺",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙晦柏珺 · 温柔细腻音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinglinyao",
+   "name": "龙凌麟瑶",
+   "gender": "男",
+   "age": "27",
+   "trait": "温柔细腻音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙凌麟瑶 · 温柔细腻音（男，27岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengmeihui",
+   "name": "龙峰梅晖",
+   "gender": "女",
+   "age": "26",
+   "trait": "利落麻利音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙峰梅晖 · 利落麻利音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlantongxuan",
+   "name": "龙澜彤璇",
+   "gender": "女",
+   "age": "24",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澜彤璇 · 电台质感音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longdiechuanling",
+   "name": "龙蝶川岭",
+   "gender": "女",
+   "age": "25",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蝶川岭 · 叙事沉浸音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingjuhong",
+   "name": "龙凌菊鸿",
+   "gender": "女",
+   "age": "9",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙凌菊鸿 · 温柔坚韧音（女，9岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyunjinji",
+   "name": "龙云瑾霁",
+   "gender": "男",
+   "age": "24",
+   "trait": "撒娇甜蜜音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙云瑾霁 · 撒娇甜蜜音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongqinglian",
+   "name": "龙松晴涟",
+   "gender": "男",
+   "age": "24",
+   "trait": "忧伤低回音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松晴涟 · 忧伤低回音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuelinglan",
+   "name": "龙玥凌嵐",
+   "gender": "男",
+   "age": "19",
+   "trait": "激动振奋音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙玥凌嵐 · 激动振奋音（男，19岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiuketao",
+   "name": "龙岫珂桃",
+   "gender": "男",
+   "age": "24",
+   "trait": "傲娇俏皮音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岫珂桃 · 傲娇俏皮音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchenghongrui",
+   "name": "龙澄鸿蕊",
+   "gender": "男",
+   "age": "28",
+   "trait": "沮丧低落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄鸿蕊 · 沮丧低落音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxueyuxia",
+   "name": "龙雪瑜霞",
+   "gender": "女",
+   "age": "24",
+   "trait": "温雅端庄音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙雪瑜霞 · 温雅端庄音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhongxinxu",
+   "name": "龙鸿昕旭",
+   "gender": "男",
+   "age": "15",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鸿昕旭 · 自然亲和音（男，15岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfenglanxiao",
+   "name": "龙风兰潇",
+   "gender": "男",
+   "age": "8",
+   "trait": "元气活力音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙风兰潇 · 元气活力音（男，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqinqueyi",
+   "name": "龙琴鹊漪",
+   "gender": "男",
+   "age": "16",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙琴鹊漪 · 自然亲和音（男，16岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquanlingfu",
+   "name": "龙泉岭芙",
+   "gender": "男",
+   "age": "7",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙泉岭芙 · 惊恐不安音（男，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuxiyue",
+   "name": "龙旭溪玥",
+   "gender": "男",
+   "age": "14",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙旭溪玥 · 惊恐不安音（男，14岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmofengshuo",
+   "name": "龙沫风烁",
+   "gender": "男",
+   "age": "13",
+   "trait": "自信从容音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙沫风烁 · 自信从容音（男，13岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyishuojin",
+   "name": "龙熠朔瑾",
+   "gender": "男",
+   "age": "9",
+   "trait": "不满犀利音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙熠朔瑾 · 不满犀利音（男，9岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqueqinlan",
+   "name": "龙雀琴嵐",
+   "gender": "女",
+   "age": "22",
+   "trait": "呆萌软糯音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙雀琴嵐 · 呆萌软糯音（女，22岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquetongwang",
+   "name": "龙鹊桐望",
+   "gender": "女",
+   "age": "8",
+   "trait": "甜萌可爱音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙鹊桐望 · 甜萌可爱音（女，8岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuekeyu",
+   "name": "龙雪珂雨",
+   "gender": "女",
+   "age": "8",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雪珂雨 · 智能助手音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiqueju",
+   "name": "龙翼雀菊",
+   "gender": "女",
+   "age": "7",
+   "trait": "搞怪逗趣音",
+   "scene": "娱乐搞笑",
+   "language": "中文",
+   "label": "龙翼雀菊 · 搞怪逗趣音（女，7岁，中文，娱乐搞笑）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcheshuofeng",
+   "name": "龙澈朔枫",
+   "gender": "女",
+   "age": "9",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澈朔枫 · 惊恐不安音（女，9岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanmuju",
+   "name": "龙澜暮菊",
+   "gender": "女",
+   "age": "6",
+   "trait": "伤感低回音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澜暮菊 · 伤感低回音（女，6岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcanlianxiu",
+   "name": "龙璨莲岫",
+   "gender": "女",
+   "age": "8",
+   "trait": "不耐烦躁音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙璨莲岫 · 不耐烦躁音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcanyanwang",
+   "name": "龙璨燕望",
+   "gender": "男",
+   "age": "42",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙璨燕望 · 中气充沛音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinxinghong",
+   "name": "龙琳杏鸿",
+   "gender": "女",
+   "age": "25",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙琳杏鸿 · 客观冷静音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengxuanxian",
+   "name": "龙澄璇弦",
+   "gender": "女",
+   "age": "25",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄璇弦 · 客观冷静音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxialan",
+   "name": "龙煜霞澜",
+   "gender": "女",
+   "age": "24",
+   "trait": "惊喜意外音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙煜霞澜 · 惊喜意外音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longruiyuling",
+   "name": "龙蕊煜翎",
+   "gender": "女",
+   "age": "24",
+   "trait": "客观冷静音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蕊煜翎 · 客观冷静音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiqinhui",
+   "name": "龙熠琴晖",
+   "gender": "男",
+   "age": "26",
+   "trait": "憨萌逗趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙熠琴晖 · 憨萌逗趣音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquefengmu",
+   "name": "龙鹊风暮",
+   "gender": "男",
+   "age": "8",
+   "trait": "青春朝气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鹊风暮 · 青春朝气音（男，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaoxuanke",
+   "name": "龙瑶璇珂",
+   "gender": "女",
+   "age": "7",
+   "trait": "天真童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶璇珂 · 天真童趣音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanxinglan",
+   "name": "龙杉杏兰",
+   "gender": "女",
+   "age": "8",
+   "trait": "天真童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙杉杏兰 · 天真童趣音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyixiaowei",
+   "name": "龙漪潇薇",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙漪潇薇 · 温柔亲和音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianchuanxuan",
+   "name": "龙莲川璇",
+   "gender": "男",
+   "age": "29",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙莲川璇 · 温柔亲和音（男，29岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhufengquan",
+   "name": "龙竹峰泉",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙竹峰泉 · 温柔亲和音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangjiluan",
+   "name": "龙朗霁鸾",
+   "gender": "男",
+   "age": "27",
+   "trait": "沉稳大气音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙朗霁鸾 · 沉稳大气音（男，27岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuyaoluan",
+   "name": "龙羽瑶鸾",
+   "gender": "女",
+   "age": "25",
+   "trait": "沉稳大气音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙羽瑶鸾 · 沉稳大气音（女，25岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianmeixiu",
+   "name": "龙涟梅岫",
+   "gender": "女",
+   "age": "24",
+   "trait": "温稳沉着音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙涟梅岫 · 温稳沉着音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmuhecan",
+   "name": "龙暮鹤璨",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙暮鹤璨 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangruiling",
+   "name": "龙朗蕊岭",
+   "gender": "男",
+   "age": "26",
+   "trait": "青春朝气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙朗蕊岭 · 青春朝气音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanzhihui",
+   "name": "龙焱芷晖",
+   "gender": "男",
+   "age": "25",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙焱芷晖 · 温润磁性音（男，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianlinxu",
+   "name": "龙弦琳旭",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙弦琳旭 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhexuefeng",
+   "name": "龙荷雪风",
+   "gender": "女",
+   "age": "24",
+   "trait": "角色模仿音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙荷雪风 · 角色模仿音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhuqinxuan",
+   "name": "龙竹琴萱",
+   "gender": "男",
+   "age": "43",
+   "trait": "角色模仿音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙竹琴萱 · 角色模仿音（男，43岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhongxiuyi",
+   "name": "龙鸿岫翼",
+   "gender": "女",
+   "age": "7",
+   "trait": "天真童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鸿岫翼 · 天真童趣音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxixiani",
+   "name": "龙曦霞霓",
+   "gender": "女",
+   "age": "7",
+   "trait": "天真童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙曦霞霓 · 天真童趣音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuqinyuan",
+   "name": "龙旭琴渊",
+   "gender": "男",
+   "age": "26",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙旭琴渊 · 温柔亲和音（男，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingfengwang",
+   "name": "龙莹风望",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔邻家音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙莹风望 · 温柔邻家音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquexuanyu",
+   "name": "龙鹊萱羽",
+   "gender": "男",
+   "age": "56",
+   "trait": "灵动戏腔音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鹊萱羽 · 灵动戏腔音（男，56岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmohuiling",
+   "name": "龙沫晖翎",
+   "gender": "女",
+   "age": "26",
+   "trait": "御姐成熟音",
+   "scene": "有声书配音",
+   "language": "中文",
+   "label": "龙沫晖翎 · 御姐成熟音（女，26岁，中文，有声书配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingtaomei",
+   "name": "龙莹桃梅",
+   "gender": "男",
+   "age": "28",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙莹桃梅 · 温润磁性音（男，28岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaoxinliu",
+   "name": "龙瑶昕柳",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙瑶昕柳 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuangyuerong",
+   "name": "龙霜玥蓉",
+   "gender": "男",
+   "age": "26",
+   "trait": "青春朝气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霜玥蓉 · 青春朝气音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlulanling",
+   "name": "龙露嵐凌",
+   "gender": "男",
+   "age": "25",
+   "trait": "青春朝气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙露嵐凌 · 青春朝气音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longruiyueju",
+   "name": "龙蕊玥菊",
+   "gender": "女",
+   "age": "25",
+   "trait": "温婉干练音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙蕊玥菊 · 温婉干练音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingjulan",
+   "name": "龙莹菊兰",
+   "gender": "女",
+   "age": "25",
+   "trait": "温稳沉着音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙莹菊兰 · 温稳沉着音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanzhuxin",
+   "name": "龙杉竹昕",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔老练音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙杉竹昕 · 温柔老练音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanxiaoling",
+   "name": "龙兰晓翎",
+   "gender": "女",
+   "age": "25",
+   "trait": "邻家亲切音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙兰晓翎 · 邻家亲切音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxikexing",
+   "name": "龙曦珂星",
+   "gender": "女",
+   "age": "7",
+   "trait": "慵懒童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙曦珂星 · 慵懒童趣音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuanglanhong",
+   "name": "龙霜兰虹",
+   "gender": "女",
+   "age": "9",
+   "trait": "慵懒童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霜兰虹 · 慵懒童趣音（女，9岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxialuling",
+   "name": "龙霞露岭",
+   "gender": "女",
+   "age": "9",
+   "trait": "调皮少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霞露岭 · 调皮少年音（女，9岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiangxizheng",
+   "name": "龙湘曦筝",
+   "gender": "女",
+   "age": "22",
+   "trait": "温柔活泼音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙湘曦筝 · 温柔活泼音（女，22岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanxueni",
+   "name": "龙焱雪霓",
+   "gender": "女",
+   "age": "8",
+   "trait": "慵懒童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙焱雪霓 · 慵懒童趣音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiuhuiyue",
+   "name": "龙岫晖月",
+   "gender": "女",
+   "age": "8",
+   "trait": "角色模仿音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岫晖月 · 角色模仿音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengyanshuo",
+   "name": "龙凤燕朔",
+   "gender": "女",
+   "age": "10",
+   "trait": "机灵少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙凤燕朔 · 机灵少年音（女，10岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongquequan",
+   "name": "龙彤鹊泉",
+   "gender": "女",
+   "age": "10",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙彤鹊泉 · 活泼灵动音（女，10岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyujulu",
+   "name": "龙煜菊露",
+   "gender": "男",
+   "age": "24",
+   "trait": "青春朝气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙煜菊露 · 青春朝气音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuocanmu",
+   "name": "龙烁璨暮",
+   "gender": "女",
+   "age": "22",
+   "trait": "青春朝气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙烁璨暮 · 青春朝气音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhehuiyi",
+   "name": "龙鹤辉漪",
+   "gender": "女",
+   "age": "25",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鹤辉漪 · 活泼灵动音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaoyuque",
+   "name": "龙潇煜雀",
+   "gender": "女",
+   "age": "23",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙潇煜雀 · 活泼灵动音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxulingji",
+   "name": "龙旭凌霁",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙旭凌霁 · 温柔亲和音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqueqingrui",
+   "name": "龙雀晴蕊",
+   "gender": "男",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙雀晴蕊 · 温柔亲和音（男，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiufengdie",
+   "name": "龙岫凤蝶",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岫凤蝶 · 温柔知性音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuyanxuan",
+   "name": "龙瑜燕暄",
+   "gender": "女",
+   "age": "24",
+   "trait": "温稳沉着音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙瑜燕暄 · 温稳沉着音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongshuoling",
+   "name": "龙松朔岭",
+   "gender": "女",
+   "age": "8",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松朔岭 · 活泼灵动音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiyaoque",
+   "name": "龙溪瑶雀",
+   "gender": "男",
+   "age": "25",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙溪瑶雀 · 活泼灵动音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanxiaoyu",
+   "name": "龙兰霄雨",
+   "gender": "女",
+   "age": "21",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙兰霄雨 · 温柔亲和音（女，21岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanmeilin",
+   "name": "龙暄梅麟",
+   "gender": "女",
+   "age": "26",
+   "trait": "温稳沉着音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙暄梅麟 · 温稳沉着音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjishuangjin",
+   "name": "龙霁霜瑾",
+   "gender": "女",
+   "age": "26",
+   "trait": "角色模仿音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霁霜瑾 · 角色模仿音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingzhengcheng",
+   "name": "龙翎筝澄",
+   "gender": "女",
+   "age": "23",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙翎筝澄 · 温柔亲和音（女，23岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongxinchuan",
+   "name": "龙松昕川",
+   "gender": "女",
+   "age": "23",
+   "trait": "温柔邻家音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙松昕川 · 温柔邻家音（女，23岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanxiaoyi",
+   "name": "龙岚霄翼",
+   "gender": "女",
+   "age": "23",
+   "trait": "邻家亲切音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岚霄翼 · 邻家亲切音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengzhiyan",
+   "name": "龙澄芷燕",
+   "gender": "女",
+   "age": "25",
+   "trait": "沉稳大气音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙澄芷燕 · 沉稳大气音（女，25岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxinwang",
+   "name": "龙煜昕望",
+   "gender": "女",
+   "age": "8",
+   "trait": "角色模仿音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙煜昕望 · 角色模仿音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengweixian",
+   "name": "龙枫薇弦",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙枫薇弦 · 温柔知性音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanlanyun",
+   "name": "龙妍岚云",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙妍岚云 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchexinfeng",
+   "name": "龙澈昕凤",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙澈昕凤 · 温柔亲和音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhongcanyue",
+   "name": "龙虹璨月",
+   "gender": "女",
+   "age": "25",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙虹璨月 · 活泼灵动音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhediexiu",
+   "name": "龙鹤蝶岫",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙鹤蝶岫 · 温柔坚韧音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyijunji",
+   "name": "龙翼珺霁",
+   "gender": "女",
+   "age": "23",
+   "trait": "心机绿茶音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙翼珺霁 · 心机绿茶音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuangsongbai",
+   "name": "龙霜松柏",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔俏皮音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙霜松柏 · 温柔俏皮音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangxiwei",
+   "name": "龙朗溪薇",
+   "gender": "女",
+   "age": "25",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙朗溪薇 · 温婉成熟音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuanyuque",
+   "name": "龙渊煜鹊",
+   "gender": "女",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙渊煜鹊 · 中气充沛音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longliulanxiang",
+   "name": "龙柳岚湘",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔青春音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙柳岚湘 · 温柔青春音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquezhujin",
+   "name": "龙雀竹瑾",
+   "gender": "女",
+   "age": "16",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雀竹瑾 · 中气充沛音（女，16岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyixuanjun",
+   "name": "龙漪暄珺",
+   "gender": "女",
+   "age": "36",
+   "trait": "成熟沉稳音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙漪暄珺 · 成熟沉稳音（女，36岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluanhuiyu",
+   "name": "龙鸾辉雨",
+   "gender": "女",
+   "age": "24",
+   "trait": "成熟沉稳音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鸾辉雨 · 成熟沉稳音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinliuhe",
+   "name": "龙琳柳荷",
+   "gender": "女",
+   "age": "25",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙琳柳荷 · 中气充沛音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuankemei",
+   "name": "龙璇珂梅",
+   "gender": "女",
+   "age": "24",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙璇珂梅 · 温婉成熟音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaqueshan",
+   "name": "龙霞雀杉",
+   "gender": "男",
+   "age": "25",
+   "trait": "搞怪逗趣音",
+   "scene": "娱乐搞笑",
+   "language": "中文",
+   "label": "龙霞雀杉 · 搞怪逗趣音（男，25岁，中文，娱乐搞笑）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianhuirui",
+   "name": "龙涟晦蕊",
+   "gender": "女",
+   "age": "26",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙涟晦蕊 · 中气充沛音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquanluanhong",
+   "name": "龙泉鸾虹",
+   "gender": "男",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙泉鸾虹 · 中气充沛音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxingxiuquan",
+   "name": "龙星岫泉",
+   "gender": "女",
+   "age": "24",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙星岫泉 · 温婉成熟音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengyanfeng",
+   "name": "龙澄燕凤",
+   "gender": "女",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄燕凤 · 中气充沛音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanzhufeng",
+   "name": "龙璇竹凤",
+   "gender": "女",
+   "age": "24",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙璇竹凤 · 温婉成熟音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongshuoxiu",
+   "name": "龙桐烁岫",
+   "gender": "女",
+   "age": "25",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙桐烁岫 · 爽朗利落音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaoquezheng",
+   "name": "龙瑶雀筝",
+   "gender": "女",
+   "age": "25",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶雀筝 · 中气充沛音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxifengyi",
+   "name": "龙曦凤漪",
+   "gender": "女",
+   "age": "25",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙曦凤漪 · 中气充沛音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunxiayan",
+   "name": "龙珺霞妍",
+   "gender": "女",
+   "age": "8",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珺霞妍 · 中气充沛音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongquanxiang",
+   "name": "龙桐泉湘",
+   "gender": "女",
+   "age": "25",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙桐泉湘 · 温婉成熟音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyixiangtao",
+   "name": "龙漪湘桃",
+   "gender": "女",
+   "age": "27",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙漪湘桃 · 温婉成熟音（女，27岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlannihui",
+   "name": "龙岚霓晖",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔青春音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岚霓晖 · 温柔青春音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanzhengju",
+   "name": "龙萱筝菊",
+   "gender": "女",
+   "age": "26",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙萱筝菊 · 中气充沛音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanyusong",
+   "name": "龙杉煜松",
+   "gender": "女",
+   "age": "25",
+   "trait": "平稳陈述音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙杉煜松 · 平稳陈述音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanyilan",
+   "name": "龙杉熠澜",
+   "gender": "女",
+   "age": "14",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙杉熠澜 · 中气充沛音（女，14岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuochehui",
+   "name": "龙朔澈晖",
+   "gender": "女",
+   "age": "26",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙朔澈晖 · 中气充沛音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiyusong",
+   "name": "龙熠瑜松",
+   "gender": "女",
+   "age": "24",
+   "trait": "活泼灵动音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙熠瑜松 · 活泼灵动音（女，24岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingqueyi",
+   "name": "龙岭鹊熠",
+   "gender": "女",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岭鹊熠 · 中气充沛音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiyuling",
+   "name": "龙曦雨翎",
+   "gender": "女",
+   "age": "26",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙曦雨翎 · 中气充沛音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunfengqing",
+   "name": "龙珺峰晴",
+   "gender": "女",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珺峰晴 · 中气充沛音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyijinquan",
+   "name": "龙翼瑾泉",
+   "gender": "女",
+   "age": "28",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙翼瑾泉 · 温婉成熟音（女，28岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanhuixiao",
+   "name": "龙焱辉潇",
+   "gender": "女",
+   "age": "21",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙焱辉潇 · 中气充沛音（女，21岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmulinghong",
+   "name": "龙暮凌虹",
+   "gender": "女",
+   "age": "25",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙暮凌虹 · 中气充沛音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengxutao",
+   "name": "龙澄旭桃",
+   "gender": "女",
+   "age": "24",
+   "trait": "活泼灵动音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙澄旭桃 · 活泼灵动音（女，24岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaosongyu",
+   "name": "龙潇松雨",
+   "gender": "女",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙潇松雨 · 中气充沛音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyantongxi",
+   "name": "龙妍彤溪",
+   "gender": "女",
+   "age": "28",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙妍彤溪 · 中气充沛音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxueronghui",
+   "name": "龙雪蓉晦",
+   "gender": "女",
+   "age": "26",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雪蓉晦 · 中气充沛音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyitingyan",
+   "name": "龙漪汀焱",
+   "gender": "女",
+   "age": "25",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙漪汀焱 · 爽朗利落音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyijinhong",
+   "name": "龙翼瑾鸿",
+   "gender": "女",
+   "age": "24",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙翼瑾鸿 · 爽朗利落音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanghuishuang",
+   "name": "龙朗辉霜",
+   "gender": "女",
+   "age": "25",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙朗辉霜 · 中气充沛音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluyueqin",
+   "name": "龙露玥琴",
+   "gender": "女",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙露玥琴 · 中气充沛音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjinlianji",
+   "name": "龙瑾莲霁",
+   "gender": "女",
+   "age": "25",
+   "trait": "低沉压抑音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑾莲霁 · 低沉压抑音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyueximu",
+   "name": "龙玥溪暮",
+   "gender": "女",
+   "age": "25",
+   "trait": "欢快明朗音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙玥溪暮 · 欢快明朗音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanjunxu",
+   "name": "龙岚珺旭",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔青春音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岚珺旭 · 温柔青春音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanhuihui",
+   "name": "龙兰辉晦",
+   "gender": "女",
+   "age": "27",
+   "trait": "搞怪逗趣音",
+   "scene": "娱乐搞笑",
+   "language": "中文",
+   "label": "龙兰辉晦 · 搞怪逗趣音（女，27岁，中文，娱乐搞笑）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaohehui",
+   "name": "龙霄鹤晖",
+   "gender": "男",
+   "age": "24",
+   "trait": "低沉压抑音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霄鹤晖 · 低沉压抑音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanxuanxian",
+   "name": "龙兰暄弦",
+   "gender": "女",
+   "age": "26",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙兰暄弦 · 爽朗利落音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuixuanyan",
+   "name": "龙晖暄燕",
+   "gender": "女",
+   "age": "24",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晖暄燕 · 中气充沛音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxingyujun",
+   "name": "龙星羽珺",
+   "gender": "女",
+   "age": "25",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙星羽珺 · 中气充沛音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanyuantao",
+   "name": "龙妍渊桃",
+   "gender": "男",
+   "age": "37",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙妍渊桃 · 爽朗利落音（男，37岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongquanxuan",
+   "name": "龙松泉璇",
+   "gender": "女",
+   "age": "26",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松泉璇 · 中气充沛音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaomohong",
+   "name": "龙潇沫虹",
+   "gender": "女",
+   "age": "22",
+   "trait": "活泼灵动音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙潇沫虹 · 活泼灵动音（女，22岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxinyanshuo",
+   "name": "龙昕妍烁",
+   "gender": "女",
+   "age": "24",
+   "trait": "活泼灵动音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙昕妍烁 · 活泼灵动音（女，24岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsongbaifeng",
+   "name": "龙松柏枫",
+   "gender": "男",
+   "age": "22",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙松柏枫 · 叙事沉浸音（男，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjiquexue",
+   "name": "龙霁鹊雪",
+   "gender": "男",
+   "age": "24",
+   "trait": "侠骨柔情音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙霁鹊雪 · 侠骨柔情音（男，24岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangjixuan",
+   "name": "龙朗霁萱",
+   "gender": "男",
+   "age": "24",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙朗霁萱 · 电台质感音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanxiaqing",
+   "name": "龙岚霞晴",
+   "gender": "男",
+   "age": "22",
+   "trait": "温润暖男音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岚霞晴 · 温润暖男音（男，22岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunlingtao",
+   "name": "龙珺岭桃",
+   "gender": "男",
+   "age": "24",
+   "trait": "侠骨柔情音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙珺岭桃 · 侠骨柔情音（男，24岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengjinhe",
+   "name": "龙峰瑾鹤",
+   "gender": "男",
+   "age": "28",
+   "trait": "沉稳大气音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙峰瑾鹤 · 沉稳大气音（男，28岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaixingyu",
+   "name": "龙柏杏煜",
+   "gender": "男",
+   "age": "26",
+   "trait": "侠骨柔情音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙柏杏煜 · 侠骨柔情音（男，26岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuanghuichuan",
+   "name": "龙霜晖川",
+   "gender": "女",
+   "age": "28",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霜晖川 · 叙事沉浸音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingzhengtong",
+   "name": "龙凌筝彤",
+   "gender": "女",
+   "age": "29",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙凌筝彤 · 叙事沉浸音（女，29岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjinxilan",
+   "name": "龙瑾溪嵐",
+   "gender": "女",
+   "age": "25",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑾溪嵐 · 电台质感音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqingxiangju",
+   "name": "龙晴湘菊",
+   "gender": "女",
+   "age": "25",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晴湘菊 · 电台质感音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaozhiqing",
+   "name": "龙瑶芷晴",
+   "gender": "女",
+   "age": "26",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑶芷晴 · 电台质感音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longdieshuangluan",
+   "name": "龙蝶霜鸾",
+   "gender": "女",
+   "age": "40",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蝶霜鸾 · 电台质感音（女，40岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanhongxi",
+   "name": "龙萱鸿溪",
+   "gender": "男",
+   "age": "24",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙萱鸿溪 · 活泼灵动音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyueyuqin",
+   "name": "龙月瑜琴",
+   "gender": "男",
+   "age": "26",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙月瑜琴 · 中气充沛音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjuhefeng",
+   "name": "龙菊荷风",
+   "gender": "男",
+   "age": "23",
+   "trait": "中气充沛音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙菊荷风 · 中气充沛音（男，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianhelan",
+   "name": "龙弦荷嵐",
+   "gender": "男",
+   "age": "28",
+   "trait": "叙事沉浸音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙弦荷嵐 · 叙事沉浸音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqingyanyun",
+   "name": "龙晴焱云",
+   "gender": "男",
+   "age": "42",
+   "trait": "侠气武侠音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晴焱云 · 侠气武侠音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianliusong",
+   "name": "龙莲柳松",
+   "gender": "男",
+   "age": "28",
+   "trait": "侠气武侠音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莲柳松 · 侠气武侠音（男，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhujinxuan",
+   "name": "龙竹瑾萱",
+   "gender": "男",
+   "age": "26",
+   "trait": "威严领导音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙竹瑾萱 · 威严领导音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuangxuandie",
+   "name": "龙霜萱蝶",
+   "gender": "女",
+   "age": "22",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霜萱蝶 · 爽朗利落音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluzhulan",
+   "name": "龙露竹澜",
+   "gender": "女",
+   "age": "22",
+   "trait": "爽朗利落音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙露竹澜 · 爽朗利落音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyixiangcheng",
+   "name": "龙熠湘澄",
+   "gender": "女",
+   "age": "19",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙熠湘澄 · 活泼灵动音（女，19岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanyanyun",
+   "name": "龙璇燕云",
+   "gender": "女",
+   "age": "23",
+   "trait": "阴郁深沉音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙璇燕云 · 阴郁深沉音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanchengdie",
+   "name": "龙萱澄蝶",
+   "gender": "女",
+   "age": "23",
+   "trait": "强势霸气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙萱澄蝶 · 强势霸气音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiyulu",
+   "name": "龙漪羽露",
+   "gender": "女",
+   "age": "25",
+   "trait": "阴狠毒辣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙漪羽露 · 阴狠毒辣音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhonglingxue",
+   "name": "龙鸿岭雪",
+   "gender": "女",
+   "age": "25",
+   "trait": "阴狠毒辣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鸿岭雪 · 阴狠毒辣音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyilianxia",
+   "name": "龙翼莲霞",
+   "gender": "女",
+   "age": "28",
+   "trait": "雍容宫廷音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙翼莲霞 · 雍容宫廷音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlulanxuan",
+   "name": "龙露岚萱",
+   "gender": "女",
+   "age": "27",
+   "trait": "阴狠毒辣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙露岚萱 · 阴狠毒辣音（女，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyizhengmu",
+   "name": "龙熠筝暮",
+   "gender": "女",
+   "age": "24",
+   "trait": "怯弱自卑音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙熠筝暮 · 怯弱自卑音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhexueling",
+   "name": "龙荷雪翎",
+   "gender": "女",
+   "age": "22",
+   "trait": "呆萌软糯音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙荷雪翎 · 呆萌软糯音（女，22岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuishanshuo",
+   "name": "龙晖杉朔",
+   "gender": "女",
+   "age": "16",
+   "trait": "呆萌软糯音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙晖杉朔 · 呆萌软糯音（女，16岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyifenghe",
+   "name": "龙熠枫荷",
+   "gender": "女",
+   "age": "22",
+   "trait": "内敛含蓄音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙熠枫荷 · 内敛含蓄音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengxuanxing",
+   "name": "龙风璇杏",
+   "gender": "女",
+   "age": "22",
+   "trait": "沉郁心事音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙风璇杏 · 沉郁心事音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxueyujun",
+   "name": "龙雪瑜珺",
+   "gender": "女",
+   "age": "21",
+   "trait": "怯弱自卑音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雪瑜珺 · 怯弱自卑音（女，21岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmolinglian",
+   "name": "龙沫岭莲",
+   "gender": "女",
+   "age": "23",
+   "trait": "平稳陈述音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙沫岭莲 · 平稳陈述音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjinlingshuang",
+   "name": "龙瑾翎霜",
+   "gender": "女",
+   "age": "22",
+   "trait": "呆萌软糯音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙瑾翎霜 · 呆萌软糯音（女，22岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longweimeiyi",
+   "name": "龙薇梅翼",
+   "gender": "女",
+   "age": "9",
+   "trait": "呆萌软糯音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙薇梅翼 · 呆萌软糯音（女，9岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaquehong",
+   "name": "龙霞鹊鸿",
+   "gender": "女",
+   "age": "22",
+   "trait": "娇嗲甜腻音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霞鹊鸿 · 娇嗲甜腻音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanwangyi",
+   "name": "龙澜望翼",
+   "gender": "女",
+   "age": "21",
+   "trait": "细腻深沉音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙澜望翼 · 细腻深沉音（女，21岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiniyan",
+   "name": "龙溪霓燕",
+   "gender": "女",
+   "age": "24",
+   "trait": "善解人意音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙溪霓燕 · 善解人意音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyufengmo",
+   "name": "龙煜枫沫",
+   "gender": "女",
+   "age": "22",
+   "trait": "温柔坚韧音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙煜枫沫 · 温柔坚韧音（女，22岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhengxike",
+   "name": "龙筝溪珂",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔青春音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙筝溪珂 · 温柔青春音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunqingyu",
+   "name": "龙珺晴煜",
+   "gender": "女",
+   "age": "24",
+   "trait": "大方温和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙珺晴煜 · 大方温和音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongwangque",
+   "name": "龙桐望鹊",
+   "gender": "女",
+   "age": "24",
+   "trait": "忧郁深沉音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙桐望鹊 · 忧郁深沉音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxueniling",
+   "name": "龙雪霓翎",
+   "gender": "女",
+   "age": "24",
+   "trait": "电台质感音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雪霓翎 · 电台质感音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxiangxia",
+   "name": "龙羽湘霞",
+   "gender": "女",
+   "age": "25",
+   "trait": "成熟知心音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙羽湘霞 · 成熟知心音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfenglanlu",
+   "name": "龙风兰露",
+   "gender": "男",
+   "age": "25",
+   "trait": "清朗少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙风兰露 · 清朗少年音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuhongche",
+   "name": "龙羽鸿澈",
+   "gender": "女",
+   "age": "72",
+   "trait": "神秘术士音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙羽鸿澈 · 神秘术士音（女，72岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangqingyi",
+   "name": "龙朗晴翼",
+   "gender": "女",
+   "age": "25",
+   "trait": "呆萌憨直音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙朗晴翼 · 呆萌憨直音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanquancheng",
+   "name": "龙嵐泉澄",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙嵐泉澄 · 温柔贴心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluanyuxu",
+   "name": "龙鸾瑜旭",
+   "gender": "男",
+   "age": "25",
+   "trait": "正气凛然音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鸾瑜旭 · 正气凛然音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtinghongxiao",
+   "name": "龙汀鸿霄",
+   "gender": "女",
+   "age": "26",
+   "trait": "活力童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙汀鸿霄 · 活力童趣音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfuhuiqing",
+   "name": "龙芙晦晴",
+   "gender": "女",
+   "age": "38",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙芙晦晴 · 温柔贴心音（女，38岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longwangyuanxing",
+   "name": "龙望渊杏",
+   "gender": "女",
+   "age": "43",
+   "trait": "憨厚诙谐音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙望渊杏 · 憨厚诙谐音（女，43岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquanqingshan",
+   "name": "龙泉晴杉",
+   "gender": "女",
+   "age": "8",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙泉晴杉 · 温柔贴心音（女，8岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaoshuoyu",
+   "name": "龙瑶朔瑜",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙瑶朔瑜 · 温柔贴心音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuiluling",
+   "name": "龙晦露凌",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙晦露凌 · 温柔贴心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinbaitong",
+   "name": "龙琳柏彤",
+   "gender": "女",
+   "age": "8",
+   "trait": "欢乐卡通音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙琳柏彤 · 欢乐卡通音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxiangzhi",
+   "name": "龙羽湘芷",
+   "gender": "女",
+   "age": "22",
+   "trait": "柔弱楚楚音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙羽湘芷 · 柔弱楚楚音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhexuanlan",
+   "name": "龙荷萱澜",
+   "gender": "男",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙荷萱澜 · 温柔亲和音（男，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingchengyi",
+   "name": "龙凌澄翼",
+   "gender": "男",
+   "age": "42",
+   "trait": "清朗少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙凌澄翼 · 清朗少年音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanyaolu",
+   "name": "龙焱瑶露",
+   "gender": "男",
+   "age": "42",
+   "trait": "清俊少年音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙焱瑶露 · 清俊少年音（男，42岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongjichuan",
+   "name": "龙彤霁川",
+   "gender": "女",
+   "age": "25",
+   "trait": "成熟知心音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙彤霁川 · 成熟知心音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinchengquan",
+   "name": "龙麟澄泉",
+   "gender": "女",
+   "age": "25",
+   "trait": "柔怯温婉音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙麟澄泉 · 柔怯温婉音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuiquanqing",
+   "name": "龙晖泉晴",
+   "gender": "女",
+   "age": "7",
+   "trait": "娇嗲甜腻音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晖泉晴 · 娇嗲甜腻音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanlingcan",
+   "name": "龙兰凌璨",
+   "gender": "女",
+   "age": "7",
+   "trait": "纯真稚嫩音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙兰凌璨 · 纯真稚嫩音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanquexiao",
+   "name": "龙兰雀潇",
+   "gender": "男",
+   "age": "25",
+   "trait": "温润暖男音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙兰雀潇 · 温润暖男音（男，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmeitingsong",
+   "name": "龙梅汀松",
+   "gender": "男",
+   "age": "29",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙梅汀松 · 温婉成熟音（男，29岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaikehui",
+   "name": "龙柏珂晦",
+   "gender": "男",
+   "age": "26",
+   "trait": "成熟知心音",
+   "scene": "深夜电台",
+   "language": "中文",
+   "label": "龙柏珂晦 · 成熟知心音（男，26岁，中文，深夜电台）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtingjinxi",
+   "name": "龙汀瑾溪",
+   "gender": "男",
+   "age": "25",
+   "trait": "憨厚诙谐音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙汀瑾溪 · 憨厚诙谐音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcanlingying",
+   "name": "龙璨凌莹",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙璨凌莹 · 温柔贴心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanlianyao",
+   "name": "龙焱涟瑶",
+   "gender": "女",
+   "age": "16",
+   "trait": "灵动戏腔音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙焱涟瑶 · 灵动戏腔音（女，16岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longximusong",
+   "name": "龙曦暮松",
+   "gender": "女",
+   "age": "28",
+   "trait": "鬼马调皮音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙曦暮松 · 鬼马调皮音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchexueyue",
+   "name": "龙澈雪月",
+   "gender": "女",
+   "age": "7",
+   "trait": "憨厚诙谐音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澈雪月 · 憨厚诙谐音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuichengfu",
+   "name": "龙晖澄芙",
+   "gender": "男",
+   "age": "8",
+   "trait": "慵懒童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晖澄芙 · 慵懒童趣音（男，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengdieshuo",
+   "name": "龙澄蝶烁",
+   "gender": "男",
+   "age": "24",
+   "trait": "少年指挥音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄蝶烁 · 少年指挥音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanyimo",
+   "name": "龙澜熠沫",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙澜熠沫 · 温柔贴心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchuanrongshuo",
+   "name": "龙川蓉朔",
+   "gender": "不能",
+   "age": "25",
+   "trait": "沉稳大气音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙川蓉朔 · 沉稳大气音（不能，25岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiuquanwang",
+   "name": "龙岫泉望",
+   "gender": "女",
+   "age": "25",
+   "trait": "温甜柔美音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岫泉望 · 温甜柔美音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquediechuan",
+   "name": "龙鹊蝶川",
+   "gender": "女",
+   "age": "27",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙鹊蝶川 · 温柔贴心音（女，27岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanyuju",
+   "name": "龙妍煜菊",
+   "gender": "女",
+   "age": "25",
+   "trait": "憨萌逗趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙妍煜菊 · 憨萌逗趣音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longnilanfeng",
+   "name": "龙霓岚凤",
+   "gender": "女",
+   "age": "26",
+   "trait": "成熟知心音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙霓岚凤 · 成熟知心音（女，26岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiangxiaozheng",
+   "name": "龙湘霄筝",
+   "gender": "女",
+   "age": "7",
+   "trait": "活泼灵动音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙湘霄筝 · 活泼灵动音（女，7岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengmeiwei",
+   "name": "龙峰梅薇",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙峰梅薇 · 温柔贴心音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjuqinshuang",
+   "name": "龙菊琴霜",
+   "gender": "男",
+   "age": "42",
+   "trait": "温润暖男音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙菊琴霜 · 温润暖男音（男，42岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyandierong",
+   "name": "龙焱蝶蓉",
+   "gender": "男",
+   "age": "24",
+   "trait": "惊恐不安音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙焱蝶蓉 · 惊恐不安音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longkechengji",
+   "name": "龙珂澄霁",
+   "gender": "男",
+   "age": "24",
+   "trait": "清朗少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珂澄霁 · 清朗少年音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanbailan",
+   "name": "龙嵐柏澜",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙嵐柏澜 · 温柔贴心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanjunxing",
+   "name": "龙澜珺星",
+   "gender": "女",
+   "age": "25",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙澜珺星 · 温婉成熟音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuangjinlan",
+   "name": "龙霜瑾澜",
+   "gender": "女",
+   "age": "25",
+   "trait": "御姐成熟音",
+   "scene": "有声书配音",
+   "language": "中文",
+   "label": "龙霜瑾澜 · 御姐成熟音（女，25岁，中文，有声书配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjinlianxiao",
+   "name": "龙瑾涟晓",
+   "gender": "女",
+   "age": "26",
+   "trait": "沉稳有力音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙瑾涟晓 · 沉稳有力音（女，26岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanfengyu",
+   "name": "龙嵐凤羽",
+   "gender": "女",
+   "age": "24",
+   "trait": "成熟沉稳音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙嵐凤羽 · 成熟沉稳音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuangchexiao",
+   "name": "龙霜澈霄",
+   "gender": "女",
+   "age": "23",
+   "trait": "傲娇闺秀音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙霜澈霄 · 傲娇闺秀音（女，23岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingjinquan",
+   "name": "龙凌瑾泉",
+   "gender": "女",
+   "age": "24",
+   "trait": "元气少女音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙凌瑾泉 · 元气少女音（女，24岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanlingying",
+   "name": "龙嵐凌莹",
+   "gender": "女",
+   "age": "24",
+   "trait": "灵动少女音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙嵐凌莹 · 灵动少女音（女，24岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanqinluan",
+   "name": "龙兰琴鸾",
+   "gender": "女",
+   "age": "25",
+   "trait": "沉稳知性音",
+   "scene": "知识分享",
+   "language": "中文",
+   "label": "龙兰琴鸾 · 沉稳知性音（女，25岁，中文，知识分享）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaoyulan",
+   "name": "龙霄羽岚",
+   "gender": "女",
+   "age": "20",
+   "trait": "成熟御姐音",
+   "scene": "有声书配音",
+   "language": "中文",
+   "label": "龙霄羽岚 · 成熟御姐音（女，20岁，中文，有声书配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxiangfeng",
+   "name": "龙煜湘凤",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙煜湘凤 · 温柔知性音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuefenghe",
+   "name": "龙雪风荷",
+   "gender": "女",
+   "age": "22",
+   "trait": "甜萌可爱音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙雪风荷 · 甜萌可爱音（女，22岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingtingxiu",
+   "name": "龙岭汀岫",
+   "gender": "女",
+   "age": "29",
+   "trait": "温柔邻家音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岭汀岫 · 温柔邻家音（女，29岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longkeyanyu",
+   "name": "龙珂焱瑜",
+   "gender": "女",
+   "age": "26",
+   "trait": "稳重沉着音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珂焱瑜 · 稳重沉着音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanhonglin",
+   "name": "龙焱虹琳",
+   "gender": "女",
+   "age": "27",
+   "trait": "温柔俏皮音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙焱虹琳 · 温柔俏皮音（女，27岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaoxianglian",
+   "name": "龙潇湘涟",
+   "gender": "女",
+   "age": "24",
+   "trait": "御姐成熟音",
+   "scene": "有声书配音",
+   "language": "中文",
+   "label": "龙潇湘涟 · 御姐成熟音（女，24岁，中文，有声书配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingxingyi",
+   "name": "龙岭星翼",
+   "gender": "女",
+   "age": "27",
+   "trait": "成熟御姐音",
+   "scene": "有声书配音",
+   "language": "中文",
+   "label": "龙岭星翼 · 成熟御姐音（女，27岁，中文，有声书配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longdiemujun",
+   "name": "龙蝶暮珺",
+   "gender": "女",
+   "age": "9",
+   "trait": "柔弱楚楚音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蝶暮珺 · 柔弱楚楚音（女，9岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuilingfu",
+   "name": "龙辉岭芙",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔俏皮音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙辉岭芙 · 温柔俏皮音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjishuangmu",
+   "name": "龙霁霜暮",
+   "gender": "女",
+   "age": "25",
+   "trait": "善解人意音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙霁霜暮 · 善解人意音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjushuorong",
+   "name": "龙菊朔蓉",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙菊朔蓉 · 温柔知性音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtaoxingque",
+   "name": "龙桃星鹊",
+   "gender": "男",
+   "age": "25",
+   "trait": "清朗少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙桃星鹊 · 清朗少年音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsonglinwang",
+   "name": "龙松麟望",
+   "gender": "男",
+   "age": "36",
+   "trait": "温润磁性音",
+   "scene": "深夜电台",
+   "language": "中文",
+   "label": "龙松麟望 · 温润磁性音（男，36岁，中文，深夜电台）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaoyanling",
+   "name": "龙潇焱岭",
+   "gender": "男",
+   "age": "28",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙潇焱岭 · 温润磁性音（男，28岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuiheting",
+   "name": "龙晦荷汀",
+   "gender": "男",
+   "age": "25",
+   "trait": "清朗少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晦荷汀 · 清朗少年音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxinchuanyi",
+   "name": "龙昕川漪",
+   "gender": "男",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙昕川漪 · 温柔亲和音（男，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanxiulian",
+   "name": "龙杉岫涟",
+   "gender": "男",
+   "age": "26",
+   "trait": "善解人意音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙杉岫涟 · 善解人意音（男，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangjishuo",
+   "name": "龙朗霁朔",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙朗霁朔 · 温柔亲和音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanchuantao",
+   "name": "龙焱川桃",
+   "gender": "女",
+   "age": "25",
+   "trait": "柔怯温婉音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙焱川桃 · 柔怯温婉音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaolinzhi",
+   "name": "龙霄琳芷",
+   "gender": "女",
+   "age": "26",
+   "trait": "温婉成熟音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙霄琳芷 · 温婉成熟音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuiyingwang",
+   "name": "龙晦樱望",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔知性音",
+   "scene": "知识分享",
+   "language": "中文",
+   "label": "龙晦樱望 · 温柔知性音（女，24岁，中文，知识分享）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuchuanlan",
+   "name": "龙瑜川岚",
+   "gender": "男",
+   "age": "29",
+   "trait": "温婉成熟音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑜川岚 · 温婉成熟音（男，29岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjinmeicheng",
+   "name": "龙瑾梅澄",
+   "gender": "男",
+   "age": "27",
+   "trait": "成熟沉稳音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑾梅澄 · 成熟沉稳音（男，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluanlanju",
+   "name": "龙鸾岚菊",
+   "gender": "女",
+   "age": "25",
+   "trait": "元气少女音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙鸾岚菊 · 元气少女音（女，25岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjintongxi",
+   "name": "龙瑾彤溪",
+   "gender": "女",
+   "age": "25",
+   "trait": "雍容宫廷音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑾彤溪 · 雍容宫廷音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxulianxia",
+   "name": "龙旭莲霞",
+   "gender": "女",
+   "age": "24",
+   "trait": "温甜柔美音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙旭莲霞 · 温甜柔美音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxinglianwei",
+   "name": "龙杏涟薇",
+   "gender": "女",
+   "age": "25",
+   "trait": "雍容宫廷音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙杏涟薇 · 雍容宫廷音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longweihezheng",
+   "name": "龙薇荷筝",
+   "gender": "女",
+   "age": "21",
+   "trait": "甜萌可爱音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙薇荷筝 · 甜萌可爱音（女，21岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longrongshuangxuan",
+   "name": "龙蓉霜暄",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙蓉霜暄 · 温柔知性音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcanruishuang",
+   "name": "龙璨蕊霜",
+   "gender": "女",
+   "age": "8",
+   "trait": "甜萌可爱音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙璨蕊霜 · 甜萌可爱音（女，8岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuetongling",
+   "name": "龙玥彤岭",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙玥彤岭 · 温柔贴心音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyunlingbai",
+   "name": "龙云凌柏",
+   "gender": "女",
+   "age": "8",
+   "trait": "甜萌可爱音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙云凌柏 · 甜萌可爱音（女，8岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchuanxuxing",
+   "name": "龙川旭杏",
+   "gender": "女",
+   "age": "24",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙川旭杏 · 温润磁性音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longkejinhui",
+   "name": "龙珂瑾晖",
+   "gender": "女",
+   "age": "24",
+   "trait": "温甜柔美音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙珂瑾晖 · 温甜柔美音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuchengrui",
+   "name": "龙旭澄蕊",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙旭澄蕊 · 温柔贴心音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshandiefeng",
+   "name": "龙杉蝶风",
+   "gender": "女",
+   "age": "20",
+   "trait": "温甜柔美音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙杉蝶风 · 温甜柔美音（女，20岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanfengxia",
+   "name": "龙澜枫霞",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙澜枫霞 · 温柔贴心音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengxiaolin",
+   "name": "龙风晓琳",
+   "gender": "男",
+   "age": "25",
+   "trait": "温润暖男音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙风晓琳 · 温润暖男音（男，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuejinxiu",
+   "name": "龙玥瑾岫",
+   "gender": "男",
+   "age": "24",
+   "trait": "成熟稳重音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙玥瑾岫 · 成熟稳重音（男，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhexiaofeng",
+   "name": "龙荷潇峰",
+   "gender": "男",
+   "age": "37",
+   "trait": "硬朗阳刚音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙荷潇峰 · 硬朗阳刚音（男，37岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhuyuebai",
+   "name": "龙竹玥柏",
+   "gender": "女",
+   "age": "25",
+   "trait": "阳光开朗音",
+   "scene": "知识分享",
+   "language": "中文",
+   "label": "龙竹玥柏 · 阳光开朗音（女，25岁，中文，知识分享）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuiliantong",
+   "name": "龙晖莲彤",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙晖莲彤 · 温柔贴心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhongyanxuan",
+   "name": "龙虹妍璇",
+   "gender": "女",
+   "age": "25",
+   "trait": "威严将领音",
+   "scene": "体育解说",
+   "language": "中文",
+   "label": "龙虹妍璇 · 威严将领音（女，25岁，中文，体育解说）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanyancan",
+   "name": "龙杉焱璨",
+   "gender": "女",
+   "age": "25",
+   "trait": "热忱推荐音",
+   "scene": "商务汇报",
+   "language": "中文",
+   "label": "龙杉焱璨 · 热忱推荐音（女，25岁，中文，商务汇报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiangkeyao",
+   "name": "龙湘珂瑶",
+   "gender": "女",
+   "age": "24",
+   "trait": "活泼开朗音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙湘珂瑶 · 活泼开朗音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfenghechuan",
+   "name": "龙枫荷川",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙枫荷川 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyunfuhong",
+   "name": "龙云芙鸿",
+   "gender": "女",
+   "age": "25",
+   "trait": "标准播音音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙云芙鸿 · 标准播音音（女，25岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanweiyue",
+   "name": "龙岚薇玥",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔知心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岚薇玥 · 温柔知心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfuxuyu",
+   "name": "龙芙旭羽",
+   "gender": "女",
+   "age": "24",
+   "trait": "专业解说音",
+   "scene": "体育解说",
+   "language": "中文",
+   "label": "龙芙旭羽 · 专业解说音（女，24岁，中文，体育解说）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxuanmei",
+   "name": "龙雨暄梅",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔哀婉音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙雨暄梅 · 温柔哀婉音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaifengshuo",
+   "name": "龙柏凤朔",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙柏凤朔 · 温柔亲和音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longwangmeican",
+   "name": "龙望梅璨",
+   "gender": "女",
+   "age": "23",
+   "trait": "爽朗大笑音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙望梅璨 · 爽朗大笑音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyanzhihe",
+   "name": "龙焱芷荷",
+   "gender": "女",
+   "age": "8",
+   "trait": "温甜柔美音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙焱芷荷 · 温甜柔美音（女，8岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiuxiayu",
+   "name": "龙岫霞煜",
+   "gender": "女",
+   "age": "24",
+   "trait": "温甜柔美音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岫霞煜 · 温甜柔美音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxianlingling",
+   "name": "龙弦凌岭",
+   "gender": "女",
+   "age": "25",
+   "trait": "磁性质感音",
+   "scene": "深夜电台",
+   "language": "中文",
+   "label": "龙弦凌岭 · 磁性质感音（女，25岁，中文，深夜电台）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanrongshuo",
+   "name": "龙嵐蓉朔",
+   "gender": "女",
+   "age": "26",
+   "trait": "搞怪卡通音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙嵐蓉朔 · 搞怪卡通音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiqinghui",
+   "name": "龙漪晴晦",
+   "gender": "女",
+   "age": "60",
+   "trait": "慈祥祖母音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙漪晴晦 · 慈祥祖母音（女，60岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchezhuyu",
+   "name": "龙澈竹雨",
+   "gender": "女",
+   "age": "25",
+   "trait": "自然亲和音",
+   "scene": "智能助手",
+   "language": "中文",
+   "label": "龙澈竹雨 · 自然亲和音（女，25岁，中文，智能助手）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengliansong",
+   "name": "龙澄涟松",
+   "gender": "女",
+   "age": "23",
+   "trait": "游戏解说音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄涟松 · 游戏解说音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtingquezhu",
+   "name": "龙汀鹊竹",
+   "gender": "女",
+   "age": "23",
+   "trait": "运动喘息音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙汀鹊竹 · 运动喘息音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongmuyuan",
+   "name": "龙彤暮渊",
+   "gender": "男",
+   "age": "38",
+   "trait": "焦躁烦闷音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙彤暮渊 · 焦躁烦闷音（男，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuxiulan",
+   "name": "龙雨岫兰",
+   "gender": "男",
+   "age": "19",
+   "trait": "撒娇甜蜜音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雨岫兰 · 撒娇甜蜜音（男，19岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiucheyu",
+   "name": "龙岫澈雨",
+   "gender": "男",
+   "age": "26",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙岫澈雨 · 温润磁性音（男，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangjunji",
+   "name": "龙朗珺霁",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙朗珺霁 · 温柔知性音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianyunxia",
+   "name": "龙莲云霞",
+   "gender": "女",
+   "age": "26",
+   "trait": "凌厉剑气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莲云霞 · 凌厉剑气音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longmoyulu",
+   "name": "龙沫雨露",
+   "gender": "女",
+   "age": "19",
+   "trait": "热血激昂音",
+   "scene": "体育解说",
+   "language": "中文",
+   "label": "龙沫雨露 · 热血激昂音（女，19岁，中文，体育解说）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjinlinfeng",
+   "name": "龙瑾麟枫",
+   "gender": "女",
+   "age": "25",
+   "trait": "大方温和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙瑾麟枫 · 大方温和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqinghexi",
+   "name": "龙晴鹤溪",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔知心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙晴鹤溪 · 温柔知心音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyilanni",
+   "name": "龙漪兰霓",
+   "gender": "女",
+   "age": "21",
+   "trait": "热血激昂音",
+   "scene": "体育解说",
+   "language": "中文",
+   "label": "龙漪兰霓 · 热血激昂音（女，21岁，中文，体育解说）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanxinglin",
+   "name": "龙岚星琳",
+   "gender": "女",
+   "age": "42",
+   "trait": "智慧祖母音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岚星琳 · 智慧祖母音（女，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjimoyan",
+   "name": "龙霁沫燕",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙霁沫燕 · 温柔贴心音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longruirongxiu",
+   "name": "龙蕊蓉岫",
+   "gender": "男",
+   "age": "26",
+   "trait": "随性自在音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蕊蓉岫 · 随性自在音（男，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingtaoji",
+   "name": "龙莹桃霁",
+   "gender": "男",
+   "age": "25",
+   "trait": "成熟稳重音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莹桃霁 · 成熟稳重音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengxindie",
+   "name": "龙风昕蝶",
+   "gender": "女",
+   "age": "26",
+   "trait": "亲和自然音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙风昕蝶 · 亲和自然音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanyinglu",
+   "name": "龙萱樱露",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙萱樱露 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqinghuilang",
+   "name": "龙晴辉朗",
+   "gender": "女",
+   "age": "24",
+   "trait": "知性姐姐音",
+   "scene": "知识分享",
+   "language": "中文",
+   "label": "龙晴辉朗 · 知性姐姐音（女，24岁，中文，知识分享）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longronghongxue",
+   "name": "龙蓉虹雪",
+   "gender": "女",
+   "age": "24",
+   "trait": "专业解说音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蓉虹雪 · 专业解说音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longruimoliu",
+   "name": "龙蕊沫柳",
+   "gender": "女",
+   "age": "28",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙蕊沫柳 · 自然亲和音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhexiaoxuan",
+   "name": "龙荷潇璇",
+   "gender": "男",
+   "age": "38",
+   "trait": "文雅书卷音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙荷潇璇 · 文雅书卷音（男，38岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengyuhui",
+   "name": "龙澄瑜辉",
+   "gender": "女",
+   "age": "8",
+   "trait": "调皮少年音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澄瑜辉 · 调皮少年音（女，8岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanlinju",
+   "name": "龙萱琳菊",
+   "gender": "女",
+   "age": "22",
+   "trait": "大方温和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙萱琳菊 · 大方温和音（女，22岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinlinying",
+   "name": "龙麟琳莹",
+   "gender": "女",
+   "age": "22",
+   "trait": "伤感低回音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙麟琳莹 · 伤感低回音（女，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyilangyan",
+   "name": "龙熠朗燕",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙熠朗燕 · 温柔知性音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuanglanhui",
+   "name": "龙霜岚晖",
+   "gender": "女",
+   "age": "25",
+   "trait": "大方温和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙霜岚晖 · 大方温和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiyuxian",
+   "name": "龙漪瑜弦",
+   "gender": "女",
+   "age": "8",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙漪瑜弦 · 温柔知性音（女，8岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longsonglinhe",
+   "name": "龙松琳鹤",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙松琳鹤 · 温柔知性音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuanzhilin",
+   "name": "龙萱芷琳",
+   "gender": "女",
+   "age": "25",
+   "trait": "耐心教导音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙萱芷琳 · 耐心教导音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengyuxiao",
+   "name": "龙峰雨霄",
+   "gender": "男",
+   "age": "29",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙峰雨霄 · 温润磁性音（男，29岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaoyihe",
+   "name": "龙霄漪荷",
+   "gender": "男",
+   "age": "42",
+   "trait": "温润暖男音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霄漪荷 · 温润暖男音（男，42岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianyingyue",
+   "name": "龙莲樱玥",
+   "gender": "女",
+   "age": "28",
+   "trait": "成熟知心音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙莲樱玥 · 成熟知心音（女，28岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqingyiyao",
+   "name": "龙晴翼瑶",
+   "gender": "女",
+   "age": "25",
+   "trait": "大方温和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙晴翼瑶 · 大方温和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuangweihe",
+   "name": "龙霜薇鹤",
+   "gender": "女",
+   "age": "24",
+   "trait": "惊奇讶异音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霜薇鹤 · 惊奇讶异音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquantaolan",
+   "name": "龙泉桃嵐",
+   "gender": "女",
+   "age": "27",
+   "trait": "成熟沉稳音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙泉桃嵐 · 成熟沉稳音（女，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchuanyingyue",
+   "name": "龙川樱玥",
+   "gender": "男",
+   "age": "38",
+   "trait": "腹黑深沉音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙川樱玥 · 腹黑深沉音（男，38岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longliutaohong",
+   "name": "龙柳桃虹",
+   "gender": "女",
+   "age": "22",
+   "trait": "傲娇俏皮音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙柳桃虹 · 傲娇俏皮音（女，22岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longrongxianyu",
+   "name": "龙蓉弦煜",
+   "gender": "女",
+   "age": "26",
+   "trait": "雍容宫廷音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙蓉弦煜 · 雍容宫廷音（女，26岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longluanxuanling",
+   "name": "龙鸾萱凌",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔姐姐音",
+   "scene": "知识分享",
+   "language": "中文",
+   "label": "龙鸾萱凌 · 温柔姐姐音（女，25岁，中文，知识分享）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhefenglian",
+   "name": "龙鹤峰涟",
+   "gender": "女",
+   "age": "24",
+   "trait": "清亮明朗音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙鹤峰涟 · 清亮明朗音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunfuyu",
+   "name": "龙珺芙羽",
+   "gender": "女",
+   "age": "23",
+   "trait": "慵懒童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珺芙羽 · 慵懒童趣音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengqinji",
+   "name": "龙峰琴霁",
+   "gender": "女",
+   "age": "26",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙峰琴霁 · 温润磁性音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingyiyu",
+   "name": "龙樱翼瑜",
+   "gender": "女",
+   "age": "23",
+   "trait": "萌宠拟声音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙樱翼瑜 · 萌宠拟声音（女，23岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchezhihong",
+   "name": "龙澈芷虹",
+   "gender": "女",
+   "age": "26",
+   "trait": "耐心教导音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙澈芷虹 · 耐心教导音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfulingmu",
+   "name": "龙芙凌暮",
+   "gender": "女",
+   "age": "24",
+   "trait": "正太变声音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙芙凌暮 · 正太变声音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuansongxing",
+   "name": "龙璇松杏",
+   "gender": "女",
+   "age": "24",
+   "trait": "柔弱楚楚音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙璇松杏 · 柔弱楚楚音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhecherong",
+   "name": "龙鹤澈蓉",
+   "gender": "女",
+   "age": "16",
+   "trait": "清亮明朗音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙鹤澈蓉 · 清亮明朗音（女，16岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianlanyuan",
+   "name": "龙莲嵐渊",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙莲嵐渊 · 温柔贴心音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiutongni",
+   "name": "龙岫桐霓",
+   "gender": "女",
+   "age": "24",
+   "trait": "清亮明朗音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岫桐霓 · 清亮明朗音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongheji",
+   "name": "龙桐荷霁",
+   "gender": "女",
+   "age": "25",
+   "trait": "温润磁性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙桐荷霁 · 温润磁性音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengmohui",
+   "name": "龙枫沫晖",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙枫沫晖 · 温柔贴心音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquanxuanshuang",
+   "name": "龙泉暄霜",
+   "gender": "女",
+   "age": "23",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙泉暄霜 · 温柔亲和音（女，23岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinheyi",
+   "name": "龙麟荷熠",
+   "gender": "女",
+   "age": "22",
+   "trait": "温柔贴心音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙麟荷熠 · 温柔贴心音（女，22岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuisongxiao",
+   "name": "龙晦松晓",
+   "gender": "女",
+   "age": "27",
+   "trait": "御姐成熟音",
+   "scene": "有声书配音",
+   "language": "中文",
+   "label": "龙晦松晓 · 御姐成熟音（女，27岁，中文，有声书配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyiyushuo",
+   "name": "龙翼雨烁",
+   "gender": "女",
+   "age": "14",
+   "trait": "威严将领音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙翼雨烁 · 威严将领音（女，14岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxinyuanxing",
+   "name": "龙昕渊星",
+   "gender": "女",
+   "age": "7",
+   "trait": "慵懒童趣音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙昕渊星 · 慵懒童趣音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxiaoxingyi",
+   "name": "龙晓星漪",
+   "gender": "女",
+   "age": "23",
+   "trait": "灵动少女音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙晓星漪 · 灵动少女音（女，23岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlianjinxing",
+   "name": "龙涟瑾星",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙涟瑾星 · 温柔知性音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanzhengqin",
+   "name": "龙杉筝琴",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙杉筝琴 · 温柔亲和音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuantaoshuo",
+   "name": "龙萱桃烁",
+   "gender": "女",
+   "age": "9",
+   "trait": "元气活力音",
+   "scene": "动漫配音",
+   "language": "中文",
+   "label": "龙萱桃烁 · 元气活力音（女，9岁，中文，动漫配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlingweiluan",
+   "name": "龙翎薇鸾",
+   "gender": "女",
+   "age": "24",
+   "trait": "雍容宫廷音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙翎薇鸾 · 雍容宫廷音（女，24岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longfengxiuche",
+   "name": "龙凤岫澈",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔邻家音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙凤岫澈 · 温柔邻家音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinshuoxi",
+   "name": "龙琳朔溪",
+   "gender": "女",
+   "age": "23",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙琳朔溪 · 温柔知性音（女，23岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyaofenghe",
+   "name": "龙瑶凤鹤",
+   "gender": "女",
+   "age": "23",
+   "trait": "磁性质感音",
+   "scene": "深夜电台",
+   "language": "中文",
+   "label": "龙瑶凤鹤 · 磁性质感音（女，23岁，中文，深夜电台）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyucanxiao",
+   "name": "龙雨璨晓",
+   "gender": "女",
+   "age": "22",
+   "trait": "清亮明朗音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙雨璨晓 · 清亮明朗音（女，22岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxilanque",
+   "name": "龙溪澜雀",
+   "gender": "女",
+   "age": "24",
+   "trait": "柔怯温婉音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙溪澜雀 · 柔怯温婉音（女，24岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longcheqinyi",
+   "name": "龙澈琴漪",
+   "gender": "女",
+   "age": "25",
+   "trait": "清亮明朗音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙澈琴漪 · 清亮明朗音（女，25岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxuequanshuo",
+   "name": "龙雪泉朔",
+   "gender": "女",
+   "age": "24",
+   "trait": "磁性质感音",
+   "scene": "深夜电台",
+   "language": "中文",
+   "label": "龙雪泉朔 · 磁性质感音（女，24岁，中文，深夜电台）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshanyuxing",
+   "name": "龙杉瑜星",
+   "gender": "女",
+   "age": "25",
+   "trait": "灵动少女音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙杉瑜星 · 灵动少女音（女，25岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlantongluan",
+   "name": "龙岚彤鸾",
+   "gender": "女",
+   "age": "24",
+   "trait": "大气司仪音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙岚彤鸾 · 大气司仪音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longbaichexuan",
+   "name": "龙柏澈萱",
+   "gender": "男",
+   "age": "28",
+   "trait": "磁性质感音",
+   "scene": "深夜电台",
+   "language": "中文",
+   "label": "龙柏澈萱 · 磁性质感音（男，28岁，中文，深夜电台）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlangmoyue",
+   "name": "龙朗沫玥",
+   "gender": "男",
+   "age": "42",
+   "trait": "沉稳内敛音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙朗沫玥 · 沉稳内敛音（男，42岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longwangjixi",
+   "name": "龙望霁溪",
+   "gender": "男",
+   "age": "25",
+   "trait": "睿智亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙望霁溪 · 睿智亲和音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longshuangqinque",
+   "name": "龙霜琴雀",
+   "gender": "女",
+   "age": "25",
+   "trait": "成熟知心音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙霜琴雀 · 成熟知心音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longkeyuecan",
+   "name": "龙珂月璨",
+   "gender": "女",
+   "age": "7",
+   "trait": "搞怪卡通音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珂月璨 · 搞怪卡通音（女，7岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuanruiling",
+   "name": "龙渊蕊翎",
+   "gender": "女",
+   "age": "23",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙渊蕊翎 · 温柔知性音（女，23岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquefengshuo",
+   "name": "龙雀枫朔",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔姐姐音",
+   "scene": "知识分享",
+   "language": "中文",
+   "label": "龙雀枫朔 · 温柔姐姐音（女，26岁，中文，知识分享）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longxishuoxuan",
+   "name": "龙溪烁璇",
+   "gender": "女",
+   "age": "26",
+   "trait": "清亮明朗音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙溪烁璇 · 清亮明朗音（女，26岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtongquanxi",
+   "name": "龙彤泉溪",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔姐姐音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙彤泉溪 · 温柔姐姐音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhetongcan",
+   "name": "龙鹤彤璨",
+   "gender": "女",
+   "age": "25",
+   "trait": "磁性质感音",
+   "scene": "古风有声书",
+   "language": "中文",
+   "label": "龙鹤彤璨 · 磁性质感音（女，25岁，中文，古风有声书）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyuyuzheng",
+   "name": "龙瑜羽筝",
+   "gender": "女",
+   "age": "24",
+   "trait": "温柔亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙瑜羽筝 · 温柔亲和音（女，24岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longjunqueyu",
+   "name": "龙珺鹊羽",
+   "gender": "女",
+   "age": "25",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙珺鹊羽 · 自然亲和音（女，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longzhenglanyao",
+   "name": "龙筝兰瑶",
+   "gender": "女",
+   "age": "8",
+   "trait": "清亮明朗音",
+   "scene": "社交互动",
+   "language": "中文",
+   "label": "龙筝兰瑶 · 清亮明朗音（女，8岁，中文，社交互动）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longqingxiaoxiang",
+   "name": "龙晴霄湘",
+   "gender": "女",
+   "age": "27",
+   "trait": "自信从容音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙晴霄湘 · 自信从容音（女，27岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyueyaoling",
+   "name": "龙月瑶翎",
+   "gender": "男",
+   "age": "25",
+   "trait": "成熟沉稳音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙月瑶翎 · 成熟沉稳音（男，25岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlinhongxi",
+   "name": "龙麟鸿溪",
+   "gender": "男",
+   "age": "22",
+   "trait": "青年朝气音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙麟鸿溪 · 青年朝气音（男，22岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longchengtingtong",
+   "name": "龙澄汀桐",
+   "gender": "女",
+   "age": "26",
+   "trait": "尖亮穿透音",
+   "scene": "新闻播报",
+   "language": "中文",
+   "label": "龙澄汀桐 · 尖亮穿透音（女，26岁，中文，新闻播报）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longtonghewei",
+   "name": "龙桐荷薇",
+   "gender": "女",
+   "age": "28",
+   "trait": "低沉深邃音",
+   "scene": "有声书配音",
+   "language": "中文",
+   "label": "龙桐荷薇 · 低沉深邃音（女，28岁，中文，有声书配音）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longlanjulu",
+   "name": "龙澜菊露",
+   "gender": "女",
+   "age": "25",
+   "trait": "磁性质感音",
+   "scene": "深夜电台",
+   "language": "中文",
+   "label": "龙澜菊露 · 磁性质感音（女，25岁，中文，深夜电台）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingdielin",
+   "name": "龙莹蝶琳",
+   "gender": "男",
+   "age": "42",
+   "trait": "热血激昂音",
+   "scene": "体育解说",
+   "language": "中文",
+   "label": "龙莹蝶琳 · 热血激昂音（男，42岁，中文，体育解说）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyulianrong",
+   "name": "龙羽莲蓉",
+   "gender": "男",
+   "age": "28",
+   "trait": "沉稳解说音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙羽莲蓉 · 沉稳解说音（男，28岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longhuiyanxing",
+   "name": "龙辉焱杏",
+   "gender": "男",
+   "age": "42",
+   "trait": "沉稳解说音",
+   "scene": "有声阅读",
+   "language": "中文",
+   "label": "龙辉焱杏 · 沉稳解说音（男，42岁，中文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longquexuhui",
+   "name": "龙雀旭辉",
+   "gender": "女",
+   "age": "35",
+   "trait": "自然亲和音",
+   "scene": "日常对话",
+   "language": "中文",
+   "label": "龙雀旭辉 · 自然亲和音（女，35岁，中文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longkeyuwang",
+   "name": "龙珂煜望",
+   "gender": "女",
+   "age": "27",
+   "trait": "专业解说音",
+   "scene": "体育解说",
+   "language": "中文",
+   "label": "龙珂煜望 · 专业解说音（女，27岁，中文，体育解说）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyushanluan",
+   "name": "龙瑜杉鸾",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙瑜杉鸾 · 温柔亲和音（女，25岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longweiquancheng",
+   "name": "龙薇泉澄",
+   "gender": "女",
+   "age": "26",
+   "trait": "温柔亲和音",
+   "scene": "情感陪伴",
+   "language": "中文",
+   "label": "龙薇泉澄 · 温柔亲和音（女，26岁，中文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loongolivialin",
+   "name": "Olivia Lin",
+   "gender": "女",
+   "age": "28",
+   "trait": "温柔知性音",
+   "scene": "情感陪伴",
+   "language": "英文",
+   "label": "Olivia Lin · 温柔知性音（女，28岁，英文，情感陪伴）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loonglunawang",
+   "name": "Luna Wang",
+   "gender": "女",
+   "age": "21",
+   "trait": "智能助手音",
+   "scene": "日常对话",
+   "language": "英文",
+   "label": "Luna Wang · 智能助手音（女，21岁，英文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loongalexanderhu",
+   "name": "Alexander Hu",
+   "gender": "男",
+   "age": "27",
+   "trait": "复古磁带音",
+   "scene": "日常对话",
+   "language": "英文",
+   "label": "Alexander Hu · 复古磁带音（男，27岁，英文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loongnorahu",
+   "name": "Nora Hu",
+   "gender": "女",
+   "age": "25",
+   "trait": "活泼灵动音",
+   "scene": "日常对话",
+   "language": "英文",
+   "label": "Nora Hu · 活泼灵动音（女，25岁，英文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loongadriangao",
+   "name": "Adrian Gao",
+   "gender": "男",
+   "age": "22",
+   "trait": "沉稳大气音",
+   "scene": "有声阅读",
+   "language": "英文",
+   "label": "Adrian Gao · 沉稳大气音（男，22岁，英文，有声阅读）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loongjameszhao",
+   "name": "James Zhao",
+   "gender": "男",
+   "age": "28",
+   "trait": "新闻播报音",
+   "scene": "日常对话",
+   "language": "英文",
+   "label": "James Zhao · 新闻播报音（男，28岁，英文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loongryanma",
+   "name": "Ryan Ma",
+   "gender": "男",
+   "age": "38",
+   "trait": "电子潮流音",
+   "scene": "日常对话",
+   "language": "英文",
+   "label": "Ryan Ma · 电子潮流音（男，38岁，英文，日常对话）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-loongivyhu",
+   "name": "Ivy Hu",
+   "gender": "女",
+   "age": "54",
+   "trait": "自信从容音",
+   "scene": "演讲朗诵",
+   "language": "英文",
+   "label": "Ivy Hu · 自信从容音（女，54岁，英文，演讲朗诵）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingbaozi",
+   "name": "龙应宝子",
+   "gender": "女",
+   "age": "25",
+   "trait": "邻家亲切音",
+   "scene": "标准通用型客服",
+   "language": "中文",
+   "label": "龙应宝子 · 邻家亲切音（女，25岁，中文，标准通用型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingyali",
+   "name": "龙应压力",
+   "gender": "男",
+   "age": "27",
+   "trait": "理性告知音",
+   "scene": "初期催收提醒客服",
+   "language": "中文",
+   "label": "龙应压力 · 理性告知音（男，27岁，中文，初期催收提醒客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingyueyue",
+   "name": "龙应越越",
+   "gender": "女",
+   "age": "22",
+   "trait": "耐心专业音",
+   "scene": "讲解引导型客服",
+   "language": "中文",
+   "label": "龙应越越 · 耐心专业音（女，22岁，中文，讲解引导型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingxiaola",
+   "name": "龙应小辣",
+   "gender": "女",
+   "age": "25",
+   "trait": "稳健顾问音",
+   "scene": "理财咨询型客服",
+   "language": "中文",
+   "label": "龙应小辣 · 稳健顾问音（女，25岁，中文，理财咨询型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingyifan",
+   "name": "龙应一帆",
+   "gender": "男",
+   "age": "30",
+   "trait": "启蒙导师音",
+   "scene": "引导新手型客服",
+   "language": "中文",
+   "label": "龙应一帆 · 启蒙导师音（男，30岁，中文，引导新手型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyinglanxin",
+   "name": "龙应岚心",
+   "gender": "女",
+   "age": "23",
+   "trait": "理性告知音",
+   "scene": "账单提醒型客服",
+   "language": "中文",
+   "label": "龙应岚心 · 理性告知音（女，23岁，中文，账单提醒型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingmuyu",
+   "name": "龙应沐语",
+   "gender": "女",
+   "age": "25",
+   "trait": "温柔亲和音",
+   "scene": "标准通用型客服",
+   "language": "中文",
+   "label": "龙应沐语 · 温柔亲和音（女，25岁，中文，标准通用型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingyulu",
+   "name": "龙应玉路",
+   "gender": "女",
+   "age": "22",
+   "trait": "真诚邀请音",
+   "scene": "新品推荐型客服",
+   "language": "中文",
+   "label": "龙应玉路 · 真诚邀请音（女，22岁，中文，新品推荐型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingmomo",
+   "name": "龙应末末",
+   "gender": "男",
+   "age": "30",
+   "trait": "诚恳稳重音",
+   "scene": "理财顾问型客服",
+   "language": "中文",
+   "label": "龙应末末 · 诚恳稳重音（男，30岁，中文，理财顾问型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingshiyu",
+   "name": "龙应时渝",
+   "gender": "女",
+   "age": "30",
+   "trait": "干练响应音",
+   "scene": "标准通用型客服",
+   "language": "中文",
+   "label": "龙应时渝 · 干练响应音（女，30岁，中文，标准通用型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyinghaitai",
+   "name": "龙应海台",
+   "gender": "女",
+   "age": "28",
+   "trait": "耐心包容音",
+   "scene": "医院社区引导型客服",
+   "language": "中文",
+   "label": "龙应海台 · 耐心包容音（女，28岁，中文，医院社区引导型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyinghaiyuan",
+   "name": "龙应海远",
+   "gender": "女",
+   "age": "35",
+   "trait": "克制礼貌音",
+   "scene": "监察回访型客服",
+   "language": "中文",
+   "label": "龙应海远 · 克制礼貌音（女，35岁，中文，监察回访型客服）"
+  },
+  {
+   "id": "qwen-audio-3.0-tts-plus-longyingwumao",
+   "name": "龙应吾茂",
+   "gender": "男",
+   "age": "30",
+   "trait": "客观冷静音",
+   "scene": "核保理赔型客服",
+   "language": "中文",
+   "label": "龙应吾茂 · 客观冷静音（男，30岁，中文，核保理赔型客服）"
+  }
+ ]
+}

@@ -204,8 +204,10 @@ export function ModelsPage() {
   const saveModel = async () => {
     if (!editing) return;
     const p = toPayload(editing);
-    if (!p.id || !p.name || !p.alias) {
-      setFeedback({ ok: false, text: "通道 ID / 模型名 / Hermes 别名均不能为空" });
+    if (!p.id || !p.name || (p.protocol !== "media-api" && !p.alias)) {
+      setFeedback({ ok: false, text: p.protocol === "media-api"
+        ? "媒体云服务条目至少填写通道 ID 与模型名"
+        : "通道 ID / 模型名 / Hermes 别名均不能为空" });
       return;
     }
     const ok = await run("save", { action: isNew ? "create" : "update", id: p.id, model: p },
@@ -317,6 +319,7 @@ export function ModelsPage() {
                       <tr key={m.id} className={m.status === "disabled" ? "models-row-off" : undefined}>
                         <td>
                           <b>{m.name}</b>
+                          {m.protocol === "media-api" && <span className="models-tag">云服务 Key</span>}
                           {m.isDefault && <span className="models-tag default">默认</span>}
                           <small className="muted mono"> · {m.id}</small>
                           <small className="muted"> · 别名 {m.alias || "—"} · 优先级 {m.priority}</small>
@@ -495,13 +498,16 @@ export function ModelsPage() {
                        onChange={(e) => setEditing({ ...editing, alias: e.target.value })} />
               </label>
               <label className="field models-span-2">
-                <span>端点 URL（OpenAI 兼容 /v1）</span>
+                <span>{editing.protocol === "media-api"
+                  ? "服务端点（仅作记录，媒体云服务不参与对话路由）" : "端点 URL（OpenAI 兼容 /v1）"}</span>
                 <input className="input mono" value={editing.url}
-                       placeholder="https://.../compatible-mode/v1"
+                       placeholder={editing.protocol === "media-api" ? "https://.../api/v1/services/..." : "https://.../compatible-mode/v1"}
                        onChange={(e) => setEditing({ ...editing, url: e.target.value })} />
               </label>
               <label className="field models-span-2">
-                <span>Token Key（API Key，仅老板可见）</span>
+                <span>{editing.protocol === "media-api"
+                  ? "云服务 API Key（声音车间 / 图片车间读取；留空则复用百炼 LLM Key）"
+                  : "Token Key（API Key，仅老板可见）"}</span>
                 <div className="models-key-row">
                   <input className="input mono" type={showKey ? "text" : "password"} value={editing.apiKey}
                          placeholder="sk-..."
@@ -516,6 +522,7 @@ export function ModelsPage() {
                         onChange={(e) => setEditing({ ...editing, protocol: e.target.value })}>
                   <option value="openai-chat">openai-chat</option>
                   <option value="hermes-cli">hermes-cli</option>
+                  <option value="media-api">media-api（媒体云服务 Key，不参与对话路由）</option>
                 </select>
               </label>
               <label className="field">
@@ -576,7 +583,9 @@ export function ModelsPage() {
               </label>
             </div>
             <div className="models-modal-foot">
-              <small className="muted">保存后会自动同步到 Hermes 主配置与全部员工 profile 的别名定义。</small>
+              <small className="muted">{editing.protocol === "media-api"
+                ? "媒体云服务条目只供加工厂读取 Key，不会写入 Hermes 别名。"
+                : "保存后会自动同步到 Hermes 主配置与全部员工 profile 的别名定义。"}</small>
               <div>
                 <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>取消</button>
                 <button type="button" className="btn" disabled={!!busy} onClick={saveModel}>

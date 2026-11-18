@@ -490,10 +490,17 @@ def toolbox_voice_ref(kn, vid):
 
 
 def voice_preview(kn, channel, voice, text=""):
-    """车间音色试听：按渠道+音色合成固定短句，服务端缓存。"""
+    """车间音色试听：有现成样本直接播，没有才合成一次，服务端缓存。"""
     if MEDIA is None:
         raise ValueError(MEDIA_UNAVAILABLE)
     return MEDIA.voice_preview(channel, voice, text)
+
+
+def voice_sample(kn, channel, voice):
+    """音色库：取已录制的试听音源，不合成。返回 (路径, 来源)。"""
+    if MEDIA is None:
+        raise ValueError(MEDIA_UNAVAILABLE)
+    return MEDIA.voice_sample_path(channel, voice)
 
 
 def toolbox_channels(kn):

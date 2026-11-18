@@ -1086,6 +1086,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **self._kernel().factory_channels()})
             except Exception as e:
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if path == "/api/factory/voice/sample":
+            if not self._session_user():
+                return self._json({"ok": False, "error": "需要登录"}, 401)
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                wav, source = self._kernel().voice_sample(
+                    (qs.get("channel") or [""])[0], (qs.get("voice") or [""])[0])
+                if not wav:
+                    return self._json({"ok": False, "error": "该音色还没有试听音源"}, 404)
+                return self._send_audio(wav, {"X-Voice-Source": source})
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if path == "/api/factory/voice/preview":
             if not self._session_user():
                 return self._json({"ok": False, "error": "需要登录"}, 401)
@@ -1094,6 +1108,7 @@ class Handler(BaseHTTPRequestHandler):
                 wav = self._kernel().voice_preview(
                     (qs.get("channel") or [""])[0], (qs.get("voice") or [""])[0],
                     (qs.get("text") or [""])[0])
+                wav = wav[0] if isinstance(wav, (tuple, list)) else wav
                 return self._send_audio(wav)
             except ValueError as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
@@ -2753,13 +2768,15 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             shutil.copyfileobj(f, self.wfile, 256 * 1024)
 
-    def _send_audio(self, path):
+    def _send_audio(self, path, extra_headers=None):
         """试听用：inline 返回 wav，不弹下载框。"""
         size = os.path.getsize(path)
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
         self.send_header("Content-Length", str(size))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (extra_headers or {}).items():
+            self.send_header(k, str(v))
         self.end_headers()
         with open(path, "rb") as f:
             shutil.copyfileobj(f, self.wfile, 128 * 1024)
@@ -3547,9 +3564,11 @@ class Handler(BaseHTTPRequestHandler):
                 after = next((r for r in st.llm_models() if r.get("id") == mid), None) or {}
                 old_alias = str(before.get("alias") or "")
                 new_alias = str(after.get("alias") or "")
-                if old_alias and old_alias != new_alias:
+                old_chat = str(before.get("protocol") or "openai-chat") != "media-api"
+                new_chat = str(after.get("protocol") or "openai-chat") != "media-api"
+                if old_alias and (old_alias != new_alias or (old_chat and not new_chat)):
                     LREG._llm_alias_sync(after, remove=True, old_alias=old_alias)
-                if new_alias:
+                if new_alias and new_chat:
                     LREG._llm_alias_sync({**after, "apiKey": after.get("api_key") or "",
                                          "contextLength": after.get("context_length") or 0,
                                          "maxOutputTokens": after.get("max_output_tokens") or 0})

@@ -1484,10 +1484,15 @@ class Store:
                 for m in defaults:
                     self._conn.execute(
                         """INSERT INTO llm_models(id,name,url,protocol,total_tokens,used_tokens,
-                           status,note,updated_at) VALUES(?,?,?,?,?,?,?,?,?)""",
-                        (m["id"], m["name"], m.get("url") or "", m.get("protocol") or "",
+                           status,alias,priority,provider,api_key,is_default,context_length,
+                           max_output_tokens,note,updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (m["id"], m["name"], m.get("url") or "", m.get("protocol") or "openai-chat",
                          _int(m.get("totalTokens")), 0, m.get("status") or "enabled",
-                         m.get("note") or "", now_iso()))
+                         str(m.get("alias") or ""), _int(m.get("priority")) or 100,
+                         str(m.get("provider") or "custom"), str(m.get("apiKey") or ""),
+                         1 if m.get("isDefault") else 0, _int(m.get("contextLength")),
+                         _int(m.get("maxOutputTokens")), m.get("note") or "", now_iso()))
                 self._conn.commit()
                 _log(f"llm_models 初始化完成（{len(defaults)} 条，额度从部署时起算）")
             except sqlite3.Error as e:
@@ -1507,6 +1512,9 @@ class Store:
         status = str(m.get("status") or "enabled")
         total, used = _int(m.get("total_tokens")), _int(m.get("used_tokens"))
         if status in ("disabled", "exhausted") or (total > 0 and used >= total):
+            return True
+        # media-api 是加工厂云服务的 Key 条目，不是对话端点，绝不参与 llm_pick
+        if str(m.get("protocol") or "openai-chat") not in ("openai-chat", "hermes-cli"):
             return True
         # 429/限流熔断：冷却期内的通道在 llm_pick 里自动跳过（到期自动恢复）
         try:

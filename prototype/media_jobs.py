@@ -56,8 +56,8 @@ CLONE_MAX_SEC = 20.0
 CLONE_MIN_SEC = 1.5
 
 # 云服务：阿里云百炼 Token Plan 语音合成（qwen-audio-3.0-tts-plus）。
-# 与 llm_registry.py 里的百炼 LLM 共用同一把 sk-sp-* Token Plan Key，不另存凭据；
-# 需要单独一把 Key 时用 OPC_BAILIAN_TTS_API_KEY 覆盖。
+# Key 优先取模型管理页 qwentts-bailian / qwenimage-bailian 条目；留空才回落百炼 LLM Key
+# 或 OPC_BAILIAN_TTS_API_KEY / OPC_BAILIAN_IMAGE_API_KEY（见 llm_registry.media_api_key）。
 BAILIAN_TTS_BASE = os.environ.get(
     "OPC_BAILIAN_TTS_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com").rstrip("/")
 BAILIAN_TTS_PATH = "/api/v1/services/audio/tts/SpeechSynthesizer"
@@ -65,6 +65,9 @@ BAILIAN_TTS_MODEL = os.environ.get("OPC_BAILIAN_TTS_MODEL", "qwen-audio-3.0-tts-
 BAILIAN_TTS_KEY = (os.environ.get("OPC_BAILIAN_TTS_API_KEY")
                    or os.environ.get("OPC_LLM_QWEN37PLUS_API_KEY")
                    or os.environ.get("OPC_LLM_QWEN38FLASH_API_KEY") or "")
+# 官方 601 个音色的中文目录（4 实测系统音色 + 597 基础音色，源自阿里云官方 Excel）
+BAILIAN_TTS_VOICES_JSON = os.environ.get(
+    "OPC_BAILIAN_TTS_VOICES_JSON", os.path.join(BASE_DIR, "data", "bailian_tts_voices.json"))
 # 云服务：阿里云百炼 Token Plan 图像生成（qwen-image-3.0-pro，文生图 + 图生图）
 BAILIAN_IMAGE_BASE = os.environ.get(
     "OPC_BAILIAN_IMAGE_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com").rstrip("/")
@@ -109,18 +112,20 @@ def _http_json(url, timeout=15, data=None, method=None, headers=None):
     return json.loads(raw.decode("utf-8")) if raw else {}
 
 
-def _bailian_api_key():
-    """百炼 Token Plan Key：显式环境变量优先，否则复用百炼 LLM 通道那把 sk-sp-*。"""
-    if BAILIAN_TTS_KEY:
-        return BAILIAN_TTS_KEY
+def _bailian_api_key(kind="tts"):
+    """百炼 Key：模型管理页的 QWEN TTS / QWEN image 条目优先，留空才回落到百炼 LLM Key。"""
     try:
-        from llm_registry import LLM_DEFAULTS
-        for m in LLM_DEFAULTS:
-            if str(m.get("id") or "").endswith("-bailian") and m.get("apiKey"):
-                return m["apiKey"]
-    except Exception:  # noqa: BLE001 - 取不到就走「未配置」，不吞掉真实合成时的报错
+        from llm_registry import media_api_key
+        key = media_api_key(kind)
+        if key:
+            return key
+    except Exception:  # noqa: BLE001 - 注册表不可用时退回环境变量，不吞掉真实调用报错
         pass
-    return ""
+    return BAILIAN_TTS_KEY
+
+
+def _bailian_image_api_key():
+    return _bailian_api_key("image")
 
 
 # ---------------------------------------------------------------- 渠道注册表
@@ -134,7 +139,8 @@ GROUPS = [
      "desc": "media-gen 出图出片 + media-engine 语音，服务端自己排队，可并发"},
     {"key": "bailian", "label": "阿里云百炼（云服务）",
      "desc": "DashScope Token Plan 云端语音合成 / 图像生成，按量计费、不占本机算力；"
-             "Key 复用百炼 LLM 通道的 sk-sp-*（可用 OPC_BAILIAN_TTS_API_KEY 单独覆盖）"},
+             "Key 在「模型管理」页的 qwen-audio-3.0-tts-plus / qwen-image-3.0-pro 条目里设置，"
+             "留空才回落 OPC_BAILIAN_*_API_KEY 或百炼 LLM 的 sk-sp-*"},
 ]
 
 CHANNELS = {
@@ -434,17 +440,15 @@ CHANNELS = {
         "modes": ["tts"],
         "params": [
             _p("voice", "音色", "select", "longanhuan_v3.6",
-               options=["longanhuan_v3.6", "longanyang_v3.6", "longjielidou_v3.6",
-                        "longpaopao_v3.6", "longhuohuo_v3.6", "longchuanshu_v3.6"],
+               options=["longanhuan_v3.6", "longanlingxin", "longanlufeng", "longanlingxi"],
                optionLabels={
-                   "longanhuan_v3.6": "龙安欢 · 活力欢快女声（默认）",
-                   "longanyang_v3.6": "龙安阳 · 阳光友好年轻男声",
-                   "longjielidou_v3.6": "龙杰力豆 · 天真男童声",
-                   "longpaopao_v3.6": "龙泡泡 · 软糯可爱女童声",
-                   "longhuohuo_v3.6": "龙火火 · 顽皮少年音",
-                   "longchuanshu_v3.6": "龙川叔 · 川普大叔音",
+                   "longanhuan_v3.6": "龙安欢 · 欢脱元气女声（默认，Key 实测可用）",
+                   "longanlingxin": "龙安灵心 · 知心温暖音（旗舰女声，Key 实测可用）",
+                   "longanlufeng": "龙安鲁风 · 明亮开朗音（旗舰男声，Key 实测可用）",
+                   "longanlingxi": "龙安灵希 · 可爱甜美音（女声，Key 实测可用）",
                },
-               hint="按阿里云「Qwen-Audio-TTS 音色列表」标注；完整列表以官方为准"),
+               hint="官方清单共 601 个（4 个系统音色 + 597 个基础音色），点「试听全部音色」搜索挑选；"
+                    "基础音色参数形如 qwen-audio-3.0-tts-plus-xxx，别用 flash 系列音色"),
             _p("format", "音频格式", "select", "mp3",
                options=["mp3", "wav", "pcm", "opus"],
                hint="mp3 体积小、网页可直接播；wav 无损但大；pcm/opus 供二次处理"),
@@ -604,12 +608,36 @@ def _probe_media_engine():
                 "reason": f"media-engine 不可达（{MEDIAENGINE}）：{type(e).__name__}: {e}"}
 
 
-def _probe_bailian():
+def _probe_bailian(kind="tts"):
     """百炼是云服务：有 Key 即视为可用，不额外打真实合成（避免烧额度）。"""
-    if not _bailian_api_key():
-        return {"available": False,
-                "reason": "未配置百炼 API Key：设置 OPC_BAILIAN_TTS_API_KEY（或复用百炼 LLM Key）"}
-    return {"available": True, "reason": "云服务 · 按量计费", "endpoint": BAILIAN_TTS_BASE}
+    label = "qwen-image-3.0-pro" if kind == "image" else "qwen-audio-3.0-tts-plus"
+    endpoint = BAILIAN_IMAGE_BASE if kind == "image" else BAILIAN_TTS_BASE
+    if not _bailian_api_key(kind):
+        return {"available": False, "endpoint": endpoint,
+                "reason": f"未配置百炼 Key：在模型管理页的 {label} 条目设置（或复用百炼 LLM Key）"}
+    return {"available": True, "reason": "云服务 · 按量计费", "endpoint": endpoint}
+
+
+_BAILIAN_VOICES_CACHE = {"at": 0.0, "data": None}
+
+
+def bailian_voice_catalog(force=False):
+    """读取官方音色目录（4 系统音色 + 597 基础音色），带 1 小时缓存。"""
+    now = time.time()
+    if not force and _BAILIAN_VOICES_CACHE["data"] and now - _BAILIAN_VOICES_CACHE["at"] < 3600:
+        return _BAILIAN_VOICES_CACHE["data"]
+    try:
+        with open(BAILIAN_TTS_VOICES_JSON, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = None
+    _BAILIAN_VOICES_CACHE.update(at=now, data=data)
+    return data
+
+
+def bailian_voice_entries():
+    cat = bailian_voice_catalog() or {}
+    return list(cat.get("system") or []) + list(cat.get("voices") or [])
 
 
 def channels(force=False):
@@ -618,7 +646,8 @@ def channels(force=False):
         if force or time.time() - _PROBE["at"] > PROBE_TTL or not _PROBE["data"]:
             mg = _probe_media_gen()
             me = _probe_media_engine()
-            bailian = _probe_bailian()
+            bailian = _probe_bailian("tts")
+            bailian_image = _probe_bailian("image")
             _PROBE["data"] = {
                 "comfyui": _probe_comfy("comfyui"),
                 "comfyui_157": _probe_comfy("comfyui_157"),
@@ -628,7 +657,7 @@ def channels(force=False):
                 "minimax_h3": mg.get("minimax_h3") or {"available": False,
                                                        "reason": "media-gen 未登记 minimax_h3"},
                 "qwen": me, "cosyvoice": dict(me), "bailian": bailian,
-                "bailian_image": dict(bailian, endpoint=BAILIAN_IMAGE_BASE),
+                "bailian_image": bailian_image,
             }
             _PROBE["at"] = time.time()
         probe = dict(_PROBE["data"])
@@ -645,6 +674,13 @@ def channels(force=False):
         if name == "cosyvoice" and opts:
             params = [dict(p, options=opts, optionLabels=vlabels)
                       if p["key"] == "voice" else p for p in params]
+        if name == "bailian":
+            bentries = bailian_voice_entries()
+            if bentries:
+                bopts = [v["id"] for v in bentries]
+                blabels = {v["id"]: v.get("label") or v.get("name") or v["id"] for v in bentries}
+                params = [dict(p, options=bopts, optionLabels=blabels)
+                          if p["key"] == "voice" else p for p in params]
         out.append({
             "name": name, "kind": ch["kind"], "label": ch["label"], "notes": ch["notes"],
             "group": ch.get("group") or "lan",
@@ -1736,9 +1772,9 @@ def _bailian_image(mgr, row, params, on_progress):
     图生图把 params.frame 的图片读成 data URI 内联进 messages（服务端是内网，
     给公网 URL 反而不可达）；最多 3 张参考图，这里传 1 张。
     """
-    key = _bailian_api_key()
+    key = _bailian_image_api_key()
     if not key:
-        raise RuntimeError("百炼 API Key 未配置（OPC_BAILIAN_TTS_API_KEY）")
+        raise RuntimeError("百炼 API Key 未配置：请在模型管理页的 QWEN TTS / QWEN image 条目设置，或用 OPC_BAILIAN_*_API_KEY 覆盖")
     content = []
     frame = str(params.get("frame") or "").strip()
     if frame:
@@ -2383,13 +2419,67 @@ def clone_ref_path(vid):
     return wav
 
 
-# 试听：固定短句、按 (渠道, 音色, 文本) 缓存，避免反复烧本机算力 / 百炼额度
+# 试听音源：优先播「已经录制好」的样本，只有完全没有时才合成一次并落盘复用
 PREVIEW_TEXT = "大家好，这是音色试听。愿每一句话，都恰到好处。"
 VOICE_PREVIEW_DIR = os.path.join(BASE_DIR, ".cache", "voice-preview")
+VOICE_SAMPLE_DIR = os.path.join(BASE_DIR, ".cache", "voice-samples")
+QWEN_SAMPLE_DIRS = tuple(
+    d.strip() for d in os.environ.get(
+        "OPC_QWEN_SAMPLE_DIRS",
+        "/opt/sefs/opc-workbench/qwen-audio/samples,"
+        "/opt/sefs/OpenMontage/projects/tian-gou-power-ranking/assets/audio").split(",")
+    if d.strip())
+
+
+def _sample_voice_id(vid):
+    """音色 id → 安全文件名（音色 id 来自前端，不能拼进路径）。"""
+    return re.sub(r"[^A-Za-z0-9_-]", "_", str(vid or ""))[:80] or "unknown"
+
+
+def voice_sample_path(channel, voice):
+    """返回一个已存在的试听音源 (路径, 来源)，不触发任何合成。
+
+    来源优先级：克隆试合成样本 / CosyVoice 内置参考录音 / Qwen3 已落盘样本
+    → 之前合成过并缓存的固定句样本。都没有时返回 ("", "")。
+    """
+    name = str(channel or "")
+    vid = str(voice or "").strip()
+    if not vid:
+        return "", ""
+    # 1. 克隆音色：clone_ref_path 优先返回试合成样本，退回参考录音
+    if vid.startswith(CLONE_PREFIX):
+        try:
+            wav = clone_ref_path(vid)
+            if wav and os.path.isfile(wav):
+                return wav, "prerecorded"
+        except ValueError:
+            pass
+    # 2. CosyVoice 内置音色：voices.json 白名单里的参考录音，不能开放任意路径
+    if name == "cosyvoice":
+        try:
+            item = ((_read_voices_cfg().get("voices") or {}).get(vid) or {})
+        except (OSError, ValueError):
+            item = {}
+        wav = str(item.get("prompt_wav") or "")
+        if wav and os.path.isfile(wav):
+            return wav, "prerecorded"
+    # 3. Qwen3-TTS：历史落地样本，按 speaker 名匹配文件名
+    if name == "qwen":
+        for d in QWEN_SAMPLE_DIRS:
+            if not os.path.isdir(d):
+                continue
+            for f in sorted(os.listdir(d)):
+                if f.lower().endswith((".wav", ".mp3")) and vid.lower() in f.lower():
+                    return os.path.join(d, f), "prerecorded"
+    # 4. 已经合成过一次的固定句样本（确定性路径，第二次起零合成）
+    cached = os.path.join(VOICE_SAMPLE_DIR, name, _sample_voice_id(vid) + ".wav")
+    if os.path.isfile(cached) and os.path.getsize(cached) > 1024:
+        return cached, "cache"
+    return "", ""
 
 
 def voice_preview(channel, voice, text=""):
-    """按渠道+音色合成一小段 wav 试听音频，返回可 inline 播放的本地路径。"""
+    """试听：有现成音源就直接返回；确实没有才合成一次并落盘，之后都读文件。"""
     name = str(channel or "")
     ch = CHANNELS.get(name)
     if not ch or ch.get("kind") != "audio":
@@ -2403,20 +2493,24 @@ def voice_preview(channel, voice, text=""):
         raise ValueError("该渠道没有音色参数")
     if name != "cosyvoice":
         opts = specs[vkey].get("options") or []
+        if name == "bailian":
+            # 静态渠道只放 4 个实测系统音色，基础音色 597 个从官方目录取
+            opts = [v["id"] for v in bailian_voice_entries()] or opts
         if opts and vid not in opts:
             raise ValueError(f"音色 {vid} 不属于渠道 {name}")
+    existing, _source = voice_sample_path(name, vid)
+    if existing:
+        return existing
     text = (text or PREVIEW_TEXT)[:100]
     digest = hashlib.md5(f"{name}|{vid}|{text}".encode("utf-8")).hexdigest()[:16]
-    path = os.path.join(VOICE_PREVIEW_DIR, f"{name}-{digest}.wav")
-    if os.path.isfile(path) and os.path.getsize(path) > 1024:
-        return path
     params = {p["key"]: p.get("default") for p in (ch.get("params") or [])}
     params[vkey] = vid
     if name == "bailian":
         params["format"] = "wav"  # 试听接口固定 inline wav，别让 mp3 走 audio/wav 头
     row = {"id": f"preview-{digest}", "prompt": text, "channel": name, "kind": "audio"}
     res = _tts(None, row, params, lambda _p: None)
-    os.makedirs(VOICE_PREVIEW_DIR, exist_ok=True)
+    path = os.path.join(VOICE_SAMPLE_DIR, name, _sample_voice_id(vid) + ".wav")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     shutil.copyfile(res["path"], path)
     return path
 
@@ -2431,7 +2525,7 @@ def _tts_bailian(mgr, row, params, on_progress):
     """
     key = _bailian_api_key()
     if not key:
-        raise RuntimeError("百炼 API Key 未配置（OPC_BAILIAN_TTS_API_KEY）")
+        raise RuntimeError("百炼 API Key 未配置：请在模型管理页的 QWEN TTS / QWEN image 条目设置，或用 OPC_BAILIAN_*_API_KEY 覆盖")
     fmt = str(params.get("format") or "mp3").lower()
     if fmt not in ("mp3", "wav", "pcm", "opus"):
         fmt = "mp3"
