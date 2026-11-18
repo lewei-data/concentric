@@ -53,12 +53,13 @@ mcpServers:
 | 图片生成（支持参照图） | `mcp__opc__image` |
 | 生成文件重取链接 | `mcp__opc__file_link` |
 
-其余工具同理，共 **21 个**（以 `tools/list` 为准；详见随附 `OPC_MCP_CLIENT_USAGE.md`）。
+其余工具同理，共 **22 个**（以 `tools/list` 为准；详见随附 `OPC_MCP_CLIENT_USAGE.md`）。
 
 ## 4. 能力边界与限制
 
 - DSH 的 MCP 集成只暴露 **tools**；resources / prompts 没有消费者。
-- 二进制内容（图片、音频）在 DSH 侧会变成占位丢失：**TTS / 生图类工具返回的是服务端 `path` + 可跨网下载的 `download_url`**，服务端绝对路径不可直接用；应把 `download_url` 交给用户在本地 curl 下载（同一把个人 key 作 `X-Mail-Agent`），链接丢了用 `file_link(file_key=...)` 重取。
+- 二进制内容（图片、音频）在 DSH 侧会变成占位丢失：**TTS / 生图类工具不返回服务端 `path`，只给可跨网下载的 `download_url` + `file_key`**；把 `download_url` 交给用户在本地 curl 下载（同一把个人 key 作 `X-Mail-Agent`），链接丢了用 `file_link(file_key=...)` 重取。`media_capabilities` 同样已净化：音色只有 `id`+说明，无参考音频/模型权重的落盘路径。
+- 员工照片/半身照用 `staff_photos(kind=all\|halfbody\|portrait\|digital_human)` 列出（全局共享，所有 key 可见），返回 `download_url` 走同一条 `X-Mail-Agent` 下载通道；`file_key` 为确定性 `sp` 前缀，不含服务端路径。
 - 不要尝试在 DSH 里"读取 MCP resource"，统一用 `opc_resource_read` 工具。
 - 读出处时，完整路径取 `knowledge_brief.items[].source` 或 `citations[].path`；简报正文里的 `→ 路径` 是截断显示，直接读会报文件不存在。
 - `citations` 命中 `opc.message` 时 `path` 为空，这类消息引用不可追溯原文，只作线索。

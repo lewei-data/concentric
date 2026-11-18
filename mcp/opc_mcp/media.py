@@ -6,9 +6,11 @@
 """
 
 import base64
+import contextlib
 import json
 import os
 import shutil
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -17,6 +19,24 @@ import uuid
 from pathlib import Path
 
 from . import config
+
+# 百炼（阿里云 Token Plan）渠道的事实源是 prototype/media_jobs.py：
+# Key 取自模型管理页（_bailian_api_key），601 音色取自官方目录 JSON，端点/模型也都在那里。
+# MCP 是独立 stdio 进程，惰性 import 并把 import 期日志导向 stderr，绝不污染 stdout 的 JSON-RPC 通道。
+_PROTO_DIR = str(Path(__file__).resolve().parents[2] / "prototype")
+_MJ = None
+
+
+def _mj():
+    """惰性加载 media_jobs（百炼渠道唯一事实源）。"""
+    global _MJ
+    if _MJ is None:
+        if _PROTO_DIR not in sys.path:
+            sys.path.insert(0, _PROTO_DIR)
+        with contextlib.redirect_stdout(sys.stderr):
+            import media_jobs
+        _MJ = media_jobs
+    return _MJ
 
 
 class MediaError(RuntimeError):
@@ -64,12 +84,39 @@ def _collect(result, out_dir, stem, token, base_url):
     return ""
 
 
+def _bailian_tts(text, out_dir, voice=None, fmt="mp3", sample_rate=22050,
+                 stem=None, brief=None, notes=None):
+    """百炼 TTS：复用 media_jobs._tts_bailian，产物从缓存目录落到调用方目录。"""
+    mj = _mj()
+    stem = stem or ("tts_%d" % int(time.time()))
+    row = {"id": "mcp_" + uuid.uuid4().hex[:16], "prompt": text,
+           "channel": "bailian", "kind": "audio"}
+    params = {"voice": voice or "longanhuan_v3.6", "format": fmt or "mp3",
+              "sample_rate": int(float(sample_rate or 22050))}
+    res = mj._tts_bailian(None, row, params, lambda _p: None)
+    src = Path(res["path"])
+    if not src.is_file():
+        raise MediaError("百炼 TTS 未产出音频文件")
+    dst = Path(out_dir)
+    dst.mkdir(parents=True, exist_ok=True)
+    target = dst / (stem + src.suffix)
+    shutil.copy2(src, target)
+    return {"path": str(target), "engine": "bailian", "channel": "bailian",
+            "voice": params["voice"], "format": params["format"],
+            "brief": brief or "", "notes": notes or "",
+            "duration": res.get("duration"), "remote_id": res.get("remote_id"),
+            "note": res.get("note")}
+
+
 def tts(text, out_dir, voice=None, engine="cosyvoice", speed=1.0, wait_sec=120, stem=None,
-        notes=None, language=None, channel=None, brief=None):
+        notes=None, language=None, channel=None, brief=None, fmt="mp3", sample_rate=22050):
     """合成音频。text=口播稿，notes=注意事项（Qwen3 走 instruct），brief=需求描述（仅记录）。"""
     text = (text or "").strip()
     if not text:
         raise MediaError("text 不能为空")
+    if channel == "bailian":
+        return _bailian_tts(text, out_dir, voice=voice, fmt=fmt, sample_rate=sample_rate,
+                            stem=stem, brief=brief, notes=notes)
     if channel in ("tts", "qwen3"):
         engine = "qwen3"
     elif channel == "cosyvoice":
@@ -233,12 +280,68 @@ def _comfy_generate(prompt, out_dir, stem, reference=None, wait_sec=900, seed=No
     raise MediaError("ComfyUI 出图超时（%ss），prompt_id=%s" % (int(limit), pid))
 
 
+def _bailian_frame(reference_image):
+    """参照图 → FRAME_DIR 下的文件名（media_jobs._bailian_image 的 frame 口径）。"""
+    ref = str(reference_image or "").strip()
+    if not ref:
+        return ""
+    mj = _mj()
+    if ref.startswith("data:image/"):
+        head, _, b64 = ref.partition(",")
+        if "base64" not in head:
+            raise MediaError("参照图 data URI 必须是 base64")
+        ext = ".png" if "png" in head else (".jpg" if "jpg" in head or "jpeg" in head else ".webp")
+        Path(mj.FRAME_DIR).mkdir(parents=True, exist_ok=True)
+        name = "mcp_ref_%s%s" % (uuid.uuid4().hex[:12], ext)
+        (Path(mj.FRAME_DIR) / name).write_bytes(base64.b64decode(b64))
+        return name
+    p = Path(ref).expanduser()
+    if not p.is_file():
+        raise MediaError("参照图不存在：%s" % ref)
+    if p.stat().st_size > 10 * 1024 * 1024:
+        raise MediaError("参照图超过 10MB 限制")
+    Path(mj.FRAME_DIR).mkdir(parents=True, exist_ok=True)
+    name = "mcp_ref_%s%s" % (uuid.uuid4().hex[:12], p.suffix.lower() or ".png")
+    shutil.copy2(p, Path(mj.FRAME_DIR) / name)
+    return name
+
+
+def _bailian_image_gen(prompt, out_dir, size="1024*1024", n=1, prompt_extend=True,
+                       watermark=False, reference_image=None, stem=None, brief=None):
+    """百炼图像：复用 media_jobs._bailian_image，文生图/图生图，产物落到调用方目录。"""
+    mj = _mj()
+    stem = stem or ("img_%d" % int(time.time()))
+    frame = _bailian_frame(reference_image)
+    row = {"id": "mcp_" + uuid.uuid4().hex[:16], "prompt": prompt,
+           "channel": "bailian_image", "kind": "image"}
+    params = {"size": size or "1024*1024", "n": int(n or 1),
+              "prompt_extend": "true" if prompt_extend else "false",
+              "watermark": "true" if watermark else "false", "frame": frame}
+    res = mj._bailian_image(None, row, params, lambda _p: None)
+    src = Path(res["path"])
+    if not src.is_file():
+        raise MediaError("百炼图像未产出图片文件")
+    dst = Path(out_dir)
+    dst.mkdir(parents=True, exist_ok=True)
+    target = dst / (stem + src.suffix)
+    shutil.copy2(src, target)
+    return {"path": str(target), "channel": "bailian_image", "model": mj.BAILIAN_IMAGE_MODEL,
+            "mode": "i2i" if frame else "t2i", "reference": bool(frame),
+            "size": params["size"], "n": params["n"], "brief": brief or "",
+            "remote_id": res.get("remote_id"), "note": res.get("note")}
+
+
 def image(prompt, out_dir, width=640, height=832, steps=20, negative=None,
-          seed=None, wait_sec=300, stem=None, channel="sd15", reference_image=None, brief=None):
+          seed=None, wait_sec=300, stem=None, channel="sd15", reference_image=None, brief=None,
+          size="1024*1024", n=1, prompt_extend=True, watermark=False):
     prompt = (prompt or "").strip()
     if not prompt:
         raise MediaError("prompt 不能为空")
     stem = stem or ("img_%d" % int(time.time()))
+    if channel == "bailian_image":
+        return _bailian_image_gen(prompt, out_dir, size=size, n=n, prompt_extend=prompt_extend,
+                                  watermark=watermark, reference_image=reference_image,
+                                  stem=stem, brief=brief)
     if channel == "qwen-image" or reference_image:
         return _comfy_generate(prompt, out_dir, stem, reference_image,
                                wait_sec=max(wait_sec, 600), seed=seed)
@@ -298,24 +401,69 @@ def health():
     return out
 
 
+def _bailian_channel_caps():
+    """百炼渠道/音色/参数：只读，不发合成请求、不烧额度。任何失败都不拖垮能力查询。"""
+    mj = _mj()
+    tts_available = bool(mj._bailian_api_key("tts"))
+    image_available = bool(mj._bailian_api_key("image"))
+    voices = []
+    for v in mj.bailian_voice_entries():
+        item = {k: v.get(k) for k in ("id", "name", "label", "gender", "age", "trait", "scene")
+                if v.get(k) is not None}
+        if item.get("id"):
+            voices.append(item)
+    return {
+        "audio": {
+            "name": "bailian", "label": "阿里云百炼 · Qwen-Audio-3.0-TTS-Plus",
+            "service": "token-plan.cn-beijing.maas.aliyuncs.com（公网云服务，按字符计费）",
+            "model": mj.BAILIAN_TTS_MODEL, "supports": ["text_to_speech"],
+            "voice_param": "voice", "available": tts_available,
+            "voice_count": len(voices), "voices_field": "audio.bailianVoices",
+            "voices": voices,
+            "params": {"voice": {"default": "longanhuan_v3.6", "type": "string",
+                                 "note": "601 个音色见 audio.bailianVoices；基础音色形如 qwen-audio-3.0-tts-plus-xxx；不要用 flash 系列"},
+                       "format": {"default": "mp3", "enum": ["mp3", "wav", "pcm", "opus"]},
+                       "sample_rate": {"default": 22050, "min": 8000, "max": 48000}},
+            "limits": {"billing": "按字符计费", "note": "同步返回有时效音频 URL，服务端立即下载后转 file_key 交付"},
+        },
+        "image": {
+            "name": "bailian_image", "label": "阿里云百炼 · Qwen-Image-3.0-Pro",
+            "service": "token-plan.cn-beijing.maas.aliyuncs.com（公网云服务，按张计费）",
+            "model": mj.BAILIAN_IMAGE_MODEL, "supports": ["text_to_image", "image_to_image"],
+            "reference_image": True, "available": image_available,
+            "params": {"size": {"default": "1024*1024", "type": "string",
+                                "note": "格式「宽*高」星号；面积 512²~2048²，长宽比 1:8~8:1；另可选 768*1024/1024*768"},
+                       "n": {"default": 1, "min": 1, "max": 4, "note": "多张按张数计费"},
+                       "prompt_extend": {"default": True, "type": "boolean"},
+                       "watermark": {"default": False, "type": "boolean"}},
+            "limits": {"size": "512²~2048² 且比例 1:8–8:1", "reference_max_mb": 10,
+                       "note": "图片 URL 有效 24 小时，生成后服务端立即下载转 file_key"},
+        },
+    }
+
+
 def capabilities():
     """聚合生成能力：渠道、音色、支持模式、限制；只读探测，不烧 token。"""
+    try:
+        bc = _bailian_channel_caps()
+    except Exception as e:                    # 百炼能力查询失败不影响其它渠道
+        bc = {"audio": None, "image": None, "error": str(e)[:200]}
     caps = {
         "audio": {"channels": [
-            {"name": "cosyvoice", "engine": "cosyvoice", "service": "media-engine:9200",
+            {"name": "cosyvoice", "engine": "cosyvoice", "service": "local:cosyvoice",
              "supports": ["text_to_speech"], "voice_param": "voice",
              "notes": "默认渠道；输出 24kHz wav/mp3；长文本自动分句；音色见 voices 字段",
              "limits": {"concurrency": "串行队列"}},
-            {"name": "tts", "engine": "qwen3", "service": "qwen-tts:9311 (via media-engine)",
+            {"name": "tts", "engine": "qwen3", "service": "local:qwen3-tts",
              "supports": ["text_to_speech", "instruct"], "voice_param": "speaker",
              "notes": "notes 作为 instruct 下发；language 默认 Chinese；CPU RTF 24~38，仅离线",
              "limits": {"max_text_chars": 200, "concurrency": 1}},
         ], "voices": {}},
         "image": {"channels": [
-            {"name": "sd15", "service": "media-gen:9103", "model": "Realistic Vision V5.1",
+            {"name": "sd15", "service": "local:sd15", "model": "Realistic Vision V5.1",
              "supports": ["text_to_image"], "reference_image": False,
              "limits": {"size": "256~1024 且 8 的倍数", "steps": "1~50", "default": "640x832"}},
-            {"name": "qwen-image", "service": "ComfyUI:8188", "model": "Qwen-Image 2.1 Turbo",
+            {"name": "qwen-image", "service": "local:qwen-image", "model": "Qwen-Image 2.1 Turbo",
              "supports": ["text_to_image", "image_to_image"], "reference_image": True,
              "reference_formats": ["本地绝对路径", "data:image/...;base64"],
              "limits": {"resolution": "512~1536 且 64 对齐（i2i 跟随输入图）",
@@ -324,10 +472,10 @@ def capabilities():
                         "note": "无 GPU，CPU 单张约 1~3 分钟"}},
         ]},
         "video": {"mcp_tools": [], "channels": [
-            {"name": "wan21", "service": "media-gen:9103", "supports": ["text_to_video"],
+            {"name": "wan21", "service": "local:wan21", "supports": ["text_to_video"],
              "limits": {"frames": "1~81 且 4k+1", "size": "256~1280 且 16 倍数",
                         "note": "CPU 3s 480p 约 10~30 分钟；MCP 当前未暴露 video 工具"}},
-            {"name": "wan22_ti2v", "service": "ComfyUI:8189",
+            {"name": "wan22_ti2v", "service": "local:wan22-ti2v",
              "supports": ["text_to_video", "image_to_video"],
              "note": "MCP 当前未暴露 video 工具"},
         ]},
@@ -360,4 +508,13 @@ def capabilities():
             caps["audio"]["voices"] = data
         else:
             caps["image"]["backends"] = data
+    if bc.get("audio"):
+        caps["audio"]["channels"].append(bc["audio"])
+        bvoices = bc["audio"].pop("voices", [])
+        caps["audio"]["bailianVoices"] = bvoices
+        caps["audio"]["voice_count"] = len(bvoices)
+    if bc.get("image"):
+        caps["image"]["channels"].append(bc["image"])
+    if bc.get("error"):
+        caps["bailianError"] = bc["error"]
     return caps

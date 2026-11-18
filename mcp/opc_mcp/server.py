@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, auth, config, graph_brief, knowledge, llm, media, resources
+from . import __version__, auth, config, graph_brief, knowledge, llm, media, resources, staff_photos
 from .jobs import JobRunner
 from .store import Store
 
@@ -231,35 +231,45 @@ TOOLS = [
     {
         "name": "tts",
         "description": "按需求描述合成音频：text=口播文字稿、brief=整体需求描述、notes=注意事项。"
-                       "渠道 tts(Qwen3/9311) 或 cosyvoice(9200)，可指定音色，产出 wav/mp3 文件路径。"
-                       "身份沿用 opc_init 的 client_key，不需单独 token；渠道/音色/限制先查 media_capabilities。",
+                       "渠道 tts(Qwen3/9311)、cosyvoice(9200) 或 bailian(阿里云百炼 qwen-audio-3.0-tts-plus，云服务按字符计费)，"
+                       "可指定音色，产出 wav/mp3 文件路径并用 file_key 交付下载。"
+                       "身份沿用 opc_init 的 client_key，不需单独 token；渠道/音色（百炼 601 个在 media_capabilities 的 audio.bailianVoices）/限制先查 media_capabilities。",
         "inputSchema": {"type": "object", "properties": {
             "text": {"type": "string", "description": "要读出来的口播原文"},
             "brief": {"type": "string", "description": "整体需求描述（用途、风格等）"},
             "notes": {"type": "string", "description": "注意事项（语速、停顿、情绪）；Qwen3 渠道作为 instruct 下发"},
-            "channel": {"type": "string", "enum": ["tts", "qwen3", "cosyvoice"], "default": "cosyvoice",
-                        "description": "tts/qwen3=Qwen3-TTS，cosyvoice=CosyVoice"},
-            "voice": {"type": "string", "description": "音色名或 speaker，可用值查 media_capabilities"},
+            "channel": {"type": "string", "enum": ["tts", "qwen3", "cosyvoice", "bailian"], "default": "cosyvoice",
+                        "description": "tts/qwen3=Qwen3-TTS，cosyvoice=CosyVoice，bailian=阿里云百炼云服务"},
+            "voice": {"type": "string", "description": "音色名或 speaker；百炼必填音色 id，可用值查 media_capabilities 的 audio.bailianVoices"},
             "engine": {"type": "string", "enum": ["cosyvoice", "qwen3"], "description": "兼容旧调用，优先用 channel"},
             "speed": {"type": "number", "default": 1.0},
+            "format": {"type": "string", "enum": ["mp3", "wav", "pcm", "opus"], "default": "mp3",
+                       "description": "仅 bailian 渠道：输出音频格式"},
+            "sample_rate": {"type": "integer", "default": 22050, "description": "仅 bailian 渠道：采样率 8000~48000"},
             "wait_sec": {"type": "number", "default": 180}},
             "required": ["text"]},
     },
     {
         "name": "image",
-        "description": "生成新图片：只给文字描述即可文生图；也可附参照照片做图生图。渠道 sd15(9103 文生图) "
-                       "或 qwen-image(8188，支持参照图)。身份沿用 opc_init 的 client_key，不需单独 token；"
+        "description": "生成新图片：只给文字描述即可文生图；也可附参照照片做图生图。渠道 sd15(9103 文生图)、"
+                       "qwen-image(8188 本地/157)、bailian_image(阿里云百炼 qwen-image-3.0-pro 云服务，按张计费，"
+                       "支持文生图/图生图)。身份沿用 opc_init 的 client_key，不需单独 token；"
                        "渠道/尺寸/耗时限制先查 media_capabilities。",
         "inputSchema": {"type": "object", "properties": {
             "prompt": {"type": "string", "description": "画面文字描述"},
             "brief": {"type": "string", "description": "整体需求描述（用途、风格等，可选）"},
-            "reference_image": {"type": "string", "description": "参照照片：本地绝对路径或 data:image/...;base64；给定时自动走图生图"},
-            "channel": {"type": "string", "enum": ["sd15", "qwen-image"], "default": "sd15"},
+            "reference_image": {"type": "string", "description": "参照照片：本地绝对路径或 data:image/...;base64；给定时自动走图生图（bailian_image 也支持）"},
+            "channel": {"type": "string", "enum": ["sd15", "qwen-image", "bailian_image"], "default": "sd15"},
             "negative_prompt": {"type": "string"},
             "width": {"type": "integer", "default": 640},
             "height": {"type": "integer", "default": 832},
             "steps": {"type": "integer", "default": 20},
             "seed": {"type": "integer"},
+            "size": {"type": "string", "default": "1024*1024",
+                     "description": "仅 bailian_image：输出尺寸「宽*高」星号，面积 512²~2048²、比例 1:8~8:1"},
+            "n": {"type": "integer", "default": 1, "description": "仅 bailian_image：出图张数 1~4，多张按张计费"},
+            "prompt_extend": {"type": "boolean", "default": True, "description": "仅 bailian_image：提示词扩写"},
+            "watermark": {"type": "boolean", "default": False, "description": "仅 bailian_image：是否加百炼水印"},
             "wait_sec": {"type": "number", "default": 300}},
             "required": ["prompt"]},
     },
@@ -276,6 +286,18 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {
             "file_key": {"type": "string", "description": "tts/image 结果里的 file_key"}},
             "required": ["file_key"]},
+    },
+    {
+        "name": "staff_photos",
+        "description": "列出公司员工的照片与半身照（全局共享，所有 key 可见，与公开下载区同口径）。"
+                       "kind=portrait(本人形象)/halfbody(半身照)/digital_human(数字人口播形象)/all；"
+                       "返回每张的 name/kind/file_key/download_url，用同一把个人 key 作 X-Mail-Agent 头即可 curl 到本地。"
+                       "结果与 media_capabilities 同样已净化，不含服务端路径。",
+        "inputSchema": {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["all", "portrait", "halfbody", "digital_human"],
+                     "default": "all", "description": "照片类别，默认全部"},
+            "limit": {"type": "integer", "default": 200, "description": "最多返回张数"}},
+            "required": []},
     },
 ]
 
@@ -700,8 +722,15 @@ class OpcServer:
              "先用 material_list 拿 material_id，再 material_delete 删除本人素材"),
             (("重新分析", "再分析", "analyze"), "material_analyze",
              "提交分析后用 job_get 等结果"),
-            (("语音", "朗读", "配音", "tts"), "tts", "文本转语音"),
-            (("图片", "画图", "生图", "图像", "image"), "image", "文生图"),
+            (("语音", "朗读", "配音", "tts"), "tts", "文本转语音；阿里云百炼云服务用 channel=bailian，601 个音色先查 media_capabilities"),
+            (("百炼", "阿里云", "dashscope", "云服务音色", "qwen-audio"), "tts",
+             "阿里云百炼 TTS：channel=bailian，音色查 media_capabilities.audio.bailianVoices"),
+            # 员工照片/半身照是查现成图，不是文生图；必须排在通用「图片/图像」之前
+            (("员工照片", "员工头像", "员工形象", "半身照", "半身像", "本人形象",
+              "数字人形象", "口播形象", "员工照", "staff photo", "portrait"),
+             "staff_photos", "现成员工照片用 staff_photos 列出并下载，不是 image 生图"),
+            (("图片", "画图", "生图", "图像", "image"), "image",
+             "文生图；阿里云百炼出图用 channel=bailian_image，尺寸参数 size=1024*1024"),
             (("检索", "查找", "原文", "出处", "有没有", "在哪里", "搜索", "search"), "kb_search",
              "关键词检索拿片段与出处"),
             (("总结", "解释", "为什么", "怎么办", "如何", "对比", "问答", "回答", "ask"), "ask",
@@ -756,6 +785,7 @@ class OpcServer:
             "job_get": 'job_get(job_id="<job_id>", wait_sec=60)',
             "tts": 'tts(text="<要朗读的文字>")',
             "image": 'image(prompt="<画面描述>")',
+            "staff_photos": 'staff_photos(kind="all")｜半身照用 kind="halfbody"；返回 download_url 直接 curl',
         }
         return _json({
             "query": query,
@@ -769,8 +799,13 @@ class OpcServer:
         })
 
     def _publish_generated(self, res, phone, kind, mime):
-        """给生成产物发不透明 file_key，并登记到 Store；返回可跨网下载的 URL。"""
-        path = str(res.get("path") or "")
+        """给生成产物发不透明 file_key，并登记到 Store；返回可跨网下载的 URL。
+
+        落盘路径只用于登记与推断文件名，不外泄给客户端；取回统一走 file_key。
+        """
+        path = str(res.pop("path", "") or "")
+        res.pop("prompt_wav", None)
+        res.pop("prompt_text", None)
         if not path or not Path(path).is_file():
             return res
         file_key = secrets.token_urlsafe(18).replace("-", "").replace("_", "")
@@ -788,18 +823,25 @@ class OpcServer:
     def tool_tts(self, args):
         user = auth.resolve(self.store, args)
         out_dir = self._dir(user["phone"], "audio")
+        channel = args.get("channel")
+        voice = args.get("voice")
+        if channel == "bailian" and not voice:
+            voice = "longanhuan_v3.6"       # 601 个里唯一 Key 实测稳定可用的默认音色
         try:
             res = media.tts(str(args.get("text") or ""), out_dir,
-                            voice=args.get("voice"), engine=args.get("engine") or "cosyvoice",
-                            channel=args.get("channel"), notes=args.get("notes"),
+                            voice=voice, engine=args.get("engine") or "cosyvoice",
+                            channel=channel, notes=args.get("notes"),
                             brief=args.get("brief"),
                             speed=float(args.get("speed") or 1.0),
-                            wait_sec=float(args.get("wait_sec") or 180))
+                            wait_sec=float(args.get("wait_sec") or 180),
+                            fmt=args.get("format") or "mp3",
+                            sample_rate=int(args.get("sample_rate") or 22050))
         except media.MediaError as e:
             return _err(str(e), status="media_error")
-        return _json(self._publish_generated(res, user["phone"], "audio",
-                                             "audio/wav" if str(res.get("path", "")).endswith(".wav")
-                                             else "audio/mpeg"))
+        suffix = str(res.get("path", "")).lower()
+        mime = "audio/wav" if suffix.endswith(".wav") else (
+            "audio/mpeg" if suffix.endswith(".mp3") else "audio/ogg")
+        return _json(self._publish_generated(res, user["phone"], "audio", mime))
 
     def tool_image(self, args):
         user = auth.resolve(self.store, args)
@@ -814,7 +856,11 @@ class OpcServer:
                               channel=args.get("channel") or "sd15",
                               reference_image=args.get("reference_image"),
                               brief=args.get("brief"),
-                              wait_sec=float(args.get("wait_sec") or 300))
+                              wait_sec=float(args.get("wait_sec") or 300),
+                              size=args.get("size") or "1024*1024",
+                              n=int(args.get("n") or 1),
+                              prompt_extend=bool(args.get("prompt_extend", True)),
+                              watermark=bool(args.get("watermark", False)))
         except media.MediaError as e:
             return _err(str(e), status="media_error")
         return _json(self._publish_generated(res, user["phone"], "image",
@@ -822,9 +868,13 @@ class OpcServer:
                                              else "image/jpeg"))
 
     def tool_media_capabilities(self, args):
-        """生成能力查询：与注册共用 client_key，不引入第二套鉴权。"""
+        """生成能力查询：与注册共用 client_key，不引入第二套鉴权。
+
+        对外口径与 ask(with_brief) 一致：剥离参考音频/模型权重的落盘路径，
+        内网地址换占位，避免远程 agent 照抄返回时泄漏服务端路径。
+        """
         auth.resolve(self.store, args)
-        return _json(media.capabilities())
+        return _json(graph_brief.public_obj(media.capabilities()))
 
     def tool_file_link(self, args):
         """已生成产物重新取下载链接（同一把 key；只能取自己的）。"""
@@ -844,6 +894,18 @@ class OpcServer:
                                            '"%s/api/mcp/file/%s" -o "%s"'
                                            % (config.PUBLIC_WORKBENCH_BASE, key,
                                               row["filename"] or path.name))})
+
+    def tool_staff_photos(self, args):
+        """员工照片/半身照清单：全局共享，任意有效 key 可见；只回 download_url，不回服务端路径。"""
+        auth.resolve(self.store, args)       # 只需有效 key；照片属公司共享资料，不按 phone 隔离
+        items, error = staff_photos.listing(args.get("kind") or "all",
+                                            limit=args.get("limit") or 200)
+        if error:
+            return _err(error, status="bad_kind")
+        return _json({"scope": "global-shared", "count": len(items),
+                      "items": graph_brief.public_obj(items),
+                      "download_auth": "X-Mail-Agent: <任意已注册的同一把个人 API key>",
+                      "note": "file_key 跨重启稳定；下载链接支持 Range。照片为公司共享资料，任何 key 可下载。"})
 
     # ---------------------------------------------------------------- 协议
     def dispatch(self, name, args):

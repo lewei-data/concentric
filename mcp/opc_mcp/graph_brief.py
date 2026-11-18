@@ -43,6 +43,26 @@ def public_text(value):
     return s
 
 
+# 对外 JSON 里属于服务端内部的字段：客户端既用不到也不该看到。
+# prompt_wav/prompt_text 是克隆音色的参考音频与转录文本（音色只回 id + 说明，试听由服务端按 id 完成）；
+# path 是参考音频/模型权重/生成产物的落盘绝对路径，下载统一走 file_key + download_url。
+_INTERNAL_PATH_KEYS = {"prompt_wav", "prompt_text", "path"}
+
+
+def public_obj(value):
+    """递归净化对外 JSON：剥离服务端内部路径字段，其余字符串过 public_text。
+
+    与 public_text 同源规则，避免远程 agent 照抄返回时把服务端路径/内网地址带出去。
+    """
+    if isinstance(value, dict):
+        return {k: public_obj(v) for k, v in value.items() if k not in _INTERNAL_PATH_KEYS}
+    if isinstance(value, (list, tuple)):
+        return [public_obj(v) for v in value]
+    if isinstance(value, str):
+        return public_text(value)
+    return value
+
+
 def _kb():
     if str(_PROTO) not in sys.path:
         sys.path.insert(0, str(_PROTO))

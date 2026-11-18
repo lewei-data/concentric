@@ -51,6 +51,8 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 | 图片生成 | `image(prompt, brief?, reference_image?, channel=sd15\|qwen-image)`；给参照图自动走图生图 |
 | 取回生成文件 | 结果里的 `download_url` 用 `curl -L -H "X-Mail-Agent: $KEY" "$download_url" -o 文件名`；链接丢了用 `file_link(file_key)` 重取。**不要用内联 base64，也不要用网页登录/conring token** |
 | 生成产物取回（完整说明） | 见随附 `OPC_MCP_CLIENT_USAGE.md` 第 3 节 |
+| 员工照片/半身照 | `staff_photos(kind=all\|portrait\|halfbody\|digital_human)`：全局共享、所有 key 可见，返回 `download_url`，用同一把 key 下载；不回服务端路径 |
+| 对外净化 | 生成结果、`media_capabilities`、`staff_photos` 均按对外口径净化：音色只回 `id`+说明，照片只回 `name`+`download_url`，无服务端路径；照抄返回不带服务端路径，但仍不要转述任何服务端路径/IP |
 
 ## 资源互通与边界
 - 同一把 key 可访问本人手机号下的 OPC 库、Obsidian vault、MCP 素材——Web/Obsidian 生成的资料 MCP 也能检索读取，MCP 问答也会回流 Web 消息中心。

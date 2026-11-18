@@ -230,7 +230,8 @@ if PIPE.LOAD_NOTE:
     print(f"[boot] 流程定义：{PIPE.LOAD_NOTE}", flush=True)
 CC.STAGES = CC.PIPELINE.item_stages    # 对外暴露的内容单状态名，唯一来源是流程定义
 
-# 内置默认编制：与 Obsidian 员工名册（19 人，boss 不占编制）保持一致，用于
+# 内置默认编制：18 名 AI 员工（不含老板本人）；owner 名册共 19 条 = 老板 1 + AI 员工 18。
+# 话术口径：AI 员工一律 18 人，不含老板；编制表/名册行数才说 19 条（含老板）。用于
 # ① owner 名册文件缺失时的回退；② 注册用户的默认编制模板（USERS._user_roster_md）
 
 # 员工编制以 Obsidian 名册为唯一数据源；文件缺失或解析异常时回退上面的内置编制
@@ -583,14 +584,31 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
         except Exception as e:  # noqa: BLE001
             return self._json({"ok": False, "error": f"读取产物登记失败：{type(e).__name__}: {e}"}, 500)
-        if not row:
-            return self._json({"ok": False, "error": "file_key 不存在或不属于当前用户"}, 404)
-        user_root = os.environ.get("OPC_USER_ROOT", USERS_DIR)
-        allowed = os.path.realpath(os.path.join(user_root, phone, "mcp"))
-        full = os.path.realpath(str(row["path"] or ""))
-        if not full.startswith(allowed + os.sep) or not os.path.isfile(full):
-            return self._json({"ok": False, "error": "产物文件不存在或已过期"}, 404)
-        ctype = str(row["mime"] or "") or None
+        # 个人产物未命中：回退到全局共享的员工照片（file_key 为 sp 前缀，任意有效 key 可下载）
+        shared = None
+        if not row and file_key.startswith("sp"):
+            try:
+                mcp_root = os.environ.get("OPC_MCP_ROOT", "/opt/sefs/opc-workbench/mcp")
+                if mcp_root not in sys.path:
+                    sys.path.insert(0, mcp_root)
+                from opc_mcp.staff_photos import resolve as resolve_staff_photo
+                shared = resolve_staff_photo(file_key)
+            except Exception:
+                shared = None
+        if shared:
+            full, ctype, _kind = shared
+        else:
+            if not row:
+                return self._json({"ok": False, "error": "file_key 不存在或不属于当前用户"}, 404)
+            user_root = os.environ.get("OPC_USER_ROOT", USERS_DIR)
+            allowed = os.path.realpath(os.path.join(user_root, phone, "mcp"))
+            full = os.path.realpath(str(row["path"] or ""))
+            if not full.startswith(allowed + os.sep) or not os.path.isfile(full):
+                return self._json({"ok": False, "error": "产物文件不存在或已过期"}, 404)
+            ctype = str(row["mime"] or "") or None
+        full = os.path.realpath(str(full))
+        if not os.path.isfile(full):
+            return self._json({"ok": False, "error": "文件不存在或已过期"}, 404)
         return self._serve_media(full, ctype)
 
     # ---------- 登录会话 ----------

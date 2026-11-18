@@ -7,7 +7,9 @@
 数据写到临时目录，不污染 mcp/data。
 """
 
+import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -266,6 +268,11 @@ def main():
           and len(caps["audio"]["channels"]) >= 2
           and any(c.get("reference_image") for c in caps["image"]["channels"])
           and "auth" in caps, {k: list(v)[:4] for k, v in caps.items() if isinstance(v, dict)})
+    caps_blob = json.dumps(caps, ensure_ascii=False)
+    check("能力查询不泄漏服务端路径/参考音频落盘位置",
+          not re.search(r"/(?:mnt/sefs|opt/sefs|home/boray)", caps_blob)
+          and "prompt_wav" not in caps_blob and '"path"' not in caps_blob,
+          caps_blob[:400])
     bad_caps = eval_content(srv.dispatch("media_capabilities", {"client_key": "bad-key"}))
     check("生成能力与注册共用鉴权", bad_caps.get("status") == "need_auth", bad_caps)
 
@@ -281,6 +288,36 @@ def main():
           and "X-Mail-Agent" in str(link.get("download_auth")), link)
     other = eval_content(srv.dispatch("file_link", {"client_key": "bad-key", "file_key": fk}))
     check("产物链接不越权", other.get("status") == "need_auth", other)
+    stub = srv._publish_generated({"path": str(probe_png), "channel": "stub"}, PHONE, "image", "image/png")
+    check("生成结果不回传服务端落盘路径",
+          "path" not in stub and stub.get("file_key")
+          and "/api/mcp/file/" in str(stub.get("download_url")), stub)
+
+    # 3c. 员工照片/半身照：全局共享、任意 key 可见、确定性 file_key、不泄漏服务端路径
+    from opc_mcp import staff_photos as sp
+    photos = eval_content(srv.dispatch("staff_photos", {"token": token}))
+    check("员工照片清单可用且全局共享",
+          photos.get("scope") == "global-shared" and photos.get("count", 0) >= 20
+          and len(photos.get("items", [])) >= 20,
+          {k: photos.get(k) for k in ("scope", "count")})
+    check("员工照片含本人形象/半身照/数字人三类",
+          {"portrait", "halfbody", "digital_human"}.issubset(
+              {i.get("kind") for i in photos.get("items", [])}),
+          sorted({i.get("kind") for i in photos.get("items", [])}))
+    check("员工照片清单不泄漏服务端路径",
+          not re.search(r"/(?:mnt/sefs|opt/sefs|home/boray)",
+                        json.dumps(photos, ensure_ascii=False)), str(photos)[:200])
+    check("员工照片 file_key 确定性且可解析",
+          all(re.fullmatch(r"[A-Za-z0-9]{16,64}", i["file_key"])
+              and sp.resolve(i["file_key"]) for i in photos["items"][:5]),
+          [i["file_key"] for i in photos["items"][:5]])
+    check("员工照片 bad-key 不可见（仍需有效 key）",
+          eval_content(srv.dispatch("staff_photos", {"client_key": "bad-key"})).get("status") == "need_auth")
+    half = eval_content(srv.dispatch("staff_photos", {"token": token, "kind": "halfbody"}))
+    check("员工照片按类别过滤", half.get("count", 0) >= 19
+          and all(i["kind"] == "halfbody" for i in half.get("items", [])), half.get("count"))
+    check("员工照片未知类别报错",
+          eval_content(srv.dispatch("staff_photos", {"token": token, "kind": "bogus"})).get("status") == "bad_kind")
 
     hits = eval_content(srv.dispatch("kb_search", {"token": token, "query": "立绘 验收标准"}))
     check("知识库检索命中", hits.get("count", 0) > 0, hits)

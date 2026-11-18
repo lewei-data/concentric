@@ -274,7 +274,7 @@ def _user_create(phone, password):
     # 独立 vault 目录树：知识库/热点采集/交付物/会议纪要/邮件 全部用户私有
     for sub in ("热点采集", "知识库", "交付物", "会议纪要", "邮件", "_归档"):
         os.makedirs(os.path.join(data_dir, "vault", "OPC", sub), exist_ok=True)
-    # 默认编制名册（内置 19 人编制 + 短剧风格随机姓名）+ 运行时日志
+    # 默认编制名册（18 名 AI 员工，不含老板 + 短剧风格随机姓名）+ 运行时日志
     roster = os.path.join(data_dir, "员工名册.md")
     if not os.path.exists(roster):
         with open(roster, "w", encoding="utf-8") as f:
@@ -394,7 +394,7 @@ def _captcha_verify(token, answer):
     return hmac.compare_digest(sig, _captcha_sign(str(answer).strip(), exp))
 
 def _user_roster_md(randomize=False):
-    """默认编制名册（从内置 19 人编制生成，项目列用项目名以便名册解析回读）。
+    """默认编制名册（从内置 18 名 AI 员工生成，不含老板；项目列用项目名以便名册解析回读）。
 
     randomize=True（注册新用户）时姓名用短剧虚拟人物风格随机生成；
     False（存量名册升级）保持内置固定名，避免升级悄悄给老用户改名。

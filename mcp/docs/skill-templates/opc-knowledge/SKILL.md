@@ -27,8 +27,10 @@ whenToUse: 用户问公司内部资料/规范/盘点，或要求查素材、删�
 ## 生成与取回（同一把 key，无单独 token）
 
 - 调 `mcp__opc__media_capabilities` 查渠道/音色/限制，再调 `mcp__opc__tts(text, brief?, notes?, channel?, voice?)` 或 `mcp__opc__image(prompt, brief?, reference_image?, channel?)`。
-- 生成结果含 `file_key` + `download_url`；取回用同一把个人 key：`curl -L -H "X-Mail-Agent: $OPC_KEY" "$download_url" -o 文件名`。
+- 生成结果含 `file_key` + `download_url`，**不含服务端 `path`**；取回用同一把个人 key：`curl -L -H "X-Mail-Agent: $OPC_KEY" "$download_url" -o 文件名`。
 - 链接丢失时用 `mcp__opc__file_link(file_key=...)` 重取。不要用网页登录态、conring 独立 token 或内联 base64 搬运。
+- 生成结果与 `media_capabilities` 已按对外口径净化：音色只回 `id`+说明，无参考音频/模型落盘路径；照抄返回不泄漏服务端路径，但仍不要转述任何服务端路径/IP。
+- 员工照片/半身照用 `mcp__opc__staff_photos(kind=all\|halfbody\|portrait\|digital_human)` 列出（全局共享、所有 key 可见），拿返回的 `download_url` 用同一把 key 下载；不要试图找服务端路径。
 - DSH 若把二进制变成占位，以 `download_url` 为准引导用户在自己机器执行 curl。
 
 ## 出处追溯

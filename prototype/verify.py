@@ -6,7 +6,7 @@
     python3 prototype/verify.py            # 预期 RESULT: ALL PASS
 
 覆盖验收项（对应方案第 10 节）：
-  编制 17 人 / 三项目分布 · SSE 实时事件 · 选题会与冲突投票 · 审核 · 审批门闭环
+  编制 18 名 AI 员工（名册 19 条含老板）/ 三项目分布 · SSE 实时事件 · 选题会与冲突投票 · 审核 · 审批门闭环
   未审批不得发布 · 人设串味驳回 · trace 可回放 · 知识归档 · 日报生成 · 审批耗时
 """
 
@@ -165,7 +165,8 @@ def main():
         per = {}
         for a in agents:
             per[a["projectId"]] = per.get(a["projectId"], 0) + 1
-        record("19 名员工编制", len(agents) == 19, f"agents={len(agents)}")
+        record("18 名 AI 员工（另老板 1 人，名册 19 条）", len(agents) == 19,
+               f"agents={len(agents)}（含老板 1，AI 员工 {len(agents) - 1}）")
         record("三项目各 3 人", all(per.get(p) == 3 for p in ("wenren", "gou", "tongxinyuan")),
                json.dumps({k: per.get(k, 0) for k in ("wenren", "gou", "tongxinyuan")}, ensure_ascii=False))
         record("中台/管理层 10 人", per.get("all") == 10, f"all={per.get('all')}")
