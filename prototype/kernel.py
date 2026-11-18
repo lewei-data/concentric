@@ -950,7 +950,7 @@ class Kernel:
         hay = " ".join([str(idea.get("title") or ""), str(idea.get("summary") or ""),
                         str(idea.get("origin") or ""), str(idea.get("source") or ""),
                         " ".join(str(t) for t in (idea.get("tags") or []))])
-        for key, val in (("文人莫克", "wenren"), ("狗大人", "gou"), ("同心圆", "tongxinyuan")):
+        for key, val in (("贾文人", "wenren"), ("文人莫克", "wenren"), ("狗大人", "gou"), ("同心圆", "tongxinyuan")):
             if key in hay:
                 return val
         return "tongxinyuan"
@@ -1560,7 +1560,7 @@ class Kernel:
     def persona_injection(self):
         trace = uid("tr")
         item = {"id": uid("c"), "projectId": "gou", "traceId": trace, "stage": "review",
-                "title": "（测试）把文人莫克的稿子塞给狗大人", "owner": "cw_gou",
+                "title": "（测试）把贾文人的稿子塞给狗大人", "owner": "cw_gou",
                 "toneProfile": self.tone["wenren"], "assets": ["asset://wenren/master.mp4"],
                 "copy": "书卷气、克制、不追网络梗。"}
         with self.lock:
@@ -1573,7 +1573,7 @@ class Kernel:
                               "evidence": reasons, "confidence": 0.95, "tools": ["review.check"]},
                    "engine": meta["engine"]}, project="gou", priority=2)
         risk = {"id": uid("rp"), "traceId": trace, "kind": "incident", "title": "风险单：跨项目人设串味",
-                "conclusion": "检测到狗大人稿件使用文人莫克人设与素材，已驳回返工", "evidence": reasons,
+                "conclusion": "检测到狗大人稿件使用贾文人设与素材，已驳回返工", "evidence": reasons,
                 "decisions": [{"text": "驳回并返工，不进入审批", "owner": "reviewer", "risk": "high",
                               "approved": False}], "engine": meta["engine"], "createdAt": iso_now()}
         with self.lock:

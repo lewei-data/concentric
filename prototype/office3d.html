@@ -99,7 +99,7 @@
 </div>
 
 <div class="legend">
-  <span class="k"><i class="sw" style="background:var(--wenren)"></i>文人莫克</span>
+  <span class="k"><i class="sw" style="background:var(--wenren)"></i>贾文人</span>
   <span class="k"><i class="sw" style="background:var(--gou)"></i>狗大人</span>
   <span class="k"><i class="sw" style="background:var(--tong)"></i>同心圆</span>
   <span class="k"><i class="sw" style="background:var(--mid)"></i>全公司</span>
@@ -1594,7 +1594,7 @@ const sCut = (s, n) => (s && s.length > n ? s.slice(0, n) + '…' : (s || ''));
 function projectNameOf(pid) {
   const p = (state.projects || []).find(x => x.id === pid);
   return (p && p.name) ||
-         ({ wenren: '文人莫克', gou: '狗大人', tongxinyuan: '同心圆' })[pid] || pid;
+         ({ wenren: '贾文人', gou: '狗大人', tongxinyuan: '同心圆' })[pid] || pid;
 }
 
 /* 每个项目只显示最新一条内容条目 */
@@ -2047,7 +2047,7 @@ function renderEmp() {
   const ava = document.getElementById('empAva');
   ava.onerror = () => { ava.onerror = null; ava.src = './avatars/scout.png'; };
   ava.src = './avatars/' + selected + '.png';
-  const proj = { wenren: '文人莫克', gou: '狗大人', tongxinyuan: '同心圆', all: '全公司' };
+  const proj = { wenren: '贾文人', gou: '狗大人', tongxinyuan: '同心圆', all: '全公司' };
   document.getElementById('empRole').textContent = ac.role + ' · ' + (proj[ac.projectId] || '全公司');
   document.getElementById('empTask').innerHTML =
     '状态：<b>' + (STATUS_CN[ac.status] || ac.status) + '</b>' +

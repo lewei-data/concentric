@@ -508,7 +508,7 @@ def patrol(kn):
         title, tags, score = None, None, None
     trace, hotspot = kn.inject_hotspot(title, tags, score, force=True)
     title = hotspot["title"]
-    assign = {"scout": "复核热点与素材包", "pm_wenren": "出文人莫克选题卡", "pm_gou": "出狗大人选题卡",
+    assign = {"scout": "复核热点与素材包", "pm_wenren": "出贾文人选题卡", "pm_gou": "出狗大人选题卡",
               "pm_tongxinyuan": "出同心圆选题卡", "cw_wenren": "写稿", "cw_gou": "写稿",
               "cw_tongxinyuan": "写产品文案", "vd_wenren": "出片", "vd_gou": "出片",
               "vd_tongxinyuan": "出演示视频", "reviewer": "跨项目串味审核",

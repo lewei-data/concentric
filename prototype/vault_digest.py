@@ -59,7 +59,7 @@ AGGR_MEMBER_CAP = 20       # 聚合条目 members 最多列出的文件数
 OM_ROOT = os.environ.get("OPC_OM_ROOT", "/opt/sefs/OpenMontage")
 OM_PROJECT_TAGS = (        # OM 项目 → 中文项目标签（按 slug 前缀）
     (("tian-gou", "dog-park", "gou-"), "狗大人"),
-    (("wenren-",), "文人莫克"),
+    (("wenren-",), "贾文人"),
 )
 
 # 屏蔽：与 server.py::_vault 同口径 + 模板/隐藏

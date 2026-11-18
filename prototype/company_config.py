@@ -44,8 +44,8 @@ DEFAULT_PROJECTS = {
                     "kpi": {"uptime": 99.95, "tickets": 0, "delivery_hours": 48.0}},
 }
 
-# 旧默认项目名（存量用户名册/知识库里的"文人莫克/狗大人/同心圆"）→ 项目 ID 别名
-LEGACY_PROJECT_ALIASES = {"文人莫克": "wenren", "狗大人": "gou", "同心圆": "tongxinyuan"}
+# 项目别名 → 项目 ID：新名「贾文人」与旧名「文人莫克」都指向 wenren，兼容存量名册/知识库
+LEGACY_PROJECT_ALIASES = {"贾文人": "wenren", "文人莫克": "wenren", "狗大人": "gou", "同心圆": "tongxinyuan"}
 DEFAULT_TONE = {"wenren": "克制·书卷气", "gou": "幽默·松弛", "tongxinyuan": "专业·可信"}
 
 OPENMONTAGE_CRAFTS = (

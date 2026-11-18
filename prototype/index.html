@@ -314,7 +314,7 @@
 <script>
 /* ============ 常量 ============ */
 const PROJECTS = {
-  wenren:{name:'文人莫克',color:'#2563EB',kind:'自媒体'},
+  wenren:{name:'贾文人',color:'#2563EB',kind:'自媒体'},
   gou:{name:'狗大人',color:'#EA580C',kind:'自媒体'},
   tongxinyuan:{name:'同心圆',color:'#7C3AED',kind:'数字分身服务'}
 };
@@ -386,7 +386,7 @@ setInterval(clock,1000);clock();
 function renderKPIs(){
   const p=S.projects;
   const items=[
-    {k:'文人莫克 播放',v:fmtK(p.wenren?.kpi?.views)},
+    {k:'贾文人 播放',v:fmtK(p.wenren?.kpi?.views)},
     {k:'狗大人 粉丝',v:fmtK(p.gou?.kpi?.fans)},
     {k:'同心圆 可用性',v:(p.tongxinyuan?.kpi?.uptime??0)+'%'},
     {k:'待审核',v:countStage(['review','approved'])},
@@ -423,7 +423,7 @@ function renderMap(){
   const pcolor=(pid,f)=>(pj(pid).color)||f;
   let html='';
   html+=zone(16,28,868,84,'管理层','#111827');
-  html+=zone(20,138,290,224,`${pname('wenren','文人莫克')} · 项目区`,pcolor('wenren','#2563EB'));
+  html+=zone(20,138,290,224,`${pname('wenren','贾文人')} · 项目区`,pcolor('wenren','#2563EB'));
   html+=zone(320,138,290,224,`${pname('gou','狗大人')} · 项目区`,pcolor('gou','#EA580C'));
   html+=zone(620,138,264,224,`${pname('tongxinyuan','同心圆')} · 项目区`,pcolor('tongxinyuan','#7C3AED'));
   html+=zone(20,394,856,110,'中台支撑区','#0D9488');
@@ -943,7 +943,7 @@ function mockRun(){
   });
   step(900,()=>{['pm_wenren','pm_gou','pm_tongxinyuan'].forEach(pm=>handle(msg('delegation','ceo',pm,{task:'评估热点匹配度，出选题卡'},'all')));});
   step(900,()=>{
-    handle(msg('result','pm_wenren','ceo',{result:{summary:'文人莫克：文化史与版权伦理切入',confidence:.88}},'wenren'));
+    handle(msg('result','pm_wenren','ceo',{result:{summary:'贾文人：文化史与版权伦理切入',confidence:.88}},'wenren'));
     handle(msg('result','pm_gou','ceo',{result:{summary:'狗大人：段子讲避坑，轻松叙事',confidence:.71}},'gou'));
     handle(msg('result','pm_tongxinyuan','ceo',{result:{summary:'同心圆：数字分身合规边界',confidence:.42}},'tongxinyuan'));
   });
@@ -953,7 +953,7 @@ function mockRun(){
     handle(msg('vote','pm_gou','ceo',{vote:{stance:'oppose',confidence:.71}},'all'));
     handle(msg('vote','pm_tongxinyuan','ceo',{vote:{stance:'abstain',confidence:.42}},'all'));
   });
-  step(700,()=>handle(msg('decision','ceo','all',{text:'决议：文人莫克拿主选题，其余并行副选题'},'all')));
+  step(700,()=>handle(msg('decision','ceo','all',{text:'决议：贾文人拿主选题，其余并行副选题'},'all')));
   step(400,()=>{
     handle({kind:'scene',traceId:tr,data:{scene:'WORK',title:'决议派发，并行生产'}});
     ['wenren','gou','tongxinyuan'].forEach(pid=>{
@@ -1008,7 +1008,7 @@ async function sendCmd(){
     }else if(text.includes('串味')){
       handle({kind:'report',traceId:'tr_demo',at:new Date().toISOString(),
         data:{id:'rp_x',kind:'incident',title:'风险单：跨项目人设串味',
-          conclusion:'狗大人稿件使用文人莫克人设，reviewer 已驳回返工',
+          conclusion:'狗大人稿件使用贾文人设，reviewer 已驳回返工',
           evidence:['人设串味：标注「克制·书卷气」，要求「幽默·松弛」']}});
     }else if(text.includes('注入')||text.includes('热点')){
       mockRun();

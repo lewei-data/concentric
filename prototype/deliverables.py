@@ -506,7 +506,7 @@ def load_knowledge(limit=40):
         project = fm.get("project") or "全公司"
         pid = "全公司"
         for name, key in (("产品一组", "wenren"), ("产品二组", "gou"), ("产品三组", "tongxinyuan"),
-                          ("文人莫克", "wenren"), ("狗大人", "gou"), ("同心圆", "tongxinyuan")):
+                          ("贾文人", "wenren"), ("文人莫克", "wenren"), ("狗大人", "gou"), ("同心圆", "tongxinyuan")):
             if name in project:
                 pid = key
                 break
