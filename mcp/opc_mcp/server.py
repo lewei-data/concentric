@@ -1,4 +1,5 @@
-"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材(含删除)/分片续传/知识库/跨源资源/路由/对话/TTS/图像共 19 个工具。"""
+"""MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材/分片续传/知识库/跨源资源/路由/对话/
+TTS/图像/能力查询/产物取回共 21 个工具（以 TOOLS 列表为准，client 用法见 mcp/docs/OPC_MCP_CLIENT_USAGE.md）。"""
 
 import base64
 import binascii
@@ -229,27 +230,52 @@ TOOLS = [
     },
     {
         "name": "tts",
-        "description": "文本转语音，产出 wav 文件路径（media-engine CosyVoice/Qwen3）。",
+        "description": "按需求描述合成音频：text=口播文字稿、brief=整体需求描述、notes=注意事项。"
+                       "渠道 tts(Qwen3/9311) 或 cosyvoice(9200)，可指定音色，产出 wav/mp3 文件路径。"
+                       "身份沿用 opc_init 的 client_key，不需单独 token；渠道/音色/限制先查 media_capabilities。",
         "inputSchema": {"type": "object", "properties": {
-            "token": {"type": "string"}, "text": {"type": "string"},
-            "voice": {"type": "string", "description": "音色名或 speaker"},
-            "engine": {"type": "string", "enum": ["cosyvoice", "qwen3"], "default": "cosyvoice"},
+            "text": {"type": "string", "description": "要读出来的口播原文"},
+            "brief": {"type": "string", "description": "整体需求描述（用途、风格等）"},
+            "notes": {"type": "string", "description": "注意事项（语速、停顿、情绪）；Qwen3 渠道作为 instruct 下发"},
+            "channel": {"type": "string", "enum": ["tts", "qwen3", "cosyvoice"], "default": "cosyvoice",
+                        "description": "tts/qwen3=Qwen3-TTS，cosyvoice=CosyVoice"},
+            "voice": {"type": "string", "description": "音色名或 speaker，可用值查 media_capabilities"},
+            "engine": {"type": "string", "enum": ["cosyvoice", "qwen3"], "description": "兼容旧调用，优先用 channel"},
             "speed": {"type": "number", "default": 1.0},
             "wait_sec": {"type": "number", "default": 180}},
-            "required": ["token", "text"]},
+            "required": ["text"]},
     },
     {
         "name": "image",
-        "description": "文生图（media-gen sd15），产出图片文件路径。",
+        "description": "生成新图片：只给文字描述即可文生图；也可附参照照片做图生图。渠道 sd15(9103 文生图) "
+                       "或 qwen-image(8188，支持参照图)。身份沿用 opc_init 的 client_key，不需单独 token；"
+                       "渠道/尺寸/耗时限制先查 media_capabilities。",
         "inputSchema": {"type": "object", "properties": {
-            "token": {"type": "string"}, "prompt": {"type": "string"},
+            "prompt": {"type": "string", "description": "画面文字描述"},
+            "brief": {"type": "string", "description": "整体需求描述（用途、风格等，可选）"},
+            "reference_image": {"type": "string", "description": "参照照片：本地绝对路径或 data:image/...;base64；给定时自动走图生图"},
+            "channel": {"type": "string", "enum": ["sd15", "qwen-image"], "default": "sd15"},
             "negative_prompt": {"type": "string"},
             "width": {"type": "integer", "default": 640},
             "height": {"type": "integer", "default": 832},
             "steps": {"type": "integer", "default": 20},
             "seed": {"type": "integer"},
             "wait_sec": {"type": "number", "default": 300}},
-            "required": ["token", "prompt"]},
+            "required": ["prompt"]},
+    },
+    {
+        "name": "media_capabilities",
+        "description": "查询生成能力：音频/图像/视频的渠道、音色、支持模式与限制（文本长度、尺寸、耗时）。"
+                       "调 tts/image 前建议先查；与注册共用 client_key，无额外 token。",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "file_link",
+        "description": "已生成的 tts/image 产物重新取下载链接（换设备/丢失链接时用）。"
+                       "输入 tts/image 返回的 file_key；下载用同一把个人 key 作 X-Mail-Agent 头。",
+        "inputSchema": {"type": "object", "properties": {
+            "file_key": {"type": "string", "description": "tts/image 结果里的 file_key"}},
+            "required": ["file_key"]},
     },
 ]
 
@@ -257,11 +283,15 @@ TOOLS = [
 for _tool in TOOLS:
     _schema = _tool["inputSchema"]
     _props = _schema.setdefault("properties", {})
+    # 所有工具共用 opc_init 的 client_key：schema 里彻底移除独立的 token 字段，
+    # 避免客户端误以为生成类工具要另配密钥（网关注入 client_key，个人 key 不会透传给媒体后端）。
+    _props.pop("token", None)
     if _tool["name"] not in ("opc_init", "opc_login", "opc_whoami", "opc_route"):
         _props.setdefault("client_key", {
             "type": "string",
             "description": "个人 API key；外网客户端由 MCP 网关按请求头自动注入，无需手写"})
-        _schema["required"] = [r for r in _schema.get("required", []) if r != "token"]
+    _schema["required"] = [r for r in _schema.get("required", [])
+                           if r not in ("token", "client_key")]
 
 
 class OpcServer:
@@ -738,17 +768,38 @@ class OpcServer:
                      "检索不到要明确说明，不要用通用知识冒充公司内部资料。",
         })
 
+    def _publish_generated(self, res, phone, kind, mime):
+        """给生成产物发不透明 file_key，并登记到 Store；返回可跨网下载的 URL。"""
+        path = str(res.get("path") or "")
+        if not path or not Path(path).is_file():
+            return res
+        file_key = secrets.token_urlsafe(18).replace("-", "").replace("_", "")
+        self.store.add_generated_file(file_key, phone, path, kind,
+                                      filename=Path(path).name, mime=mime,
+                                      size=Path(path).stat().st_size)
+        res["file_key"] = file_key
+        res["download_url"] = "%s/api/mcp/file/%s" % (config.PUBLIC_WORKBENCH_BASE, file_key)
+        res["download_auth"] = "X-Mail-Agent: <生成时用的同一把个人 API key>（或用 Bearer session_token）"
+        res["download_example"] = ('curl -L -H "X-Mail-Agent: $OPC_KEY" '
+                                   '"%s/api/mcp/file/%s" -o "%s"'
+                                   % (config.PUBLIC_WORKBENCH_BASE, file_key, Path(path).name))
+        return res
+
     def tool_tts(self, args):
         user = auth.resolve(self.store, args)
         out_dir = self._dir(user["phone"], "audio")
         try:
             res = media.tts(str(args.get("text") or ""), out_dir,
                             voice=args.get("voice"), engine=args.get("engine") or "cosyvoice",
+                            channel=args.get("channel"), notes=args.get("notes"),
+                            brief=args.get("brief"),
                             speed=float(args.get("speed") or 1.0),
                             wait_sec=float(args.get("wait_sec") or 180))
         except media.MediaError as e:
             return _err(str(e), status="media_error")
-        return _json(res)
+        return _json(self._publish_generated(res, user["phone"], "audio",
+                                             "audio/wav" if str(res.get("path", "")).endswith(".wav")
+                                             else "audio/mpeg"))
 
     def tool_image(self, args):
         user = auth.resolve(self.store, args)
@@ -760,10 +811,39 @@ class OpcServer:
                               steps=int(args.get("steps") or 20),
                               negative=args.get("negative_prompt"),
                               seed=args.get("seed"),
+                              channel=args.get("channel") or "sd15",
+                              reference_image=args.get("reference_image"),
+                              brief=args.get("brief"),
                               wait_sec=float(args.get("wait_sec") or 300))
         except media.MediaError as e:
             return _err(str(e), status="media_error")
-        return _json(res)
+        return _json(self._publish_generated(res, user["phone"], "image",
+                                             "image/png" if str(res.get("path", "")).endswith(".png")
+                                             else "image/jpeg"))
+
+    def tool_media_capabilities(self, args):
+        """生成能力查询：与注册共用 client_key，不引入第二套鉴权。"""
+        auth.resolve(self.store, args)
+        return _json(media.capabilities())
+
+    def tool_file_link(self, args):
+        """已生成产物重新取下载链接（同一把 key；只能取自己的）。"""
+        user = auth.resolve(self.store, args)
+        key = str(args.get("file_key") or "").strip()
+        row = self.store.generated_file(key, user["phone"]) if key else None
+        if not row:
+            return _err("file_key 不存在或不属于当前用户", status="not_found")
+        path = Path(row["path"] or "")
+        if not path.is_file():
+            return _err("产物文件已不存在（可能已过期清理）", status="gone")
+        return _json({"file_key": key, "filename": row["filename"] or path.name,
+                      "size": row["size"], "kind": row["kind"],
+                      "download_url": "%s/api/mcp/file/%s" % (config.PUBLIC_WORKBENCH_BASE, key),
+                      "download_auth": "X-Mail-Agent: <生成时用的同一把个人 API key>",
+                      "download_example": ('curl -L -H "X-Mail-Agent: $OPC_KEY" '
+                                           '"%s/api/mcp/file/%s" -o "%s"'
+                                           % (config.PUBLIC_WORKBENCH_BASE, key,
+                                              row["filename"] or path.name))})
 
     # ---------------------------------------------------------------- 协议
     def dispatch(self, name, args):

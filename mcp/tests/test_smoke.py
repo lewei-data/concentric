@@ -260,6 +260,28 @@ def main():
     lst = eval_content(srv.dispatch("material_list", {"token": token}))
     check("素材列表可见", lst.get("count") == 1, lst)
 
+    caps = eval_content(srv.dispatch("media_capabilities", {"token": token}))
+    check("能力查询列出音频/图像/视频渠道",
+          "audio" in caps and "image" in caps and "video" in caps
+          and len(caps["audio"]["channels"]) >= 2
+          and any(c.get("reference_image") for c in caps["image"]["channels"])
+          and "auth" in caps, {k: list(v)[:4] for k, v in caps.items() if isinstance(v, dict)})
+    bad_caps = eval_content(srv.dispatch("media_capabilities", {"client_key": "bad-key"}))
+    check("生成能力与注册共用鉴权", bad_caps.get("status") == "need_auth", bad_caps)
+
+    # 生成产物取回：file_key 登记 + file_link 重取，下载端点单独用 HTTP 验证
+    probe_png = Path(TMP) / "file_link_probe.png"
+    probe_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 64)
+    fk = "smokefilekey123456"
+    srv.store.add_generated_file(fk, PHONE, str(probe_png), "image",
+                                 filename="probe.png", mime="image/png", size=probe_png.stat().st_size)
+    link = eval_content(srv.dispatch("file_link", {"token": token, "file_key": fk}))
+    check("产物可取回下载链接（同一 key）",
+          link.get("file_key") == fk and "/api/mcp/file/" in str(link.get("download_url"))
+          and "X-Mail-Agent" in str(link.get("download_auth")), link)
+    other = eval_content(srv.dispatch("file_link", {"client_key": "bad-key", "file_key": fk}))
+    check("产物链接不越权", other.get("status") == "need_auth", other)
+
     hits = eval_content(srv.dispatch("kb_search", {"token": token, "query": "立绘 验收标准"}))
     check("知识库检索命中", hits.get("count", 0) > 0, hits)
 

@@ -494,9 +494,17 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def _require_auth(self):
-        """非回环来源必须携带 Basic 凭据；本机访问免登录（验收脚本、调试不受影响）。"""
+        """非回环来源必须携带 Basic 凭据；本机访问免登录（验收脚本、调试不受影响）。
+
+        MCP 生成产物下载用同一把个人 key 自带鉴权，不走 Basic/网页会话，豁免。
+        """
         if not AUTH_USER or self.client_address[0] in LOOPBACK:
             return True
+        try:
+            if unquote(urlparse(self.path).path).rstrip("/").startswith("/api/mcp/file/"):
+                return True
+        except Exception:
+            pass
         header = self.headers.get("Authorization") or ""
         if header.startswith("Basic "):
             try:
@@ -515,6 +523,75 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         return False
+
+    def _mcp_credential_phone(self):
+        """解析 MCP 个人 key（X-Mail-Agent / Bearer / ?key=）或 session_token，返回手机号。
+
+        与 MCP 工具共用同一把 key，不另设凭据；两种形态分别查 mcp/data/opc.db 的
+        api_keys（sha256('opc-personal:'+key)）与 sessions 表。
+        """
+        raw = (self.headers.get("X-Mail-Agent")
+               or self.headers.get("X-OPC-Token")
+               or "").strip()
+        auth = self.headers.get("Authorization") or ""
+        if auth.startswith("Bearer "):
+            raw = raw or auth[7:].strip()
+        if not raw:
+            raw = (parse_qs(urlparse(self.path).query).get("key") or [""])[0].strip()
+        if not raw:
+            return ""
+        try:
+            import sqlite3
+            db_path = os.environ.get("OPC_MCP_DB", "/opt/sefs/opc-workbench/mcp/data/opc.db")
+            if not os.path.isfile(db_path):
+                return ""
+            con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=3)
+            try:
+                digest = hashlib.sha256(("opc-personal:" + raw).encode("utf-8")).hexdigest()
+                row = con.execute(
+                    "SELECT phone FROM api_keys WHERE key_hash=? AND revoked=0 AND enabled=1 "
+                    "AND (expires_at IS NULL OR expires_at>?)", (digest, time.time())).fetchone()
+                if row:
+                    return str(row[0])
+                row = con.execute(
+                    "SELECT phone FROM sessions WHERE token=? AND expires_at>?",
+                    (raw, time.time())).fetchone()
+                return str(row[0]) if row else ""
+            finally:
+                con.close()
+        except Exception:
+            return ""
+
+    def _mcp_generated_file(self, file_key):
+        """按 file_key + 同一把 MCP key 下发生成产物（支持 Range，禁止路径穿越）。"""
+        file_key = str(file_key or "").strip().strip("/")
+        if not re.fullmatch(r"[A-Za-z0-9]{16,64}", file_key):
+            return self._json({"ok": False, "error": "file_key 格式不合法"}, 400)
+        phone = self._mcp_credential_phone()
+        if not phone:
+            return self._json({"ok": False, "error": "需要 MCP 个人 key：X-Mail-Agent 或 Bearer session_token"}, 401)
+        try:
+            import sqlite3
+            db_path = os.environ.get("OPC_MCP_DB", "/opt/sefs/opc-workbench/mcp/data/opc.db")
+            con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=3)
+            con.row_factory = sqlite3.Row
+            try:
+                row = con.execute(
+                    "SELECT phone, path, filename, mime FROM generated_files "
+                    "WHERE file_key=? AND phone=?", (file_key, phone)).fetchone()
+            finally:
+                con.close()
+        except Exception as e:  # noqa: BLE001
+            return self._json({"ok": False, "error": f"读取产物登记失败：{type(e).__name__}: {e}"}, 500)
+        if not row:
+            return self._json({"ok": False, "error": "file_key 不存在或不属于当前用户"}, 404)
+        user_root = os.environ.get("OPC_USER_ROOT", USERS_DIR)
+        allowed = os.path.realpath(os.path.join(user_root, phone, "mcp"))
+        full = os.path.realpath(str(row["path"] or ""))
+        if not full.startswith(allowed + os.sep) or not os.path.isfile(full):
+            return self._json({"ok": False, "error": "产物文件不存在或已过期"}, 404)
+        ctype = str(row["mime"] or "") or None
+        return self._serve_media(full, ctype)
 
     # ---------- 登录会话 ----------
     def _cookie_token(self):
@@ -870,6 +947,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._web_dist("index.html")
         if path.startswith("/app/"):
             return self._web_dist(path[len("/app/"):])
+        # MCP 生成产物（tts/image）取回：用生成时的同一把个人 key 鉴权，不设第二套 token
+        if path.startswith("/api/mcp/file/"):
+            return self._mcp_generated_file(path[len("/api/mcp/file/"):])
         # 素材库文件只读发布（可外部浏览器直接打开，与交付链接同口径不拦登录）
         if path.startswith("/materials/"):
             return self._material(path[len("/materials/"):])

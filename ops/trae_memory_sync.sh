@@ -1,13 +1,14 @@
 #!/bin/bash
-# Trae 会话记录 / 项目资料 -> NAS 每日归档
-# 由 crontab 在每天 23:59 调用：59 23 * * * /opt/sefs/opc-workbench/ops/trae_memory_sync.sh
+# Trae 会话记录 / 项目资料 -> NAS 每日归档（归档“前一天”的数据）
+# 由 crontab 在次日 00:30 调用：30 0 * * * /opt/sefs/opc-workbench/ops/trae_memory_sync.sh
+# 可手动指定日期：bash trae_memory_sync.sh 2026-11-17
 set -u
 export TZ=Asia/Shanghai
 
 SRC=/home/boray/.trae-cn/memory/projects
 ROOT=/mnt/sefs/conring/users/18911789286/trae
-TODAY=$(date +%Y%m%d)
-DAY=$(date +%F)
+DAY=${1:-$(date -d yesterday +%F)}
+TODAY=${DAY//-/}
 NOW=$(date '+%Y-%m-%d %H:%M:%S %Z')
 LOG=$ROOT/sync.log
 LATEST=$ROOT/latest.md
@@ -62,7 +63,7 @@ done
 
 # 3) 日志
 if [ "$files" -eq 0 ] && [ -z "$pm_rows" ]; then
-  log_line "归档日期 $DAY | 无当日记录 | 状态 $status"
+  log_line "归档日期 $DAY | 无会话记录 | 状态 $status"
 else
   log_line "归档日期 $DAY | 项目 $projects 个 | 文件数 $files | 字节数 $bytes | 新增 $newf 跳过 $skipf | 状态 $status | ${errs}"
 fi
@@ -77,7 +78,7 @@ fi
   echo "- 当日会话文件：$files 个，$bytes 字节（新增 $newf，跳过 $skipf）"
   echo "- 总体状态：$status"
   [ -n "$errs" ] && echo "- 错误：$errs"
-  echo "- 执行方式：系统 crontab（59 23 * * *），脚本 $0"
+  echo "- 执行方式：系统 crontab（次日 00:30 归档前一天），脚本 $0"
   if [ -n "$rows" ]; then
     echo
     echo "| 项目 | 单日文件数 | 字节数 | 结果 |"
@@ -85,7 +86,7 @@ fi
     printf "$rows"
   else
     echo
-    echo "当日无 Trae 会话记录。"
+    echo "该日期无 Trae 会话记录。"
   fi
   if [ -n "$pm_rows" ]; then
     echo

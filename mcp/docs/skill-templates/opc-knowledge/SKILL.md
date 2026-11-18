@@ -20,9 +20,16 @@ whenToUse: 用户问公司内部资料/规范/盘点，或要求查素材、删�
 
 ## 素材
 
-- 用户说"我上传的素材"：先 `mcp__opc__material_list` 拿 id。
-- 删除前跟用户确认，再调用 `mcp__opc__material_delete`。
-- 导出用 `mcp__opc__material_download`，按返回结果告知用户如何访问。
+- 用户说"我上传的素材"：先 `mcp__opc__material_list` 拿 id。删除前跟用户确认，再调 `mcp__opc__material_delete`。
+- 导出已上传素材用 `mcp__opc__material_download`；导出**生成的音频/图片**用生成结果里的 `download_url`（见下）。
+- 问"公司共享的资料/公开下载区"：用 `mcp__opc__opc_resource_list(kind=shared_materials 或 downloads)`；`material_list` 只查本人上传的素材，不要混淆。
+
+## 生成与取回（同一把 key，无单独 token）
+
+- 调 `mcp__opc__media_capabilities` 查渠道/音色/限制，再调 `mcp__opc__tts(text, brief?, notes?, channel?, voice?)` 或 `mcp__opc__image(prompt, brief?, reference_image?, channel?)`。
+- 生成结果含 `file_key` + `download_url`；取回用同一把个人 key：`curl -L -H "X-Mail-Agent: $OPC_KEY" "$download_url" -o 文件名`。
+- 链接丢失时用 `mcp__opc__file_link(file_key=...)` 重取。不要用网页登录态、conring 独立 token 或内联 base64 搬运。
+- DSH 若把二进制变成占位，以 `download_url` 为准引导用户在自己机器执行 curl。
 
 ## 出处追溯
 

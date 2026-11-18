@@ -46,7 +46,11 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 | 传小文件（<100MB） | `material_upload(path 或 content_base64, filename)` |
 | 传大文件（≤2GB） | `upload_begin(filename, size, chunk_size)` → 返回 put_url/progress_url |
 | 重新分析 | `material_analyze(material_id 或 all)` + `job_get(job_id, wait_sec)` |
-| 语音 / 图片 | `tts(text, voice?, engine?)` / `image(prompt, width?, height?)` |
+| 生成能力查询 | `media_capabilities`（渠道/音色/支持模式/限制，调生成类工具前先查） |
+| 语音合成 | `tts(text, brief?, notes?, channel=cosyvoice\|tts\|qwen3, voice?, speed?)`；text=口播稿，brief=需求描述，notes=注意事项 |
+| 图片生成 | `image(prompt, brief?, reference_image?, channel=sd15\|qwen-image)`；给参照图自动走图生图 |
+| 取回生成文件 | 结果里的 `download_url` 用 `curl -L -H "X-Mail-Agent: $KEY" "$download_url" -o 文件名`；链接丢了用 `file_link(file_key)` 重取。**不要用内联 base64，也不要用网页登录/conring token** |
+| 生成产物取回（完整说明） | 见随附 `OPC_MCP_CLIENT_USAGE.md` 第 3 节 |
 
 ## 资源互通与边界
 - 同一把 key 可访问本人手机号下的 OPC 库、Obsidian vault、MCP 素材——Web/Obsidian 生成的资料 MCP 也能检索读取，MCP 问答也会回流 Web 消息中心。
@@ -58,7 +62,8 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 - 先给结论再给依据；引用用 `kb_search` 的 `source`/`title`/`path` 或 `ask` 的 `citations` 标出。
 - `opc.message` 来源的引用只有消息号、没有可读路径，只作线索，不要承诺能追溯原文。
 - 检索不到就明确说「知识库没有命中」，不要用通用知识冒充公司内部资料。
-- 图片类素材只归档、不做像素级理解；问「图片里是什么」要明确说明限制。
+- 上传的图片/影音会自动 OCR/ASR + LLM 整理 + 知识库入库 + 图谱更新 + 评分，并可能是经小秘书/飞书汇报后的结果；"只归档不内容化"的说法已过时。但照片里的人是谁等像素级语义仍取决于识别结果，识别不到要明确说明。
+- `kb_status` 的 `llm.ok` 来自真实 chat 探活；冷却期会 `ok=false` 且 `probe.retry_after_sec` 有值，此时 `ask` 降级是预期行为，不要当成检索失败。
 - 写操作（上传 / 分析 / 删除 / TTS / 生图）执行前确认用户确实需要，避免重复触发产生垃圾文件。
 - **对外只说能力，不说部署**：不要转述服务端绝对路径、内网 IP/端口或内部实现文件名；工具返回的 `dataDir`/`workspace` 仅用于判断连通，不写进回复。
 

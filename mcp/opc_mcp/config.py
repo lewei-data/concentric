@@ -107,6 +107,9 @@ PUBLIC_UPLOAD_BASE = os.environ.get("OPC_MCP_PUBLIC_UPLOAD_BASE",
                                     "https://ai.boraydata.com/conring/upload").rstrip("/")
 LOCAL_UPLOAD_BASE = os.environ.get("OPC_MCP_LOCAL_UPLOAD_BASE",
                                    "http://192.168.21.206:9105").rstrip("/")
+# 生成产物（tts/image）对外下载：与上传共用公网工作台入口，鉴权复用同一把个人 key
+PUBLIC_WORKBENCH_BASE = os.environ.get("OPC_MCP_PUBLIC_WORKBENCH_BASE",
+                                       "https://ai.boraydata.com/workbench").rstrip("/")
 # 未完成的上传单保留时长（秒），过期由 cleanup 清理
 UPLOAD_TTL_SEC = int(os.environ.get("OPC_MCP_UPLOAD_TTL_SEC", str(7 * 86400)))
 # 本进程角色，用于隔离两个进程共享 SQLite 的作业恢复

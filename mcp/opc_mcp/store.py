@@ -51,6 +51,13 @@ CREATE TABLE IF NOT EXISTS messages(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   phone TEXT NOT NULL, role TEXT NOT NULL, content TEXT, created_at REAL);
 CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone, id DESC);
+
+-- 生成类工具（tts/image）的产物登记：不透明 file_key 对外，路径只留服务端
+CREATE TABLE IF NOT EXISTS generated_files(
+  file_key TEXT PRIMARY KEY, phone TEXT NOT NULL, path TEXT NOT NULL,
+  kind TEXT NOT NULL, filename TEXT, mime TEXT, size INTEGER,
+  created_at REAL NOT NULL, expires_at REAL);
+CREATE INDEX IF NOT EXISTS idx_genfiles_phone ON generated_files(phone, created_at DESC);
 """
 
 
@@ -100,6 +107,24 @@ class Store:
         with self._lock:
             rows = self.db.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
+
+    # ---------------------------------------------------------------- 生成产物
+    def add_generated_file(self, file_key, phone, path, kind, filename="",
+                           mime="", size=0, ttl_sec=7 * 86400):
+        self.exec("INSERT OR REPLACE INTO generated_files"
+                  "(file_key, phone, path, kind, filename, mime, size, created_at, expires_at) "
+                  "VALUES(?,?,?,?,?,?,?,?,?)",
+                  (file_key, phone, path, kind, filename, mime, int(size or 0),
+                   time.time(), time.time() + int(ttl_sec or 0)))
+        return file_key
+
+    def generated_file(self, file_key, phone=None):
+        sql = "SELECT * FROM generated_files WHERE file_key=?"
+        params = [file_key]
+        if phone:
+            sql += " AND phone=?"
+            params.append(phone)
+        return self.one(sql, params)
 
     # ---------------------------------------------------------------- 会话
     def create_session(self, token, phone, ttl_sec):
