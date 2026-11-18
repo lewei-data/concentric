@@ -2271,23 +2271,37 @@ class Handler(BaseHTTPRequestHandler):
         m_config.USER_ROOT = Path(OWNER_DATA_DIR).parent   # 与工作台 dataDir 同源
         return (phone, m_auth, m_config, McpStore(m_config.DB_PATH)), None
 
+    @staticmethod
+    def _mcp_key_view(row):
+        def fmt(ts):
+            return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else None
+        return {
+            "id": row["id"], "key_id": row["id"],
+            "label": row.get("label") or "", "source": row.get("source") or "",
+            "createdAt": fmt(row["created_at"]), "lastUsed": fmt(row.get("last_used")),
+            "expiresAt": fmt(row.get("expires_at")),
+            "enabled": bool(row.get("enabled", 1)), "revoked": bool(row.get("revoked", 0)),
+        }
+
     def _mcp_key_get(self):
         ctx, err = self._mcp_key_context()
         if err:
             return err
         phone, _auth, m_conf, store = ctx
         try:
-            rows = [r for r in store.api_keys(phone) if not r["revoked"]]
-            row = rows[-1] if rows else None
+            rows = store.api_keys(phone)
+            active = [r for r in rows if not r["revoked"] and r.get("enabled", 1)]
+            current = active[0] if active else None
+            items = [self._mcp_key_view(r) for r in rows]
             return self._json({
-                "ok": True, "phone": phone, "configured": bool(row),
-                "key_id": row["id"] if row else None,
-                "label": row["label"] if row else "",
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["created_at"]))
-                              if row else None,
-                "last_used": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["last_used"]))
-                             if row and row["last_used"] else None,
-                "note": "key 只存哈希，页面无法回显；如忘记请点“重新生成”",
+                "ok": True, "phone": phone, "configured": bool(current),
+                "keys": items, "count": len(rows), "activeCount": len(active),
+                # 兼容旧领 key 页：仍回显最新一把有效 key 的摘要
+                "key_id": current["id"] if current else None,
+                "label": (current.get("label") or "") if current else "",
+                "created_at": self._mcp_key_view(current)["createdAt"] if current else None,
+                "last_used": self._mcp_key_view(current)["lastUsed"] if current else None,
+                "note": "新增 key 不会覆盖旧 key；key 只存哈希，页面无法回显完整内容。",
                 "dataDir": str(m_conf.phone_root(phone)),
                 "vault": str(m_conf.user_vault(phone)),
                 "mcp_url": "https://ai.boraydata.com/mcp",
@@ -2304,22 +2318,50 @@ class Handler(BaseHTTPRequestHandler):
         phone, m_auth, m_conf, store = ctx
         try:
             action = str(body.get("action") or "create").lower()
-            if action not in ("create", "rotate", "revoke"):
-                return self._json({"ok": False, "error": "action 需为 create/rotate/revoke"}, 400)
-            store.revoke_api_key(phone=phone)
-            if action == "revoke":
-                return self._json({"ok": True, "phone": phone, "configured": False,
-                                   "revoked": True})
+            if action not in ("create", "update", "revoke"):
+                return self._json({"ok": False,
+                                   "error": "action 需为 create/update/revoke（旧 rotate 等同 create，不再覆盖旧 key）"}, 400)
+
+            # 单 key 管理：改开关/名称/来源/有效期/撤销，必须带 id 且属于当前手机号
+            if action in ("update", "revoke"):
+                key_id = body.get("id") or body.get("key_id")
+                if not key_id:
+                    return self._json({"ok": False, "error": "update/revoke 需提供 id"}, 400)
+                row = store.api_key(key_id)
+                if not row or row["phone"] != phone:
+                    return self._json({"ok": False, "error": "key 不存在或不属于当前账号"}, 403)
+                if action == "revoke":
+                    store.revoke_api_key(key_id=key_id)
+                    return self._json({"ok": True, "revoked": True, "id": int(key_id)})
+                days = body.get("days")
+                expires_at = time.time() + float(days) * 86400 if days not in (None, "") else None
+                updated = store.update_api_key(
+                    key_id, phone=phone,
+                    label=body.get("label"), source=body.get("source"),
+                    enabled=(None if body.get("enabled") is None else bool(body.get("enabled"))),
+                    expires_at=expires_at,
+                    clear_expires=bool(body.get("forever")))
+                return self._json({"ok": True, "item": self._mcp_key_view(updated)})
+
+            # create：追加新 key，不撤销任何旧 key；来源标注名称
             key = "opc_" + secrets.token_urlsafe(32)
-            label = str(body.get("label") or "工作台自助领取")[:40]
-            row = store.add_api_key(phone, m_auth.hash_key(key), label)
+            source = str(body.get("source") or "").strip().lower()[:40]
+            label = str(body.get("label") or "").strip()[:80]
+            if not label:
+                label = {"workbuddy": "WorkBuddy", "doubao": "豆包",
+                         "cli": "命令行", "": "工作台自助领取"}.get(source, source or "工作台自助领取")
+            days = body.get("days")
+            expires_at = time.time() + float(days) * 86400 if days not in (None, "") else None
+            row = store.add_api_key(phone, m_auth.hash_key(key), label,
+                                    source=source or None, expires_at=expires_at)
             return self._json({
                 "ok": True, "phone": phone, "configured": True, "revoked": False,
-                "key": key, "key_id": row["id"],
+                "key": key, "key_id": row["id"], "label": label, "source": source,
+                "expiresAt": self._mcp_key_view(row)["expiresAt"],
                 "mcp_url": "https://ai.boraydata.com/mcp",
                 "header": "X-Mail-Agent: " + key,
                 "doubao_url": "https://ai.boraydata.com/conring/opc/%s/mcp" % key,
-                "note": "key 只显示这一次，请立即复制并配置到客户端；泄漏后回到本页点“撤销”。",
+                "note": "新 key 已追加，旧 key 仍然有效；key 只显示这一次，请立即复制。",
                 "apply_url": m_conf.KEY_APPLY_URL,
             })
         finally:

@@ -20,6 +20,14 @@ type AccountResp = {
   settings?: Settings;
 };
 type Settings = { sound: boolean; autoRefreshSec: number; signature: string };
+type McpKey = {
+  id: number; label: string; source: string; createdAt: string | null;
+  lastUsed: string | null; expiresAt: string | null; enabled: boolean; revoked: boolean;
+};
+type McpKeysResp = {
+  ok: boolean; phone?: string; keys?: McpKey[]; count?: number; activeCount?: number;
+  mcp_url?: string; mcpUrl?: string; apply_url?: string; error?: string;
+};
 type SubSource = {
   id: string; name: string; category: string; live: boolean;
   note?: string; count?: number; desc?: string; scope?: string; interval?: string;
@@ -67,6 +75,12 @@ export function AccountPage() {
   const [subs, setSubs] = useState<string[]>([]);
   const [cats, setCats] = useState<CategoryGroup[]>([]);
   const [collectInterval, setCollectInterval] = useState("30 分钟/轮");
+  const [mcpKeys, setMcpKeys] = useState<McpKey[]>([]);
+  const [mcpUrl, setMcpUrl] = useState("");
+  const [newKey, setNewKey] = useState("");
+  const [keyName, setKeyName] = useState("");
+  const [newSource, setNewSource] = useState("workbuddy");
+  const [newDays, setNewDays] = useState("");
   const location = useLocation();
   const section = location.pathname.replace(/\/$/, "") || "/account";
 
@@ -89,6 +103,38 @@ export function AccountPage() {
       /* 分类表读取失败不阻断 */
     }
   };
+
+  const loadMcpKeys = async () => {
+    try {
+      const d = await getJson<McpKeysResp>("/api/mcp-key");
+      setMcpKeys(d.keys || []);
+      setMcpUrl(d.mcp_url || d.mcpUrl || "");
+    } catch {
+      /* 未配置身份时不影响个人信息页 */
+    }
+  };
+
+  const mcpKeyAction = async (body: Record<string, unknown>) => {
+    setErr("");
+    try {
+      const res = await fetch("/api/mcp-key", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = (await res.json()) as McpKeysResp & { key?: string; header?: string };
+      if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+      if (d.key) setNewKey(d.key);
+      await loadMcpKeys();
+      setMsg(body.action === "create" ? "已新增 key（仅显示一次），旧 key 仍有效" : "已更新");
+      return d;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      return null;
+    }
+  };
+
+  useEffect(() => { void loadMcpKeys(); }, [section]);
 
   const saveSubs = async (next: string[]) => {
     setBusy("subs");
@@ -358,6 +404,73 @@ export function AccountPage() {
                 {copied ? "已复制" : "复制"}
               </button>
             </div>
+          </div>
+          <div className="card">
+            <h2>外部 Agent API Key（MCP）</h2>
+            <p className="muted">
+              用于豆包 / WorkBuddy / CodeBuddy 接入 OPC MCP。新增 key 不会覆盖旧 key；可逐把停用、改名、设置有效期或撤销。
+              完整领 key 说明页：<a href="/mcp-key" target="_blank" rel="noreferrer">/mcp-key</a>。
+            </p>
+            <div className="account-grid" style={{ marginBottom: 12 }}>
+              <div className="account-item"><small>key 总数</small><b>{mcpKeys.length}</b></div>
+              <div className="account-item"><small>有效</small><b>{mcpKeys.filter(k => !k.revoked && k.enabled).length}</b></div>
+              <div className="account-item"><small>MCP 地址</small><b>{mcpUrl || "—"}</b></div>
+            </div>
+            <div className="row" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <select value={newSource} onChange={e => setNewSource(e.target.value)}>
+                <option value="workbuddy">来源：WorkBuddy</option>
+                <option value="doubao">来源：豆包</option>
+                <option value="cli">来源：命令行</option>
+                <option value="other">来源：其它</option>
+              </select>
+              <input placeholder="名称（可选）" value={keyName} onChange={e => setKeyName(e.target.value)} />
+              <input type="number" min={1} placeholder="有效期天数（空=长期）" value={newDays} onChange={e => setNewDays(e.target.value)} />
+              <button type="button" className="btn" onClick={() => void mcpKeyAction({
+                action: "create", source: newSource, label: keyName, days: newDays })}>新增 key</button>
+            </div>
+            {newKey && (
+              <div className="account-token" style={{ marginTop: 12 }}>
+                <code>{newKey}</code>
+                <button type="button" className="btn btn-ghost" onClick={() => {
+                  void navigator.clipboard?.writeText(newKey); setMsg("key 已复制");
+                }}>复制</button>
+              </div>
+            )}
+            {mcpKeys.length > 0 && (
+              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 14, fontSize: 13 }}>
+                <thead><tr>
+                  <th style={{ textAlign: "left" }}>#</th><th style={{ textAlign: "left" }}>名称 / 来源</th>
+                  <th style={{ textAlign: "left" }}>有效期</th><th style={{ textAlign: "left" }}>状态</th>
+                  <th style={{ textAlign: "left" }}>操作</th>
+                </tr></thead>
+                <tbody>{mcpKeys.map(k => {
+                  const expired = !!k.expiresAt && new Date(k.expiresAt.replace(" ", "T")) < new Date();
+                  const status = k.revoked ? "已撤销" : !k.enabled ? "已停用" : expired ? "已过期" : "有效";
+                  return <tr key={k.id}>
+                    <td>{k.id}</td>
+                    <td>{k.label || "—"}{k.source ? ` · ${k.source}` : ""}</td>
+                    <td>{k.expiresAt || "长期"}</td>
+                    <td>{status}</td>
+                    <td>
+                      {!k.revoked && <>
+                        <button type="button" className="btn btn-ghost" onClick={() => void mcpKeyAction({
+                          action: "update", id: k.id, enabled: !k.enabled })}>{k.enabled ? "停用" : "启用"}</button>{" "}
+                        <button type="button" className="btn btn-ghost" onClick={() => {
+                          const v = prompt("新名称", k.label); if (v !== null) void mcpKeyAction({ action: "update", id: k.id, label: v });
+                        }}>改名</button>{" "}
+                        <button type="button" className="btn btn-ghost" onClick={() => {
+                          const v = prompt("有效期天数（空或 0 = 长期）"); if (v === null) return;
+                          void mcpKeyAction({ action: "update", id: k.id, ...(v ? { days: Number(v) } : { forever: true }) });
+                        }}>有效期</button>{" "}
+                        <button type="button" className="btn btn-ghost" onClick={() => {
+                          if (confirm("撤销这把 key？不可恢复。")) void mcpKeyAction({ action: "revoke", id: k.id });
+                        }}>撤销</button>
+                      </>}
+                    </td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            )}
           </div>
         </>
       )}

@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS sessions(
 CREATE TABLE IF NOT EXISTS api_keys(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   phone TEXT NOT NULL, key_hash TEXT NOT NULL UNIQUE, label TEXT,
-  created_at REAL, last_used REAL, revoked INTEGER DEFAULT 0);
+  source TEXT, created_at REAL, last_used REAL,
+  expires_at REAL, enabled INTEGER DEFAULT 1, revoked INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_api_keys_phone ON api_keys(phone);
 
 CREATE TABLE IF NOT EXISTS materials(
@@ -75,6 +76,14 @@ class Store:
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(uploads)").fetchall()}
         if "chunk_size" not in cols:
             self.db.execute("ALTER TABLE uploads ADD COLUMN chunk_size INTEGER DEFAULT 0")
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(api_keys)").fetchall()}
+        for col, ddl in (("source", "ALTER TABLE api_keys ADD COLUMN source TEXT"),
+                         ("expires_at", "ALTER TABLE api_keys ADD COLUMN expires_at REAL"),
+                         ("enabled", "ALTER TABLE api_keys ADD COLUMN enabled INTEGER DEFAULT 1")):
+            if col not in cols:
+                self.db.execute(ddl)
+        # 历史 key 默认启用；NULL 视为启用（新库 DEFAULT 已保证非 NULL）
+        self.db.execute("UPDATE api_keys SET enabled=1 WHERE enabled IS NULL")
 
     def exec(self, sql, params=()):
         with self._lock:
@@ -109,24 +118,51 @@ class Store:
         self.exec("DELETE FROM sessions WHERE token=?", (token,))
 
     # ---------------------------------------------------------------- 个人 API key
-    def add_api_key(self, phone, key_hash, label=None):
-        self.exec("INSERT INTO api_keys(phone, key_hash, label, created_at) VALUES(?,?,?,?)",
-                  (phone, key_hash, label, time.time()))
+    def add_api_key(self, phone, key_hash, label=None, source=None, expires_at=None):
+        self.exec("INSERT INTO api_keys(phone, key_hash, label, source, created_at, expires_at, enabled) "
+                  "VALUES(?,?,?,?,?,?,1)",
+                  (phone, key_hash, label, source, time.time(), expires_at))
         return self.one("SELECT * FROM api_keys WHERE key_hash=?", (key_hash,))
 
     def api_key_user(self, key_hash):
-        row = self.one("SELECT * FROM api_keys WHERE key_hash=? AND revoked=0", (key_hash,))
+        row = self.one("SELECT * FROM api_keys WHERE key_hash=? AND revoked=0 AND enabled=1 "
+                       "AND (expires_at IS NULL OR expires_at > ?)", (key_hash, time.time()))
         if not row:
             return None
         self.exec("UPDATE api_keys SET last_used=? WHERE id=?", (time.time(), row["id"]))
         return self.one("SELECT * FROM users WHERE phone=?", (row["phone"],))
 
     def api_keys(self, phone=None):
+        cols = "id, phone, label, source, created_at, last_used, expires_at, enabled, revoked"
         if phone:
-            return self.all("SELECT id, phone, label, created_at, last_used, revoked"
-                            " FROM api_keys WHERE phone=? ORDER BY id", (phone,))
-        return self.all("SELECT id, phone, label, created_at, last_used, revoked"
-                        " FROM api_keys ORDER BY id")
+            return self.all("SELECT %s FROM api_keys WHERE phone=? ORDER BY id DESC" % cols, (phone,))
+        return self.all("SELECT %s FROM api_keys ORDER BY id DESC" % cols)
+
+    def api_key(self, key_id):
+        return self.one("SELECT id, phone, label, source, created_at, last_used, expires_at, enabled, revoked "
+                        "FROM api_keys WHERE id=?", (int(key_id),))
+
+    def update_api_key(self, key_id, phone=None, label=None, source=None,
+                       enabled=None, expires_at=None, clear_expires=False):
+        """按 id 修改单个 key 的元数据；只更新显式传入的字段。返回最新行。"""
+        sets, params = [], []
+        if label is not None:
+            sets.append("label=?"); params.append(str(label)[:80])
+        if source is not None:
+            sets.append("source=?"); params.append(str(source)[:40])
+        if enabled is not None:
+            sets.append("enabled=?"); params.append(1 if enabled else 0)
+        if clear_expires:
+            sets.append("expires_at=NULL")
+        elif expires_at is not None:
+            sets.append("expires_at=?"); params.append(float(expires_at))
+        if not sets:
+            return self.api_key(key_id)
+        where = "id=?"; params.append(int(key_id))
+        if phone:
+            where += " AND phone=?"; params.append(phone)
+        self.exec("UPDATE api_keys SET %s WHERE %s" % (", ".join(sets), where), tuple(params))
+        return self.api_key(key_id)
 
     def revoke_api_key(self, key_id=None, key_hash=None, phone=None):
         clauses, params = [], []

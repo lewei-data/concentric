@@ -5,24 +5,36 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>外部 Agent API Key · OPC</title>
 <style>
-:root{color-scheme:light;--ink:#1c2430;--muted:#667085;--line:#e4e7ec;--accent:#2f6df6;--bg:#f7f8fa}
+:root{color-scheme:light;--ink:#1c2430;--muted:#667085;--line:#e4e7ec;--accent:#2f6df6;--bg:#f7f8fa;--danger:#b42318}
 *{box-sizing:border-box}body{margin:0;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
-.wrap{max-width:860px;margin:40px auto;padding:0 20px}h1{font-size:22px;margin:0 0 6px}.sub{color:var(--muted);margin:0 0 24px}
+.wrap{max-width:980px;margin:40px auto;padding:0 20px}h1{font-size:22px;margin:0 0 6px}.sub{color:var(--muted);margin:0 0 24px}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:16px}
-.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.badge{padding:2px 10px;border-radius:999px;font-size:12px;background:#eef4ff;color:#175cd3}.badge.off{background:#f2f4f7;color:#667085}
-button{border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;background:var(--accent);color:#fff}button.ghost{background:#fff;color:#344054;border:1px solid var(--line)}
-pre,textarea{font-family:ui-monospace,Menlo,Consolas,monospace}pre{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all}
-textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8px;padding:10px}.hint{color:var(--muted);font-size:13px}.err{color:#b42318;margin-top:10px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.badge{padding:2px 10px;border-radius:999px;font-size:12px;background:#eef4ff;color:#175cd3}.badge.off{background:#f2f4f7;color:#667085}.badge.bad{background:#fee4e2;color:var(--danger)}
+button{border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;background:var(--accent);color:#fff}button.ghost{background:#fff;color:#344054;border:1px solid var(--line)}button.sm{padding:5px 10px;font-size:12px}button.danger{background:#fff;color:var(--danger);border:1px solid #fda29b}
+pre,textarea,input,select{font-family:ui-monospace,Menlo,Consolas,monospace}pre{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+textarea,input,select{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px}textarea{min-height:70px}label{font-size:13px;color:var(--muted);display:block;margin:10px 0 4px}
+.hint{color:var(--muted);font-size:13px}.err{color:var(--danger);margin-top:10px}
+table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}th{color:var(--muted);font-weight:500}td .row{gap:6px}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>外部 Agent API Key</h1>
-<p class="sub">登录后按手机号领取个人 key，用于豆包工作 / WorkBuddy / CodeBuddy 调用 OPC MCP。接入时只需要这一串 key，手机号仅在领取时用于认领身份。</p>
+<p class="sub">按手机号领取个人 key，用于豆包 / WorkBuddy / CodeBuddy 调用 OPC MCP。接入时只需要 key，手机号仅在领取时认领身份。<b>新增 key 不会覆盖旧 key</b>，可在此逐把管理。</p>
 <div class="card">
-<div class="row"><span>当前账号：<b id="phone">—</b></span><span id="badge" class="badge off">检测中…</span></div>
-<p class="hint">key 只存 sha256，页面无法回显；忘记或泄漏请重新生成。</p>
-<div class="row"><button id="gen">生成 / 重新生成 key</button><button id="revoke" class="ghost">撤销当前 key</button><button id="refresh" class="ghost">刷新状态</button></div>
+<div class="row"><span>当前账号：<b id="phone">—</b></span><span id="badge" class="badge off">检测中…</span><span id="cnt" class="hint"></span></div>
+<label>来源 / 客户端</label>
+<select id="source">
+<option value="workbuddy">WorkBuddy</option>
+<option value="doubao">豆包</option>
+<option value="cli">命令行 / 脚本</option>
+<option value="other">其它</option>
+</select>
+<label>名称（可选，留空按来源自动生成）</label>
+<input id="label" maxlength="80" placeholder="如：家里电脑的豆包">
+<label>有效期（天，留空长期有效）</label>
+<input id="days" type="number" min="1" max="3650" placeholder="如 90">
+<div class="row" style="margin-top:14px"><button id="gen">新增 key</button><button id="refresh" class="ghost">刷新列表</button></div>
 <div id="msg" class="hint"></div>
 </div>
 <div class="card" id="result" style="display:none">
@@ -32,19 +44,36 @@ textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8
 <h3 style="font-size:14px;margin:18px 0 6px">WorkBuddy / CodeBuddy（HTTP）</h3><pre id="cfg-http"></pre>
 <h3 style="font-size:14px;margin:18px 0 6px">豆包（不能设请求头时用路径式 URL）</h3><pre id="cfg-path"></pre>
 </div>
+<div class="card">
+<h2 style="font-size:16px;margin-top:0">我的 key 列表</h2>
+<p class="hint">可逐把停用/启用、改名、改有效期或撤销。停用与撤销都会让该 key 立即失效；撤销不可恢复。</p>
+<table><thead><tr><th>#</th><th>名称 / 来源</th><th>创建</th><th>最近使用</th><th>有效期</th><th>状态</th><th>操作</th></tr></thead><tbody id="keys"><tr><td colspan="7" class="hint">加载中…</td></tr></tbody></table>
+</div>
 <div class="card"><h2 style="font-size:16px;margin-top:0">MCP 地址</h2><pre id="urls">加载中…</pre>
-<p class="hint">外部 agent 提示缺 key 时，错误信息会带本页地址；回到这里登录后生成即可。撤销后旧 key 立即失效。</p></div>
+<p class="hint">外部 agent 提示缺 key 时，错误信息会带本页地址；回到这里登录后新增即可。key 只存 sha256，页面无法回显完整内容。</p></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
 function say(t,err){$('msg').textContent=t||'';$('msg').className=err?'err':'hint'}
-async function api(action){var opt=action?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}:{};var r=await fetch('api/mcp-key',opt);if(r.status===401){location.href='login?next='+encodeURIComponent(location.pathname);return null}var d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));return d}
-function render(d){$('phone').textContent=d.phone||'—';$('badge').textContent=d.configured?'已配置':'未配置';$('badge').className='badge'+(d.configured?'':' off');$('urls').textContent='MCP:    '+(d.mcp_url||'')+'\n上传:  '+(d.upload_url||'')+'\n申请页: '+(d.apply_url||location.href)+'\nOPC 根目录: '+(d.dataDir||'')+'\nVault:  '+(d.vault||'')}
+async function api(action,body){var opt={};if(action){opt={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:action},body||{}))}}var r=await fetch('api/mcp-key',opt);if(r.status===401){location.href='login?next='+encodeURIComponent(location.pathname);return null}var d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));return d}
+function fmt(ts){return ts||'—'}
+function statusOf(k){if(k.revoked)return'<span class="badge bad">已撤销</span>';if(!k.enabled)return'<span class="badge off">已停用</span>';if(k.expiresAt&&new Date(k.expiresAt.replace(' ','T'))<new Date())return'<span class="badge bad">已过期</span>';return'<span class="badge">有效</span>'}
+function renderKeys(d){var ks=d.keys||[];$('cnt').textContent='共 '+ks.length+' 把（有效 '+(d.activeCount||0)+'）';if(!ks.length){$('keys').innerHTML='<tr><td colspan="7" class="hint">还没有 key，点上方「新增 key」领取第一把。</td></tr>';return}
+$('keys').innerHTML=ks.map(function(k){var src=k.source?(' · '+esc(k.source)):'';var ops='<div class="row">'+(k.revoked?'':'<button class="sm ghost" data-act="toggle" data-id="'+k.id+'" data-on="'+(k.enabled?0:1)+'">'+(k.enabled?'停用':'启用')+'</button>')+(k.revoked?'':'<button class="sm ghost" data-act="rename" data-id="'+k.id+'" data-label="'+esc(k.label)+'">改名</button>')+(k.revoked?'':'<button class="sm ghost" data-act="expire" data-id="'+k.id+'">有效期</button>')+(!k.revoked?'<button class="sm danger" data-act="revoke" data-id="'+k.id+'">撤销</button>':'')+'</div>';
+return'<tr><td>'+k.id+'</td><td><b>'+esc(k.label||'—')+'</b>'+src+'</td><td>'+fmt(k.createdAt)+'</td><td>'+fmt(k.lastUsed)+'</td><td>'+fmt(k.expiresAt)+'</td><td>'+statusOf(k)+'</td><td>'+ops+'</td></tr>'}).join('')}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function render(d){$('phone').textContent=d.phone||'—';$('badge').textContent=d.configured?'已配置':'未配置';$('badge').className='badge'+(d.configured?'':' off');renderKeys(d);$('urls').textContent='MCP:    '+(d.mcp_url||'')+'\n上传:  '+(d.upload_url||'')+'\n申请页: '+(d.apply_url||location.href)+'\nOPC 根目录: '+(d.dataDir||'')+'\nVault:  '+(d.vault||'')}
 function showKey(d){$('result').style.display='block';$('key').value=d.key||'';$('cfg-http').textContent=JSON.stringify({mcpServers:{'opc-kb':{type:'http',url:d.mcp_url,headers:{'X-Mail-Agent':d.key}}}},null,2);$('cfg-path').textContent=d.doubao_url||''}
 $('refresh').onclick=function(){api(null).then(function(d){if(d){render(d);say('')}}).catch(function(e){say(e.message,true)})};
-$('gen').onclick=function(){api('create').then(function(d){if(d){render(d);showKey(d);say('已生成，仅显示这一次',false)}}).catch(function(e){say(e.message,true)})};
-$('revoke').onclick=function(){if(!confirm('确定撤销当前 key？'))return;api('revoke').then(function(d){if(d){render(d);$('result').style.display='none';say('已撤销',false)}}).catch(function(e){say(e.message,true)})};
+$('gen').onclick=function(){var body={source:$('source').value,label:$('label').value,days:$('days').value};api('create',body).then(function(d){if(!d)return;showKey(d);$('label').value='';$('days').value='';say('已新增 key，仅显示这一次；旧 key 仍有效',false);return api(null)}).then(function(d){if(d)render(d)}).catch(function(e){say(e.message,true)})};
 $('copy').onclick=function(){$('key').select();document.execCommand('copy');say('已复制',false)};
+$('keys').onclick=function(e){var b=e.target.closest('button');if(!b)return;var id=b.getAttribute('data-id'),act=b.getAttribute('data-act');var body={id:id};
+if(act==='toggle'){body.enabled=parseInt(b.getAttribute('data-on'),10)}
+if(act==='rename'){var v=prompt('新的名称：',b.getAttribute('data-label')||'');if(v===null)return;body.label=v}
+if(act==='expire'){var d=prompt('有效期天数（留空=长期有效，填 0 清除有效期）：');if(d===null)return;if(d==='')body.forever=true;else if(d==='0')body.forever=true;else body.days=parseInt(d,10)}
+if(act==='revoke'&&!confirm('确定撤销这把 key？不可恢复。'))return;
+if(act==='revoke'){body={action:'revoke',id:id}}
+api(act==='revoke'?'revoke':'update',body).then(function(){return api(null)}).then(function(d){if(d){render(d);say('已更新',false)}}).catch(function(e){say(e.message,true)})};
 api(null).then(function(d){if(d)render(d)}).catch(function(e){say(e.message,true)});
 </script>
 </body>
