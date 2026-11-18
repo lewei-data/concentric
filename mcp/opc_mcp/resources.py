@@ -261,7 +261,10 @@ def search(store, phone, query, k=8):
         if h:
             scored.append(h)
     for row in _rows(phone, "SELECT id,source,substr(content,1,2000) c FROM chat_messages ORDER BY id DESC LIMIT 400"):
-        h = _hit("opc.message", row["id"], row.get("source") or "", row.get("c") or "", q)
+        content = row.get("c") or ""
+        if "LLM 通道" in content and ("先给知识库命中" in content or content.lstrip().startswith("[降级]")):
+            continue                                     # 旧降级回答不参与检索，避免层层嵌套
+        h = _hit("opc.message", row["id"], row.get("source") or "", content, q)
         if h:
             scored.append(h)
     if store is not None:

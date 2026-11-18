@@ -18,7 +18,7 @@
 2. 用你的 **OPC 工作台账号**登录（就是绑定你手机号的那个账号）。
 3. 在「外部 Agent API Key」页面选**来源**（WorkBuddy / 豆包 / 命令行）、填名称（可选）和有效期（可选），点 **「新增 key」**。
 4. 立即复制页面显示的 key（形如 `opc_xxxxxxxx...`），**它只显示这一次**。
-5. 页面会同时显示你这把 key 属于哪个 OPC 根目录和 vault，确认是自己的账号。
+5. 页面会同时显示你这把 key 属于哪个租户和 vault，确认是自己的账号。
 
 > **新增 key 不会覆盖旧 key**：每把 key 独立存在，可在领 key 页或「个人中心 → 个人信息 → 外部 Agent API Key」逐把停用、改名、改有效期或撤销。
 
@@ -112,6 +112,7 @@ key 自带手机号，因此你能通过 MCP 访问**该手机号名下的全部
 | 查公司知识库（含 OPC/Obsidian/Web 资料） | 「用 `kb_search` 查「分片上传的 offset 语义」」 |
 | 让 OPC 总结回答 | 「用 `ask` 的 text 参数问：大文件上限是多少？并给引用」 |
 | 查库内事实（省一轮检索） | 「用 `ask(..., with_brief=true)` 问：同心圆知识图谱是什么？」（自带五行三才图谱简报，不必先 kb_search） |
+| 读简报里的出处 | 「用 `knowledge_brief.items[].source` 或 `citations[].path` 的完整路径调 `opc_resource_read`」（简报正文的 `→` 为截断显示，勿直接读） |
 | 列出 OPC 库条目 | 「用 `opc_resource_list` 列 kind=knowledge / reports / contents / vault」 |
 | 读某条资料原文 | 「用 `opc_resource_read` 读 ref=knowledge:kb_xxx 或 vault:OPC/知识库/a.md」 |
 | 看知识库状态 | 「调用 `kb_status`，告诉我素材数、OPC 库条目数和可检索片段数」 |

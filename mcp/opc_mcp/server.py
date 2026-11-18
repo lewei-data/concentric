@@ -20,6 +20,19 @@ SYSTEM_PROMPT = ("你是 OPC 公司的知识助手。优先依据给出的知识
                  "不要编造。回答用中文，先给结论，再给依据。")
 
 
+_DEGRADED_RE = re.compile(r"[（(]?\s*LLM\s*通道(?:暂)?不可用[^）)\n]*[）)]?")
+
+
+def _clean_snippet(text, limit=180):
+    """清掉旧降级回答留下的嵌套标记，避免一次故障滚成多层拼接。"""
+    s = str(text or "").replace("\n", " ").strip()
+    if "LLM 通道" in s and ("先给知识库命中" in s or s.lstrip().startswith(("[降级]", "（LLM", "(LLM"))):
+        s = _DEGRADED_RE.sub("", s)
+        s = re.sub(r"^[\s\-–—•]*【[^】]{1,40}】", "", s)
+        s = re.sub(r"\s+", " ", s).strip()
+    return s[:limit]
+
+
 def log(msg):
     sys.stderr.write("[opc-mcp] %s\n" % msg)
     sys.stderr.flush()
@@ -300,6 +313,9 @@ class OpcServer:
                     c["path"] = ""
                     c["ref"] = "%s:%s" % ("material" if c["source"] == "mcp.material" else "knowledge", c["id"])
         history = store.messages(phone, limit=8)
+        # 历史里的降级回答没有信息量，还会把故障文本滚进下一轮
+        history = [m for m in history
+                   if not (m.get("role") == "assistant" and "LLM 通道" in str(m.get("content") or ""))]
         if public:
             history = [{"role": m["role"], "content": graph_brief.public_text(m["content"])}
                        for m in history]
@@ -320,16 +336,21 @@ class OpcServer:
         except Exception as e:
             degraded, error = True, str(e)[:300]
             if hits:
-                answer = "（LLM 通道不可用，先给知识库命中）\n" + "\n".join(
-                    "- 【%s】%s" % (h["source"], h["snippet"]) for h in hits)
+                lines = []
+                for h in hits[:5]:
+                    snip = _clean_snippet(h.get("snippet"))
+                    lines.append("- 【%s】%s%s" % (h["source"], h.get("title") or h["id"],
+                                                 ("：" + snip) if snip else ""))
+                answer = "（LLM 通道暂不可用，先给知识库命中）\n" + "\n".join(lines)
             else:
-                answer = "LLM 通道不可用，且知识库没有命中「%s」的内容。" % question
+                answer = "LLM 通道暂不可用，且知识库没有命中「%s」的内容。" % str(question)[:80]
 
         if public:
             answer = graph_brief.public_text(answer)
             error = graph_brief.public_text(error) if error else error
         store.add_message(phone, "user", question)
-        store.add_message(phone, "assistant", answer)
+        store.add_message(phone, "assistant", ("[降级] %s" % (error or "LLM 通道暂不可用")[:160])
+                          if degraded else answer)
         out = {"answer": answer, "degraded": degraded, "llm_error": error,
                "citations": citations, "context_chars": len(context)}
         if public:
@@ -555,6 +576,7 @@ class OpcServer:
         chunks = self.store.one("SELECT COUNT(*) n FROM chunks WHERE phone=?", (phone,))
         cards = self.store.one("SELECT COUNT(*) n FROM cards WHERE phone=?", (phone,))
         ok, detail, probe_info = llm.probe()
+        fcfg = llm.fallback_config() or {}
         rc = resources.counts(phone, self.store)
         return _json({
             "user": {"phone": phone, "name": user["name"], "role": user["role"]},
@@ -570,7 +592,11 @@ class OpcServer:
             "recent_jobs": [{"job_id": j["id"], "kind": j["kind"], "status": j["status"],
                              "error": j["error"]} for j in self.store.jobs(phone, limit=5)],
             "llm": {"ok": ok, "base_url": config.LLM_BASE_URL, "model": config.LLM_MODEL,
-                    "detail": None if ok else detail, "probe": probe_info},
+                    "detail": None if ok else detail, "probe": probe_info,
+                    "fallback": {"enabled": config.LLM_FALLBACK_ENABLED,
+                                 "configured": bool(fcfg),
+                                 "channel": fcfg.get("id") or config.LLM_FALLBACK_CHANNEL_ID,
+                                 "model": fcfg.get("model") or config.LLM_FALLBACK_MODEL}},
             "media": media.health(),
         })
 
@@ -630,6 +656,9 @@ class OpcServer:
              "确认当前 key 对应的手机号与 OPC 根目录"),
             (("状态", "多少", "统计", "健康", "可用", "探活", "status"), "kb_status",
              "看素材/片段/卡片数与 LLM 状态"),
+            (("没分析", "未分析", "待分析", "没处理", "待处理", "pending", "unanalyzed"),
+             "material_list",
+             "素材是否已分析看 material_list 的 status；要补分析再 material_analyze(all=true)"),
             (("上传", "导入", "传文件", "upload"), "upload_begin",
              "大文件走 upload_begin 分片；<100MB 可用 material_upload"),
             (("共享", "公开", "公共", "下载区", "全局", "shared", "downloads"),
@@ -656,6 +685,11 @@ class OpcServer:
         # 除非用户同时明确说了「我的素材」。
         if any(t == "opc_resource_list" for t, _ in matched) and "我的素材" not in low:
             matched = [x for x in matched if x[0] not in ("material_list", "material_download")]
+        # "我上传的素材里有哪些没分析"：问的是状态，不是再传一遍，上传规则要让位给 material_list。
+        if any(w in low for w in ("没分析", "未分析", "待分析", "没处理", "待处理", "pending", "unanalyzed")):
+            matched = [x for x in matched if x[0] not in ("material_upload", "upload_begin")]
+            if not any(t == "material_list" for t, _ in matched):
+                matched.insert(0, ("material_list", "素材状态看 material_list 的 status"))
         # "删除我上传的素材"会同时命中上传规则；删除优先，并补一步 list 拿 id。
         if any(t == "material_delete" for t, _ in matched):
             matched = [x for x in matched if x[0] not in ("material_upload", "upload_begin")]

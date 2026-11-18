@@ -12,7 +12,7 @@
 1. 打开浏览器，访问 `https://ai.boraydata.com/workbench/mcp-key`。
 2. 用你的 **OPC 工作台账号**登录（绑定你手机号的那个账号）。
 3. 选**来源「豆包」**、填名称（可选）和有效期（可选），点 **「新增 key」**，立即复制（形如 `opc_xxxxxxxx...`，**只显示这一次**）。
-4. 页面会显示这把 key 属于哪个 OPC 根目录和 vault，确认是自己的账号。
+4. 页面会显示这把 key 属于哪个租户和 vault，确认是自己的账号。
 
 > **新增 key 不会覆盖旧 key**：每把 key 独立管理，可在领 key 页或「个人中心 → 个人信息 → 外部 Agent API Key」逐把停用/改名/改有效期/撤销。
 
@@ -168,6 +168,8 @@ process.stdin.on("data", async d => {
 
 【回答方式】
 先给结论再给依据；引用用 kb_search 的 source/title/path 或 ask 的 citations 标出。
+读原文时，完整路径以 knowledge_brief.items[].source 或 citations[].path 为准；简报正文里的 → 路径是截断显示，直接读取会报文件不存在。
+citations 命中 opc.message 时没有可读路径，这类消息引用不可追溯原文，只作线索。
 检索不到就明说「知识库没有命中」，不要用通用知识冒充公司内部资料。
 图片/影音素材只归档不内容化；问「照片里是谁」要明确说明限制。
 上传/生图/TTS 是写操作，执行前确认用户确实需要。

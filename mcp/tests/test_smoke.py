@@ -124,6 +124,9 @@ def main():
     check("opc_route 删除意图命中 material_delete",
           "material_list" in rt_del["steps"] and "material_delete" in rt_del["steps"]
           and "material_delete(material_id=" in rt_del["templates"].get("material_delete", ""), rt_del)
+    rt_pend = eval_content(srv0.dispatch("opc_route", {"query": "我上传的素材里有哪些没分析"}))
+    check("opc_route 待分析意图优先 material_list",
+          "material_list" in rt_pend["steps"] and "upload_begin" not in rt_pend["steps"], rt_pend)
     check("opc_route 无需鉴权",
           srv0.dispatch("opc_route", {"query": "OPC"}).get("isError") is False)
     config.PHONE_ONLY = False
@@ -370,6 +373,10 @@ def main():
     check("屏蔽条目不进简报", "敏感台账" not in b1["text"] and "绝密" not in b1["text"],
           b1["text"][:200])
     check("层级1带一跳邻居", "↳" in b1["text"], b1["text"][:300])
+    check("简报尾部提示完整出处而非截断路径",
+          "items[].source" in b1["text"] and "勿直接读取" in b1["text"], b1["text"].splitlines()[-1])
+    check("items.source 是完整可读路径",
+          b1["items"] and all(str(i["source"]).endswith(".md") for i in b1["items"]), b1["items"])
     b0 = graph_brief.build(store, PHONE, qb, level=0, budget=700)
     check("层级0无邻居与图扩展", "↳" not in b0["text"] and "○" not in b0["text"], b0["text"][:200])
     b2 = graph_brief.build(store, PHONE, qb, level=2, budget=1200)
@@ -400,6 +407,58 @@ def main():
     badb = srv.dispatch("ask", {"token": token, "text": qb, "brief_chars": "abc"})
     check("brief_chars 非整数报错", badb.get("isError") is True,
           badb["content"][0]["text"][:100])
+
+    # 8. LLM 故障时降级回答不嵌套、历史只留短标记
+    orig_chat = llm.chat
+
+    def _boom(*a, **k):
+        raise llm.LLMError("LLM HTTP 429：所选模型无可用部署，冷却约 50400 秒")
+
+    llm.chat = _boom
+    try:
+        dg = eval_content(srv.dispatch("ask", {"token": token, "text": qb, "wait_sec": 60}))
+    finally:
+        llm.chat = orig_chat
+    dans = (dg.get("result") or {}).get("answer") or ""
+    check("降级回答单层不嵌套",
+          dans.count("LLM 通道") == 1 and "先给知识库命中" in dans, dans[:200])
+
+    # 9. 主通道 429/500 自动切兜底；400 不兜底
+    orig_post, orig_fb, orig_base = llm._post, llm.fallback_config, config.LLM_BASE_URL
+    calls = []
+
+    def fake_post(url, model, key, messages, temperature, max_tokens, timeout):
+        calls.append((url, model))
+        if "primary" in url:
+            raise llm.LLMError("HTTP 429", status=429, retry_after_sec=10)
+        return "兜底回答"
+
+    llm._post = fake_post
+    llm.fallback_config = lambda force=False: {
+        "id": "test-oc", "url": "http://fallback.test/v1", "model": "m", "key": "k"}
+    config.LLM_BASE_URL = "http://primary.test/v1"
+    try:
+        out_fb = llm.chat([{"role": "user", "content": "hi"}])
+    finally:
+        llm._post, llm.fallback_config, config.LLM_BASE_URL = orig_post, orig_fb, orig_base
+    check("429 自动切兜底通道", out_fb == "兜底回答" and len(calls) == 2, calls)
+
+    calls400 = []
+
+    def fake_post_400(url, model, key, messages, temperature, max_tokens, timeout):
+        calls400.append(url)
+        raise llm.LLMError("HTTP 400", status=400)
+
+    llm._post, orig_base = fake_post_400, config.LLM_BASE_URL
+    config.LLM_BASE_URL = "http://primary.test/v1"
+    raised = False
+    try:
+        llm.chat([{"role": "user", "content": "hi"}])
+    except llm.LLMError:
+        raised = True
+    finally:
+        llm._post, config.LLM_BASE_URL = orig_post, orig_base
+    check("400 不触发兜底", raised and len(calls400) == 1, calls400)
 
     print("\n共 %d 项通过：\n  - %s" % (len(PASSED), "\n  - ".join(PASSED)))
     print("运行目录（可删除）：", TMP)

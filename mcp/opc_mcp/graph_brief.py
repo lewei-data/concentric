@@ -249,7 +249,7 @@ def build(store, phone, question, level=None, budget=None):
         counts[dim] += 1
     head = kb._trim("【知识图谱·五行三才】%d 条 / 图 %d 节点 %d 边（天%d 地%d 人%d）" % (
         len(seeds), len(nodes), len(edges), counts["tian"], counts["di"], counts["ren"]), head_reserve)
-    tail = kb._trim("出处见 → 路径；需要原文用 opc_resource_read(ref=vault:路径)。无关可忽略。", tail_reserve)
+    tail = kb._trim("完整出处见 items[].source / citations[].path；正文 → 为截断显示，勿直接读取。", tail_reserve)
     text = "\n".join([head, *body, tail])
     if len(text) > budget:                               # 硬上限：库再大也不越过预算
         text = text[:budget - 1].rstrip() + "…"

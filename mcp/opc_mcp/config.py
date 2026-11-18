@@ -63,6 +63,17 @@ LLM_API_KEY = os.environ.get("OPC_MCP_LLM_API_KEY") or os.environ.get("OPC_LLM_A
     or "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a"
 LLM_TIMEOUT = float(os.environ.get("OPC_MCP_LLM_TIMEOUT", "120"))
 
+# 兜底通道：主通道 429/5xx/网络错误时自动切到 OpenCode 通道。
+# key 默认从模型管理页的 opencode-glm53 读取，避免在环境变量里再存一份明文。
+LLM_FALLBACK_ENABLED = os.environ.get("OPC_MCP_LLM_FALLBACK", "1") != "0"
+LLM_FALLBACK_URL = os.environ.get("OPC_MCP_LLM_FALLBACK_URL", "https://opencode.ai/zen/go/v1")
+LLM_FALLBACK_MODEL = os.environ.get("OPC_MCP_LLM_FALLBACK_MODEL", "glm-5.3-flash")
+LLM_FALLBACK_API_KEY = os.environ.get("OPC_MCP_LLM_FALLBACK_API_KEY", "")
+LLM_FALLBACK_CHANNEL_ID = os.environ.get("OPC_MCP_LLM_FALLBACK_CHANNEL_ID", "opencode-glm53")
+LLM_FALLBACK_DB = Path(os.environ.get("OPC_MCP_LLM_FALLBACK_DB")
+                       or (USER_ROOT / "18911789286" / "opc.db"))
+LLM_FALLBACK_TIMEOUT = float(os.environ.get("OPC_MCP_LLM_FALLBACK_TIMEOUT", "90"))
+
 # 媒体能力：TTS 走 media-engine（本机 192.168.21.206:9200），图像走 media-gen（:9103）
 # 注：9311/9312 只是 media-engine 背后的 qwen 引擎，不对 MCP 直接暴露
 TTS_URL = os.environ.get("OPC_MCP_TTS_URL", "http://192.168.21.206:9200").rstrip("/")
