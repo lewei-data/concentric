@@ -277,7 +277,11 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
             webhook_queue.task_done()
 
     def mark_seen(payload):
-        """event_id 去重；stdio 通知与事件日志 tail 不会双推。返回 True=已见过。"""
+        """event_id 去重（入队层）；stdio 通知与事件日志 tail 不会双推。返回 True=已见过。
+
+        注意：这只约束「往订阅队列投递」一层（第 4 轮验证 D3 整改）——补发路径不走本函数，
+        否则"先收实时帧、5 分钟内重连 ?since"会被全局表误判已见而零帧。
+        """
         eid = payload.get("event_id")
         if not eid:
             return False
@@ -570,19 +574,28 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
                                      "limit": sse_max}, status_code=429)
             send, recv = anyio.create_memory_object_stream(64)
             subscribers.setdefault(fp, set()).add(send)
-        try:
-            since = float(request.query_params.get("since") or 0)
-        except (TypeError, ValueError):
-            since = 0
+        since_raw = request.query_params.get("since")
+        since = None
+        if since_raw is not None and since_raw.strip():
+            try:
+                since = float(since_raw)
+            except (TypeError, ValueError):
+                since = None                    # 非法值按未传处理
 
         async def stream():
+            conn_seen = set()          # 本连接已发过的 event_id（补发与实时共用的去重口径）
             try:
                 yield ": connected\n\n"
-                if since > 0:                                  # 断线补发：只发本账号的终态事件
+                if since is not None:                        # 断线补发：带了 since 就补（0=补发最近全部）
                     for rec in read_events_since(since, fp):
-                        if not mark_seen(rec):
-                            yield frame(rec)
+                        eid = rec.get("event_id")
+                        if eid and eid in conn_seen:
+                            continue
+                        if eid:
+                            conn_seen.add(eid)
+                        yield frame(rec)
                 while True:
+                    event = None                               # D4 整改：超时必须清空，否则重发上一帧
                     with anyio.move_on_after(20):
                         try:
                             event = await recv.receive()
@@ -591,6 +604,11 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
                     if event is None:                          # 20 秒心跳，防代理断链
                         yield ": ping\n\n"
                         continue
+                    eid = event.get("event_id") if isinstance(event, dict) else None
+                    if eid and eid in conn_seen:
+                        continue
+                    if eid:
+                        conn_seen.add(eid)
                     yield frame(event)
             finally:
                 async with subs_lock:

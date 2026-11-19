@@ -31,7 +31,13 @@ def _iso(ts):
 
 
 def groups_and_rev(phone, store):
-    """返回 (groups, rev)。一条批量查询 + owner 库计数，成本可控（表都是小表）。"""
+    """返回 (groups, rev)。一条批量查询 + owner 库计数，成本可控（表都是小表）。
+
+    口径与 kb_status 对齐（第 4 轮验证 D1/D2 整改）：
+    - knowledge.cards/chunks 直接查 MCP 库（此前误用 owner_counts 的占位 0）；
+    - materials.analyzed 是严格口径（by_status.analyzed，与 kb_status.by_status 同值），
+      skipped 单列；pending 含 failed。
+    """
     by_status = {r["status"]: r["n"] for r in store.all(
         "SELECT status, COUNT(*) n FROM materials WHERE phone=? GROUP BY status", (phone,))}
     latest = store.one(
@@ -39,13 +45,23 @@ def groups_and_rev(phone, store):
     total = sum(by_status.values())
     superseded = int(by_status.get("superseded", 0))
     pending = int(by_status.get("pending", 0)) + int(by_status.get("failed", 0))
-    analyzed = total - superseded - pending
+    analyzed = int(by_status.get("analyzed", 0))
+    skipped = int(by_status.get("skipped", 0))
+
+    def _cnt(sql):
+        try:
+            return int(store.one(sql, (phone,))["n"] or 0)
+        except Exception:                                 # noqa: BLE001 表缺失等按 0 计
+            return 0
+
+    cards = _cnt("SELECT COUNT(*) n FROM cards WHERE phone=?")
+    chunks = _cnt("SELECT COUNT(*) n FROM chunks WHERE phone=?")
     rc = resources.owner_counts(phone)   # 轻量：不算共享 vault / 目录枚举
     groups = {
         "knowledge": {"entries": int(rc.get("knowledge", 0)),
-                      "cards": int(rc.get("mcpCards", 0)),
-                      "chunks": int(rc.get("mcpChunks", 0))},
-        "materials": {"total": total, "analyzed": max(0, analyzed),
+                      "cards": cards,
+                      "chunks": chunks},
+        "materials": {"total": total, "analyzed": analyzed, "skipped": skipped,
                       "pending": pending, "superseded": superseded,
                       "latest_at": _iso(latest["m"]) if latest else None},
         "content": {"contents": int(rc.get("contents", 0)),
@@ -54,7 +70,8 @@ def groups_and_rev(phone, store):
     fingerprint = "|".join(str(x) for x in (
         groups["knowledge"]["entries"], groups["knowledge"]["cards"],
         groups["knowledge"]["chunks"], groups["materials"]["total"],
-        groups["materials"]["analyzed"], groups["materials"]["superseded"],
+        groups["materials"]["analyzed"], groups["materials"]["skipped"],
+        groups["materials"]["superseded"],
         groups["materials"]["latest_at"], groups["content"]["contents"],
         groups["content"]["reports"]))
     rev = hashlib.sha1(fingerprint.encode()).hexdigest()[:12]

@@ -1,8 +1,8 @@
 {
- "updated": "2026-11-19T15:55:57.603924+08:00",
+ "updated": "2026-11-19T16:09:07.795812+08:00",
  "grades": {
   "优质": 168,
-  "可用": 1288,
+  "可用": 1289,
   "待观察": 507
  },
  "items": {
@@ -1974,6 +1974,8 @@
   "kb_vault_mat_c11c408e14": {},
   "kb_vault_mat_36fae55f8a": {},
   "kb_vault_mat_0b647b0574": {},
-  "kb_vault_mat_fcda09166b": {}
+  "kb_vault_mat_fcda09166b": {},
+  "kb_vault_mat_90041c8da0": {},
+  "kb_vault_mat_6ae3922858": {}
  }
 }

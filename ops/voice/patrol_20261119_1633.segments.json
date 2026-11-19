@@ -1,0 +1,20 @@
+{
+  "voice": "default",
+  "speed": 1.0,
+  "sample_rate": 24000,
+  "duration": 10.198,
+  "segments": [
+    {
+      "index": 0,
+      "text": "巡检发现 1 项异常。sup206 的 ports-drift 不可用，端口 0。",
+      "start": 0.0,
+      "end": 5.713
+    },
+    {
+      "index": 1,
+      "text": "另有 0 项未逐条播报，详见巡检详细报告。",
+      "start": 5.833,
+      "end": 10.198
+    }
+  ]
+}

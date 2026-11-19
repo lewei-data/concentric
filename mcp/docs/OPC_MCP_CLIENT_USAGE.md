@@ -264,7 +264,14 @@ JSON-RPC 通知 `notifications/opc/job`，mcp-bridge 绑定后按账号指纹（
   注释帧，客户端天然忽略，不是重复投递。标准 GET /mcp 流由 SDK 自行维护连接。
 - **补发显式标记**：断线重连传 `?since=<上次收到的最大 at>`（Unix 秒）补发期间事件（最多最近
   1000 条），补发帧额外带 `"replay": true`，不是新的投递；客户端按 `event_id`/`job_id` 去重即可。
-  超出上限仍用 `job_get` 兜底。
+  `since=0` = 补发最近全部（同一上限）；不传 `since` = 从连接时刻起只收实时帧。
+  补发去重是**连接级**的：先收过实时帧、短时间内重连带 `since`，同一事件会再次补发（带
+  `replay:true`），客户端必须自己按 `event_id` 去重，不要假设服务端记得上次连接。超出上限仍用
+  `job_get` 兜底。
+- **分帧注意（D5）**：标准 GET /mcp 通道的 SSE 帧**可能以 CRLF（`\r\n`）或 LF（`\n`）结尾**——
+  这取决于底层 HTTP 库，客户端切帧请用 `\r?\n\r?\n` 匹配空行，按 LF 硬编码会切不出帧。
+  `/mcp/events` 恒为 LF。帧格式也不同：标准通道是 JSON-RPC 通知（`event: message`），额外通道是
+  `event: job` + 裸 `params`；两通道语义等同，客户端按通道二选一即可。
 - 面板/插件拿到 `ask(wait_sec=0)` 的 `job_id` 后订阅其一，作业完成即刷新，无需轮询。
 - `/mcp/events` 订阅数上限 `OPC_MCP_SSE_MAX`（默认 100），超限返回 429。
 
