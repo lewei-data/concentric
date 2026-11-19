@@ -44,7 +44,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_phone ON jobs(phone, created_at DESC);
 CREATE TABLE IF NOT EXISTS uploads(
   id TEXT PRIMARY KEY, phone TEXT NOT NULL, filename TEXT, size INTEGER,
   offset INTEGER, sha256 TEXT, path TEXT, status TEXT, material_id TEXT,
-  chunk_size INTEGER DEFAULT 0, created_at REAL, updated_at REAL);
+  chunk_size INTEGER DEFAULT 0, supersedes TEXT, keep_history INTEGER DEFAULT 0,
+  created_at REAL, updated_at REAL);
 CREATE INDEX IF NOT EXISTS idx_uploads_phone ON uploads(phone, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS messages(
@@ -91,6 +92,11 @@ class Store:
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(materials)").fetchall()}
         if "superseded_by" not in cols:
             self.db.execute("ALTER TABLE materials ADD COLUMN superseded_by TEXT")
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(uploads)").fetchall()}
+        if "supersedes" not in cols:
+            self.db.execute("ALTER TABLE uploads ADD COLUMN supersedes TEXT")
+        if "keep_history" not in cols:
+            self.db.execute("ALTER TABLE uploads ADD COLUMN keep_history INTEGER DEFAULT 0")
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(api_keys)").fetchall()}
         for col, ddl in (("source", "ALTER TABLE api_keys ADD COLUMN source TEXT"),
                          ("expires_at", "ALTER TABLE api_keys ADD COLUMN expires_at REAL"),
@@ -358,11 +364,14 @@ class Store:
         return cur.rowcount
 
     # ---------------------------------------------------------------- 上传单
-    def add_upload(self, upload_id, phone, filename, size, path, chunk_size=0):
+    def add_upload(self, upload_id, phone, filename, size, path, chunk_size=0,
+                   supersedes=None, keep_history=False):
         now = time.time()
         self.exec("INSERT INTO uploads(id, phone, filename, size, offset, path, status, chunk_size,"
-                  " created_at, updated_at) VALUES(?,?,?,?,0,?, 'uploading', ?, ?, ?)",
-                  (upload_id, phone, filename, size, str(path), int(chunk_size or 0), now, now))
+                  " supersedes, keep_history, created_at, updated_at)"
+                  " VALUES(?,?,?,?,0,?, 'uploading', ?, ?, ?, ?, ?)",
+                  (upload_id, phone, filename, size, str(path), int(chunk_size or 0),
+                   supersedes or None, 1 if keep_history else 0, now, now))
 
     def upload(self, upload_id):
         return self.one("SELECT * FROM uploads WHERE id=?", (upload_id,))

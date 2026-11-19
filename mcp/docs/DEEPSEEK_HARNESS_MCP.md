@@ -65,11 +65,21 @@ mcpServers:
 （`invalid_argument`/`not_found`/`unauthorized`/`forbidden`/`rate_limited`/`upstream_unavailable`）。
 `kb_status` 默认已脱敏（不再回 `dataDir`/`vault`/内网地址），面板健康灯改轮询 `kb_ping`（有缓存）。
 
-**实时刷新（替代轮询）**：服务端作业完成会推送 `notifications/opc/job`，DSH Host 可用
-`GET https://ai.boraydata.com/mcp/events`（Header `X-Mail-Agent: <个人 key>`）订阅
-`event: job` 帧，`job_id` 对应 `ask`/`material_upload` 返回的作业号；
-必须用 `fetch + ReadableStream`（EventSource 不能带自定义头）。断线重连期间事件不补发，
-面板仍保留 `job_get` 轮询作兜底。服务端请求层已改为线程池并发
+**实时刷新（替代轮询）**：服务端作业完成会推送 `notifications/opc/job`，**默认直接走标准
+`GET https://ai.boraydata.com/mcp`（即 `initialize` 的同一个 endpoint）的 SSE 流**——DSH 自带
+MCP 连接只要注册 `method == "notifications/opc/job"` 的通知处理器即可收到，无需另开连接、无需
+设自定义头。`initialize` 结果的 `capabilities.experimental.events` 会声明这条约定
+（`notification`/`path`/`replay_query` 等）。通知 `params` 字段仅
+`job_id/kind/status/error/at/event_id`，**无手机号/指纹**；`job_id` 对应 `ask`/`material_upload`
+返回的作业号。事件按账号指纹定向分发，跨账号不会串。
+
+`GET /mcp/events`（Header `X-Mail-Agent: <个人 key>`）是给纯 SSE/`fetch` 客户端用的**额外通道**，
+输出同样的字段，只是包成 `event: job` 帧；EventSource 不能带自定义头，须用 `fetch + ReadableStream`。
+`/mcp/events` 每 20 秒发 `: ping` 注释帧保活（不是重复投递）；重连传 `?since=<上次最大 at>` 补发，
+补发帧带 `replay: true`，客户端按 `event_id` 去重。标准 GET /mcp 通道无此心跳需求（SDK 自己维护）。
+断线补发上限最近 1000 条，超出用 `job_get` 兜底。POST /mcp 只收 JSON-RPC，需
+`Accept: application/json, text/event-stream`（纯 `text/event-stream` 返回 406）；长任务走
+`ask(wait_sec=0)` + 事件通知的异步模式。服务端请求层是线程池并发
 （`OPC_MCP_REQUEST_WORKERS` 默认 8），长等待调用不会堵住其他请求。
 
 ## 4. 能力边界与限制

@@ -38,7 +38,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import auth, config, knowledge
+from . import auth, config, events as events_mod, knowledge
 from . import supersede as supersede_mod
 from .jobs import JobRunner
 from .store import Store
@@ -104,7 +104,7 @@ class App:
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.store = Store(config.DB_PATH)
-        self.runner = JobRunner(self.store, owner="upload")
+        self.runner = JobRunner(self.store, owner="upload", on_finish=self._emit_job_event)
         self.runner.register("analyze", self._job_analyze)
         self._locks = {}
         self._locks_guard = threading.Lock()
@@ -117,6 +117,13 @@ class App:
     def _job_analyze(store, phone, payload):
         mid = payload.get("material_id")
         return knowledge.analyze_material(store, phone, mid)
+
+    @staticmethod
+    def _emit_job_event(job_id, kind, status, phone, error=None):
+        """9105 通道作业终态写共享事件日志，由 bridge tail 后推 SSE/Webhook。"""
+        events_mod.append_event({"job_id": job_id, "kind": kind, "status": status,
+                                 "phone_fp": auth.fingerprint(phone),  # 事件帧对外不带手机号
+                                 "error": (str(error) or "")[:300] or None})
 
     # ------------------------------------------------------------ 上传单
     def lock_for(self, upload_id):
@@ -131,16 +138,22 @@ class App:
         d.mkdir(parents=True, exist_ok=True)
         return d / (upload_id + ".part")
 
-    def create(self, user, filename, size, chunk_size=0):
+    def create(self, user, filename, size, chunk_size=0, supersedes=None, keep_history=False):
         if size <= 0:
             raise ApiError(400, "size 必须为正整数")
         if size > config.UPLOAD_MAX_MB * 1024 * 1024:
             raise ApiError(413, "文件超过上限 %sMB" % config.UPLOAD_MAX_MB)
+        supersedes = str(supersedes or "").strip() or None
+        if supersedes:
+            old = self.store.material(supersedes)
+            if not old or old["phone"] != user["phone"]:
+                raise ApiError(404, "supersedes 指向的素材不存在或不属于当前账号")
         upload_id = "up_" + secrets.token_hex(8)
         path = self.part_path(upload_id, user["phone"])
         path.write_bytes(b"")
         self.store.add_upload(upload_id, user["phone"], safe_name(filename), int(size), path,
-                              chunk_size=int(chunk_size or 0))
+                              chunk_size=int(chunk_size or 0), supersedes=supersedes,
+                              keep_history=bool(keep_history))
         row = self.store.upload(upload_id)
         return self.view(row)
 
@@ -214,6 +227,8 @@ class App:
             "updated_at": iso_ts(row["updated_at"]),
             "sha256": row["sha256"],
             "material_id": row["material_id"],
+            "supersedes": row["supersedes"] if "supersedes" in row.keys() else None,
+            "keep_history": bool(row["keep_history"]) if "keep_history" in row.keys() else False,
             "chunk_size_hint": config.UPLOAD_CHUNK_HINT,
         }
         out.update(self._urls(row))
@@ -306,11 +321,21 @@ class App:
         job = self.runner.submit(user["phone"], "analyze", {"material_id": mid})
         extras = {"duplicate": False, "material_id": mid, "job_id": job["job_id"],
                   "job_status": job["status"]}
-        # 同名旧版默认被本版本取代（S3）：切块/卡片/内化条目不再参与召回，文件保留
-        sup = [s for s in supersede_mod.supersede_older_same_name(
-            self.store, user["phone"], row["filename"], mid) if s.get("ok")]
+        # 版本语义（S3）：显式 supersedes 优先；同名旧版默认取代，keep_history=true 保留历史
+        r = dict(row)
+        sup = []
+        if r.get("supersedes"):
+            s = supersede_mod.supersede(self.store, user["phone"], r["supersedes"], mid)
+            if s.get("ok"):
+                sup.append(s)
+        sup.extend(s for s in supersede_mod.supersede_older_same_name(
+            self.store, user["phone"], r["filename"], mid,
+            keep_history=bool(r.get("keep_history"))) if s.get("ok"))
         if sup:
-            extras["superseded"] = [s["material_id"] for s in sup]
+            extras["superseded"] = [{"material_id": s["material_id"],
+                                     "deleted_chunks": s["deleted_chunks"],
+                                     "deleted_cards": s["deleted_cards"],
+                                     "retracted_kb": s.get("retracted_kb", [])} for s in sup]
         return self.view(self.store.upload(row_id), extras)
 
     def cancel(self, user, row_id):
@@ -567,7 +592,12 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     raise ApiError(400, "size/chunk_size 必须是整数")
                 filename = body.get("filename")
-            view = self.app.create(user, filename, size, chunk_size)
+            supersedes = (self.headers.get("X-OPC-Supersedes") if tus
+                          else body.get("supersedes"))
+            keep_history = (self.headers.get("X-OPC-Keep-History", "").lower() in ("1", "true", "yes")
+                            if tus else bool(body.get("keep_history")))
+            view = self.app.create(user, filename, size, chunk_size,
+                                   supersedes=supersedes, keep_history=keep_history)
             if tus:
                 headers = self._tus_headers(self.app.store.upload(view["upload_id"]))
                 headers["Location"] = "%s/files/%s" % (config.PUBLIC_UPLOAD_BASE, view["upload_id"])

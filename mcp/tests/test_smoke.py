@@ -684,6 +684,61 @@ def main():
     check("限流生效并带 retry_after_sec",
           rl is not None and rl.get("retry_after_sec", 0) >= 1, rl)
 
+    # 11. 二次完善：资源脱敏 / 错误码 / 分片版本参数 / 事件日志
+    rsrc = eval_content(srv.dispatch("opc_resources", {"token": token}))
+    rblob = json.dumps(rsrc, ensure_ascii=False)
+    check("opc_resources 默认脱敏",
+          all(k not in rsrc for k in ("dataDir", "vault", "ownerDb"))
+          and "/mnt/" not in rblob and "192.168." not in rblob,
+          [k for k in ("dataDir", "vault", "ownerDb") if k in rsrc])
+    rsrc_d = eval_content(srv.dispatch("opc_resources", {"token": token, "detail": True}))
+    check("opc_resources detail 管理员可见", bool(rsrc_d.get("dataDir")), bool(rsrc_d.get("dataDir")))
+    rsrc_x = eval_content(srv.dispatch("opc_resources", {"client_key": other_key, "detail": True}))
+    check("opc_resources detail 非管理员拒绝", rsrc_x.get("code") == "forbidden", rsrc_x)
+    rlist = eval_content(srv.dispatch("opc_resource_list", {"token": token, "kind": "knowledge"}))
+    check("opc_resource_list 默认净化 path",
+          rlist.get("items") and all("path" not in i for i in rlist["items"]), rlist.get("items"))
+    rlist_d = eval_content(srv.dispatch("opc_resource_list", {"token": token,
+                                                              "kind": "knowledge", "detail": True}))
+    check("opc_resource_list detail 带 path",
+          rlist_d.get("items") and all("path" in i for i in rlist_d["items"]), rlist_d.get("items"))
+    rread = eval_content(srv.dispatch("opc_resource_read", {"token": token,
+                                                            "ref": "knowledge:kb_web_1"}))
+    check("opc_resource_read 默认净化 item.path",
+          "path" not in rread.get("item", {}), rread.get("item", {}))
+    rread_d = eval_content(srv.dispatch("opc_resource_read", {"token": token,
+                                                              "ref": "knowledge:kb_web_1",
+                                                              "detail": True}))
+    check("opc_resource_read detail 带 item.path",
+          rread_d.get("item", {}).get("path"), rread_d.get("item", {}))
+
+    e_dl = eval_content(srv.dispatch("material_download", {"token": token, "material_id": "mat_none"}))
+    check("material_download 不存在 → not_found", e_dl.get("code") == "not_found", e_dl)
+    e_del0 = eval_content(srv.dispatch("material_delete", {"token": token}))
+    check("material_delete 缺 id → invalid_argument",
+          e_del0.get("code") == "invalid_argument", e_del0)
+    e_del1 = eval_content(srv.dispatch("material_delete", {"token": token, "material_id": "mat_none"}))
+    check("material_delete 不存在 → not_found", e_del1.get("code") == "not_found", e_del1)
+
+    from opc_mcp import events as events_mod
+    evs = events_mod.read_since(0, auth.fingerprint(PHONE))
+    check("作业终态写入事件日志（含 event_id、无明文手机号）",
+          any(e.get("job_id") == a1.get("job_id") and e.get("event_id")
+              and "phone" not in e and e.get("phone_fp") == auth.fingerprint(PHONE)
+              for e in evs), len(evs))
+    upb = eval_content(srv.dispatch("upload_begin", {"token": token, "filename": "big.bin",
+                                                     "size": 10, "chunk_size": 5,
+                                                     "supersedes": up_v2["material_id"],
+                                                     "keep_history": True}))
+    brow = srv.store.upload(upb["upload_id"])
+    check("upload_begin 接收 supersedes/keep_history",
+          brow["supersedes"] == up_v2["material_id"] and bool(brow["keep_history"]),
+          (brow["supersedes"], brow["keep_history"]))
+    upb_x = eval_content(srv.dispatch("upload_begin", {"token": token, "filename": "big2.bin",
+                                                       "size": 10, "supersedes": "mat_none"}))
+    check("upload_begin 非法 supersedes → not_found",
+          upb_x.get("code") == "not_found", upb_x)
+
     print("\n共 %d 项通过：\n  - %s" % (len(PASSED), "\n  - ".join(PASSED)))
     print("运行目录（可删除）：", TMP)
 

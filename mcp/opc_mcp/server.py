@@ -26,7 +26,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import __version__, auth, config, graph_brief, knowledge, llm, media, resources, staff_photos
+from . import __version__, auth, config, events as events_mod
+from . import graph_brief, knowledge, llm, media, resources, staff_photos
 from . import supersede as supersede_mod
 from .jobs import JobRunner
 from .store import Store
@@ -138,12 +139,17 @@ TOOLS = [
                        "①PUT ?offset=N；②Content-Range: bytes s-e/total（bytes */* 查状态）；"
                        "③片号 ?part=N（建单带 chunk_size）；④Tus 1.0：POST /files + HEAD/PATCH /files/{id}。"
                        "返回 put_url/part_put_url/tus_url/tus_create_url/progress_url/complete_url。"
-                       "进度接口含 percent/已传/剩余/速率/ETA；断电后 GET progress_url 取 offset 续传。",
+                       "进度接口含 percent/已传/剩余/速率/ETA；断电后 GET progress_url 取 offset 续传。"
+                       "版本语义与 material_upload 一致：同名旧版默认取代；supersedes/keep_history 可在建单时指定。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"},
             "filename": {"type": "string", "description": "含扩展名的文件名，如 资料.zip、合同.pdf"},
             "size": {"type": "integer", "description": "文件总字节数（必须精确）"},
-            "chunk_size": {"type": "integer", "description": "可选：片号模式的分片字节数，需固定"}},
+            "chunk_size": {"type": "integer", "description": "可选：片号模式的分片字节数，需固定"},
+            "supersedes": {"type": "string",
+                           "description": "显式指定被本版本取代的素材 id（可选，默认按同名自动取代）"},
+            "keep_history": {"type": "boolean", "default": False,
+                             "description": "true=同名旧版不取代，多版本并存"}},
             "required": ["token", "filename", "size"]},
     },
     {
@@ -433,7 +439,11 @@ class OpcServer:
         self._idem_lock = threading.Lock()
 
     def _emit_job_event(self, job_id, kind, status, phone, error=None):
-        _job_event(job_id, kind, status, phone, error)
+        event = events_mod.append_event({
+            "job_id": job_id, "kind": kind, "status": status,
+            "phone_fp": auth.fingerprint(phone),   # 手机号只留指纹，事件帧对外不带 PII
+            "error": graph_brief.public_text(error)[:300] if error else None})
+        _write({"jsonrpc": "2.0", "method": "notifications/opc/job", "params": event})
 
     # ---------------------------------------------------------------- 限流
     def _rate_allow(self, phone):
@@ -570,6 +580,7 @@ class OpcServer:
         user = auth.resolve(self.store, args)
         phone = user["phone"]
         out = {"phone": phone, "name": user["name"], "role": user["role"],
+               "phone_fp": auth.fingerprint(phone),
                "tenant": config.phone_root(phone).name}
         # 服务端路径默认不下发（S4）；detail=true 仅对白名单手机号放开
         if args.get("detail"):
@@ -688,14 +699,23 @@ class OpcServer:
         except (TypeError, ValueError):
             return _err("chunk_size 必须是整数",
                         status="invalid_argument", code="invalid_argument")
+        supersedes = str(args.get("supersedes") or "").strip() or None
+        if supersedes:
+            old = self.store.material(supersedes)
+            if not old or old["phone"] != phone:
+                return _err("supersedes 指向的素材不存在或不属于当前账号：%s" % supersedes,
+                            status="not_found", code="not_found")
+        keep_history = bool(args.get("keep_history"))
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         upload_id = "up_" + secrets.token_hex(8)
         path = config.UPLOAD_DIR / (upload_id + ".part")
         path.write_bytes(b"")
-        self.store.add_upload(upload_id, phone, filename, size, path, chunk_size)
+        self.store.add_upload(upload_id, phone, filename, size, path, chunk_size,
+                              supersedes=supersedes, keep_history=keep_history)
         base = config.PUBLIC_UPLOAD_BASE
         return _json({
             "upload_id": upload_id, "filename": filename, "size": size, "offset": 0,
+            "supersedes": supersedes, "keep_history": keep_history,
             "chunk_size_hint": config.UPLOAD_CHUNK_HINT, "chunk_size": chunk_size,
             "protocols": ["native-offset", "content-range", "chunk-index", "tus-1.0"],
             "auth": "Authorization: Bearer <个人 API key 换来的 session_token>，或用 ?token=/X-OPC-Token",
@@ -750,10 +770,10 @@ class OpcServer:
         user = auth.resolve(self.store, args)
         mat = self.store.material(str(args.get("material_id") or ""))
         if not mat or mat["phone"] != user["phone"]:
-            return _err("素材不存在或不属于当前账号")
+            return _err("素材不存在或不属于当前账号", status="not_found", code="not_found")
         src = Path(mat["path"])
         if not src.is_file():
-            return _err("素材文件已丢失：%s" % src)
+            return _err("素材文件已丢失：%s" % src, status="not_found", code="not_found")
         dest = args.get("dest")
         dst = Path(str(dest)).expanduser() if dest else (self._dir(user["phone"], "downloads") / mat["filename"])
         if dst.is_dir():
@@ -774,10 +794,12 @@ class OpcServer:
         user = auth.resolve(self.store, args)
         mid = str(args.get("material_id") or "").strip()
         if not mid:
-            return _err("请提供 material_id（先用 material_list 查看）")
+            return _err("请提供 material_id（先用 material_list 查看）",
+                        status="invalid_argument", code="invalid_argument")
         deleted = self.store.delete_material(mid, user["phone"])
         if not deleted:
-            return _err("素材不存在或不属于当前账号：%s" % mid)
+            return _err("素材不存在或不属于当前账号：%s" % mid,
+                        status="not_found", code="not_found")
         src = Path(str(deleted.get("path") or ""))
         file_removed, note = False, ""
         if args.get("remove_file", True) and src.is_file():
@@ -919,19 +941,45 @@ class OpcServer:
                            % (top_score, config.LOW_CONFIDENCE_SCORE, coverage * 100))
         return _json(out)
 
+    def _resource_detail(self, args, phone):
+        """detail=true 白名单校验；返回 (detail, 错误响应)。"""
+        detail = bool(args.get("detail"))
+        if detail and phone not in config.DETAIL_PHONES:
+            return None, _err("detail 模式仅对管理员开放", status="blocked", code="forbidden")
+        return detail, None
+
     def tool_opc_resources(self, args):
         user = auth.resolve(self.store, args)
-        return _json(resources.counts(user["phone"], self.store))
+        phone = user["phone"]
+        detail, error = self._resource_detail(args, phone)
+        if error:
+            return error
+        out = resources.counts(phone, self.store)
+        if not detail:
+            for key in ("dataDir", "vault", "ownerDb"):
+                out.pop(key, None)
+            return _json(graph_brief.public_obj(out))
+        return _json(out)
 
     def tool_opc_resource_list(self, args):
         user = auth.resolve(self.store, args)
-        return _json(resources.list_kind(user["phone"], str(args.get("kind") or "knowledge"),
-                                         int(args.get("limit") or 20)))
+        phone = user["phone"]
+        detail, error = self._resource_detail(args, phone)
+        if error:
+            return error
+        out = resources.list_kind(phone, str(args.get("kind") or "knowledge"),
+                                  int(args.get("limit") or 20))
+        return _json(out if detail else graph_brief.public_obj(out))
 
     def tool_opc_resource_read(self, args):
         user = auth.resolve(self.store, args)
-        out, error = resources.read(user["phone"], args.get("ref"), self.store)
-        return _err(error, status="blocked") if error else _json(out)
+        phone = user["phone"]
+        detail, error = self._resource_detail(args, phone)
+        if error:
+            return error
+        out, error = resources.read(phone, args.get("ref"), self.store)
+        return _err(error, status="blocked") if error else _json(
+            out if detail else graph_brief.public_obj(out))
 
     def tool_ask(self, args):
         user = auth.resolve(self.store, args)
@@ -1289,16 +1337,6 @@ def _write(obj):
     with _STDOUT_LOCK:
         sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
         sys.stdout.flush()
-
-
-def _job_event(job_id, kind, status, phone, error=None):
-    """作业终态通知：走 JSON-RPC notification，mcp-bridge 收到后推 SSE/Webhook。"""
-    _write({"jsonrpc": "2.0", "method": "notifications/opc/job",
-            "params": {"job_id": job_id, "kind": kind, "status": status,
-                       "phone": phone,
-                       "error": graph_brief.public_text(error)[:300] if error else None,
-                       "at": time.time()}})
-
 
 def _ts(epoch):
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(epoch)) if epoch else None

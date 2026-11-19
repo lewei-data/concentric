@@ -17,7 +17,7 @@
 | 领取 key | `https://ai.boraydata.com/workbench/mcp-key`（登录后自助生成，可多把并存，新增不撤销旧 key） |
 | 手机号 | **由 key 自带，不要传 `phone`，也不要向用户索要手机号或 key** |
 
-- **全套 22 个工具共用这一把 key**：注册、检索、问答、上传、生成、取回都用它，没有第二套 token。
+- **全套 23 个工具共用这一把 key**：注册、检索、问答、上传、生成、取回都用它，没有第二套 token。
 - 工具 schema 里**没有 `token` 字段**，也不需要手写 `client_key`（网关注入）。看到旧文档里 `token=<...>` 的写法一律忽略；传 `token` 只作兼容，等同 `client_key`。
 - `opc_init(key=...)` 可用 key 换 `session_token`，但普通工具调用不需要它。
 - 返回 `need_auth` / `need_secret` 时，引导用户去领取/更新 key，**不要解读成"没有数据"**。
@@ -38,14 +38,14 @@
 | --- | --- | --- |
 | `kb_status` | `detail?` | 素材数、片段数、LLM 探活；**默认已脱敏**（不含服务端路径/内网地址），`detail=true` 仅管理员 key 放开；面板轮询请用 `kb_ping` |
 | `kb_search` | `query`, `k=6` | 跨源检索（OPC + vault + Web + MCP 素材 + 全局共享），命中带 `source`；最高分低于阈值时返回 `low_confidence: true` + `hint`（换自然语言再问） |
-| `ask` | `text` 或 `question`（等价）, `idempotency_key?`, `wait_sec=60`, `with_brief=true` | 综合问答；**超时重试务必带同一 `idempotency_key`**（窗口 15 分钟，重放返回同一 `job_id` + `idempotent_replay: true`，不会双排任务）；`wait_sec` 上限 300，到点未完成返回 `status=queued/running` + `retry_after_sec`，用 `job_get` 续等 |
+| `ask` | `text` 或 `question`（等价）, `idempotency_key?`, `wait_sec=0`, `with_brief=true` | 综合问答；**超时重试务必带同一 `idempotency_key`**（窗口 15 分钟，重放返回同一 `job_id` + `idempotent_replay: true`，不会双排任务）；`wait_sec` 上限 300，到点未完成返回 `status=queued/running` + `retry_after_sec`，用 `job_get` 续等 |
 
 ### 资源（本人 + 全局共享）
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
-| `opc_resources` | 无 | 本人 OPC 库/vault/MCP 素材/全局共享总览 |
-| `opc_resource_list` | `kind`, `limit=20` | 本人：`knowledge/reports/contents/messages/approvals/vault`；**全局共享：`shared_knowledge/shared_materials/shared_hotspots/downloads`** |
-| `opc_resource_read` | `ref` | `knowledge:kb_xxx` / `vault:相对路径` / `material:<id>` / `shared_knowledge:<id>` / `shared_material:<id>` / `shared_download:<文件名>` |
+| `opc_resources` | `detail?` | 本人 OPC 库/vault/MCP 素材/全局共享总览；**默认脱敏**（无 dataDir/vault/ownerDb/内网地址），`detail=true` 仅管理员 key |
+| `opc_resource_list` | `kind`, `limit=20`, `detail?` | 本人：`knowledge/reports/contents/messages/approvals/vault`；**全局共享：`shared_knowledge/shared_materials/shared_hotspots/downloads`**；默认净化 `path`/`fileRoot` |
+| `opc_resource_read` | `ref`, `detail?` | `knowledge:kb_xxx` / `vault:相对路径` / `material:<id>` / `shared_knowledge:<id>` / `shared_material:<id>` / `shared_download:<文件名>`；默认净化 `item.path` |
 
 > **共享资料路由纠错**：问"公司共享的资料/公开下载区"用 `opc_resource_list(kind=shared_materials)` 或 `kind=downloads`；
 > `material_list` 只查**自己上传的素材**，与共享区无关。
@@ -54,7 +54,7 @@
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
 | `material_upload` | `path` 或 `content_base64`, `filename`, `supersedes?`, `keep_history?` | 小文件（<100MB）；**版本语义**：同名旧素材默认被本版本取代（旧版切块/卡片/内化条目不再参与召回，文件保留可审计）；`keep_history=true` 保留多版本并存；`supersedes=<material_id>` 显式指定被取代者。返回 `superseded` 列表 |
-| `upload_begin` | `filename`, `size`, `chunk_size` | 大文件（≤2GB）分片续传，返回 `put_url` / `progress_url`；完成后同名旧版同样自动取代 |
+| `upload_begin` | `filename`, `size`, `chunk_size`, `supersedes?`, `keep_history?` | 大文件（≤2GB）分片续传，返回 `put_url` / `progress_url`；版本语义与 `material_upload` 一致（显式 `supersedes` 优先；同名默认取代；`keep_history=true` 保留历史）。直连 9105 的 `POST /v1/uploads` 也可带 `supersedes`/`keep_history` JSON 字段（Tus 用 `X-OPC-Supersedes`/`X-OPC-Keep-History` 头） |
 | `material_list` | `limit=50`, `cursor?`, `include_superseded?` | 本人素材清单；默认不含被取代旧版；返回 `total`/`has_more`/`next_cursor`，用 `cursor` 翻页 |
 | `material_analyze` | `material_id` 或 `all` | 重新分析（入队后自动 OCR/ASR + LLM 卡片 + 知识库 + 图谱 + 评分，结果经小秘书/飞书汇报）；被取代（superseded）的素材会被拒绝 |
 | `material_download` | `material_id`, `inline=false`, `dest?` | 导出素材；默认返回服务端路径，`inline=true` 且 ≤4MB 才附 base64 |
@@ -231,24 +231,48 @@ image({"prompt":"一只戴墨镜的柴犬","channel":"bailian_image","size":"102
 响应按 JSON-RPC id 回写，stdout 单行原子写入。实测两个 `wait_sec=5s` 的调用总墙钟 5.2s（原先 10.4s），
 长等待调用不再阻塞 `ping`/检索。后台作业池仍是 `JOB_WORKERS`（默认 2），可按需调高。
 
-**SSE 作业事件**：服务端在每个作业终态向 stdout 发 JSON-RPC 通知
-`notifications/opc/job`，mcp-bridge 绑定后按手机号推送：
+**SSE 作业事件（两条通道，同一份净化数据）**：服务端在每个作业终态向 stdout 发
+JSON-RPC 通知 `notifications/opc/job`，mcp-bridge 绑定后按账号指纹（非明文手机号）定向推送。
 
-```
-GET https://ai.boraydata.com/mcp/events
-Header: X-Mail-Agent: <个人 API key>
-Accept: text/event-stream
-```
+1. **标准 MCP 客户端（推荐，无需改协议）**：作业事件作为 JSON-RPC 服务端通知直接写进
+   `GET https://ai.boraydata.com/mcp` 的 SSE 流（就是 `initialize` 用的那个 endpoint），
+   客户端按 `method == "notifications/opc/job"` 注册通知处理器即可，`params` 是下面白名单字段。
+   `initialize` 结果的 `capabilities.experimental.events` 会声明这条约定：
+   `{"path":"/mcp/events","event":"job","notification":"notifications/opc/job","replay_query":"since",...}`。
+   这正是只订阅 `GET <endpoint>` 的规范客户端（含 DSH 自带 MCP 连接）能收到事件的路径。
+2. **纯 SSE / fetch 客户端（额外通道，别名）**：不方便处理 JSON-RPC 通知时，可单独订阅：
+   ```
+   GET https://ai.boraydata.com/mcp/events
+   Header: X-Mail-Agent: <个人 API key>
+   Accept: text/event-stream
+   ```
+   解析 `event: job` 帧。`/conring/mcp/events` 是同一接口的等价路径。
+   **EventSource 不能设置自定义头**，请用 `fetch + ReadableStream`。
 
-- 必须用 `fetch + ReadableStream` 读流并解析 `event: job` 帧；**EventSource 不能设置自定义头**，
-  不要用它。首帧为 `: connected`，之后每 20 秒 `: ping` 保活。
-- 事件体：`{"job_id","kind","status","phone","error","at"}`，只推送同账号事件；
-  断线期间的事件不补发，重要场景仍用 `job_get` 兜底。
-- 面板/插件拿到 `ask(wait_sec=0)` 的 `job_id` 后订阅此流，作业完成即刷新，无需轮询。
+- 两条通道的事件帧字段一致（白名单）：`{"job_id","kind","status","error","at","event_id"}`，
+  **不含手机号或指纹**；账号路由在服务端用 sha256 指纹完成，bridge 内存中也不存明文手机号。
+  标准通道是 JSON-RPC 通知（`{"jsonrpc":"2.0","method":"notifications/opc/job","params":{...}}`），
+  额外通道是 `event: job` 的 `data`（`params` 与 `data` 内容相同）。
+- **保活用注释帧**：`/mcp/events` 首帧 `: connected`，之后每 20 秒 `: ping`——这是 SSE 标准
+  注释帧，客户端天然忽略，不是重复投递。标准 GET /mcp 流由 SDK 自行维护连接。
+- **补发显式标记**：断线重连传 `?since=<上次收到的最大 at>`（Unix 秒）补发期间事件（最多最近
+  1000 条），补发帧额外带 `"replay": true`，不是新的投递；客户端按 `event_id`/`job_id` 去重即可。
+  超出上限仍用 `job_get` 兜底。
+- 面板/插件拿到 `ask(wait_sec=0)` 的 `job_id` 后订阅其一，作业完成即刷新，无需轮询。
+- `/mcp/events` 订阅数上限 `OPC_MCP_SSE_MAX`（默认 100），超限返回 429。
+
+**关于 POST /mcp 与 Accept**：POST 只承载 JSON-RPC 请求/响应，不接受纯 `text/event-stream`
+请求体；请求需带 `Accept: application/json, text/event-stream`，仅 `text/event-stream` 会返回
+`406 Not Acceptable: Client must accept application/json`。服务端通知走 GET 流，与 POST 解耦。
+未来若要让长任务在 POST 上流式返回，将显式约定 `Prefer: respond-async` 或独立端点，而不是靠
+`Accept` 协商——当前 `ask(wait_sec=0)` + 事件通知即是推荐的异步模式。
 
 **Webhook**：bridge 进程设置 `OPC_MCP_JOB_WEBHOOK_URLS`（逗号分隔多个 URL）后，
 每条作业事件会 POST JSON 到这些地址；设置 `OPC_MCP_WEBHOOK_SECRET` 时带
-`X-OPC-Event-Signature: sha256=<HMAC-SHA256>` 供接收方校验。生产当前未配置 URL（按需启用）。
+`X-OPC-Event-Signature: sha256=<HMAC-SHA256>` 供接收方校验。投递失败按 1s/5s/30s
+退避重试三次，耗尽后打印 stderr 告警，不阻塞后续事件。生产当前未配置 URL（按需启用）。
 
-**覆盖范围**：经 MCP stdio 提交的作业（`ask`、`material_upload` 的 analyze）会推送；
-大文件分片通道（9105 上传服务）提交的作业暂不推送，仍用 `job_get` 轮询。
+**覆盖范围**：所有通道的作业终态都写共享事件日志（`<DATA_DIR>/job_events.jsonl`，
+`OPC_MCP_EVENTS_FILE` 可覆盖），bridge 每秒 tail 一次并推送：MCP stdio 提交的作业
+（`ask`、`material_upload` 的 analyze）走实时通知 + 日志双通道（按 `event_id` 去重），
+9105 分片上传通道提交的 analyze 作业走日志通道（延迟约 1 秒）。
