@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -399,6 +400,21 @@ def health():
         except Exception as e:
             out[name] = {"ok": False, "error": str(e)[:200]}
     return out
+
+
+_HEALTH_CACHE = {"at": 0.0, "data": None}
+_HEALTH_LOCK = threading.Lock()
+
+
+def health_cached(ttl=30):
+    """带缓存的媒体健康检查：kb_ping/面板轮询用，不打后端接口。"""
+    with _HEALTH_LOCK:
+        if _HEALTH_CACHE["data"] is not None and time.monotonic() - _HEALTH_CACHE["at"] < max(5, ttl):
+            return _HEALTH_CACHE["data"]
+    data = health()
+    with _HEALTH_LOCK:
+        _HEALTH_CACHE.update({"at": time.monotonic(), "data": data})
+    return data
 
 
 def _bailian_channel_caps():

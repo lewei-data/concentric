@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS messages(
   phone TEXT NOT NULL, role TEXT NOT NULL, content TEXT, created_at REAL);
 CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone, id DESC);
 
+-- ask 幂等：同一 (phone, idempotency_key) 窗口内映射到同一 job
+CREATE TABLE IF NOT EXISTS idempotency(
+  map_key TEXT PRIMARY KEY, job_id TEXT NOT NULL, phone TEXT, created_at REAL);
+CREATE INDEX IF NOT EXISTS idx_idem_phone ON idempotency(phone, created_at DESC);
+
 -- 生成类工具（tts/image）的产物登记：不透明 file_key 对外，路径只留服务端
 CREATE TABLE IF NOT EXISTS generated_files(
   file_key TEXT PRIMARY KEY, phone TEXT NOT NULL, path TEXT NOT NULL,
@@ -83,6 +88,9 @@ class Store:
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(uploads)").fetchall()}
         if "chunk_size" not in cols:
             self.db.execute("ALTER TABLE uploads ADD COLUMN chunk_size INTEGER DEFAULT 0")
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(materials)").fetchall()}
+        if "superseded_by" not in cols:
+            self.db.execute("ALTER TABLE materials ADD COLUMN superseded_by TEXT")
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(api_keys)").fetchall()}
         for col, ddl in (("source", "ALTER TABLE api_keys ADD COLUMN source TEXT"),
                          ("expires_at", "ALTER TABLE api_keys ADD COLUMN expires_at REAL"),
@@ -220,9 +228,32 @@ class Store:
     def material(self, material_id):
         return self.one("SELECT * FROM materials WHERE id=?", (material_id,))
 
-    def materials(self, phone, limit=50):
-        return self.all("SELECT * FROM materials WHERE phone=? ORDER BY created_at DESC LIMIT ?",
-                        (phone, int(limit)))
+    def materials(self, phone, limit=50, offset=0, include_superseded=False):
+        cond = "" if include_superseded else " AND status!='superseded'"
+        return self.all("SELECT * FROM materials WHERE phone=?%s "
+                        "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?" % cond,
+                        (phone, int(limit), max(0, int(offset))))
+
+    def materials_total(self, phone, include_superseded=False):
+        cond = "" if include_superseded else " AND status!='superseded'"
+        return self.one("SELECT COUNT(*) n FROM materials WHERE phone=?%s" % cond,
+                        (phone,))["n"]
+
+    def supersede_material(self, material_id, superseded_by):
+        """标记素材被新版本取代：保留行与文件，回收切块/卡片使其不再参与召回。"""
+        with self._lock:
+            row = self.db.execute("SELECT * FROM materials WHERE id=?",
+                                  (material_id,)).fetchone()
+            if not row:
+                return None
+            n_chunks = self.db.execute("DELETE FROM chunks WHERE material_id=?",
+                                       (material_id,)).rowcount
+            n_cards = self.db.execute("DELETE FROM cards WHERE material_id=?",
+                                      (material_id,)).rowcount
+            self.db.execute("UPDATE materials SET status='superseded', superseded_by=?, "
+                            "reason='被新版本取代' WHERE id=?", (superseded_by, material_id))
+            self.db.commit()
+            return {"id": material_id, "deleted_chunks": n_chunks, "deleted_cards": n_cards}
 
     def pending_materials(self, phone):
         return self.all("SELECT * FROM materials WHERE phone=? AND status IN ('pending','failed')"
@@ -270,6 +301,24 @@ class Store:
                         " WHERE c.phone=? ORDER BY c.id DESC LIMIT ?", (phone, int(limit)))
 
     # ---------------------------------------------------------------- 作业
+    def get_idempotent(self, map_key, ttl_sec):
+        """窗口内命中返回 job_id；过期或不存在返回 None。"""
+        row = self.one("SELECT job_id, created_at FROM idempotency WHERE map_key=?", (map_key,))
+        if row and row["created_at"] >= time.time() - max(0, int(ttl_sec)):
+            return row["job_id"]
+        return None
+
+    def put_idempotent(self, map_key, job_id, phone):
+        """登记幂等映射；撞唯一键（并发同 key）返回 False，调用方应改读既有映射。"""
+        try:
+            self.exec("INSERT INTO idempotency(map_key, job_id, phone, created_at) VALUES(?,?,?,?)",
+                      (map_key, job_id, phone, time.time()))
+        except sqlite3.IntegrityError:
+            return False
+        # 顺手清掉七天前的旧映射，表不膨胀
+        self.exec("DELETE FROM idempotency WHERE created_at<?", (time.time() - 7 * 86400,))
+        return True
+
     def add_job(self, job_id, phone, kind, payload_json, owner=None):
         now = time.time()
         self.exec("INSERT INTO jobs(id, phone, kind, status, payload, owner, created_at, updated_at)"

@@ -39,6 +39,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from . import auth, config, knowledge
+from . import supersede as supersede_mod
 from .jobs import JobRunner
 from .store import Store
 
@@ -303,9 +304,14 @@ class App:
         self.store.update_upload(row_id, status="done", sha256=digest, material_id=mid)
         self._forget(row_id)
         job = self.runner.submit(user["phone"], "analyze", {"material_id": mid})
-        return self.view(self.store.upload(row_id), {
-            "duplicate": False, "material_id": mid, "job_id": job["job_id"],
-            "job_status": job["status"]})
+        extras = {"duplicate": False, "material_id": mid, "job_id": job["job_id"],
+                  "job_status": job["status"]}
+        # 同名旧版默认被本版本取代（S3）：切块/卡片/内化条目不再参与召回，文件保留
+        sup = [s for s in supersede_mod.supersede_older_same_name(
+            self.store, user["phone"], row["filename"], mid) if s.get("ok")]
+        if sup:
+            extras["superseded"] = [s["material_id"] for s in sup]
+        return self.view(self.store.upload(row_id), extras)
 
     def cancel(self, user, row_id):
         row = self.store.upload(row_id)

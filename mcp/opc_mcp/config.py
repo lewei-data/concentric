@@ -86,6 +86,24 @@ CHUNK_CHARS = int(os.environ.get("OPC_MCP_CHUNK_CHARS", "800"))
 CONTEXT_BUDGET = int(os.environ.get("OPC_MCP_CONTEXT_BUDGET", "4000"))
 JOB_WORKERS = max(1, int(os.environ.get("OPC_MCP_JOB_WORKERS", "2")))
 
+# ---------------- 契约与防护（2026-11-19 DSH 面板整改 S 系列） ----------------
+# ask 幂等窗口（秒）：同一 idempotency_key 在窗口内重放返回同一 job_id
+IDEMPOTENCY_TTL = int(os.environ.get("OPC_MCP_IDEMPOTENCY_TTL", "900"))
+# 每 key 滑动窗口限流：超限返回 code=rate_limited + retry_after_sec
+RATE_WINDOW_SEC = float(os.environ.get("OPC_MCP_RATE_WINDOW", "10"))
+RATE_MAX = int(os.environ.get("OPC_MCP_RATE_MAX", "40"))
+# stdio 请求并发度：stdin 单读线程，handle() 交给线程池；响应按 id 回写
+REQUEST_WORKERS = max(1, min(32, int(os.environ.get("OPC_MCP_REQUEST_WORKERS", "8"))))
+# kb_ping 结果缓存秒数：面板轮询不再每次触发上游模型探测
+PING_TTL_SEC = int(os.environ.get("OPC_MCP_PING_TTL", "60"))
+MEDIA_PING_TTL_SEC = int(os.environ.get("OPC_MCP_MEDIA_PING_TTL", "30"))
+# kb_search 低置信度阈值：最高分低于该值时返回 low_confidence=true
+LOW_CONFIDENCE_SCORE = float(os.environ.get("OPC_MCP_LOW_CONFIDENCE", "6.0"))
+# kb_status/opc_whoami 的 detail=true 完整信息只对这些手机号放开
+DETAIL_PHONES = {p.strip() for p in (os.environ.get("OPC_MCP_DETAIL_PHONES")
+                                     or os.environ.get("OPC_OWNER_PHONE")
+                                     or "18911789286").split(",") if p.strip()}
+
 # ---------------- ask(with_brief=true) 的知识图谱简报 ----------------
 # 硬预算：无论库长到多大，简报正文都不超过这个字符数。
 BRIEF_BUDGET = max(200, int(os.environ.get("OPC_MCP_BRIEF_BUDGET", "900")))

@@ -1,20 +1,37 @@
 """MCP stdio 服务：JSON-RPC 2.0，暴露初始化/素材/分片续传/知识库/跨源资源/路由/对话/
-TTS/图像/能力查询/产物取回共 21 个工具（以 TOOLS 列表为准，client 用法见 mcp/docs/OPC_MCP_CLIENT_USAGE.md）。"""
+TTS/图像/能力查询/产物取回/轻量健康检查共 23 个工具（以 TOOLS 列表为准，
+client 用法见 mcp/docs/OPC_MCP_CLIENT_USAGE.md）。
+
+契约要点（2026-11-19 起）：
+- 每个工具带 annotations（readOnlyHint/destructiveHint/idempotentHint），客户端按注解过滤；
+- 错误返回带稳定 code（invalid_argument/not_found/unauthorized/forbidden/
+  rate_limited/upstream_unavailable/internal_error）；
+- ask 支持 idempotency_key 幂等重放；未完成作业统一带 retry_after_sec；
+- material_list 支持 cursor 分页；material_upload 支持同名取代（supersedes/keep_history）；
+- kb_status/opc_whoami 默认脱敏（detail=true 按白名单手机号放开）；
+- kb_ping 提供缓存式轻量健康检查。
+"""
 
 import base64
 import binascii
+import collections
 import hashlib
 import json
 import re
 import secrets
 import shutil
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import __version__, auth, config, graph_brief, knowledge, llm, media, resources, staff_photos
+from . import supersede as supersede_mod
 from .jobs import JobRunner
 from .store import Store
+
+_STDOUT_LOCK = threading.Lock()   # 响应与作业通知共用 stdout，单行写入必须原子
 
 PROTOCOL = "2024-11-05"
 SYSTEM_PROMPT = ("你是 OPC 公司的知识助手。优先依据给出的知识库资料回答，资料不足就明确说缺什么，"
@@ -44,11 +61,25 @@ def _json(obj):
             "isError": False}
 
 
-def _err(msg, **extra):
+def _err(msg, status=None, code=None, **extra):
+    """统一错误体：code 是稳定机器码；status 保留旧字段向后兼容。
+
+    code 取值：invalid_argument / not_found / unauthorized / forbidden /
+    rate_limited / upstream_unavailable / internal_error。
+    """
     body = {"ok": False, "error": str(msg)}
+    if status:
+        body["status"] = status
+    body["code"] = code or _ERR_CODE.get(status or "", "internal_error")
     body.update(extra)
     return {"content": [{"type": "text", "text": json.dumps(body, ensure_ascii=False)}],
             "isError": True}
+
+
+# 旧 status → 稳定 code 的映射（历史客户端只看 status，不受影响）
+_ERR_CODE = {"need_auth": "unauthorized", "not_found": "not_found", "gone": "not_found",
+             "blocked": "forbidden", "media_error": "upstream_unavailable",
+             "bad_kind": "invalid_argument"}
 
 
 def _safe_name(name):
@@ -87,12 +118,18 @@ TOOLS = [
         "name": "material_upload",
         "description": "上传素材文件并自动排队分析、内化进知识库。path 方式上限 2GB（服务端本地文件，流式拷贝）；"
                        "content_base64 上限 100MB。zip/pdf/doc/docx/xls/ppt/pptx 均可解析；"
-                       "需要跨网络断点续传时改用 upload_begin。",
+                       "需要跨网络断点续传时改用 upload_begin。"
+                       "版本语义：同名旧素材默认被本版本取代（旧版切块/卡片与内化条目不再参与召回，"
+                       "文件保留可审计）；keep_history=true 保留历史并存；也可用 supersedes 显式指定被取代的素材。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"},
             "path": {"type": "string", "description": "服务端可读的本地文件路径"},
             "content_base64": {"type": "string", "description": "文件内容 base64（与 path 二选一）"},
-            "filename": {"type": "string", "description": "content_base64 时的文件名，含扩展名"}},
+            "filename": {"type": "string", "description": "content_base64 时的文件名，含扩展名"},
+            "supersedes": {"type": "string",
+                           "description": "显式指定被本版本取代的素材 id（可选，默认按同名自动取代）"},
+            "keep_history": {"type": "boolean", "default": False,
+                             "description": "true=同名旧版不取代，多版本并存（默认 false 只召回最新版）"}},
             "required": ["token"]},
     },
     {
@@ -111,9 +148,13 @@ TOOLS = [
     },
     {
         "name": "material_list",
-        "description": "列出本人已上传素材及其分析状态。",
+        "description": "列出本人已上传素材及其分析状态（默认不含已被取代的旧版；"
+                       "include_superseded=true 可见全部）。超出一页时用 next_cursor 翻页。",
         "inputSchema": {"type": "object", "properties": {
-            "token": {"type": "string"}, "limit": {"type": "integer", "default": 50}},
+            "token": {"type": "string"}, "limit": {"type": "integer", "default": 50},
+            "cursor": {"type": "string", "description": "上一页返回的 next_cursor（可选）"},
+            "include_superseded": {"type": "boolean", "default": False,
+                                   "description": "true=连已被取代的旧版一起列出"}},
             "required": ["token"]},
     },
     {
@@ -157,9 +198,22 @@ TOOLS = [
     {
         "name": "kb_status",
         "description": "知识库与依赖服务状态：素材数、可检索片段数、卡片数、近期作业、LLM/TTS/图像探活。"
-                       "当用户提到知识库/知识管理/OPC/同心圆/知识图谱/图数据库，想先看数据规模或是否可用时优先调用。",
-        "inputSchema": {"type": "object", "properties": {"token": {"type": "string"}},
+                       "当用户提到知识库/知识管理/OPC/同心圆/知识图谱/图数据库，想先看数据规模或是否可用时优先调用。"
+                       "默认已脱敏（不含服务端路径/内网地址）；面板轮询请改用 kb_ping（有缓存，不重复探测上游）。",
+        "inputSchema": {"type": "object", "properties": {"token": {"type": "string"},
+                        "detail": {"type": "boolean", "default": False,
+                                   "description": "true=返回 dataDir/vault/llm.base_url 等完整信息（仅管理员 key）"}},
                         "required": ["token"]},
+    },
+    {
+        "name": "kb_ping",
+        "description": "轻量健康检查：LLM/语音/图像三盏灯 + degraded 标记。结果缓存约 60 秒，"
+                       "面板/轮询场景用本工具，不要轮询 kb_status（那会真实探测上游模型、消耗额度）。"
+                       "refresh=true 忽略缓存立即重探。",
+        "inputSchema": {"type": "object", "properties": {
+            "refresh": {"type": "boolean", "default": False,
+                        "description": "true=忽略缓存立即探测（仍受每 key 限流约束）"}},
+            "required": []},
     },
     {
         "name": "kb_search",
@@ -179,9 +233,14 @@ TOOLS = [
                        "有硬字符预算且不随知识库变大膨胀，可省掉先调 kb_search 的一轮；返回 knowledge_brief 元数据。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"},
-            "text": {"type": "string", "description": "问题内容；与 question 二选一"},
+            "text": {"type": "string", "description": "问题内容；与 question 二选一（等价，question 为推荐名）"},
             "question": {"type": "string", "description": "同 text，问题内容；二选一即可"},
-            "wait_sec": {"type": "number", "default": 0, "description": "0=只返回作业号"},
+            "idempotency_key": {"type": "string", "maxLength": 128,
+                                "description": "幂等键：同一 key 在窗口内（默认 15 分钟）重放返回同一 job_id，"
+                                               "客户端超时重试时务必携带，避免双排任务"},
+            "wait_sec": {"type": "number", "default": 0,
+                         "description": "同步等待秒数，0=只返回作业号；上限 300；"
+                                        "到点未完成返回 status=queued/running + retry_after_sec，用 job_get 续等"},
             "with_brief": {"type": "boolean", "default": False,
                            "description": "true=注入图谱简报并在结果里返回 knowledge_brief（含 text 全文）；默认 false 完全走原链路"},
             "brief_level": {"type": "integer", "enum": [0, 1, 2], "default": 1,
@@ -203,8 +262,12 @@ TOOLS = [
         "description": "资源总览：一次看清本人手机号下所有可访问资源——OPC 库（知识/报告/内容/消息/流水线/审批）、"
                        "Obsidian vault 顶层目录、MCP 自有素材/片段/卡片，以及全局共享部分 shared"
                        "（全公司知识、共享素材清单、公开下载区、共享热点流；所有 key 可见）。"
-                       "想确认『key 能看到哪些东西』或跨源检索前先调本工具。",
-        "inputSchema": {"type": "object", "properties": {}},
+                       "想确认『key 能看到哪些东西』或跨源检索前先调本工具。"
+                       "默认已脱敏（不含服务端绝对路径/内网地址）；detail=true 仅管理员 key 可见完整信息。",
+        "inputSchema": {"type": "object", "properties": {
+            "detail": {"type": "boolean", "default": False,
+                       "description": "true=返回 dataDir/vault/ownerDb 等完整信息（仅管理员 key）"}},
+            "required": []},
     },
     {
         "name": "opc_resource_list",
@@ -215,7 +278,9 @@ TOOLS = [
             "kind": {"type": "string", "default": "knowledge",
                      "description": "knowledge/reports/contents/messages/approvals/vault/"
                                     "shared_knowledge/shared_materials/shared_hotspots/downloads"},
-            "limit": {"type": "integer", "default": 20}},
+            "limit": {"type": "integer", "default": 20},
+            "detail": {"type": "boolean", "default": False,
+                       "description": "true=保留 path/fileRoot 等字段（仅管理员 key；默认已净化）"}},
             "required": []},
     },
     {
@@ -225,7 +290,9 @@ TOOLS = [
                        "shared_material:<id> / shared_hotspot:<id> / shared_download:<文件名>。"
                        "敏感文件按安全策略屏蔽；超过 2MB 请用 kb_search 检索片段。",
         "inputSchema": {"type": "object", "properties": {
-            "ref": {"type": "string", "description": "<类型>:<标识>"}},
+            "ref": {"type": "string", "description": "<类型>:<标识>"},
+            "detail": {"type": "boolean", "default": False,
+                       "description": "true=保留 item.path 等字段（仅管理员 key；默认已净化）"}},
             "required": ["ref"]},
     },
     {
@@ -315,14 +382,82 @@ for _tool in TOOLS:
     _schema["required"] = [r for r in _schema.get("required", [])
                            if r not in ("token", "client_key")]
 
+# 工具注解：客户端应按 readOnlyHint 过滤只读白名单，而不是硬编码工具名；
+# destructiveHint 标删除类；ask 会创建后台作业（不改动用户数据，故归只读），
+# 传 idempotency_key 后可安全重试。
+_TOOL_ANN = {
+    "opc_init": {"readOnlyHint": False, "idempotentHint": True},
+    "opc_login": {"readOnlyHint": False, "idempotentHint": False},
+    "opc_whoami": {"readOnlyHint": True, "idempotentHint": True},
+    "kb_ping": {"readOnlyHint": True, "idempotentHint": True},
+    "kb_status": {"readOnlyHint": True, "idempotentHint": True},
+    "kb_search": {"readOnlyHint": True, "idempotentHint": True},
+    "ask": {"readOnlyHint": True, "idempotentHint": False,
+            "note": "创建后台作业并消耗 LLM 额度；带 idempotency_key 可安全重试"},
+    "job_get": {"readOnlyHint": True, "idempotentHint": True},
+    "material_list": {"readOnlyHint": True, "idempotentHint": True},
+    "material_download": {"readOnlyHint": False, "idempotentHint": True},
+    "material_analyze": {"readOnlyHint": False, "idempotentHint": False},
+    "opc_resources": {"readOnlyHint": True, "idempotentHint": True},
+    "opc_resource_list": {"readOnlyHint": True, "idempotentHint": True},
+    "opc_resource_read": {"readOnlyHint": True, "idempotentHint": True},
+    "opc_route": {"readOnlyHint": True, "idempotentHint": True},
+    "media_capabilities": {"readOnlyHint": True, "idempotentHint": True},
+    "file_link": {"readOnlyHint": True, "idempotentHint": True},
+    "staff_photos": {"readOnlyHint": True, "idempotentHint": True},
+    "tts": {"readOnlyHint": False, "idempotentHint": False},
+    "image": {"readOnlyHint": False, "idempotentHint": False},
+    "material_upload": {"readOnlyHint": False, "idempotentHint": False},
+    "upload_begin": {"readOnlyHint": False, "idempotentHint": False},
+    "material_delete": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False},
+}
+for _tool in TOOLS:
+    _ann = dict(_TOOL_ANN.get(_tool["name"],
+                              {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False}))
+    _ann.setdefault("destructiveHint", False)
+    _ann.setdefault("idempotentHint", False)
+    _tool["annotations"] = _ann
+
 
 class OpcServer:
     def __init__(self):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.store = Store(config.DB_PATH)
-        self.runner = JobRunner(self.store)
+        self.runner = JobRunner(self.store, on_finish=self._emit_job_event)
         self.runner.register("analyze", self._job_analyze)
         self.runner.register("ask", self._job_ask)
+        # 每 key 滑动窗口限流（S11）：phone -> 最近请求时间戳
+        self._rate_lock = threading.Lock()
+        self._rate_hits = {}
+        # 幂等键「查→提交→登记」必须原子，否则并发同 key 会双排作业
+        self._idem_lock = threading.Lock()
+
+    def _emit_job_event(self, job_id, kind, status, phone, error=None):
+        _job_event(job_id, kind, status, phone, error)
+
+    # ---------------------------------------------------------------- 限流
+    def _rate_allow(self, phone):
+        """返回 (是否放行, retry_after_sec)。窗口/上限取 config，便于运维调整。"""
+        now = time.time()
+        window = max(1.0, float(config.RATE_WINDOW_SEC))
+        with self._rate_lock:
+            q = self._rate_hits.setdefault(phone, collections.deque())
+            while q and q[0] <= now - window:
+                q.popleft()
+            if len(q) >= max(1, int(config.RATE_MAX)):
+                return False, max(1, int(window - (now - q[0])))
+            q.append(now)
+            return True, 0
+
+    def _metric(self, kind, **fields):
+        """轻量观测指标（S13）：追加 JSONL，手机号只记指纹。失败不影响业务。"""
+        try:
+            rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "kind": kind}
+            rec.update(fields)
+            with open(config.DATA_DIR / "metrics.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
 
     # ---------------------------------------------------------------- 作业
     def _job_analyze(self, store, phone, payload):
@@ -337,6 +472,7 @@ class OpcServer:
 
     def _job_ask(self, store, phone, payload):
         question = payload["text"]
+        _t0 = time.time()
         public = bool(payload.get("with_brief"))       # 对外口径：结果里不留内网地址/服务端路径
         brief = None
         if public:
@@ -412,6 +548,9 @@ class OpcServer:
             meta.setdefault("text", "")
             meta.setdefault("reason", "简报不可用，已回退原链路")
             out["knowledge_brief"] = meta
+        self._metric("ask", phone_fp=auth.fingerprint(phone), with_brief=public,
+                     degraded=degraded, error=(error or "")[:120] or None,
+                     citations=len(citations), duration_sec=round(time.time() - _t0, 2))
         return out
 
     # ---------------------------------------------------------------- 工具实现
@@ -430,33 +569,50 @@ class OpcServer:
     def tool_opc_whoami(self, args):
         user = auth.resolve(self.store, args)
         phone = user["phone"]
-        return _json({"phone": phone, "name": user["name"], "role": user["role"],
-                      "tenant": config.phone_root(phone).name,
-                      "dataDir": str(config.phone_root(phone)),
-                      "vault": str(config.user_vault(phone)),
-                      "workspace": str(config.user_dir(phone))})
+        out = {"phone": phone, "name": user["name"], "role": user["role"],
+               "tenant": config.phone_root(phone).name}
+        # 服务端路径默认不下发（S4）；detail=true 仅对白名单手机号放开
+        if args.get("detail"):
+            if phone not in config.DETAIL_PHONES:
+                return _err("detail 模式仅对管理员开放", status="blocked", code="forbidden")
+            out.update({"dataDir": str(config.phone_root(phone)),
+                        "vault": str(config.user_vault(phone)),
+                        "workspace": str(config.user_dir(phone))})
+        return _json(out)
 
     def tool_material_upload(self, args):
         user = auth.resolve(self.store, args)
         phone = user["phone"]
+        keep_history = bool(args.get("keep_history"))
+        supersedes = str(args.get("supersedes") or "").strip() or None
+        if supersedes:
+            old = self.store.material(supersedes)
+            if not old or old["phone"] != phone:
+                return _err("supersedes 指向的素材不存在或不属于当前账号：%s" % supersedes,
+                            status="not_found", code="not_found")
         if args.get("content_base64"):
             try:
                 raw = base64.b64decode(str(args["content_base64"]).split(",")[-1])
             except (binascii.Error, ValueError) as e:
-                return _err("content_base64 解码失败：%s" % e)
+                return _err("content_base64 解码失败：%s" % e,
+                            status="invalid_argument", code="invalid_argument")
             filename = _safe_name(args.get("filename") or "upload.bin")
             if len(raw) > config.MAX_UPLOAD_MB * 1024 * 1024:
                 return _err("base64 上传超过上限 %sMB，请改用 upload_begin 分片续传"
-                            % config.MAX_UPLOAD_MB)
-            return self._ingest_bytes(phone, filename, raw)
+                            % config.MAX_UPLOAD_MB,
+                            status="invalid_argument", code="invalid_argument")
+            return self._ingest_bytes(phone, filename, raw,
+                                      supersedes=supersedes, keep_history=keep_history)
         if args.get("path"):
             src = Path(str(args["path"])).expanduser()
             if not src.is_file():
-                return _err("文件不存在或不是普通文件：%s" % src)
+                return _err("文件不存在或不是普通文件：%s" % src,
+                            status="invalid_argument", code="invalid_argument")
             filename = _safe_name(args.get("filename") or src.name)
             size = src.stat().st_size
             if size > config.UPLOAD_MAX_MB * 1024 * 1024:
-                return _err("文件超过上限 %sMB" % config.UPLOAD_MAX_MB)
+                return _err("文件超过上限 %sMB" % config.UPLOAD_MAX_MB,
+                            status="invalid_argument", code="invalid_argument")
             sha = hashlib.sha256()
             with open(src, "rb") as f:
                 for buf in iter(lambda: f.read(4 << 20), b""):
@@ -472,10 +628,12 @@ class OpcServer:
             if dst.exists():
                 dst = dst.with_name("%s_%s%s" % (dst.stem, digest[:6], dst.suffix))
             shutil.copyfile(src, dst)
-            return self._queue(phone, filename, dst, size, digest)
-        return _err("需要 path 或 content_base64")
+            return self._queue(phone, filename, dst, size, digest,
+                               supersedes=supersedes, keep_history=keep_history)
+        return _err("需要 path 或 content_base64",
+                    status="invalid_argument", code="invalid_argument")
 
-    def _ingest_bytes(self, phone, filename, raw):
+    def _ingest_bytes(self, phone, filename, raw, supersedes=None, keep_history=False):
         sha = hashlib.sha256(raw).hexdigest()
         dup = self.store.one("SELECT * FROM materials WHERE phone=? AND sha256=?", (phone, sha))
         if dup:
@@ -486,14 +644,31 @@ class OpcServer:
         if dst.exists():
             dst = dst.with_name("%s_%s%s" % (dst.stem, sha[:6], dst.suffix))
         dst.write_bytes(raw)
-        return self._queue(phone, filename, dst, len(raw), sha)
+        return self._queue(phone, filename, dst, len(raw), sha,
+                           supersedes=supersedes, keep_history=keep_history)
 
-    def _queue(self, phone, filename, dst, size, digest):
+    def _queue(self, phone, filename, dst, size, digest, supersedes=None, keep_history=False):
         mid = self.store.add_material(phone, filename, dst, size, digest, _guess_mime(filename))
         job = self.runner.submit(phone, "analyze", {"material_id": mid})
-        return _json({"material_id": mid, "filename": filename, "size": size,
-                      "path": str(dst), "job_id": job["job_id"], "status": "queued",
-                      "note": "已在后台分析并内化，可轮询 job_get"})
+        out = {"material_id": mid, "filename": filename, "size": size,
+               "path": str(dst), "job_id": job["job_id"], "status": "queued",
+               "note": "已在后台分析并内化，可轮询 job_get"}
+        # 版本语义（S3）：显式 supersedes 优先；同名旧版默认取代，keep_history 可保留
+        sup = []
+        if supersedes:
+            sup.append(supersede_mod.supersede(self.store, phone, supersedes, mid))
+        sup.extend(supersede_mod.supersede_older_same_name(
+            self.store, phone, filename, mid, keep_history=keep_history))
+        sup = [s for s in sup if s.get("ok")]
+        if sup:
+            out["superseded"] = [{"material_id": s["material_id"],
+                                  "deleted_chunks": s["deleted_chunks"],
+                                  "deleted_cards": s["deleted_cards"],
+                                  "retracted_kb": s.get("retracted_kb", [])}
+                                 for s in sup]
+            out["note"] = ("旧版已被本版本取代（切块/卡片/内化条目不再参与召回，文件保留）；"
+                           + out["note"])
+        return _json(out)
 
     def tool_upload_begin(self, args):
         user = auth.resolve(self.store, args)
@@ -502,15 +677,17 @@ class OpcServer:
         try:
             size = int(args.get("size") or 0)
         except (TypeError, ValueError):
-            return _err("size 必须是整数")
+            return _err("size 必须是整数", status="invalid_argument", code="invalid_argument")
         if size <= 0:
-            return _err("size 必须为正整数")
+            return _err("size 必须为正整数", status="invalid_argument", code="invalid_argument")
         if size > config.UPLOAD_MAX_MB * 1024 * 1024:
-            return _err("文件超过上限 %sMB" % config.UPLOAD_MAX_MB)
+            return _err("文件超过上限 %sMB" % config.UPLOAD_MAX_MB,
+                        status="invalid_argument", code="invalid_argument")
         try:
             chunk_size = int(args.get("chunk_size") or 0)
         except (TypeError, ValueError):
-            return _err("chunk_size 必须是整数")
+            return _err("chunk_size 必须是整数",
+                        status="invalid_argument", code="invalid_argument")
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         upload_id = "up_" + secrets.token_hex(8)
         path = config.UPLOAD_DIR / (upload_id + ".part")
@@ -539,11 +716,35 @@ class OpcServer:
 
     def tool_material_list(self, args):
         user = auth.resolve(self.store, args)
-        rows = self.store.materials(user["phone"], int(args.get("limit") or 50))
-        return _json({"count": len(rows), "items": [
-            {"material_id": r["id"], "filename": r["filename"], "size": r["size"],
-             "status": r["status"], "reason": r["reason"],
-             "created_at": _ts(r["created_at"])} for r in rows]})
+        try:
+            limit = max(1, min(int(args.get("limit") or 50), 200))
+        except (TypeError, ValueError):
+            return _err("limit 必须是整数", status="invalid_argument", code="invalid_argument")
+        include_superseded = bool(args.get("include_superseded"))
+        offset = 0
+        cursor = args.get("cursor")
+        if cursor:
+            try:
+                offset = max(0, int(base64.urlsafe_b64decode(str(cursor) + "===")
+                                    .decode("ascii", "strict")))
+            except (ValueError, UnicodeError, binascii.Error):
+                return _err("cursor 非法：请原样透传上一页返回的 next_cursor",
+                            status="invalid_argument", code="invalid_argument")
+        phone = user["phone"]
+        rows = self.store.materials(phone, limit + 1, offset, include_superseded)
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        out = {"count": len(rows),
+               "total": self.store.materials_total(phone, include_superseded),
+               "has_more": has_more,
+               "items": [{"material_id": r["id"], "filename": r["filename"], "size": r["size"],
+                          "status": r["status"], "reason": r["reason"],
+                          "superseded_by": r.get("superseded_by"),
+                          "created_at": _ts(r["created_at"])} for r in rows]}
+        if has_more:
+            out["next_cursor"] = base64.urlsafe_b64encode(
+                str(offset + limit).encode("ascii")).decode("ascii")
+        return _json(out)
 
     def tool_material_download(self, args):
         user = auth.resolve(self.store, args)
@@ -606,20 +807,38 @@ class OpcServer:
         else:
             mat = self.store.material(target)
             if not mat or mat["phone"] != user["phone"]:
-                return _err("素材不存在或不属于当前账号")
+                return _err("素材不存在或不属于当前账号", status="not_found", code="not_found")
+            if mat.get("status") == "superseded":
+                return _err("素材已被新版本取代（superseded_by=%s），请对最新版本操作或先确认需要恢复"
+                            % mat.get("superseded_by"),
+                            status="invalid_argument", code="invalid_argument")
             ids = [target]
         job = self.runner.submit(user["phone"], "analyze", {"material_ids": ids})
         return _json({"job_id": job["job_id"], "status": "queued", "count": len(ids)})
+
+    def _job_view(self, view):
+        """作业视图契约 v2：未完成带 retry_after_sec，方便所有客户端统一轮询节奏。"""
+        if not view:
+            return view
+        view = dict(view)
+        view["job_contract"] = 2
+        if view.get("status") in ("queued", "running"):
+            view["retry_after_sec"] = 5
+        return view
 
     def tool_job_get(self, args):
         user = auth.resolve(self.store, args)
         job = self.runner.wait(str(args.get("job_id") or ""), user["phone"],
                                float(args.get("wait_sec") or 0))
-        return _json(job) if job else _err("作业不存在")
+        return _json(self._job_view(job)) if job else _err(
+            "作业不存在", status="not_found", code="not_found")
 
     def tool_kb_status(self, args):
         user = auth.resolve(self.store, args)
         phone = user["phone"]
+        detail = bool(args.get("detail"))
+        if detail and phone not in config.DETAIL_PHONES:
+            return _err("detail 模式仅对管理员开放", status="blocked", code="forbidden")
         by_status = {r["status"]: r["n"] for r in self.store.all(
             "SELECT status, COUNT(*) n FROM materials WHERE phone=? GROUP BY status", (phone,))}
         total = sum(by_status.values())
@@ -627,10 +846,10 @@ class OpcServer:
             "SELECT DISTINCT material_id FROM chunks WHERE phone=? AND material_id IS NOT NULL", (phone,))}
         chunks = self.store.one("SELECT COUNT(*) n FROM chunks WHERE phone=?", (phone,))
         cards = self.store.one("SELECT COUNT(*) n FROM cards WHERE phone=?", (phone,))
-        ok, detail, probe_info = llm.probe()
+        ok, detail_text, probe_info = llm.probe()
         fcfg = llm.fallback_config() or {}
         rc = resources.counts(phone, self.store)
-        return _json({
+        body = {
             "user": {"phone": phone, "name": user["name"], "role": user["role"]},
             "tenant": config.phone_root(phone).name,
             "dataDir": rc["dataDir"], "vault": rc["vault"],
@@ -644,22 +863,61 @@ class OpcServer:
             "recent_jobs": [{"job_id": j["id"], "kind": j["kind"], "status": j["status"],
                              "error": j["error"]} for j in self.store.jobs(phone, limit=5)],
             "llm": {"ok": ok, "base_url": config.LLM_BASE_URL, "model": config.LLM_MODEL,
-                    "detail": None if ok else detail, "probe": probe_info,
+                    "detail": None if ok else detail_text, "probe": probe_info,
                     "fallback": {"enabled": config.LLM_FALLBACK_ENABLED,
                                  "configured": bool(fcfg),
                                  "channel": fcfg.get("id") or config.LLM_FALLBACK_CHANNEL_ID,
                                  "model": fcfg.get("model") or config.LLM_FALLBACK_MODEL}},
             "media": media.health(),
-        })
+        }
+        if not detail:
+            # 对外脱敏（S4）：不回服务端路径与内网地址，剩余字符串再过一遍净化
+            body.pop("dataDir"), body.pop("vault"), body.pop("workspace")
+            body["llm"].pop("base_url", None)
+            return _json(graph_brief.public_obj(body))
+        return _json(body)
+
+    def tool_kb_ping(self, args):
+        """轻量健康检查（S9）：缓存式三盏灯，面板轮询不再触发上游模型探测。"""
+        auth.resolve(self.store, args)
+        ttl = max(10, int(config.PING_TTL_SEC))
+        ok, _detail, info = llm.probe_cached(ttl, force=bool(args.get("refresh")))
+        mhealth = media.health_cached(max(10, int(config.MEDIA_PING_TTL_SEC)))
+        checks = {
+            "llm": {"ok": bool(ok)},
+            "tts": {"ok": bool((mhealth.get("tts") or {}).get("ok"))},
+            "image": {"ok": bool((mhealth.get("image") or {}).get("ok"))},
+        }
+        if info.get("retry_after_sec"):
+            checks["llm"]["retry_after_sec"] = info["retry_after_sec"]
+            checks["llm"]["cooldown_until"] = info.get("cooldown_until")
+        all_ok = all(c["ok"] for c in checks.values())
+        return _json({"ok": all_ok, "degraded": not all_ok, "checks": checks,
+                      "cached_for_sec": ttl,
+                      "note": "结果按缓存返回；refresh=true 立即重探。面板轮询请用本工具，"
+                              "kb_status 会真实探测上游模型。"})
 
     def tool_kb_search(self, args):
         user = auth.resolve(self.store, args)
         query = str(args.get("query") or "")
         hits = resources.search(self.store, user["phone"], query, int(args.get("k") or 6))
-        return _json({"query": query, "count": len(hits), "hits": hits,
-                      "sources": ["opc.knowledge", "opc.report", "opc.content",
-                                  "opc.message", "mcp.material",
-                                  "shared.knowledge", "shared.material", "shared.hotspot"]})
+        # 低置信度（S8）：最高分低于阈值，或查询词覆盖率不足一半（常用词误命中）
+        qterms = knowledge.terms(query)
+        top = hits[0] if hits else None
+        top_score = float(top["score"]) if top else 0.0
+        coverage = ((top.get("matched", 0) / len(qterms))
+                    if top and qterms else 0.0)
+        low = (not hits) or top_score < config.LOW_CONFIDENCE_SCORE or coverage < 0.5
+        out = {"query": query, "count": len(hits), "hits": hits,
+               "low_confidence": low,
+               "sources": ["opc.knowledge", "opc.report", "opc.content",
+                           "opc.message", "mcp.material",
+                           "shared.knowledge", "shared.material", "shared.hotspot"]}
+        if low:
+            out["hint"] = ("最高分 %.1f（阈值 %.1f）、查询词覆盖率 %.0f%%，命中可能与问题无关；"
+                           "建议换用自然语言描述（少用标识符/路径/参数名堆叠）后再试"
+                           % (top_score, config.LOW_CONFIDENCE_SCORE, coverage * 100))
+        return _json(out)
 
     def tool_opc_resources(self, args):
         user = auth.resolve(self.store, args)
@@ -677,25 +935,54 @@ class OpcServer:
 
     def tool_ask(self, args):
         user = auth.resolve(self.store, args)
-        text = str(args.get("text") or args.get("question") or "").strip()
-        if not text:
-            return _err("请提供问题内容：text 或 question 任填一项")
+        phone = user["phone"]
+        text = str(args.get("text") or "").strip()
+        alt = str(args.get("question") or "").strip()
+        if text and alt and text != alt:
+            return _err("text 与 question 是同义字段，只能提供一个（内容需一致）",
+                        status="invalid_argument", code="invalid_argument")
+        question = text or alt
+        if not question:
+            return _err("请提供问题内容：text 或 question 任填一项",
+                        status="invalid_argument", code="invalid_argument")
         try:
             level = int(args["brief_level"]) if args.get("brief_level") is not None else None
             chars = int(args["brief_chars"]) if args.get("brief_chars") is not None else None
         except (TypeError, ValueError):
-            return _err("brief_level / brief_chars 必须是整数")
+            return _err("brief_level / brief_chars 必须是整数",
+                        status="invalid_argument", code="invalid_argument")
         if level is not None:
             level = max(0, min(2, level))
         if chars is not None:
             chars = max(200, min(config.BRIEF_HARD_MAX, chars))
-        job = self.runner.submit(user["phone"], "ask", {
-            "text": text, "with_brief": bool(args.get("with_brief")),
-            "brief_level": level, "brief_chars": chars})
-        wait = float(args.get("wait_sec") or 0)
+        try:
+            wait = max(0.0, min(float(args.get("wait_sec") or 0), 300.0))
+        except (TypeError, ValueError):
+            return _err("wait_sec 必须是数字", status="invalid_argument", code="invalid_argument")
+
+        # 幂等（S1）：「查重→提交→登记」在同一把锁内完成，并发同 key 不双排作业
+        idem = str(args.get("idempotency_key") or "").strip()[:128]
+        map_key = None
+        if idem:
+            map_key = hashlib.sha256(("%s|%s" % (phone, idem)).encode("utf-8")).hexdigest()
+        with self._idem_lock:
+            if map_key:
+                prev = self.store.get_idempotent(map_key, config.IDEMPOTENCY_TTL)
+                if prev:
+                    view = self.runner.wait(prev, phone, wait) if wait > 0 \
+                        else self.runner.view(prev, phone)
+                    if view:
+                        view = self._job_view(view)
+                        view["idempotent_replay"] = True
+                        return _json(view)
+            job = self.runner.submit(phone, "ask", {
+                "text": question, "with_brief": bool(args.get("with_brief")),
+                "brief_level": level, "brief_chars": chars})
+            if map_key:
+                self.store.put_idempotent(map_key, job["job_id"], phone)
         if wait > 0:
-            return _json(self.runner.wait(job["job_id"], user["phone"], wait))
-        return _json(job)
+            return _json(self._job_view(self.runner.wait(job["job_id"], phone, wait)))
+        return _json(self._job_view(job))
 
     def tool_opc_route(self, args):
         query = str(args.get("query") or "").strip()
@@ -911,9 +1198,23 @@ class OpcServer:
     def dispatch(self, name, args):
         fn = getattr(self, "tool_" + name, None)
         if not fn:
-            return _err("未知工具：%s" % name)
+            return _err("未知工具：%s" % name, status="not_found", code="not_found")
+        args = args or {}
+        # 每 key 限流（S11）：面板/脚本反复点击也不会变成压测；鉴权类工具不计数
+        if name not in ("opc_init", "opc_login", "opc_route"):
+            try:
+                _user = auth.resolve(self.store, args)
+            except auth.AuthError:
+                _user = None
+            if _user:
+                allowed, retry = self._rate_allow(_user["phone"])
+                if not allowed:
+                    return _err("请求过于频繁（每 %g 秒最多 %d 次），请 %d 秒后重试"
+                                % (config.RATE_WINDOW_SEC, config.RATE_MAX, retry),
+                                status="rate_limited", code="rate_limited",
+                                retry_after_sec=retry)
         try:
-            return fn(args or {})
+            return fn(args)
         except auth.AuthError as e:
             return _err(str(e), status="need_auth",
                         next="未领取 key：打开 %s 登录后自助生成；" % config.KEY_APPLY_URL
@@ -921,7 +1222,7 @@ class OpcServer:
                                "或只调用 opc_init(key=...) 获取 session_token（不需要手机号）")
         except Exception as e:
             log("工具 %s 异常：%r" % (name, e))
-            return _err("%s: %s" % (type(e).__name__, e))
+            return _err("%s: %s" % (type(e).__name__, e), code="internal_error")
 
     def handle(self, msg):
         method = msg.get("method")
@@ -948,26 +1249,55 @@ class OpcServer:
         return {"jsonrpc": "2.0", "id": mid,
                 "error": {"code": -32601, "message": "Method not found: %s" % method}}
 
-    def serve(self):
-        log("ready db=%s vault=%s" % (config.DB_PATH, config.VAULT))
-        for line in sys.stdin:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError as e:
-                _write({"jsonrpc": "2.0", "id": None,
-                        "error": {"code": -32700, "message": "Parse error: %s" % e}})
-                continue
+    def _serve_line(self, line):
+        """单条 JSON-RPC 的处理入口：在请求线程池里执行，响应按 id 回写。"""
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError as e:
+            _write({"jsonrpc": "2.0", "id": None,
+                    "error": {"code": -32700, "message": "Parse error: %s" % e}})
+            return
+        try:
             resp = self.handle(msg)
-            if resp is not None:
-                _write(resp)
+        except Exception as e:                      # 单请求异常不能带垮整个服务
+            log("请求处理异常：%r" % e)
+            mid = msg.get("id") if isinstance(msg, dict) else None
+            resp = {"jsonrpc": "2.0", "id": mid,
+                    "error": {"code": -32603, "message": "%s: %s" % (type(e).__name__, e)}} \
+                if mid is not None else None
+        if resp is not None:
+            _write(resp)
+
+    def serve(self):
+        """stdin 单读线程 + 请求线程池：长等待调用不再阻塞其它请求。
+
+        JSON-RPC 靠 id 匹配响应，允许乱序；stdout 写入由 _STDOUT_LOCK 串行化，
+        作业完成通知也走同一个锁，保证每行都是完整 JSON。
+        """
+        n = config.REQUEST_WORKERS
+        log("ready db=%s vault=%s request_workers=%d" % (config.DB_PATH, config.VAULT, n))
+        with ThreadPoolExecutor(max_workers=n, thread_name_prefix="opc-req") as pool:
+            for line in sys.stdin:
+                line = line.strip()
+                if line:
+                    pool.submit(self._serve_line, line)
+        # EOF 时 with 退出，等待在途请求处理完毕再结束进程
 
 
 def _write(obj):
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    """原子写一行 JSON-RPC（响应或通知）到 stdout。"""
+    with _STDOUT_LOCK:
+        sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+
+
+def _job_event(job_id, kind, status, phone, error=None):
+    """作业终态通知：走 JSON-RPC notification，mcp-bridge 收到后推 SSE/Webhook。"""
+    _write({"jsonrpc": "2.0", "method": "notifications/opc/job",
+            "params": {"job_id": job_id, "kind": kind, "status": status,
+                       "phone": phone,
+                       "error": graph_brief.public_text(error)[:300] if error else None,
+                       "at": time.time()}})
 
 
 def _ts(epoch):

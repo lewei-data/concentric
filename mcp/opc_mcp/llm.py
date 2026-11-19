@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -161,7 +162,11 @@ def chat_json(messages, **kwargs):
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise LLMError("模型未返回 JSON：%s" % text[:200])
-    return json.loads(text[start:end + 1])
+    try:
+        return json.loads(text[start:end + 1])
+    except json.JSONDecodeError as e:
+        # 统一包成 LLMError，让调用方（如素材卡片生成）走降级路径而不是整单失败
+        raise LLMError("模型返回的 JSON 无法解析：%s（%s）" % (e, text[:120]))
 
 
 def _probe_one(url, model, key, timeout):
@@ -216,4 +221,24 @@ def probe(timeout=8):
         detail = None
     else:
         detail = p_detail + ("；兜底：" + (f_detail or "不可用") if cfg else "")
+    return ok, detail, info
+
+
+_PROBE_CACHE = {"at": 0.0, "ok": None, "detail": None, "info": None}
+_PROBE_LOCK = threading.Lock()
+
+
+def probe_cached(ttl=60, timeout=8, force=False):
+    """带缓存的探活：kb_ping/面板轮询用，避免每次都打上游模型。
+
+    ttl 秒内的重复调用直接回缓存；force=true 忽略缓存立即重探。
+    """
+    with _PROBE_LOCK:
+        if (not force and _PROBE_CACHE["ok"] is not None
+                and time.monotonic() - _PROBE_CACHE["at"] < max(5, ttl)):
+            return _PROBE_CACHE["ok"], _PROBE_CACHE["detail"], _PROBE_CACHE["info"]
+    ok, detail, info = probe(timeout)
+    with _PROBE_LOCK:
+        _PROBE_CACHE.update({"at": time.monotonic(), "ok": ok,
+                             "detail": detail, "info": info})
     return ok, detail, info

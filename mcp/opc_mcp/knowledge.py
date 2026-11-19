@@ -254,6 +254,11 @@ def chunk_text(text, size=None):
 
 
 def terms(text):
+    """查询/正文分词：中文 bigram + 英文整词；标识符再按分隔符拆一层。
+
+    拆层是为了「符号化提问」（cordis_inspect_query、路径、参数名堆叠）也能
+    命中自然语言语料：整词保留保精度，子词提升召回。
+    """
     out = set()
     for m in CJK.findall(text):
         for i in range(len(m) - 1):
@@ -261,6 +266,9 @@ def terms(text):
     for w in ASCII_WORD.findall(text.lower()):
         if w not in STOP:
             out.add(w)
+        for part in re.split(r"[_\-/.:\\]+", w):
+            if len(part) >= 2 and part not in STOP:
+                out.add(part)
     return out
 
 
@@ -284,9 +292,11 @@ def search(store, phone, query, k=6):
     out = []
     for s, row in scored[:max(1, int(k))]:
         body = row["body"] or ""
+        matched = sum(1 for t in qterms if t in (body or "").lower())
         pos = min((body.find(t) for t in qterms if t in body), default=0)
         start = max(0, pos - 100)
         out.append({"material_id": row["material_id"], "seq": row["seq"], "score": round(s, 2),
+                    "matched": matched,
                     "snippet": body[start:start + 320].replace("\n", " ")})
     return out
 
@@ -325,6 +335,9 @@ def analyze_material(store, phone, material_id):
     mat = store.material(material_id)
     if not mat:
         raise ValueError("素材不存在：%s" % material_id)
+    if mat.get("status") == "superseded":                 # 取代发生在排队之后，别再写回
+        return {"material_id": material_id, "status": "canceled",
+                "reason": "素材已被新版本取代"}
     # 内容化钩子：图片/影音在本模块会被跳过像素分析，统一交给工作台内容化引擎
     # （OCR / ASR → 知识卡片 → 知识库 + 知识图谱 → 评分 → 小秘书/飞书汇报）。
     if os.environ.get("OPC_MCP_SKIP_CONTENT_ENQUEUE") != "1":
@@ -350,6 +363,8 @@ def analyze_material(store, phone, material_id):
 
     if not store.material(material_id):                      # 分析期间被用户删除，别再写回切块
         return {"material_id": material_id, "status": "canceled", "reason": "素材已删除"}
+    if (store.material(material_id) or {}).get("status") == "superseded":
+        return {"material_id": material_id, "status": "canceled", "reason": "素材已被新版本取代"}
     chunks = chunk_text(text)
     n = store.replace_chunks(material_id, phone, chunks)
 

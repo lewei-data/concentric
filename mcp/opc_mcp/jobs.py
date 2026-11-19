@@ -9,11 +9,13 @@ from . import config
 
 
 class JobRunner:
-    def __init__(self, store, owner=None):
+    def __init__(self, store, owner=None, on_finish=None):
         self.store = store
         self.owner = owner or config.PROCESS_ROLE
         self.pool = ThreadPoolExecutor(max_workers=config.JOB_WORKERS, thread_name_prefix="opc-job")
         self.handlers = {}
+        # 作业终态回调：服务端用它发 JSON-RPC 通知，bridge 转 SSE/Webhook
+        self.on_finish = on_finish
         # 只清理本进程上次遗留的作业；另一个进程的在跑作业不受影响
         store.recover_stale_jobs(self.owner)
 
@@ -31,11 +33,18 @@ class JobRunner:
 
     def _run(self, job_id, phone, kind, payload):
         self.store.update_job(job_id, "running")
+        status, error = "succeeded", None
         try:
             result = self.handlers[kind](self.store, phone, payload)
-            self.store.update_job(job_id, "succeeded", json.dumps(result, ensure_ascii=False))
+            self.store.update_job(job_id, status, json.dumps(result, ensure_ascii=False))
         except Exception as e:
-            self.store.update_job(job_id, "failed", error="%s: %s" % (type(e).__name__, e))
+            status, error = "failed", "%s: %s" % (type(e).__name__, e)
+            self.store.update_job(job_id, status, error=error)
+        if self.on_finish:
+            try:
+                self.on_finish(job_id, kind, status, phone, error)
+            except Exception:
+                pass                                  # 通知失败不影响作业落库
 
     def view(self, job_id, phone=None):
         row = self.store.job(job_id)

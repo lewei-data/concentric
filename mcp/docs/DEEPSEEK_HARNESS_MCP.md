@@ -52,8 +52,25 @@ mcpServers:
 | 语音合成 | `mcp__opc__tts` |
 | 图片生成（支持参照图） | `mcp__opc__image` |
 | 生成文件重取链接 | `mcp__opc__file_link` |
+| 轻量健康检查（缓存式三盏灯） | `mcp__opc__kb_ping` |
 
-其余工具同理，共 **22 个**（以 `tools/list` 为准；详见随附 `OPC_MCP_CLIENT_USAGE.md`）。
+其余工具同理，共 **23 个**（以 `tools/list` 为准；详见随附 `OPC_MCP_CLIENT_USAGE.md`）。
+
+**白名单建议改按注解过滤（2026-11-19 起）**：每个工具的 `tools/list` 条目带
+`annotations.readOnlyHint / destructiveHint / idempotentHint`。DSH 侧 Host 桥不要再硬编码
+8 个只读工具名——按 `readOnlyHint === true` 过滤即可，工具增删改名都不会静默失效；
+`material_delete` 带 `destructiveHint: true`，面板/桥一律不放开。
+`ask` 带非幂等作业语义，重试请传 `idempotency_key`（窗口内重放返回同一 `job_id`）；
+`job_get` 未完成时带 `retry_after_sec`，按它轮询。错误返回统一带稳定 `code`
+（`invalid_argument`/`not_found`/`unauthorized`/`forbidden`/`rate_limited`/`upstream_unavailable`）。
+`kb_status` 默认已脱敏（不再回 `dataDir`/`vault`/内网地址），面板健康灯改轮询 `kb_ping`（有缓存）。
+
+**实时刷新（替代轮询）**：服务端作业完成会推送 `notifications/opc/job`，DSH Host 可用
+`GET https://ai.boraydata.com/mcp/events`（Header `X-Mail-Agent: <个人 key>`）订阅
+`event: job` 帧，`job_id` 对应 `ask`/`material_upload` 返回的作业号；
+必须用 `fetch + ReadableStream`（EventSource 不能带自定义头）。断线重连期间事件不补发，
+面板仍保留 `job_get` 轮询作兜底。服务端请求层已改为线程池并发
+（`OPC_MCP_REQUEST_WORKERS` 默认 8），长等待调用不会堵住其他请求。
 
 ## 4. 能力边界与限制
 

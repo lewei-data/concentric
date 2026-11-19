@@ -22,6 +22,8 @@ os.environ["OPC_MCP_SKIP_CONTENT_ENQUEUE"] = "1"
 # 用户产物根目录也隔离，避免测试写到 /mnt/sefs/conring/users/<真实手机号>
 os.environ["OPC_USER_ROOT"] = os.path.join(TMP, "users")
 os.environ["OPC_MCP_API_KEYS"] = os.environ.get("OPC_MCP_API_KEYS") or "testkey-123"
+# 测试会连发大量请求：放宽限流；限流行为在 10i 节单独用低阈值验证
+os.environ["OPC_MCP_RATE_MAX"] = "1000"
 # 历史用例沿用本机 phone-only；外部部署默认关闭，见下方 need_secret 检查
 os.environ["OPC_MCP_PHONE_ONLY"] = "1"
 
@@ -518,6 +520,169 @@ def main():
     finally:
         llm._post, config.LLM_BASE_URL = orig_post, orig_base
     check("400 不触发兜底", raised and len(calls400) == 1, calls400)
+
+    # 10. S 系列契约（2026-11-19 DSH 面板整改）：注解/幂等/取代/分页/脱敏/ping/错误码/限流
+    config.RATE_MAX = 1000
+
+    tl = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    tools = tl["result"]["tools"]
+    tmap = {t["name"]: t for t in tools}
+    check("tools/list 全部带 annotations",
+          len(tools) >= 23 and all(isinstance(t.get("annotations", {}).get("readOnlyHint"), bool)
+                                   for t in tools), len(tools))
+    ro = {n for n, t in tmap.items() if t["annotations"]["readOnlyHint"]}
+    check("只读注解覆盖 DSH 白名单八件",
+          {"kb_status", "kb_search", "ask", "job_get", "material_list",
+           "opc_resources", "opc_resource_list", "opc_whoami"} <= ro, sorted(ro))
+    check("material_delete 标 destructive",
+          tmap["material_delete"]["annotations"]["destructiveHint"] is True,
+          tmap["material_delete"]["annotations"])
+    check("kb_ping 已注册且只读",
+          "kb_ping" in tmap and tmap["kb_ping"]["annotations"]["readOnlyHint"] is True)
+
+    # 10b. ask 幂等（S1）：同 key 重放返回同一 job
+    a1 = eval_content(srv.dispatch("ask", {"token": token, "text": "幂等测试：这个问题只需要一句话",
+                                            "idempotency_key": "smoke-idem-1", "wait_sec": 0}))
+    a2 = eval_content(srv.dispatch("ask", {"token": token, "text": "幂等测试：这个问题只需要一句话",
+                                            "idempotency_key": "smoke-idem-1", "wait_sec": 0}))
+    check("ask 幂等重放返回同一 job_id",
+          a2.get("job_id") == a1.get("job_id") and a2.get("idempotent_replay") is True,
+          (a1.get("job_id"), a2.get("job_id"), a2.get("idempotent_replay")))
+    check("ask 未完成作业带 retry_after_sec（契约 v2）",
+          a1.get("retry_after_sec") == 5 and a1.get("job_contract") == 2, a1)
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    cq = "并发幂等探针：同 key 只排一个作业"
+    with _TPE(2) as _ex:
+        cr = list(_ex.map(lambda _: eval_content(srv.dispatch(
+            "ask", {"token": token, "question": cq, "idempotency_key": "smoke-idem-race",
+                    "wait_sec": 0})), range(2)))
+    check("并发同 key 只排一个作业",
+          cr[0]["job_id"] == cr[1]["job_id"]
+          and sum(1 for j in srv.store.all("SELECT id FROM jobs WHERE payload LIKE ?",
+                                           ("%并发幂等探针%",)) if j) == 1,
+          (cr[0]["job_id"], cr[1]["job_id"]))
+
+    # 10c. 同名取代（S3）：旧版切块/卡片回收，默认只召回最新版
+    v1 = Path(TMP) / "版本测试.md"
+    v1.write_text("版本一旧结论：旧标记词甲乙丙。\n\n旧版正文，仅用于验证取代语义。\n", encoding="utf-8")
+    up_v1 = eval_content(srv.dispatch("material_upload", {"token": token, "path": str(v1),
+                                                           "filename": "版本测试.md"}))
+    jv1 = eval_content(srv.dispatch("job_get", {"token": token, "job_id": up_v1["job_id"],
+                                                "wait_sec": 120}))
+    check("v1 分析完成",
+          (jv1.get("result") or {}).get("items", [{}])[0].get("status") == "analyzed", jv1.get("status"))
+    v1_id = up_v1["material_id"]
+    v2 = Path(TMP) / "版本测试v2.md"
+    v2.write_text("版本二新结论：新标记词丁戊己。\n\n新版正文，取代旧版语义。\n", encoding="utf-8")
+    up_v2 = eval_content(srv.dispatch("material_upload", {"token": token, "path": str(v2),
+                                                           "filename": "版本测试.md"}))
+    check("同名新版本自动取代旧版",
+          up_v2.get("superseded") and up_v2["superseded"][0]["material_id"] == v1_id,
+          up_v2.get("superseded"))
+    jv2 = eval_content(srv.dispatch("job_get", {"token": token, "job_id": up_v2["job_id"],
+                                                "wait_sec": 120}))
+    check("v2 分析完成", jv2.get("status") == "succeeded", jv2.get("status"))
+    lsup = eval_content(srv.dispatch("material_list", {"token": token,
+                                                       "include_superseded": True}))
+    row_v1 = [m for m in lsup["items"] if m["material_id"] == v1_id]
+    check("旧版状态 superseded 且带 superseded_by",
+          row_v1 and row_v1[0]["status"] == "superseded"
+          and row_v1[0].get("superseded_by") == up_v2["material_id"], row_v1)
+    ldef = eval_content(srv.dispatch("material_list", {"token": token}))
+    check("默认列表不含被取代旧版",
+          all(m["material_id"] != v1_id for m in ldef["items"]), ldef.get("count"))
+    hits_old = eval_content(srv.dispatch("kb_search", {"token": token, "query": "旧标记词 甲乙丙 旧结论"}))
+    check("旧版内容不再被检索",
+          all(h.get("id") != v1_id for h in hits_old.get("hits", [])), hits_old.get("count"))
+    hits_new = eval_content(srv.dispatch("kb_search", {"token": token, "query": "新标记词 丁戊己 新结论"}))
+    check("新版内容可被检索",
+          any(h.get("id") == up_v2["material_id"] for h in hits_new.get("hits", [])),
+          hits_new.get("count"))
+    v3 = Path(TMP) / "版本测试v3.md"
+    v3.write_text("版本三：keep_history 保留多版本并存。\n", encoding="utf-8")
+    up_v3 = eval_content(srv.dispatch("material_upload", {"token": token, "path": str(v3),
+                                                           "filename": "版本测试.md",
+                                                           "keep_history": True}))
+    check("keep_history=true 不取代", not up_v3.get("superseded"), up_v3.get("superseded"))
+    ana_old = srv.dispatch("material_analyze", {"token": token, "material_id": v1_id})
+    check("被取代素材拒绝重析",
+          ana_old.get("isError") and "取代" in ana_old["content"][0]["text"],
+          ana_old["content"][0]["text"][:120])
+
+    # 10d. 分页（S7）
+    pg1 = eval_content(srv.dispatch("material_list", {"token": token, "limit": 1}))
+    check("material_list 第一页带 next_cursor",
+          pg1["count"] == 1 and pg1["has_more"] is True and pg1.get("next_cursor")
+          and pg1.get("total", 0) >= 2, {k: pg1.get(k) for k in ("count", "has_more", "total")})
+    pg2 = eval_content(srv.dispatch("material_list", {"token": token, "limit": 1,
+                                                      "cursor": pg1["next_cursor"]}))
+    check("cursor 翻页不重复",
+          pg2["items"][0]["material_id"] != pg1["items"][0]["material_id"], pg2)
+    bad_cur = srv.dispatch("material_list", {"token": token, "cursor": "###not-cursor###"})
+    check("非法 cursor → invalid_argument",
+          bad_cur.get("isError") and "invalid_argument" in bad_cur["content"][0]["text"],
+          bad_cur["content"][0]["text"][:120])
+
+    # 10e. kb_status / opc_whoami 默认脱敏，detail 按白名单放开（S4）
+    st = eval_content(srv.dispatch("kb_status", {"token": token}))
+    st_blob = json.dumps(st, ensure_ascii=False)
+    check("kb_status 默认不含服务端路径/内网地址",
+          "dataDir" not in st and "vault" not in st and "workspace" not in st
+          and not st["llm"].get("base_url")
+          and not re.search(r"/(?:mnt|opt|home)/", st_blob) and "192.168." not in st_blob,
+          [k for k in ("dataDir", "vault", "workspace") if k in st])
+    std = eval_content(srv.dispatch("kb_status", {"token": token, "detail": True}))
+    check("kb_status detail 返回完整信息", std.get("dataDir") and std["llm"].get("base_url"),
+          bool(std.get("dataDir")))
+    who2 = eval_content(srv.dispatch("opc_whoami", {"client_key": personal}))
+    check("opc_whoami 默认不带路径",
+          "dataDir" not in who2 and "workspace" not in who2, who2)
+    who3 = eval_content(srv.dispatch("opc_whoami", {"client_key": personal, "detail": True}))
+    check("opc_whoami detail 带路径", who3.get("dataDir"), who3)
+    who_forbidden = eval_content(srv.dispatch("opc_whoami", {"client_key": other_key, "detail": True}))
+    check("非白名单 detail → forbidden", who_forbidden.get("code") == "forbidden", who_forbidden)
+
+    # 10f. kb_ping（S9）
+    ping = eval_content(srv.dispatch("kb_ping", {"token": token}))
+    check("kb_ping 返回三盏灯",
+          set(ping.get("checks", {})) == {"llm", "tts", "image"}
+          and isinstance(ping.get("ok"), bool) and ping.get("cached_for_sec", 0) >= 10, ping)
+
+    # 10g. 稳定错误码（S6/S15）
+    e_conflict = eval_content(srv.dispatch("ask", {"token": token, "text": "a", "question": "b"}))
+    check("ask 双字段冲突 → invalid_argument", e_conflict.get("code") == "invalid_argument", e_conflict)
+    e_empty = eval_content(srv.dispatch("material_upload", {"token": token}))
+    check("upload 缺参 → invalid_argument", e_empty.get("code") == "invalid_argument", e_empty)
+    e_job = eval_content(srv.dispatch("job_get", {"token": token, "job_id": "job_none"}))
+    check("job_get 不存在 → not_found", e_job.get("code") == "not_found", e_job)
+    e_tool = eval_content(srv.dispatch("no_such_tool", {}))
+    check("未知工具 → not_found", e_tool.get("code") == "not_found", e_tool)
+    e_auth = eval_content(srv.dispatch("ask", {"text": "hi"}))
+    check("缺身份 → unauthorized（status=need_auth 兼容）",
+          e_auth.get("code") == "unauthorized" and e_auth.get("status") == "need_auth", e_auth)
+
+    # 10h. 低置信度标记（S8）
+    lc = eval_content(srv.dispatch("kb_search", {"token": token, "query": "毫不相关的琐屑词组 zzzqqq"}))
+    check("无关查询不再自信", lc.get("count", 0) == 0 or lc.get("low_confidence") is True,
+          (lc.get("count"), lc.get("low_confidence")))
+    sym = eval_content(srv.dispatch("kb_search",
+                                    {"token": token, "query": "cordis_inspect_query input 参数不可用"}))
+    check("符号化查询低置信或零命中",
+          sym.get("count", 0) == 0 or sym.get("low_confidence") is True,
+          (sym.get("count"), sym.get("low_confidence")))
+    check("低置信度带提示", "low_confidence" in sym and (sym["count"] == 0 or "hint" in sym), sym.get("hint", "")[:80])
+
+    # 10i. 限流（S11）
+    config.RATE_MAX, config.RATE_WINDOW_SEC = 3, 5
+    rl = None
+    for _ in range(8):
+        r = eval_content(srv.dispatch("opc_whoami", {"client_key": personal}))
+        if r.get("code") == "rate_limited":
+            rl = r
+            break
+    config.RATE_MAX, config.RATE_WINDOW_SEC = 1000, 10
+    check("限流生效并带 retry_after_sec",
+          rl is not None and rl.get("retry_after_sec", 0) >= 1, rl)
 
     print("\n共 %d 项通过：\n  - %s" % (len(PASSED), "\n  - ".join(PASSED)))
     print("运行目录（可删除）：", TMP)

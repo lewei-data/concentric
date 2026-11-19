@@ -230,9 +230,10 @@ def _hit(source, ident, title, text, q, path=""):
     s = kb._score(q, text)
     if s <= 0:
         return None
+    matched = sum(1 for t in q if t in low)
     pos = min((low.find(t) for t in q if t in low), default=0)
     return {"source": source, "id": str(ident), "title": title or "", "path": path or "",
-            "score": round(s, 2),
+            "score": round(s, 2), "matched": matched,
             "snippet": text[max(0, pos - 80):pos + 240].replace("\n", " ")}
 
 

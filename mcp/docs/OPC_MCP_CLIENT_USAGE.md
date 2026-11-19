@@ -1,7 +1,12 @@
-# OPC MCP Client 当前用法（权威口径，核实于 2026-11-18）
+# OPC MCP Client 当前用法（权威口径，核实于 2026-11-19）
 
 > 本文以线上 `opc_mcp/server.py::TOOLS` 为准，是当前唯一权威的 client 用法基线。
-> 历史文档中的工具数（13/14/15/18/19）、token 说法、"图片只归档"等表述均已过时，以本文为准。
+> 历史文档中的工具数（13/14/15/18/19/22）、token 说法、"图片只归档"等表述均已过时，以本文为准。
+>
+> **契约 v2（2026-11-19 起）**：每个工具带 `annotations`（readOnlyHint/destructiveHint/
+> idempotentHint），客户端应按注解过滤只读白名单，不要硬编码工具名；错误返回带稳定 `code`；
+> `ask` 支持 `idempotency_key` 幂等重放；`material_list` 支持 cursor 分页；上传带同名取代语义；
+> `kb_status`/`opc_whoami` 默认脱敏；新增轻量健康检查 `kb_ping`。详见第 6 节。
 
 ## 1. 接入与鉴权（唯一一套凭据）
 
@@ -17,22 +22,23 @@
 - `opc_init(key=...)` 可用 key 换 `session_token`，但普通工具调用不需要它。
 - 返回 `need_auth` / `need_secret` 时，引导用户去领取/更新 key，**不要解读成"没有数据"**。
 
-## 2. 工具清单（22 个，按用途分组）
+## 2. 工具清单（23 个，按用途分组）
 
 ### 身份与路由（无需鉴权）
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
 | `opc_init` | `key?`, `phone?`, `password?` | key 换 session_token，验证连通 |
 | `opc_login` | `key?`, `phone?`, `password?` | 密码/key 登录 |
-| `opc_whoami` | 无 | 确认身份与租户（服务端路径只用于自检，不要转述） |
+| `opc_whoami` | `detail?` | 确认身份与租户；默认不回服务端路径，`detail=true` 仅管理员 key 可见完整信息 |
 | `opc_route` | `query` | 不确定用哪个工具时，传用户原话拿推荐工具链 |
+| `kb_ping` | `refresh?` | 轻量健康检查（LLM/语音/图像三盏灯），结果缓存约 60 秒；**面板轮询用这个，不要轮询 kb_status** |
 
 ### 知识与问答
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
-| `kb_status` | 无 | 素材数、片段数、LLM 探活状态 |
-| `kb_search` | `query`, `k=6` | 跨源检索（OPC + vault + Web + MCP 素材 + 全局共享），命中带 `source` |
-| `ask` | `text` 或 `question`（等价，推荐 `text`）, `wait_sec=60`, `with_brief=true` | 综合问答；库内事实类带 `with_brief` 自带五行三才图谱简报与对外脱敏，通常不必先 `kb_search` |
+| `kb_status` | `detail?` | 素材数、片段数、LLM 探活；**默认已脱敏**（不含服务端路径/内网地址），`detail=true` 仅管理员 key 放开；面板轮询请用 `kb_ping` |
+| `kb_search` | `query`, `k=6` | 跨源检索（OPC + vault + Web + MCP 素材 + 全局共享），命中带 `source`；最高分低于阈值时返回 `low_confidence: true` + `hint`（换自然语言再问） |
+| `ask` | `text` 或 `question`（等价）, `idempotency_key?`, `wait_sec=60`, `with_brief=true` | 综合问答；**超时重试务必带同一 `idempotency_key`**（窗口 15 分钟，重放返回同一 `job_id` + `idempotent_replay: true`，不会双排任务）；`wait_sec` 上限 300，到点未完成返回 `status=queued/running` + `retry_after_sec`，用 `job_get` 续等 |
 
 ### 资源（本人 + 全局共享）
 | 工具 | 关键参数 | 用途 |
@@ -47,13 +53,13 @@
 ### 素材上传与管理
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
-| `material_upload` | `path` 或 `content_base64`, `filename` | 小文件（<100MB）；`path` 是服务端路径，外部客户端请用 `content_base64` 或 `upload_begin` |
-| `upload_begin` | `filename`, `size`, `chunk_size` | 大文件（≤2GB）分片续传，返回 `put_url` / `progress_url` |
-| `material_list` | `limit=50` | 本人素材清单 |
-| `material_analyze` | `material_id` 或 `all` | 重新分析（入队后自动 OCR/ASR + LLM 卡片 + 知识库 + 图谱 + 评分，结果经小秘书/飞书汇报） |
+| `material_upload` | `path` 或 `content_base64`, `filename`, `supersedes?`, `keep_history?` | 小文件（<100MB）；**版本语义**：同名旧素材默认被本版本取代（旧版切块/卡片/内化条目不再参与召回，文件保留可审计）；`keep_history=true` 保留多版本并存；`supersedes=<material_id>` 显式指定被取代者。返回 `superseded` 列表 |
+| `upload_begin` | `filename`, `size`, `chunk_size` | 大文件（≤2GB）分片续传，返回 `put_url` / `progress_url`；完成后同名旧版同样自动取代 |
+| `material_list` | `limit=50`, `cursor?`, `include_superseded?` | 本人素材清单；默认不含被取代旧版；返回 `total`/`has_more`/`next_cursor`，用 `cursor` 翻页 |
+| `material_analyze` | `material_id` 或 `all` | 重新分析（入队后自动 OCR/ASR + LLM 卡片 + 知识库 + 图谱 + 评分，结果经小秘书/飞书汇报）；被取代（superseded）的素材会被拒绝 |
 | `material_download` | `material_id`, `inline=false`, `dest?` | 导出素材；默认返回服务端路径，`inline=true` 且 ≤4MB 才附 base64 |
-| `material_delete` | `material_id`, `remove_file?` | 删本人素材（先确认），同步清切块/卡片 |
-| `job_get` | `job_id`, `wait_sec` | 查异步作业 |
+| `material_delete` | `material_id`, `remove_file?` | 删本人素材（先确认），同步清切块/卡片；`annotations.destructiveHint=true` |
+| `job_get` | `job_id`, `wait_sec` | 查异步作业；未完成时带 `retry_after_sec`，按它轮询；返回结构带 `job_contract: 2` |
 
 ### 生成与取回（同一把 key，无单独 token）
 | 工具 | 关键参数 | 用途 |
@@ -160,3 +166,89 @@ image({"prompt":"一只戴墨镜的柴犬","channel":"bailian_image","size":"102
 - 素材内容化会自动 OCR/ASR + 知识库入库 + 评分 + 汇报；**"图片只归档不做理解"的说法已过时**，但像素级语义（如"照片里的人是谁"）仍取决于识别结果，识别不到要明确说明。
 - 敏感文件按 Web 同口径屏蔽（登录凭据、隐藏段、运维手册、台账/凭据/拓扑结尾、下划线开头），不要尝试绕过。
 - 写操作（上传/分析/删除/TTS/生图）执行前确认用户确实需要。
+
+## 6. 契约 v2（2026-11-19 起，DSH 面板整改 S 系列）
+
+### 6.1 工具注解（按注解过滤，别再硬编码白名单）
+
+`tools/list` 的每个工具带 `annotations`：
+
+- `readOnlyHint: true` = 不改动用户数据，可安全用于只读面板（`opc_whoami`/`kb_ping`/`kb_status`/
+  `kb_search`/`ask`/`job_get`/`material_list`/`opc_resources`/`opc_resource_list`/`opc_resource_read`/
+  `opc_route`/`media_capabilities`/`file_link`/`staff_photos`）。
+  `ask` 虽只读但会创建后台作业并消耗 LLM 额度，重试请带 `idempotency_key`。
+- `destructiveHint: true` = 删除类（目前仅 `material_delete`），调用前必须与用户确认。
+- 工具将来改名会保留别名至少一个发布周期，并在注解里标 `deprecated` + `replacement`。
+
+### 6.2 稳定错误码
+
+失败返回统一带 `code`（旧字段 `status` 保留兼容）：`invalid_argument` / `not_found` /
+`unauthorized`（旧 need_auth）/ `forbidden`（旧 blocked）/ `rate_limited`（带 `retry_after_sec`）/
+`upstream_unavailable`（媒体/上游故障）/ `internal_error`。客户端按 `code` 决定重试或提示。
+
+### 6.3 幂等与等待语义
+
+- `ask` 接受 `idempotency_key`（≤128 字符）：窗口内（默认 900 秒）同 key 重放返回同一 `job_id`
+  （带 `idempotent_replay: true`），不会双排任务。**任何"失败了想重试一次"的客户端都必须带它。**
+- `ask(wait_sec)` / `job_get(wait_sec)`：到点未完成统一返回 `status: queued|running` +
+  `retry_after_sec`（默认 5 秒）+ `job_contract: 2`，按 `retry_after_sec` 轮询 `job_get`。
+
+### 6.4 上传版本语义
+
+- 相同内容（sha256）去重：返回既有 `material_id` + `duplicate: true`。
+- 相同文件名的**新版**默认取代旧版：旧素材 `status=superseded` + `superseded_by`，其切块/卡片/
+  已内化知识条目不再参与 `kb_search`/`ask` 召回；素材行与文件保留可审计，被回收的 vault md
+  移到 `<用户根>/mcp/backup/superseded/<日期>/` 可人工恢复。`keep_history=true` 保留多版本并存。
+- `material_list` 默认不列被取代旧版；`include_superseded=true` 可见全部。
+
+### 6.5 分页
+
+`material_list` 返回 `total` / `has_more` / `next_cursor`；下一页传 `cursor=<上一页的 next_cursor>`
+（原样透传，非法值报 `invalid_argument`）。`limit` 默认 50、上限 200。
+
+### 6.6 脱敏与健康检查
+
+- `kb_status` / `opc_whoami` 默认响应不含服务端绝对路径与内网地址（正文再过一层占位替换）；
+  `detail=true` 只对管理员手机号（`OPC_MCP_DETAIL_PHONES`）放开。
+- `kb_ping` 为缓存式轻量健康检查（约 60 秒缓存），面板轮询用 `kb_ping`，不要轮询 `kb_status`
+  （后者每次都真实探测上游模型）。
+
+### 6.7 限流与低置信度
+
+- 每 key 滑动窗口限流（默认 40 次 / 10 秒，`OPC_MCP_RATE_MAX`/`OPC_MCP_RATE_WINDOW` 可调），
+  超限返回 `code: rate_limited` + `retry_after_sec`。
+- `kb_search` 最高分低于阈值（默认 6.0）或零命中时返回 `low_confidence: true` + `hint`；
+  符号化提问（标识符/路径/参数名堆叠）建议换自然语言描述。
+
+### 6.8 观测
+
+`ask` 每次完成会追加一行 JSON 到服务端 `data/metrics.jsonl`（时延、degraded、失败原因、引用数，
+手机号只记指纹），供运维统计 p50/p95 与降级率。
+
+### 6.9 并发模型与实时推送（2026-11-19 二次优化）
+
+**并发**：stdio 服务端是「stdin 单读线程 + `OPC_MCP_REQUEST_WORKERS` 请求线程池（默认 8）」，
+响应按 JSON-RPC id 回写，stdout 单行原子写入。实测两个 `wait_sec=5s` 的调用总墙钟 5.2s（原先 10.4s），
+长等待调用不再阻塞 `ping`/检索。后台作业池仍是 `JOB_WORKERS`（默认 2），可按需调高。
+
+**SSE 作业事件**：服务端在每个作业终态向 stdout 发 JSON-RPC 通知
+`notifications/opc/job`，mcp-bridge 绑定后按手机号推送：
+
+```
+GET https://ai.boraydata.com/mcp/events
+Header: X-Mail-Agent: <个人 API key>
+Accept: text/event-stream
+```
+
+- 必须用 `fetch + ReadableStream` 读流并解析 `event: job` 帧；**EventSource 不能设置自定义头**，
+  不要用它。首帧为 `: connected`，之后每 20 秒 `: ping` 保活。
+- 事件体：`{"job_id","kind","status","phone","error","at"}`，只推送同账号事件；
+  断线期间的事件不补发，重要场景仍用 `job_get` 兜底。
+- 面板/插件拿到 `ask(wait_sec=0)` 的 `job_id` 后订阅此流，作业完成即刷新，无需轮询。
+
+**Webhook**：bridge 进程设置 `OPC_MCP_JOB_WEBHOOK_URLS`（逗号分隔多个 URL）后，
+每条作业事件会 POST JSON 到这些地址；设置 `OPC_MCP_WEBHOOK_SECRET` 时带
+`X-OPC-Event-Signature: sha256=<HMAC-SHA256>` 供接收方校验。生产当前未配置 URL（按需启用）。
+
+**覆盖范围**：经 MCP stdio 提交的作业（`ask`、`material_upload` 的 analyze）会推送；
+大文件分片通道（9105 上传服务）提交的作业暂不推送，仍用 `job_get` 轮询。
