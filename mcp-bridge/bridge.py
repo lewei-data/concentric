@@ -83,6 +83,15 @@ class JobEvent(BaseModel):
     at: float | None = None
 
 
+class OverviewEvent(BaseModel):
+    """kb_overview 变更信号（notifications/opc/overview）：只带 rev，不塞数据。"""
+    event_id: str = ""
+    kind: str = "overview"
+    rev: str = ""
+    phone_fp: str = ""
+    at: float | None = None
+
+
 class EventsServer(Server):
     """在 initialize.capabilities.experimental 里声明作业事件通道，
     让只订阅标准 GET <endpoint> 的规范客户端也能发现 /mcp/events 与通知方法。
@@ -96,6 +105,8 @@ class EventsServer(Server):
             "path": "/mcp/events",
             "event": "job",
             "notification": "notifications/opc/job",
+            "overview_notification": "notifications/opc/overview",
+            "overview_event": "overview",
             "auth_header": IDENTITY_HEADER,
             "replay_query": "since",
             "fields": ["job_id", "kind", "status", "error", "at", "event_id"],
@@ -281,10 +292,16 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
         return False
 
     _EVENT_FIELDS = ("job_id", "kind", "status", "error", "at", "event_id")
+    _OVERVIEW_FIELDS = ("kind", "rev", "event_id")
+
+    def event_name(payload):
+        """SSE 事件名：job（作业终态）/ overview（概览版本变更）。"""
+        return "overview" if str(payload.get("kind")) == "overview" else "job"
 
     def public_event(payload, replay=False):
         """出站白名单：绝不带手机号/指纹；补发帧显式标 replay=true。"""
-        out = {k: payload[k] for k in _EVENT_FIELDS if k in payload}
+        fields = _OVERVIEW_FIELDS if str(payload.get("kind")) == "overview" else _EVENT_FIELDS
+        out = {k: payload[k] for k in fields if k in payload}
         if replay:
             out["replay"] = True
         return out
@@ -303,7 +320,8 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
         return hashlib.sha256(("opc:" + digits).encode()).hexdigest()[:12]
 
     def frame(payload):
-        return "event: job\ndata: %s\n\n" % json.dumps(payload, ensure_ascii=False)
+        return "event: %s\ndata: %s\n\n" % (
+            event_name(payload), json.dumps(payload, ensure_ascii=False))
 
     async def publish(payload):
         if mark_seen(payload):
@@ -325,6 +343,9 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
             asyncio.create_task(broadcast_get_stream(public, fp))  # 标准 GET /mcp 流
 
     async def on_job_event(params: JobEvent):
+        await publish(params.model_dump())
+
+    async def on_overview_event(params: OverviewEvent):
         await publish(params.model_dump())
 
     def read_new_events():
@@ -391,7 +412,10 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
         async with stdio_client(params, errlog=errlog) as (read, write):
             bindings = [NotificationBinding(method="notifications/opc/job",
                                             params_type=JobEvent,
-                                            handler=on_job_event)]
+                                            handler=on_job_event),
+                        NotificationBinding(method="notifications/opc/overview",
+                                            params_type=OverviewEvent,
+                                            handler=on_overview_event)]
             async with ClientSession(read, write, notification_bindings=bindings) as session:
                 await session.initialize()
                 session_ref["session"] = session
@@ -492,7 +516,7 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
         return None
 
     async def broadcast_get_stream(public, fp):
-        """把净化后的事件以 notifications/opc/job 写进各会话的写流。
+        """把净化后的事件以 JSON-RPC 通知写进各会话的写流（job/overview 两种 method）。
 
         Streamable HTTP 的 message_router 会把无 request id 的服务端通知投递到
         该会话的 GET /mcp SSE 流；只投给账号指纹匹配的会话，避免跨账号泄露。
@@ -512,8 +536,11 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
             if ws is None:
                 continue
             try:
+                method = ("notifications/opc/overview"
+                          if str(public.get("kind")) == "overview"
+                          else "notifications/opc/job")
                 msg = SessionMessage(JSONRPCNotification(
-                    jsonrpc="2.0", method="notifications/opc/job", params=dict(public)))
+                    jsonrpc="2.0", method=method, params=dict(public)))
                 await asyncio.wait_for(ws.send(msg), timeout=1)
             except Exception:                                   # noqa: BLE001
                 pass

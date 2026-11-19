@@ -37,7 +37,7 @@
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
 | `kb_status` | `detail?` | 素材数、片段数、LLM 探活；**默认已脱敏**（不含服务端路径/内网地址），`detail=true` 仅管理员 key 放开；面板轮询请用 `kb_ping` |
-| `kb_search` | `query`, `k=6` | 跨源检索（OPC + vault + Web + MCP 素材 + 全局共享），命中带 `source`；最高分低于阈值时返回 `low_confidence: true` + `hint`（换自然语言再问） |
+| `kb_search` | `query`, `k=6`, `reasoning?` | 跨源检索（OPC + vault + Web + MCP 素材 + 全局共享），命中带 `source`；最高分低于阈值时返回 `low_confidence: true` + `hint`（换自然语言再问）。命中与返回体带**八步执行法标签**：每条 hit 有 `reasoning`（1-8 主步骤）+ `reasoning_name`（立题/证据/结构/决策/执行/反馈/归档/复盘），返回体带 `reasoning_steps` 分布与 `reasoning_legend` 图例；`reasoning=N` 只取第 N 步材料（标签由 source×category×stage×关键词推导，一条内容可服务多步、这里只给主步骤，`null` 表示对不齐不硬猜） |
 | `ask` | `text` 或 `question`（等价）, `idempotency_key?`, `wait_sec=0`, `with_brief=true` | 综合问答；**超时重试务必带同一 `idempotency_key`**（窗口 15 分钟，重放返回同一 `job_id` + `idempotent_replay: true`，不会双排任务）；`wait_sec` 上限 300，到点未完成返回 `status=queued/running` + `retry_after_sec`，用 `job_get` 续等 |
 
 ### 资源（本人 + 全局共享）
@@ -73,6 +73,11 @@
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
 | `staff_photos` | `kind=all\|portrait\|halfbody\|digital_human`, `limit=200` | 列出员工本人形象 / 半身照 / 数字人口播形象，返回每人的 `name`/`kind`/`file_key`/`download_url`；**所有 key 可见**，不按手机号隔离 |
+
+### 员工对话（staff_chat，仅老板 key）
+| 工具 | 关键参数 | 用途 |
+| --- | --- | --- |
+| `staff_chat` | `agent`, `message`, `list_agents?`, `wait_sec=120`, `idempotency_key?` | 老板经 MCP 直接 **@某员工下指令**：走工作台 `/api/commands` 全链路，员工用独立 hermes profile 真实处理后回复（`engine=hermes`，典型十几秒，慢工种可能更久）。`list_agents=true` 先拿员工清单（id/姓名/岗位，18 人）；`agent` 填 id 或姓名均可，不填 message 默认要对方汇报进展。**非老板 key 返回 forbidden**。指令与回复自动落入消息中心线程 `mcp:<手机号>`（小秘书面板可见），作业走 `job_get` 续等，重试带同一 `idempotency_key` 不重复下发 |
 
 ## 3. 生成文件怎么取回本地（关键）
 

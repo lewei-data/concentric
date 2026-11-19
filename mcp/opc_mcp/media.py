@@ -399,6 +399,7 @@ def health():
                 out[name] = {"ok": True, "status": r.status}
         except Exception as e:
             out[name] = {"ok": False, "error": str(e)[:200]}
+    out["checked_at"] = time.time()               # 面板显示"健康状态更新于 N 秒前"
     return out
 
 

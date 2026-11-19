@@ -111,14 +111,16 @@ def _shared_search(q, k, phone=None):
             if shield(row.get("path") or "") or shield(row.get("title") or ""):
                 continue
             text = "%s %s %s" % (row.get("title") or "", row.get("summary") or "", row.get("body") or "")
-            h = _hit("shared.knowledge", row["id"], row.get("title"), text, q, row.get("path") or "")
+            h = _hit("shared.knowledge", row["id"], row.get("title"), text, q, row.get("path") or "",
+                     reasoning=_reasoning("shared.knowledge", row))
             if h:
                 scored.append(h)
     for item in _materials_items():
         if not isinstance(item, dict):
             continue
         text = "%s %s %s" % (item.get("title") or "", item.get("desc") or "", item.get("meta") or "")
-        h = _hit("shared.material", item.get("id"), item.get("title"), text, q, item.get("url") or "")
+        h = _hit("shared.material", item.get("id"), item.get("title"), text, q, item.get("url") or "",
+                 reasoning=_reasoning("shared.material"))
         if h:
             scored.append(h)
     if GLOBAL_DB.is_file():
@@ -128,7 +130,8 @@ def _shared_search(q, k, phone=None):
             for row in g.execute("SELECT id,title,source,url FROM hotspot_feed ORDER BY id DESC LIMIT 500"):
                 r = dict(row)
                 h = _hit("shared.hotspot", r["id"], r.get("title") or "",
-                         "%s %s" % (r.get("title") or "", r.get("source") or ""), q, r.get("url") or "")
+                         "%s %s" % (r.get("title") or "", r.get("source") or ""), q, r.get("url") or "",
+                         reasoning=_reasoning("shared.hotspot"))
                 if h:
                     scored.append(h)
             g.close()
@@ -225,16 +228,57 @@ def counts(phone, store):
     return out
 
 
-def _hit(source, ident, title, text, q, path=""):
+# 八步执行法（kb_wuxing_sancai_method）：检索命中服务于哪一步的推导标签。
+# 命名与 LLM 生态对齐（DeepSeek reasoning_content / OpenAI Responses reasoning）：
+# 一条内容可服务多步，这里只给「主步骤」；对不齐时 reasoning=None，不硬猜。
+REASONING_STEPS = [(1, "立题"), (2, "证据"), (3, "结构"), (4, "决策"),
+                   (5, "执行"), (6, "反馈"), (7, "归档"), (8, "复盘")]
+REASONING_NAMES = dict(REASONING_STEPS)
+
+_KNOWLEDGE_CATEGORY_STEP = {"analysis": 2, "graph": 3, "decision": 4,
+                            "skill": 5, "reflection": 6}
+_CONTENT_STAGE_STEP = {"topic": 1, "assessment": 2, "blocked": 4, "approved": 4,
+                       "copy": 5, "sample": 5, "sample_reel": 5, "final": 5,
+                       "review": 6, "archived": 7, "published": 8, "report": 8}
+_FEEDBACK_HINTS = ("驳回", "退回", "失败", "异常", "超时", "重试")
+
+
+def _reasoning(source, row=None, text=""):
+    """按来源与元数据推导八步法主步骤（1-8）；未知来源返回 None。"""
+    if source in ("opc.knowledge", "shared.knowledge"):
+        return _KNOWLEDGE_CATEGORY_STEP.get((row or {}).get("category") or "", 2)
+    if source == "opc.report":
+        kind = (row or {}).get("kind") or ""
+        if kind == "incident":
+            return 8
+        if kind == "inventory":
+            return 2
+        return 4
+    if source == "opc.content":
+        return _CONTENT_STAGE_STEP.get((row or {}).get("stage") or "", 5)
+    if source == "opc.message":
+        if any(w in (text or "") for w in _FEEDBACK_HINTS):
+            return 6
+        return 5
+    if source in ("mcp.material", "shared.material", "shared.hotspot"):
+        return 2
+    return None
+
+
+def _hit(source, ident, title, text, q, path="", reasoning=None):
     low = text.lower()
     s = kb._score(q, text)
     if s <= 0:
         return None
     matched = sum(1 for t in q if t in low)
     pos = min((low.find(t) for t in q if t in low), default=0)
-    return {"source": source, "id": str(ident), "title": title or "", "path": path or "",
-            "score": round(s, 2), "matched": matched,
-            "snippet": text[max(0, pos - 80):pos + 240].replace("\n", " ")}
+    h = {"source": source, "id": str(ident), "title": title or "", "path": path or "",
+         "score": round(s, 2), "matched": matched,
+         "snippet": text[max(0, pos - 80):pos + 240].replace("\n", " ")}
+    if reasoning:
+        h["reasoning"] = reasoning
+        h["reasoning_name"] = REASONING_NAMES.get(reasoning, "")
+    return h
 
 
 def search(store, phone, query, k=8):
@@ -247,25 +291,29 @@ def search(store, phone, query, k=8):
         if shield(row.get("path") or "") or shield(row.get("title") or ""):
             continue
         text = "%s %s %s" % (row.get("title") or "", row.get("summary") or "", row.get("body") or "")
-        h = _hit("opc.knowledge", row["id"], row.get("title"), text, q, row.get("path") or "")
+        h = _hit("opc.knowledge", row["id"], row.get("title"), text, q, row.get("path") or "",
+                 reasoning=_reasoning("opc.knowledge", row))
         if h:
             scored.append(h)
     for row in _rows(phone, "SELECT id,title,kind,conclusion,evidence,trace_id FROM reports LIMIT 300"):
         text = "%s %s %s %s" % (row.get("title") or "", row.get("conclusion") or "",
                                 row.get("evidence") or "", row.get("kind") or "")
-        h = _hit("opc.report", row["id"], row.get("title"), text, q, row.get("trace_id") or "")
+        h = _hit("opc.report", row["id"], row.get("title"), text, q, row.get("trace_id") or "",
+                 reasoning=_reasoning("opc.report", row))
         if h:
             scored.append(h)
     for row in _rows(phone, "SELECT id,title,stage,raw,trace_id FROM contents LIMIT 500"):
         text = "%s %s %s" % (row.get("title") or "", row.get("stage") or "", row.get("raw") or "")
-        h = _hit("opc.content", row["id"], row.get("title"), text, q, row.get("trace_id") or "")
+        h = _hit("opc.content", row["id"], row.get("title"), text, q, row.get("trace_id") or "",
+                 reasoning=_reasoning("opc.content", row))
         if h:
             scored.append(h)
     for row in _rows(phone, "SELECT id,source,substr(content,1,2000) c FROM chat_messages ORDER BY id DESC LIMIT 400"):
         content = row.get("c") or ""
         if "LLM 通道" in content and ("先给知识库命中" in content or content.lstrip().startswith("[降级]")):
             continue                                     # 旧降级回答不参与检索，避免层层嵌套
-        h = _hit("opc.message", row["id"], row.get("source") or "", content, q)
+        h = _hit("opc.message", row["id"], row.get("source") or "", content, q,
+                 reasoning=_reasoning("opc.message", row, content))
         if h:
             scored.append(h)
     if store is not None:
@@ -275,7 +323,8 @@ def search(store, phone, query, k=8):
                 scored.append({"source": "mcp.material", "id": hit["material_id"],
                                "title": mat.get("filename") or hit["material_id"],
                                "path": str(mat.get("path") or ""), "score": hit["score"],
-                               "snippet": hit["snippet"]})
+                               "snippet": hit["snippet"],
+                               "reasoning": 2, "reasoning_name": REASONING_NAMES[2]})
         except Exception:
             pass
     try:

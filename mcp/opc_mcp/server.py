@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import __version__, auth, config, events as events_mod
-from . import graph_brief, knowledge, llm, media, resources, staff_photos
+from . import graph_brief, knowledge, llm, media, overview, resources, staff_chat, staff_photos
 from . import supersede as supersede_mod
 from .jobs import JobRunner
 from .store import Store
@@ -222,12 +222,30 @@ TOOLS = [
             "required": []},
     },
     {
+        "name": "kb_overview",
+        "description": "知识库概览一次返回：分组计数（knowledge/materials/content）+ 三盏健康灯 + "
+                       "账号信息 + 近期作业，带版本号 rev 支持条件请求（rev 相同只回约 60 字节的 "
+                       "changed:false，不计入限流）。概览页/面板用本工具，替代 kb_status+kb_ping 两次调用。",
+        "inputSchema": {"type": "object", "properties": {
+            "rev": {"type": "string",
+                    "description": "上次拿到的 rev；传相同 rev 且数据未变时返回 changed:false（几乎零成本）"},
+            "fields": {"type": "string",
+                       "description": "逗号分隔裁剪：groups,health,owner,recent；默认全给"},
+            "detail": {"type": "boolean", "default": False,
+                       "description": "true=附带服务端路径（仅管理员 key）"}},
+            "required": []},
+    },
+    {
         "name": "kb_search",
         "description": "在本人知识库做关键词检索，返回最相关片段与出处。当用户提到知识库/知识管理/OPC/同心圆/"
-                       "知识图谱/图数据库，或要查原文、找出处、确认『有没有/在哪里』时优先调用（配合 ask 做综合问答）。",
+                       "知识图谱/图数据库，或要查原文、找出处、确认『有没有/在哪里』时优先调用（配合 ask 做综合问答）。"
+                       "命中带 reasoning 字段（1-8，八步执行法主步骤：立题/证据/结构/决策/执行/反馈/归档/复盘），"
+                       "可用 reasoning 参数只取某一步的材料。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"}, "query": {"type": "string"},
-            "k": {"type": "integer", "default": 6}},
+            "k": {"type": "integer", "default": 6},
+            "reasoning": {"type": "integer", "minimum": 1, "maximum": 8,
+                          "description": "只取八步执行法第 N 步的材料（1立题 2证据 3结构 4决策 5执行 6反馈 7归档 8复盘）"}},
             "required": ["token", "query"]},
     },
     {
@@ -372,6 +390,22 @@ TOOLS = [
             "limit": {"type": "integer", "default": 200, "description": "最多返回张数"}},
             "required": []},
     },
+    {
+        "name": "staff_chat",
+        "description": "员工对话通道（仅老板 key）：像在工作台输入 @员工 一样给具体 AI 员工下指令，"
+                       "员工走独立 hermes profile 真实处理后回复（非通用问答）。"
+                       "先 list_agents=true 拿员工 id/姓名/岗位，再 agent=<id 或姓名> message=<指令> 下发；"
+                       "wait_sec>0 等回复（员工处理约几十秒），指令与回复会落入消息中心线程 mcp:<手机号>。",
+        "inputSchema": {"type": "object", "properties": {
+            "agent": {"type": "string", "description": "员工 id 或姓名，如 cto / 牛盒码；先 list_agents 查清单"},
+            "message": {"type": "string", "description": "下发的指令内容"},
+            "list_agents": {"type": "boolean", "default": False,
+                            "description": "true=只返回员工清单，不下发指令"},
+            "wait_sec": {"type": "number", "default": 120, "maximum": 300,
+                         "description": "等员工回复的秒数；到点未完成返回 job_id 用 job_get 续等"},
+            "idempotency_key": {"type": "string", "description": "重试时带同一 key 防重复下发"}},
+            "required": []},
+    },
 ]
 
 # 外部网关会把个人 API key 注入 client_key；模型不需要也不应该手写 token/key。
@@ -416,6 +450,7 @@ _TOOL_ANN = {
     "material_upload": {"readOnlyHint": False, "idempotentHint": False},
     "upload_begin": {"readOnlyHint": False, "idempotentHint": False},
     "material_delete": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False},
+    "kb_overview": {"readOnlyHint": True, "idempotentHint": True},
 }
 for _tool in TOOLS:
     _ann = dict(_TOOL_ANN.get(_tool["name"],
@@ -432,9 +467,13 @@ class OpcServer:
         self.runner = JobRunner(self.store, on_finish=self._emit_job_event)
         self.runner.register("analyze", self._job_analyze)
         self.runner.register("ask", self._job_ask)
+        self.runner.register("staff_chat", self._job_staff_chat)
         # 每 key 滑动窗口限流（S11）：phone -> 最近请求时间戳
         self._rate_lock = threading.Lock()
         self._rate_hits = {}
+        # kb_overview 分层缓存：groups/rev 每 tenant 30s，recent.jobs 每 tenant 10s
+        self._ov_cache = {}      # phone -> {at, rev, groups, generated_at}
+        self._ov_recent = {}     # phone -> {at, jobs}
         # 幂等键「查→提交→登记」必须原子，否则并发同 key 会双排作业
         self._idem_lock = threading.Lock()
 
@@ -444,6 +483,22 @@ class OpcServer:
             "phone_fp": auth.fingerprint(phone),   # 手机号只留指纹，事件帧对外不带 PII
             "error": graph_brief.public_text(error)[:300] if error else None})
         _write({"jsonrpc": "2.0", "method": "notifications/opc/job", "params": event})
+        if kind == "analyze":
+            # 分析完成会改变 chunks/cards/knowledge 计数 → 推 overview 变更信号
+            self._overview_changed(phone)
+
+    def _overview_changed(self, phone):
+        """写操作后刷新 groups/rev 并推 overview 变更信号（事件日志 + stdio 通知）。"""
+        try:
+            groups, rev = overview.groups_and_rev(phone, self.store)
+            fp = auth.fingerprint(phone)
+            now = time.time()
+            self._ov_cache[phone] = {"at": now, "rev": rev, "groups": groups,
+                                     "generated_at": now}
+            event = events_mod.append_event({"kind": "overview", "rev": rev, "phone_fp": fp})
+            _write({"jsonrpc": "2.0", "method": "notifications/opc/overview", "params": event})
+        except Exception as e:                          # 信号失败不影响业务
+            log("overview 信号失败：%r" % e)
 
     # ---------------------------------------------------------------- 限流
     def _rate_allow(self, phone):
@@ -563,6 +618,23 @@ class OpcServer:
                      citations=len(citations), duration_sec=round(time.time() - _t0, 2))
         return out
 
+    def _job_staff_chat(self, store, phone, payload):
+        """@员工 下指令：经工作台 /api/commands 驱动真实员工，回复落 mcp 消息线程。"""
+        agent = str(payload.get("agent") or "").strip()
+        message = str(payload.get("message") or "").strip()
+        out = staff_chat.command(agent, message)
+        answer = out.get("answer") or {}
+        reply = str(answer.get("reply") or answer.get("summary") or "")
+        # 指令与回复写 mcp 库 messages → 工作台 ingest.pull_mcp 摄取进消息中心 mcp:<phone>
+        store.add_message(phone, "user", "@%s %s" % (agent, message))
+        store.add_message(phone, "assistant", "【%s】%s" % (out.get("agent") or agent, reply))
+        return {"agentId": out.get("agentId"), "agent": out.get("agent"),
+                "reply": reply, "evidence": answer.get("evidence") or [],
+                "confidence": answer.get("confidence"),
+                "engine": out.get("engine"), "latencyMs": out.get("latencyMs"),
+                "thread": "mcp:%s" % phone,
+                "note": "指令与回复已写入消息中心线程 mcp:<手机号>，小秘书面板可见"}
+
     # ---------------------------------------------------------------- 工具实现
     def _dir(self, phone, sub):
         d = config.user_dir(phone, sub) / time.strftime("%Y-%m-%d")
@@ -679,6 +751,7 @@ class OpcServer:
                                  for s in sup]
             out["note"] = ("旧版已被本版本取代（切块/卡片/内化条目不再参与召回，文件保留）；"
                            + out["note"])
+        self._overview_changed(phone)               # 上传改变计数 → 推 overview 信号
         return _json(out)
 
     def tool_upload_begin(self, args):
@@ -812,6 +885,7 @@ class OpcServer:
                     file_removed = True
                 except OSError as e:
                     note = "素材记录已删，但磁盘文件删除失败：%s" % e
+        self._overview_changed(user["phone"])       # 删除改变计数 → 推 overview 信号
         return _json({
             "material_id": mid, "filename": deleted["filename"], "deleted": True,
             "deleted_chunks": deleted["deleted_chunks"], "deleted_cards": deleted["deleted_cards"],
@@ -919,10 +993,117 @@ class OpcServer:
                       "note": "结果按缓存返回；refresh=true 立即重探。面板轮询请用本工具，"
                               "kb_status 会真实探测上游模型。"})
 
+    # ---------------------------------------------------------------- kb_overview
+    def _overview_health(self):
+        """三盏健康灯：与 kb_ping 共用同一份缓存，不重复探测上游。失败隔离（不拖垮整页）。"""
+        try:
+            ok, _detail, info = llm.probe_cached(config.PING_TTL_SEC)
+            llm_item = {"ok": bool(ok), "degraded": not ok,
+                        "checked_at": info.get("checked_at")}
+            if info.get("retry_after_sec"):
+                llm_item["retry_after_sec"] = info["retry_after_sec"]
+                llm_item["cooldown_until"] = info.get("cooldown_until")
+        except Exception as e:                          # 探测失败不拖垮概览
+            log("overview LLM 探测失败：%r" % e)
+            llm_item = {"ok": False, "degraded": True, "status": "unknown"}
+        try:
+            mh = media.health_cached(config.MEDIA_PING_TTL_SEC)
+            tts_item = {"ok": bool((mh.get("tts") or {}).get("ok")),
+                        "checked_at": mh.get("checked_at")}
+            img_item = {"ok": bool((mh.get("image") or {}).get("ok")),
+                        "checked_at": mh.get("checked_at")}
+        except Exception as e:
+            log("overview 媒体探测失败：%r" % e)
+            tts_item = {"ok": False, "status": "unknown"}
+            img_item = {"ok": False, "status": "unknown"}
+        health = {"llm": llm_item, "tts": tts_item, "image": img_item}
+        return health, not all(v.get("ok") for v in health.values())
+
+    def _overview_recent(self, phone):
+        """近期作业：单独 10s 短 TTL 缓存。"""
+        now = time.time()
+        cache = self._ov_recent.get(phone)
+        if cache and now - cache["at"] < config.OVERVIEW_RECENT_TTL_SEC:
+            return cache["jobs"]
+        jobs = [{"job_id": j["id"], "kind": j["kind"], "status": j["status"],
+                 "error": graph_brief.public_text(j["error"])[:200] if j.get("error") else None,
+                 "updated_at": j.get("updated_at")}
+                for j in self.store.jobs(phone, limit=5)]
+        self._ov_recent[phone] = {"at": now, "jobs": jobs}
+        return jobs
+
+    def tool_kb_overview(self, args):
+        """概览一次返回（条件请求 + 分层缓存）。
+
+        条件命中（rev 相同且缓存新鲜）≈ 60 字节且不计入限流；其余路径正常计数。
+        """
+        user = auth.resolve(self.store, args)
+        phone = user["phone"]
+        detail, error = self._resource_detail(args, phone)
+        if error:
+            return error
+        want = [f.strip() for f in str(args.get("fields") or "").split(",") if f.strip()]
+        fields = set(want) if want else None
+        client_rev = str(args.get("rev") or "").strip()
+        ttl = config.OVERVIEW_TTL_SEC
+        now = time.time()
+        cache = self._ov_cache.get(phone)
+        if cache and now - cache["at"] < ttl and client_rev and client_rev == cache["rev"]:
+            return _json({"rev": cache["rev"], "generated_at": cache["generated_at"],
+                          "ttl_sec": ttl, "changed": False})
+        # 变化/首屏路径才计入限流（dispatch 层对 kb_overview 豁免）
+        allowed, retry = self._rate_allow(phone)
+        if not allowed:
+            return _err("请求过于频繁（每 %g 秒最多 %d 次），请 %d 秒后重试"
+                        % (config.RATE_WINDOW_SEC, config.RATE_MAX, retry),
+                        status="rate_limited", code="rate_limited", retry_after_sec=retry)
+        if cache and now - cache["at"] < ttl:
+            groups, rev = cache["groups"], cache["rev"]
+            generated_at = cache["generated_at"]
+        else:
+            try:
+                groups, rev = overview.groups_and_rev(phone, self.store)
+            except Exception as e:
+                log("overview 计数失败：%r" % e)
+                return _err("概览计数失败：%s" % type(e).__name__,
+                            code="internal_error")
+            generated_at = now
+            self._ov_cache[phone] = {"at": now, "rev": rev, "groups": groups,
+                                     "generated_at": generated_at}
+        out = {"rev": rev, "generated_at": generated_at, "ttl_sec": ttl,
+               "changed": not (client_rev and client_rev == rev)}
+        if fields is None or "groups" in fields:
+            out["groups"] = groups
+        if fields is None or "health" in fields:
+            health, degraded = self._overview_health()
+            out["health"] = health
+            out["degraded"] = degraded
+        if fields is None or "owner" in fields:
+            out["owner"] = {"name": user["name"], "role": user["role"],
+                            "phone_fp": auth.fingerprint(phone)}
+        if fields is None or "recent" in fields:
+            out["recent"] = {"jobs": self._overview_recent(phone)}
+        if detail:
+            rc = resources.counts(phone, self.store)
+            out["paths"] = {"dataDir": rc["dataDir"], "vault": rc["vault"]}
+        return _json(out)
+
     def tool_kb_search(self, args):
         user = auth.resolve(self.store, args)
         query = str(args.get("query") or "")
         hits = resources.search(self.store, user["phone"], query, int(args.get("k") or 6))
+        # 八步执行法过滤：reasoning=N 只保留主步骤为 N 的命中
+        try:
+            want = int(args.get("reasoning") or 0)
+        except (TypeError, ValueError):
+            want = 0
+        if 1 <= want <= 8:
+            hits = [h for h in hits if h.get("reasoning") == want]
+        dist = {}
+        for h in hits:
+            step = h.get("reasoning")
+            if step:
+                dist[str(step)] = dist.get(str(step), 0) + 1
         # 低置信度（S8）：最高分低于阈值，或查询词覆盖率不足一半（常用词误命中）
         qterms = knowledge.terms(query)
         top = hits[0] if hits else None
@@ -932,6 +1113,8 @@ class OpcServer:
         low = (not hits) or top_score < config.LOW_CONFIDENCE_SCORE or coverage < 0.5
         out = {"query": query, "count": len(hits), "hits": hits,
                "low_confidence": low,
+               "reasoning_legend": [{"step": s, "name": n} for s, n in resources.REASONING_STEPS],
+               "reasoning_steps": dist,
                "sources": ["opc.knowledge", "opc.report", "opc.content",
                            "opc.message", "mcp.material",
                            "shared.knowledge", "shared.material", "shared.hotspot"]}
@@ -1060,6 +1243,10 @@ class OpcServer:
             (("语音", "朗读", "配音", "tts"), "tts", "文本转语音；阿里云百炼云服务用 channel=bailian，601 个音色先查 media_capabilities"),
             (("百炼", "阿里云", "dashscope", "云服务音色", "qwen-audio"), "tts",
              "阿里云百炼 TTS：channel=bailian，音色查 media_capabilities.audio.bailianVoices"),
+            # @员工/下指令是对话通道；「照片」类词留给 staff_photos，注意顺序
+            (("@员工", "员工对话", "点名员工", "找员工", "给员工", "叫员工", "对员工",
+              "通知员工", "提醒员工", "下达指令", "派单给"),
+             "staff_chat", "给具体员工下指令用 staff_chat（仅老板 key），先 list_agents 查名单"),
             # 员工照片/半身照是查现成图，不是文生图；必须排在通用「图片/图像」之前
             (("员工照片", "员工头像", "员工形象", "半身照", "半身像", "本人形象",
               "数字人形象", "口播形象", "员工照", "staff photo", "portrait"),
@@ -1107,6 +1294,7 @@ class OpcServer:
         templates = {
             "opc_whoami": "opc_whoami()",
             "kb_status": "kb_status()",
+            "kb_overview": "kb_overview()｜概览页一次返回，之后传 rev 做条件轮询",
             "kb_search": 'kb_search(query="<关键词>", k=6)',
             "ask": 'ask(text="<你的问题>", wait_sec=60)｜库内事实问题加 with_brief=true 可省掉 kb_search',
             "material_list": "material_list(limit=50)",
@@ -1242,14 +1430,63 @@ class OpcServer:
                       "download_auth": "X-Mail-Agent: <任意已注册的同一把个人 API key>",
                       "note": "file_key 跨重启稳定；下载链接支持 Range。照片为公司共享资料，任何 key 可下载。"})
 
+    def tool_staff_chat(self, args):
+        """员工对话通道（仅老板 key）：@员工 下指令，工作台真实员工回复。"""
+        user = auth.resolve(self.store, args)
+        phone = user["phone"]
+        if phone not in config.DETAIL_PHONES:
+            return _err("员工对话通道仅对老板开放",
+                        status="blocked", code="forbidden")
+        if args.get("list_agents"):
+            try:
+                return _json({"ok": True, "agents": staff_chat.agents(),
+                              "note": "agent 参数填 id 或姓名均可"})
+            except staff_chat.StaffChatError as e:
+                return _err(str(e), status=e.status, code=e.code)
+        agent = str(args.get("agent") or "").strip()
+        message = str(args.get("message") or "").strip()
+        if not agent:
+            return _err("请指定员工：agent 填员工 id 或姓名（list_agents=true 可查清单）",
+                        status="invalid_argument", code="invalid_argument")
+        if not message:
+            return _err("请提供要下发的指令内容：message",
+                        status="invalid_argument", code="invalid_argument")
+        try:
+            wait = max(0.0, min(float(args.get("wait_sec") or 0), 300.0))
+        except (TypeError, ValueError):
+            return _err("wait_sec 必须是数字", status="invalid_argument", code="invalid_argument")
+        # 幂等：与 ask 同一套「查重→提交→登记」锁内流程，重试同 key 不重复下发指令
+        idem = str(args.get("idempotency_key") or "").strip()[:128]
+        map_key = None
+        if idem:
+            map_key = hashlib.sha256(("%s|%s" % (phone, idem)).encode("utf-8")).hexdigest()
+        with self._idem_lock:
+            if map_key:
+                prev = self.store.get_idempotent(map_key, config.IDEMPOTENCY_TTL)
+                if prev:
+                    view = self.runner.wait(prev, phone, wait) if wait > 0 \
+                        else self.runner.view(prev, phone)
+                    if view:
+                        view = self._job_view(view)
+                        view["idempotent_replay"] = True
+                        return _json(view)
+            job = self.runner.submit(phone, "staff_chat",
+                                     {"agent": agent, "message": message})
+            if map_key:
+                self.store.put_idempotent(map_key, job["job_id"], phone)
+        if wait > 0:
+            return _json(self._job_view(self.runner.wait(job["job_id"], phone, wait)))
+        return _json(self._job_view(job))
+
     # ---------------------------------------------------------------- 协议
     def dispatch(self, name, args):
         fn = getattr(self, "tool_" + name, None)
         if not fn:
             return _err("未知工具：%s" % name, status="not_found", code="not_found")
         args = args or {}
-        # 每 key 限流（S11）：面板/脚本反复点击也不会变成压测；鉴权类工具不计数
-        if name not in ("opc_init", "opc_login", "opc_route"):
+        # 每 key 限流（S11）：面板/脚本反复点击也不会变成压测；鉴权类工具不计数。
+        # kb_overview 在工具内部按路径计数（条件命中/缓存命中不计），这里也豁免。
+        if name not in ("opc_init", "opc_login", "opc_route", "kb_overview"):
             try:
                 _user = auth.resolve(self.store, args)
             except auth.AuthError:

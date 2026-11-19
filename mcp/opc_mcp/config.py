@@ -81,6 +81,9 @@ TTS_TOKEN = os.environ.get("MEDIA_ENGINE_TOKEN", "")
 IMAGE_URL = os.environ.get("OPC_MCP_IMAGE_URL", "http://192.168.21.206:9103").rstrip("/")
 IMAGE_TOKEN = os.environ.get("MEDIA_GEN_TOKEN", "")
 
+# staff_chat 员工对话通道：经工作台 /api/commands 驱动真实员工（hermes profile）回复
+WORKBENCH_URL = os.environ.get("OPC_WORKBENCH_URL", "http://127.0.0.1:8848").rstrip("/")
+
 MAX_UPLOAD_MB = float(os.environ.get("OPC_MCP_MAX_UPLOAD_MB", "100"))
 CHUNK_CHARS = int(os.environ.get("OPC_MCP_CHUNK_CHARS", "800"))
 CONTEXT_BUDGET = int(os.environ.get("OPC_MCP_CONTEXT_BUDGET", "4000"))
@@ -97,6 +100,9 @@ REQUEST_WORKERS = max(1, min(32, int(os.environ.get("OPC_MCP_REQUEST_WORKERS", "
 # kb_ping 结果缓存秒数：面板轮询不再每次触发上游模型探测
 PING_TTL_SEC = int(os.environ.get("OPC_MCP_PING_TTL", "60"))
 MEDIA_PING_TTL_SEC = int(os.environ.get("OPC_MCP_MEDIA_PING_TTL", "30"))
+# kb_overview：groups/rev 进程内缓存；recent.jobs 单独短 TTL（变化快）
+OVERVIEW_TTL_SEC = max(5, int(os.environ.get("OPC_MCP_OVERVIEW_TTL", "30")))
+OVERVIEW_RECENT_TTL_SEC = max(2, int(os.environ.get("OPC_MCP_OVERVIEW_RECENT_TTL", "10")))
 # kb_search 低置信度阈值：最高分低于该值时返回 low_confidence=true
 LOW_CONFIDENCE_SCORE = float(os.environ.get("OPC_MCP_LOW_CONFIDENCE", "6.0"))
 # kb_status/opc_whoami 的 detail=true 完整信息只对这些手机号放开

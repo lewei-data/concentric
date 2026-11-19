@@ -38,12 +38,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import auth, config, events as events_mod, knowledge
+from . import auth, config, events as events_mod, knowledge, overview
 from . import supersede as supersede_mod
 from .jobs import JobRunner
 from .store import Store
 
 CHUNK = 1024 * 1024
+_APP = None  # 供静态回调访问 store（单实例服务）
 
 
 def log(msg):
@@ -104,6 +105,8 @@ class App:
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.store = Store(config.DB_PATH)
+        global _APP
+        _APP = self
         self.runner = JobRunner(self.store, owner="upload", on_finish=self._emit_job_event)
         self.runner.register("analyze", self._job_analyze)
         self._locks = {}
@@ -124,6 +127,19 @@ class App:
         events_mod.append_event({"job_id": job_id, "kind": kind, "status": status,
                                  "phone_fp": auth.fingerprint(phone),  # 事件帧对外不带手机号
                                  "error": (str(error) or "")[:300] or None})
+
+        if kind == "analyze" and _APP is not None:
+            App._emit_overview_signal(phone, _APP.store)   # 分析完成改变计数 → overview 信号
+
+    @staticmethod
+    def _emit_overview_signal(phone, store):
+        """9105 侧 overview 变更信号：写共享事件日志，bridge tail 后推 event: overview。"""
+        try:
+            _groups, rev = overview.groups_and_rev(phone, store)
+            events_mod.append_event({"kind": "overview", "rev": rev,
+                                     "phone_fp": auth.fingerprint(phone)})
+        except Exception as e:
+            log("overview 信号失败：%r" % e)
 
     # ------------------------------------------------------------ 上传单
     def lock_for(self, upload_id):
@@ -336,6 +352,7 @@ class App:
                                      "deleted_chunks": s["deleted_chunks"],
                                      "deleted_cards": s["deleted_cards"],
                                      "retracted_kb": s.get("retracted_kb", [])} for s in sup]
+        self._emit_overview_signal(user["phone"], self.store)  # 上传改变计数 → overview 信号
         return self.view(self.store.upload(row_id), extras)
 
     def cancel(self, user, row_id):

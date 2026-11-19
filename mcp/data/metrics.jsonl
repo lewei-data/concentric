@@ -17,3 +17,7 @@
 {"ts": "2026-11-19T12:40:28+0800", "kind": "ask", "phone_fp": "7e68c2d5d7b3", "with_brief": false, "degraded": false, "error": null, "citations": 5, "duration_sec": 6.3}
 {"ts": "2026-11-19T12:42:24+0800", "kind": "ask", "phone_fp": "7e68c2d5d7b3", "with_brief": false, "degraded": false, "error": null, "citations": 5, "duration_sec": 5.09}
 {"ts": "2026-11-19T13:17:31+0800", "kind": "ask", "phone_fp": "7e68c2d5d7b3", "with_brief": true, "degraded": false, "error": null, "citations": 5, "duration_sec": 9.83}
+{"ts": "2026-11-19T14:03:01+0800", "kind": "ask", "phone_fp": "7e68c2d5d7b3", "with_brief": true, "degraded": false, "error": null, "citations": 5, "duration_sec": 17.16}
+{"ts": "2026-11-19T14:04:02+0800", "kind": "ask", "phone_fp": "7e68c2d5d7b3", "with_brief": false, "degraded": false, "error": null, "citations": 5, "duration_sec": 7.94}
+{"ts": "2026-11-19T14:04:08+0800", "kind": "ask", "phone_fp": "7e68c2d5d7b3", "with_brief": false, "degraded": false, "error": null, "citations": 5, "duration_sec": 8.61}
+{"ts": "2026-11-19T14:05:50+0800", "kind": "ask", "phone_fp": "7e68c2d5d7b3", "with_brief": true, "degraded": false, "error": null, "citations": 5, "duration_sec": 14.05}

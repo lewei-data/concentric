@@ -239,6 +239,8 @@ def probe_cached(ttl=60, timeout=8, force=False):
             return _PROBE_CACHE["ok"], _PROBE_CACHE["detail"], _PROBE_CACHE["info"]
     ok, detail, info = probe(timeout)
     with _PROBE_LOCK:
+        info = dict(info)
+        info["checked_at"] = time.time()          # 面板显示"健康状态更新于 N 秒前"
         _PROBE_CACHE.update({"at": time.monotonic(), "ok": ok,
                              "detail": detail, "info": info})
     return ok, detail, info

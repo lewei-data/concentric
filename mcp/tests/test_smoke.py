@@ -739,6 +739,51 @@ def main():
     check("upload_begin 非法 supersedes → not_found",
           upb_x.get("code") == "not_found", upb_x)
 
+    # 11. kb_overview：一次返回 + rev 条件请求 + 分层缓存 + fields 裁剪 + 变更信号
+    import base64
+    from opc_mcp import events as events_mod2
+    orig_probe_cached, orig_health_cached = llm.probe_cached, media.health_cached
+    llm.probe_cached = lambda ttl=60, timeout=8, force=False: (
+        True, None, {"checked_at": time.time()})
+    media.health_cached = lambda ttl=30: {"tts": {"ok": True, "status": 200},
+                                          "image": {"ok": True, "status": 200},
+                                          "checked_at": time.time()}
+    try:
+        ov1 = eval_content(srv.dispatch("kb_overview", {"token": token}))
+        check("kb_overview 一次返回 groups/health/owner/recent",
+              all(k in ov1 for k in ("rev", "groups", "health", "owner", "recent"))
+              and '"phone"' not in json.dumps(ov1["owner"])
+              and ov1["owner"].get("phone_fp") == auth.fingerprint(PHONE)
+              and ov1.get("degraded") is False, sorted(ov1))
+        check("kb_overview 默认不回服务端路径",
+              "dataDir" not in json.dumps(ov1) and "vault" not in json.dumps(ov1), "")
+        ov2 = eval_content(srv.dispatch("kb_overview", {"token": token, "rev": ov1["rev"]}))
+        check("kb_overview 条件请求 rev 相同 → changed:false 且不带 groups",
+              ov2.get("changed") is False and "groups" not in ov2
+              and ov2.get("rev") == ov1["rev"], ov2)
+        flooded = [srv.dispatch("kb_overview", {"token": token, "rev": ov1["rev"]})
+                   for _ in range(60)]
+        n_limited = sum(1 for r in flooded if "rate_limited" in r["content"][0]["text"])
+        check("kb_overview 条件命中不计入限流（60 连发无 rate_limited）", n_limited == 0, n_limited)
+        ov3 = eval_content(srv.dispatch("kb_overview", {"token": token, "fields": "groups"}))
+        check("kb_overview fields=groups 裁剪",
+              "groups" in ov3 and "health" not in ov3 and "owner" not in ov3, sorted(ov3))
+        eval_content(srv.dispatch("material_upload", {
+            "token": token, "filename": "overview-bump.txt",
+            "content_base64": base64.b64encode(
+                ("overview rev bump %s" % time.time()).encode()).decode()}))
+        ov4 = eval_content(srv.dispatch("kb_overview", {"token": token}))
+        check("写操作后 rev 变化（上传即刷新概览）",
+              ov4["rev"] != ov1["rev"] and ov4.get("changed") is True
+              and ov4["groups"]["materials"]["total"] == ov1["groups"]["materials"]["total"] + 1,
+              (ov1["rev"], ov4["rev"]))
+        evs2 = events_mod2.read_since(0, auth.fingerprint(PHONE))
+        check("overview 变更信号写入事件日志（kind=overview + rev）",
+              any(e.get("kind") == "overview" and e.get("rev") == ov4["rev"] for e in evs2),
+              len([e for e in evs2 if e.get("kind") == "overview"]))
+    finally:
+        llm.probe_cached, media.health_cached = orig_probe_cached, orig_health_cached
+
     print("\n共 %d 项通过：\n  - %s" % (len(PASSED), "\n  - ".join(PASSED)))
     print("运行目录（可删除）：", TMP)
 
