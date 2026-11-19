@@ -41,7 +41,7 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 | 综合问答 | `ask(text 或 question, wait_sec=60)` |
 | 路由兜底 | `opc_route(query)` |
 | 看素材列表 | `material_list(limit=50)` |
-| 导出素材 | `material_download(material_id, dest?)` |
+| 导出/预览素材 | `material_download(material_id, inline?, dest?)`：默认返回短时效签名 `download_url`（URL 自鉴权、支持 Range，可直接作 `<video>/<img src>`，10 分钟过期重调换新）；`inline=true` 仅 ≤4MB 小文件附 base64，超限返回 `too_large`+`limit_bytes` |
 | 删除自己上传的素材 | `material_delete(material_id, remove_file?)`：只能删本 key 账号的素材，同步清掉切块/卡片；已内化进 OPC 库/vault 的条目不受影响 |
 | 传小文件（<100MB） | `material_upload(path 或 content_base64, filename)` |
 | 传大文件（≤2GB） | `upload_begin(filename, size, chunk_size)` → 返回 put_url/progress_url |

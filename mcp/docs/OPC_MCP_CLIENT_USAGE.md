@@ -59,7 +59,7 @@
 | `upload_begin` | `filename`, `size`, `chunk_size`, `supersedes?`, `keep_history?` | 大文件（≤2GB）分片续传，返回 `put_url` / `progress_url`；版本语义与 `material_upload` 一致（显式 `supersedes` 优先；同名默认取代；`keep_history=true` 保留历史）。直连 9105 的 `POST /v1/uploads` 也可带 `supersedes`/`keep_history` JSON 字段（Tus 用 `X-OPC-Supersedes`/`X-OPC-Keep-History` 头） |
 | `material_list` | `limit=50`, `cursor?`, `include_superseded?` | 本人素材清单；默认不含被取代旧版；返回 `total`/`has_more`/`next_cursor`，用 `cursor` 翻页 |
 | `material_analyze` | `material_id` 或 `all` | 重新分析（入队后自动 OCR/ASR + LLM 卡片 + 知识库 + 图谱 + 评分，结果经小秘书/飞书汇报）；被取代（superseded）的素材会被拒绝 |
-| `material_download` | `material_id`, `inline=false`, `dest?` | 导出素材；默认返回服务端路径，`inline=true` 且 ≤4MB 才附 base64 |
+| `material_download` | `material_id`, `inline=false`, `dest?` | 导出素材（S16）：默认返回短时效签名 `download_url`（**自鉴权、支持 Range、可直接作 `<video>/<img src>` 播放/拖动**，`expires_in` 600 秒，不含服务端路径，不带个人 key）；`inline=true` 对 ≤4MB 小文件附 `content_base64` 兜底，超限返回 `code=too_large` + `limit_bytes`（勿再内联大文件）；`dest=`宿主机路径时才落盘并回 `path`。链接过期重调本工具换新 URL |
 | `material_delete` | `material_id`, `remove_file?` | 删本人素材（先确认），同步清切块/卡片；`annotations.destructiveHint=true` |
 | `job_get` | `job_id`, `wait_sec` | 查异步作业；未完成时带 `retry_after_sec`，按它轮询；返回结构带 `job_contract: 2` |
 
@@ -103,6 +103,10 @@ curl -L -H "X-Mail-Agent: $OPC_KEY" "$download_url" -o output.wav
 
 - 端点 `GET /api/mcp/file/<file_key>` 支持 Range，按 phone 隔离，产物 7 天过期。
 - `file_link(file_key)` 用同一把 key 重取链接；别人的 key 取不到。
+- **上传素材不适用本节**：`file_link` 只认 `tts`/`image` 生成的 `file_key`。素材预览/下载用
+  `material_download` 的签名 `download_url`（`https://ai.boraydata.com/mcp/media/raw?...`，
+  URL 自鉴权、无需 X-Mail-Agent 头，`<video>/<img src>` 可直接用；支持 Range 拖动；10 分钟过期），
+  见素材管理表 `material_download` 行。
 - 不要再把 `srt_url` / `output_url`（内网 `/files/...` 相对路径）当成公网可访问地址。
 - 生成类工具与能力查询按 `ask(with_brief)` 同源对外口径净化：`media_capabilities` 的音色仅 `id`+`description`（无 `prompt_wav`）、模型后端无 `path`、`reachability` 内网地址换占位；`tts`/`image` 结果无 `path`。照抄返回也不会泄漏服务端路径。
 

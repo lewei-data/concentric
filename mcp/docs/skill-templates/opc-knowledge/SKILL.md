@@ -21,7 +21,7 @@ whenToUse: 用户问公司内部资料/规范/盘点，或要求查素材、删�
 ## 素材
 
 - 用户说"我上传的素材"：先 `mcp__opc__material_list` 拿 id。删除前跟用户确认，再调 `mcp__opc__material_delete`。
-- 导出已上传素材用 `mcp__opc__material_download`；导出**生成的音频/图片**用生成结果里的 `download_url`（见下）。
+- 导出/预览已上传素材用 `mcp__opc__material_download`：默认返回短时效签名 `download_url`（URL 自鉴权、支持 Range，可直接作 `<video>/<img src>` 播放与拖动，10 分钟过期，过期重调换新）；`inline=true` 仅对 ≤4MB 小文件附 base64，超限返回 `code=too_large` + `limit_bytes`，不要把大视频转 base64。导出**生成的音频/图片**用生成结果里的 `download_url`（见下）。
 - 问"公司共享的资料/公开下载区"：用 `mcp__opc__opc_resource_list(kind=shared_materials 或 downloads)`；`material_list` 只查本人上传的素材，不要混淆。
 
 ## 生成与取回（同一把 key，无单独 token）

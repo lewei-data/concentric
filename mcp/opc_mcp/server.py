@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import __version__, auth, config, events as events_mod
-from . import graph_brief, knowledge, llm, media, overview, resources, staff_chat, staff_photos
+from . import graph_brief, knowledge, llm, media, media_sign, overview, resources, staff_chat, staff_photos
 from . import supersede as supersede_mod
 from .jobs import JobRunner
 from .store import Store
@@ -165,11 +165,13 @@ TOOLS = [
     },
     {
         "name": "material_download",
-        "description": "下载素材：返回落盘路径，内联时可附 base64。",
+        "description": "下载素材：默认返回短时效签名 download_url（自鉴权、支持 Range，可直接作为 "
+                       "<video>/<img src> 播放/预览/拖动，过期 10 分钟）；inline=true 时对 ≤4MB 小文件附 "
+                       "content_base64 兜底（超限返回 too_large + limit_bytes）；dest=宿主机路径时才落盘并回 path。",
         "inputSchema": {"type": "object", "properties": {
             "token": {"type": "string"}, "material_id": {"type": "string"},
             "inline": {"type": "boolean", "default": False},
-            "dest": {"type": "string", "description": "另存到指定路径（可选）"}},
+            "dest": {"type": "string", "description": "另存到指定路径（可选；传了才回 path）"}},
             "required": ["token", "material_id"]},
     },
     {
@@ -849,21 +851,27 @@ class OpcServer:
             return _err("素材不存在或不属于当前账号", status="not_found", code="not_found")
         src = Path(mat["path"])
         if not src.is_file():
-            return _err("素材文件已丢失：%s" % src, status="not_found", code="not_found")
-        dest = args.get("dest")
-        dst = Path(str(dest)).expanduser() if dest else (self._dir(user["phone"], "downloads") / mat["filename"])
-        if dst.is_dir():
-            dst = dst / mat["filename"]
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if dst.resolve() != src.resolve():
-            dst.write_bytes(src.read_bytes())
+            return _err("素材文件已丢失", status="not_found", code="not_found")
+        # 签名下载链接（S16）：URL 自鉴权、短时效、支持 Range，供 <video>/<img src> 直接用
+        url, ttl = media_sign.media_url(mat["id"])
         out = {"material_id": mat["id"], "filename": mat["filename"],
-               "path": str(dst), "size": mat["size"], "mime": mat["mime"]}
+               "size": mat["size"], "mime": mat["mime"],
+               "download_url": url, "expires_in": ttl}
+        dest = args.get("dest")
+        if dest:                                             # 显式要求落盘才回宿主机路径
+            dst = Path(str(dest)).expanduser()
+            if dst.is_dir():
+                dst = dst / mat["filename"]
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.resolve() != src.resolve():
+                dst.write_bytes(src.read_bytes())
+            out["path"] = str(dst)
         if args.get("inline"):
             if mat["size"] > 4 * 1024 * 1024:
-                out["note"] = "文件超过 4MB，未内联"
-            else:
-                out["content_base64"] = base64.b64encode(src.read_bytes()).decode()
+                return _err("文件超过内联上限，未内联；请直接用 download_url 预览或下载",
+                            status="too_large", code="too_large",
+                            limit_bytes=4 * 1024 * 1024, size=mat["size"])
+            out["content_base64"] = base64.b64encode(src.read_bytes()).decode()
         return _json(out)
 
     def tool_material_delete(self, args):

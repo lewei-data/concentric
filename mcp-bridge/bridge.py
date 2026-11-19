@@ -549,6 +549,102 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
             except Exception:                                   # noqa: BLE001
                 pass
 
+    _MEDIA_SECRET_FILE = os.environ.get(
+        "OPC_MCP_MEDIA_SECRET_FILE",
+        "/opt/sefs/opc-workbench/mcp/data/media_secret.key")
+    _MEDIA_DB = os.environ.get(
+        "OPC_MCP_MEDIA_DB", "/opt/sefs/opc-workbench/mcp/data/opc.db")
+
+    def _media_secret():
+        try:
+            with open(_MEDIA_SECRET_FILE, "rb") as f:
+                return f.read().strip()
+        except OSError:
+            return None
+
+    def _resolve_material(mid):
+        """material_id → (绝对路径, mime, size)；只读库，不落任何可写句柄。"""
+        try:
+            import sqlite3
+            con = sqlite3.connect("file:%s?mode=ro" % _MEDIA_DB, uri=True, timeout=3)
+            con.row_factory = sqlite3.Row
+            try:
+                row = con.execute(
+                    "SELECT path, mime FROM materials WHERE id=?", (mid,)).fetchone()
+            finally:
+                con.close()
+        except Exception:                                     # noqa: BLE001
+            return None
+        if not row or not row["path"]:
+            return None
+        full = os.path.realpath(str(row["path"]))
+        if not os.path.isfile(full):
+            return None
+        return full, str(row["mime"] or "application/octet-stream"), os.path.getsize(full)
+
+    async def media_raw(request):
+        """GET /mcp/media/raw?mid=&exp=&sig= —— 素材二进制（S16，支持 Range）。
+
+        鉴权 = HMAC-SHA256(secret, "mid:exp")（密钥与 opc_mcp.media_sign 共用文件）；
+        URL 自鉴权，供 <video>/<img src> 直接使用；短时效，过期 410；素材删除 404。
+        """
+        mid = str(request.query_params.get("mid") or "")
+        sig = str(request.query_params.get("sig") or "")
+        try:
+            exp = int(request.query_params.get("exp") or 0)
+        except (TypeError, ValueError):
+            exp = 0
+        secret = _media_secret()
+        if not secret or not mid or not sig or not exp:
+            return JSONResponse({"error": "bad media link"}, status_code=400)
+        msg = ("%s:%d" % (mid, exp)).encode("utf-8")
+        want = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(want, sig):
+            return JSONResponse({"error": "invalid signature"}, status_code=403)
+        if time.time() > exp:
+            return JSONResponse({"error": "link expired"}, status_code=410)
+        resolved = await asyncio.to_thread(_resolve_material, mid)
+        if not resolved:
+            return JSONResponse({"error": "material not found"}, status_code=404)
+        full, mime, size = resolved
+        start, end = 0, size - 1
+        status = 200
+        rng = request.headers.get("range") or ""
+        m = re.match(r"bytes=(\d*)-(\d*)$", rng.split(",")[0].strip())
+        if m:
+            a, b = m.group(1), m.group(2)
+            if a == "" and b:                                  # 后缀范围：bytes=-N
+                n = min(int(b), size)
+                start, end = size - n, size - 1
+            else:
+                start = int(a or 0)
+                end = int(b) if b else size - 1
+            if start >= size:
+                return JSONResponse({"error": "range not satisfiable"}, status_code=416,
+                                    headers={"Content-Range": "bytes */%d" % size})
+            end = min(end, size - 1)
+            status = 206
+
+        def gen():
+            with open(full, "rb") as f:
+                f.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    chunk = f.read(min(262144, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        headers = {"Accept-Ranges": "bytes",
+                   "Content-Length": str(end - start + 1),
+                   "Cache-Control": "private, max-age=600",
+                   "X-Accel-Buffering": "no"}
+        if status == 206:
+            headers["Content-Range"] = "bytes %d-%d/%d" % (start, end, size)
+        return StreamingResponse(gen(), status_code=status, media_type=mime,
+                                 headers=headers)
+
     async def job_events(request):
         """GET /mcp/events：按 X-Mail-Agent 过滤的作业完成事件流（fetch SSE，非 EventSource）。
 
@@ -625,6 +721,7 @@ def build_app(name: str, command: str, args: list[str], cwd: str | None, host: s
 
     routes = [Route("/healthz", healthz),
               Route("/mcp/events", job_events, methods=["GET"]),
+              Route("/mcp/media/raw", media_raw, methods=["GET"]),
               WebSocketRoute("/ws/{channel_id}", realtime_proxy)]
     # 可选静态素材：把本地目录挂到 HTTP 路径下，供 nginx 反代后的 /conring/<svc>/assets/* 直接取图/视频
     for d in static_dirs or []:
