@@ -78,3 +78,4 @@ mcp-tts/*.bak-*
 # SQLite 运行时文件（WAL/SHM 由数据库自行维护，不入库）
 *.db-wal
 *.db-shm
+*.db-journal
