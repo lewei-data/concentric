@@ -56,3 +56,25 @@ preview/
 *.png
 # 例外：Android 启动图标必须入库，否则 Gradle 打包失败
 !android/app/src/main/res/mipmap-*/ic_launcher*.png
+
+# ---- MCP 服务组（2026-11-19 由 /opt/sefs/mcp-* 迁入，统一在本仓库管理）----
+# 只入库代码与配置；运行产物、模型权重、虚拟环境、日志、本地库一律本机保留
+mcp-asr/output/
+mcp-asr/lipsync/weights/
+mcp-asr/lipsync/_frames/
+mcp-asr/lipsync/_test.*
+mcp-tts/output/
+mcp-tts/*.lock
+mcp-mail/logs/
+mcp-mail/state.db
+mcp-mail/dispatch/state.db
+mcp-bridge/venv/
+# 旧备份快照（*.bak-*）不入库
+mcp-asr/*.bak-*
+mcp-bridge/*.bak-*
+mcp-mail/*.bak-*
+mcp-tts/*.bak-*
+
+# SQLite 运行时文件（WAL/SHM 由数据库自行维护，不入库）
+*.db-wal
+*.db-shm

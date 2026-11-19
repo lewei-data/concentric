@@ -25,7 +25,7 @@ _KEY_LEN = 24
 # 类别 → (目录解析, 中文标签, MIME)
 _IMG_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 _EMPLOYEES = Path(os.environ.get("OPC_EMPLOYEES_JSON",
-                                 "/opt/sefs/mcp-asr/employees.json"))
+                                 "/opt/sefs/opc-workbench/mcp-asr/employees.json"))
 
 
 def _roots():

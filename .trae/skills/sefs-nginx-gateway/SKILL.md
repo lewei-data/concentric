@@ -132,5 +132,5 @@ WebSocket 路由把 `Connection` 换成 `"upgrade"`，并加 `proxy_set_header U
 - 208 只代理 `/health` 与 `/v1/*`；`/conring/media/files/` 在 nginx 层 `return 404`，因为引擎的 `/files/{name}` 无鉴权、产物 TTL 24h。
 - 所以 `/v1/tts` 返回的 `audio_url`（`/files/xxx`）**不能**直接拼公网地址；要音频走 9101 的 MCP 门面，或后续加签名 URL。
 - 数字人成片走 `/conring/media/v1/assets/intro/<id>.mp4`（Range 可用）；App 现有 `/conring/asr/assets/intro/<id>.mp4` 通路仍有效（9102 静态目录）。
-- 本机调用方统一 `MEDIA_ENGINE_URL=http://192.168.21.206:9200`：hermes gateway unit、`/opt/sefs/mcp-tts/run.sh`、`media-voice` 与 `media-platform` 插件默认值。
+- 本机调用方统一 `MEDIA_ENGINE_URL=http://192.168.21.206:9200`：hermes gateway unit、`/opt/sefs/opc-workbench/mcp-tts/run.sh`、`media-voice` 与 `media-platform` 插件默认值。
 - 改 9200 绑定前先想清楚：绑 21 之后**所有** `127.0.0.1:9200` 调用方都会连接被拒，必须同步改。

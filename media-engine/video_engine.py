@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """media-engine 的视频/数字人能力：员工档案、自我介绍视频、异步任务队列、老板汇报。
 
-从 /opt/sefs/mcp-asr/server.py 迁移（代码复用，不重写）：
+从 /opt/sefs/opc-workbench/mcp-asr/server.py 迁移（代码复用，不重写）：
   - 员工档案 / 数字人素材解析（employees.json + assets/avatars|faces|videos|portraits）
   - intro 流水线：文案（Hermes 润色，失败回退档案模板）→ TTS → Wav2Lip 口型
     → ffmpeg 合成 720×960 MP4（+faststart），落 assets/intro/<id>.mp4
@@ -51,7 +51,7 @@ ASSET_WRITE_DIR = _cfg("ASSET_WRITE_DIR") or (ASSET_DIRS[0] if ASSET_DIRS else "
 INTRO_DIR = os.path.join(ASSET_WRITE_DIR, "intro") if ASSET_WRITE_DIR else ""
 ASSET_URL_BASE = _cfg("ASSET_URL_BASE", "").rstrip("/")
 PUBLIC_BASE = _cfg("PUBLIC_BASE", "").rstrip("/")
-PROFILES_FILE = _cfg("PROFILES", "/opt/sefs/mcp-asr/employees.json")
+PROFILES_FILE = _cfg("PROFILES", "/opt/sefs/opc-workbench/mcp-asr/employees.json")
 HERMES_CLI = _cfg("HERMES_CLI", "/opt/sefs/hermes/run-hermes.sh")
 
 FFMPEG_BIN = (os.environ.get("MEDIA_FFMPEG") or os.environ.get("ASR_FFMPEG")
@@ -349,10 +349,10 @@ INTRO_PIPELINE = "fullbody-hold-v1"
 # 自我介绍视频：有全身照时整条只用全身照（慢推），配音从头开始；不再拼接半身口型段
 INTRO_OPEN_SEC = max(0.0, float(_cfg("INTRO_OPEN_SEC", "2.4")))
 LIPSYNC_ENABLE = _cfg("LIPSYNC", "1") not in ("0", "false", "False", "no")
-LIPSYNC_RUNNER = _cfg("LIPSYNC_RUNNER", os.path.join("/opt/sefs/mcp-asr/lipsync", "run_lipsync.py"))
+LIPSYNC_RUNNER = _cfg("LIPSYNC_RUNNER", os.path.join("/opt/sefs/opc-workbench/mcp-asr/lipsync", "run_lipsync.py"))
 LIPSYNC_PYTHON = _cfg("LIPSYNC_PYTHON", "/opt/sefs/CosyVoice/venv/bin/python")
 LIPSYNC_WEIGHTS = _cfg("LIPSYNC_WEIGHTS",
-                       os.path.join("/opt/sefs/mcp-asr/lipsync", "weights", "wav2lip_gan.pth"))
+                       os.path.join("/opt/sefs/opc-workbench/mcp-asr/lipsync", "weights", "wav2lip_gan.pth"))
 LIPSYNC_THREADS = max(1, int(_cfg("LIPSYNC_THREADS", "32")))
 LIPSYNC_TIMEOUT = float(_cfg("LIPSYNC_TIMEOUT", "1200"))
 

@@ -18,7 +18,7 @@ import uuid
 
 ROOT = "/opt/sefs/opc-workbench/prototype"
 ASSETS = os.path.join(ROOT, "assets")
-EMP_JSON = "/opt/sefs/mcp-asr/employees.json"
+EMP_JSON = "/opt/sefs/opc-workbench/mcp-asr/employees.json"
 # ComfyUI 通道：只走 21.157（30.157 已确认没有 ComfyUI，放弃）
 HOST = ""
 HOST_CANDIDATES = [h for h in (

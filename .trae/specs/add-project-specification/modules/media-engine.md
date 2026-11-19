@@ -94,7 +94,7 @@ media-engine 是 Hermes 媒体能力的**单实例推理宿主**：把 TTS、ASR
 | 变量 | 默认 | 说明 | 出处 |
 | --- | --- | --- | --- |
 | `TTS_MODEL_DIR` | 自动探测 Fun-CosyVoice3-0.5B，缺失回退 CosyVoice2-0.5B | 模型目录 | `tts_engine.py:31-33` |
-| `MEDIA_VOICES_FILE` | `/opt/sefs/mcp-tts/voices.json` | 音色表唯一数据源 | `tts_engine.py:35` |
+| `MEDIA_VOICES_FILE` | `/opt/sefs/opc-workbench/mcp-tts/voices.json` | 音色表唯一数据源 | `tts_engine.py:35` |
 | `TTS_WORKERS` | `2`（代码）/ `6`（`run.sh`） | 进程池大小 | `tts_engine.py:42`、`run.sh:13` |
 | `TTS_THREADS` | `16` | 每进程线程数；`run.sh` 同步设置 OMP/MKL/OPENBLAS | `tts_engine.py:43` |
 | `TTS_SYNTH_TIMEOUT` | `600` | 单次合成超时（秒） | `tts_engine.py:44` |
@@ -124,7 +124,7 @@ media-engine 是 Hermes 媒体能力的**单实例推理宿主**：把 TTS、ASR
 | `MEDIA_ASSET_WRITE_DIR` | 首个素材根 | 写入根 |
 | `MEDIA_ASSET_URL_BASE` | 空 | 对外相对前缀 |
 | `MEDIA_PUBLIC_BASE` | 空 | 对外绝对前缀 |
-| `MEDIA_PROFILES` | `/opt/sefs/mcp-asr/employees.json` | 员工档案 |
+| `MEDIA_PROFILES` | `/opt/sefs/opc-workbench/mcp-asr/employees.json` | 员工档案 |
 | `MEDIA_HERMES_CLI` | `/opt/sefs/hermes/run-hermes.sh` | 生成口播文案 |
 | `MEDIA_VIDEO_WORKERS` | `2` | 视频任务 worker |
 | `MEDIA_JOB_TTL` | `7200` | 完成任务保留秒数 |

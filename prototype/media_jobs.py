@@ -49,8 +49,8 @@ PROBE_TTL = 30.0
 # 音色事实源：media-engine（192.168.21.206:9200）与 hermes 的 tts 共用这份表，
 # 且 Engine.voice() 每次合成前重读文件 —— 往这里追加一条就等于「注册新音色」，
 # 不必重启 media-engine（重启会打断网页配音与精灵语音）。
-TTS_VOICES_JSON = os.environ.get("OPC_TTS_VOICES_JSON", "/opt/sefs/mcp-tts/voices.json")
-TTS_REF_DIR = os.environ.get("OPC_TTS_REF_DIR", "/opt/sefs/mcp-tts/voices/ref")
+TTS_VOICES_JSON = os.environ.get("OPC_TTS_VOICES_JSON", "/opt/sefs/opc-workbench/mcp-tts/voices.json")
+TTS_REF_DIR = os.environ.get("OPC_TTS_REF_DIR", "/opt/sefs/opc-workbench/mcp-tts/voices/ref")
 CLONE_PREFIX = "clone-"
 CLONE_MAX_SEC = 20.0
 CLONE_MIN_SEC = 1.5

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""media-engine 的 ASR 核心：自 /opt/sefs/mcp-asr/server.py 迁移（S1，代码复用）。
+"""media-engine 的 ASR 核心：自 /opt/sefs/opc-workbench/mcp-asr/server.py 迁移（S1，代码复用）。
 
 除了原有的「能量门 + 黑名单 + 复读 + 置信度」之外，按方案 §6.2 补齐多媒体防幻觉
 过滤链：时长门 → 能量门 → VAD 门 → 文本置信门 → 复读门 → 黑名单门 → 字符集门。

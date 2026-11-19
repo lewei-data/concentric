@@ -36,7 +36,7 @@ VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidia
 ROOT = os.path.join(VAULT, "OPC", "交付物")
 
 REMOTION_DIR = os.environ.get("OPC_REMOTION_DIR", "/opt/sefs/OpenMontage/remotion-composer")
-TTS_RUN = os.environ.get("OPC_TTS_RUN", "/opt/sefs/mcp-tts/run.sh")
+TTS_RUN = os.environ.get("OPC_TTS_RUN", "/opt/sefs/opc-workbench/mcp-tts/run.sh")
 TTS_VOICE = os.environ.get("OPC_TTS_VOICE", "female-zh-short")
 TTS_SPEED = float(os.environ.get("OPC_TTS_SPEED", "0.7"))  # CosyVoice2 语速偏快，压到 0.7
 NODE_BIN = os.environ.get("OPC_NODE_BIN", "/opt/sefs/tools/node22/bin")

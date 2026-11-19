@@ -75,7 +75,7 @@ MAIL_DOMAIN = os.environ.get("OPC_MAIL_DOMAIN", "mail.conring.cn")
 MAIL_HOST = os.environ.get("OPC_MAIL_HOST", "127.0.0.1")
 MAIL_SMTP_PORT = int(os.environ.get("OPC_MAIL_SMTP_PORT", "587"))
 MAIL_CRED_FILE = os.environ.get("OPC_MAIL_CRED", os.path.join(VAULT, "公司", ".邮箱凭据.md"))
-MAIL_AUDIT = os.environ.get("OPC_MAIL_AUDIT", "/opt/sefs/mcp-mail/logs/mail-audit.jsonl")
+MAIL_AUDIT = os.environ.get("OPC_MAIL_AUDIT", "/opt/sefs/opc-workbench/mcp-mail/logs/mail-audit.jsonl")
 BOSS_MAIL = os.environ.get("OPC_BOSS_MAIL", f"boss@{MAIL_DOMAIN}")
 
 OM_DEFS_DIR = os.environ.get("OPC_OM_DEFS", "/opt/sefs/OpenMontage/pipeline_defs")

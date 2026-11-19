@@ -24,6 +24,12 @@ opc-workbench/
 ├── opc.sh                  # 后台管理脚本：start/stop/restart/status/logs/verify/reload/patrol/vault
 ├── vault_export.py         # 公司配置 + 运行时动态 → Obsidian Markdown
 ├── web/                    # 新版前端（React 18 + Refine v4 + Vite，构建产物 dist 托管在 /app）
+├── mcp/                    # OPC MCP 服务端（opc_mcp，9104 业务 + 9105 分片上传）
+├── mcp-bridge/             # MCP stdio → Streamable HTTP 网关（9100 邮件 / 9101 TTS / 9102 ASR / 9104 OPC）
+├── mcp-mail/               # 邮件 MCP 服务（mail_send/list/read/check，走本机 postfix/dovecot）
+├── mcp-tts/                # 语音合成 MCP 服务（CosyVoice2，可代理 media-engine）
+├── mcp-asr/                # 语音识别 + 语音对话/口型视频 MCP 服务
+├── media-engine/           # 常驻媒体引擎（TTS/ASR/视频，192.168.21.206:9200）
 └── prototype/                # 旧版前端与服务端（旧界面仍保留，回滚用）
     ├── server.py           # 服务端主程序（标准库 HTTP + SSE + Hermes 适配层）
     ├── verify.py           # 端到端验收（零依赖）
@@ -37,6 +43,8 @@ opc-workbench/
     ├── assets/             # 员工头像、脸部贴图、字体、SVG 插图
     └── vendor/             # three.module.js（本地化，避免外网 CDN）
 ```
+
+> **统一管理（2026-11-19）**：`mcp-asr` / `mcp-bridge` / `mcp-mail` / `mcp-tts` 原先各自放在 `/opt/sefs/mcp-*`，现已迁入本目录，代码与工作台同仓跟踪（`git@github.com:lewei-data/concentric.git`）。仓库只跟踪代码与配置；`output/`、`lipsync/weights/`、`mcp-bridge/venv/`、`logs/`、SQLite 的 `-wal/-shm` 由本机保留（见 `.gitignore`）。systemd 单元、hermes 各 profile 的 `command:` 以及工作台代码内的默认路径均已同步改为 `opc-workbench/mcp-*`。
 
 ## 快速开始
 

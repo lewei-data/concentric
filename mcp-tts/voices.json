@@ -1,0 +1,130 @@
+{
+  "default": "female-zh-real",
+  "voices": {
+    "female-zh-real": {
+      "description": "中文女声·真人参考（年轻自然，来自 CosyVoice 官方真人录音，3.5s）；推荐默认",
+      "prompt_wav": "/opt/sefs/CosyVoice/asset/zero_shot_prompt.wav",
+      "prompt_text": "希望你以后能够做得比我还好呦。"
+    },
+    "female-zh": {
+      "description": "中文女声，zero-shot 克隆自 Piper 花颜(huayan)参考音频；中英混读。（合成参考，音色偏机器，已降级为备用）",
+      "prompt_wav": "/opt/sefs/tools/piper-voices/samples/huayan.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一编址。"
+    },
+    "female-zh-short": {
+      "prompt_text": "今天天气不错，我们开始吧。",
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/female-zh-short.wav",
+      "description": "中文女声，短参考音频（Piper 花颜），适合短句，降低 CosyVoice 长 prompt 失控"
+    },
+    "m01": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m01.wav",
+      "prompt_text": "让主机按需访问远端内存。",
+      "description": "男声·青年（约25岁），清亮"
+    },
+    "m02": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m02.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一编址",
+      "description": "男声·青年，略快"
+    },
+    "m03": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m03.wav",
+      "prompt_text": "让主机按需访问远端内存。",
+      "description": "男声·28岁上下，自然"
+    },
+    "m04": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m04.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一编址",
+      "description": "男声·30岁上下，平稳"
+    },
+    "m05": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m05.wav",
+      "prompt_text": "让主机按需访问远端内存。",
+      "description": "男声·33岁，中性"
+    },
+    "m06": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m06.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一编址",
+      "description": "男声·35岁，沉稳"
+    },
+    "m07": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m07.wav",
+      "prompt_text": "让主机按需访问远端内存。",
+      "description": "男声·38岁，偏低"
+    },
+    "m08": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m08.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一编址",
+      "description": "男声·42岁，低沉"
+    },
+    "m09": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m09.wav",
+      "prompt_text": "让主机按需访问远端内存。",
+      "description": "男声·46岁，厚重"
+    },
+    "m10": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/m10.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一编址",
+      "description": "男声·52岁，年长"
+    },
+    "f01": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f01.wav",
+      "prompt_text": "内存池化是把多台服务器的内存",
+      "description": "女声·22岁，明亮"
+    },
+    "f02": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f02.wav",
+      "prompt_text": "让主机按需访问远端内存",
+      "description": "女声·24岁，轻快"
+    },
+    "f03": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f03.wav",
+      "prompt_text": "内存池化是把多台服务器的内存",
+      "description": "女声·26岁，清甜"
+    },
+    "f04": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f04.wav",
+      "prompt_text": "让主机按需访问远端内存",
+      "description": "女声·28岁，自然"
+    },
+    "f05": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f05.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一",
+      "description": "女声·31岁，温和"
+    },
+    "f06": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f06.wav",
+      "prompt_text": "让主机按需访问远端内存",
+      "description": "女声·33岁，干练"
+    },
+    "f07": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f07.wav",
+      "prompt_text": "内存池化是把多台服务器的内存统一",
+      "description": "女声·36岁，偏低"
+    },
+    "f08": {
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/f08.wav",
+      "prompt_text": "让主机按需访问远端内存",
+      "description": "女声·40岁，沉稳"
+    },
+    "backup-zh-xtts": {
+      "description": "备用·中文女声（XTTS-v2 官方样本，小王子片段克隆，偏合成感）",
+      "prompt_wav": "/opt/sefs/opc-workbench/qwen-audio/samples/opensource/xtts-v2/zh-cn-sample-s16.wav",
+      "prompt_text": "当我还只有六岁的时候，看到了一幅精彩的插画。"
+    },
+    "backup-en-xtts": {
+      "description": "备用·英文女声（XTTS-v2 官方样本克隆）",
+      "prompt_wav": "/opt/sefs/opc-workbench/qwen-audio/samples/opensource/xtts-v2/en_sample-s16.wav",
+      "prompt_text": "Once, when I was six years old, I saw a magnificent picture."
+    },
+    "backup-ja-xtts": {
+      "description": "备用·日文女声（XTTS-v2 官方样本克隆）",
+      "prompt_wav": "/opt/sefs/opc-workbench/qwen-audio/samples/opensource/xtts-v2/ja-sample-s16.wav",
+      "prompt_text": "かつて6歳の時、素晴らしい夢を見ました。"
+    },
+    "backup-zh-cosy2": {
+      "description": "备用·中文女声（CosyVoice 官方 cross-lingual 参考音，13.7s 长参考）",
+      "prompt_wav": "/opt/sefs/opc-workbench/qwen-audio/samples/opensource/cosyvoice/cross_lingual_prompt-s16.wav",
+      "prompt_text": "在那之后，完全收购那家公司，因此保持管理层的一致性，利益与即将加入家族的资产保持一致。这就是我们有时不买下全部的原因。"
+    }
+  }
+}

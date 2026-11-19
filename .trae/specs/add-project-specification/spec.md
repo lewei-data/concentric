@@ -273,7 +273,7 @@ SSE 通道另有首帧 `state` 与 10s `heartbeat`（`server.py:3791-3824`）；
 
 ### Requirement: 样片渲染与验收门
 - 渲染链路：逐镜 props → TTS 分段旁白按实测时长对齐 → Remotion 渲染 → 验收门校验分辨率/时长/音轨。
-- TTS 走 stdio JSON-RPC：`OPC_TTS_RUN` 默认 `/opt/sefs/mcp-tts/run.sh`，调用 `tts_synthesize`（`prototype/om_render.py:35, 129-176`）。
+- TTS 走 stdio JSON-RPC：`OPC_TTS_RUN` 默认 `/opt/sefs/opc-workbench/mcp-tts/run.sh`，调用 `tts_synthesize`（`prototype/om_render.py:35, 129-176`）。
 - Remotion 以 `NODE_BIN/npx remotion render src/index.tsx Explainer` 执行，工作目录固定 `/opt/sefs/OpenMontage/remotion-composer`（`om_render.py:34, 706-712`）。
 - 验收门事件：`render-gate`、`sample-review`、`tech-gate`、`rework`（见 C4 枚举）。
 - 分辨率基线 1080×1920、30fps（`server.py:282`；om_render 内另有 W/H/FPS 常量，`om_render.py:40`）。

@@ -6,9 +6,9 @@
 
 | 调用方 | 位置 | 现状 |
 |---|---|---|
-| mcp-asr（语音） | `/opt/sefs/mcp-asr/server.py:741` `run_hermes()`，4 个调用点（724 / 1135 / 2328 / 2345） | 每条语音指令 fork 一次，冷启动 10.47s / 未预热 16.10s |
+| mcp-asr（语音） | `/opt/sefs/opc-workbench/mcp-asr/server.py:741` `run_hermes()`，4 个调用点（724 / 1135 / 2328 / 2345） | 每条语音指令 fork 一次，冷启动 10.47s / 未预热 16.10s |
 | dispatchd（任务调度） | `/opt/sefs/hermes/dispatch/dispatchd.py:532` `run_hermes()` | `QUEUE_WORKERS=2`、`HERMES_PARALLEL=4`，注释写明「-z 是一次性进程，无法常驻复用」 |
-| mcp-mail（邮件派单） | `/opt/sefs/mcp-mail/dispatch.py:164` | `HERMES_PROFILE=aid` + `-z` |
+| mcp-mail（邮件派单） | `/opt/sefs/opc-workbench/mcp-mail/dispatch.py:164` | `HERMES_PROFILE=aid` + `-z` |
 | prototype（工作台） | `/opt/sefs/opc-workbench/prototype/server.py:816` | `CLI -z <prompt> --usage-file`，`WORKERS=6` |
 
 而 gateway 已内建 `api_server` 平台适配器，是官方一等公民的常驻执行入口：
@@ -175,7 +175,7 @@ def mode() -> str                      # HERMES_EXEC_MODE: auto|gateway|subproce
 8. `health()`：`GET /health`，连接超时 0.5s / 读 2s，结果缓存 5s。
 9. 日志：统一 `[gw] submit profile=%s run=%s idem=%s`、`[gw] done run=%s elapsed=%.2fs status=%s`。
 
-### 4.3 mcp-asr（`/opt/sefs/mcp-asr/server.py`）
+### 4.3 mcp-asr（`/opt/sefs/opc-workbench/mcp-asr/server.py`）
 
 1. 顶部 `sys.path.insert(0, "/opt/sefs/hermes")` 后 `import gw_runs_client as gw`。
 2. 把现有 `run_hermes` 拆成两层，**原实现改名 `_run_hermes_subprocess` 原样保留**：
@@ -226,7 +226,7 @@ def run_hermes(prompt, profile=None, timeout=240, *, idem_key=None, session_id=N
 - 保留 `lane_hint`、`DEFAULT_TIMEOUT`、`_strip_ansi` 行为不变；`GatewayUnavailable/Busy` → 回落 `_spawn_hermes`。
 - `QUEUE_WORKERS=2`、`HERMES_PARALLEL=4` 不改。
 
-### 4.5 mcp-mail（`/opt/sefs/mcp-mail/dispatch.py:162-170`）与 prototype（`/opt/sefs/opc-workbench/prototype/server.py:45-51, 810-831`）
+### 4.5 mcp-mail（`/opt/sefs/opc-workbench/mcp-mail/dispatch.py:162-170`）与 prototype（`/opt/sefs/opc-workbench/prototype/server.py:45-51, 810-831`）
 
 - mcp-mail：`plt = gw.run(prompt, profile=aid, timeout=AGENT_TIMEOUT)`，**不带 session**
   （每封邮件独立）；`GatewayUnavailable/Busy` → 保留原 `subprocess.run([HERMES,"-z",...])`。

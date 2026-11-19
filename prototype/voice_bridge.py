@@ -5,7 +5,7 @@
   asr_transcribe(audio_b64)   —— whisper 转写（wav/mp3/ogg/flac/webm 均可），纯转写无副作用
   tts_synthesize(text, out)   —— CosyVoice 合成，wav 落盘；失败返回 ""（前端回退浏览器朗读）
 
-桥接协议（/opt/sefs/mcp-bridge/bridge.py）：streamable-HTTP，先 initialize 拿
+桥接协议（/opt/sefs/opc-workbench/mcp-bridge/bridge.py）：streamable-HTTP，先 initialize 拿
 Mcp-Session-Id，再 notifications/initialized，之后 tools/call；响应可能是 SSE
 （data: 行）或纯 JSON，这里统一解析。
 """

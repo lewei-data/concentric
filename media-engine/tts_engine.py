@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""media-engine 的 TTS 核心：自 /opt/sefs/mcp-tts/server.py 迁移（S1，代码复用）。
+"""media-engine 的 TTS 核心：自 /opt/sefs/opc-workbench/mcp-tts/server.py 迁移（S1，代码复用）。
 
 只剥离 MCP 协议层；切句、归一化、音色注册、超长重试、并发进程池全部保持原样，
 保证 S3 下线 mcp-tts 时行为不跳变。相对原文件的差异只有：
-  - 音色表默认仍读 /opt/sefs/mcp-tts/voices.json（唯一数据源），可用 MEDIA_VOICES_FILE 覆盖
+  - 音色表默认仍读 /opt/sefs/opc-workbench/mcp-tts/voices.json（唯一数据源），可用 MEDIA_VOICES_FILE 覆盖
   - 日志前缀改为 [media-engine/tts]
   - 合成入口 synthesize() 只返回路径与时间轴，不再拼 base64（由 HTTP 层决定响应形态）
 """
@@ -32,7 +32,7 @@ MODEL_DIR = os.environ.get("TTS_MODEL_DIR") or (
     _V3_DIR if os.path.exists(os.path.join(_V3_DIR, "cosyvoice3.yaml")) else _V2_DIR)
 IS_V3 = os.path.exists(os.path.join(MODEL_DIR, "cosyvoice3.yaml"))
 V3_SYS_PROMPT = "You are a helpful assistant.<|endofprompt|>"
-VOICES_FILE = os.environ.get("MEDIA_VOICES_FILE", "/opt/sefs/mcp-tts/voices.json")
+VOICES_FILE = os.environ.get("MEDIA_VOICES_FILE", "/opt/sefs/opc-workbench/mcp-tts/voices.json")
 SENTENCE_GAP = 0.12
 
 _CPU = os.cpu_count() or 4
