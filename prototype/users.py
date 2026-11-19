@@ -244,6 +244,49 @@ def _user_get(phone):
         print(f"[users] 读取注册表失败：{type(e).__name__}: {e}", flush=True)
         return None
 
+def _seed_skills(data_dir, phone):
+    """为用户工作区建技能沉淀区 skills/（幂等，只补缺不覆盖）。"""
+    root = os.path.join(data_dir, "skills")
+    os.makedirs(root, exist_ok=True)
+    readme = os.path.join(root, "README.md")
+    if not os.path.exists(readme):
+        with open(readme, "w", encoding="utf-8") as f:
+            f.write("""# 用户专属技能沉淀区（skills/）
+
+一个「技能」= 一套被验证有效的处理流程，包含四要素：特殊约定、处理流程（固化步骤）、
+代码与参数（放 code/ 子目录）、对应作品与复用条件（作品贴路径不拷贝大文件）。
+
+目录约定：一个技能一个目录 `<skill-id>/SKILL.md`（frontmatter 含 name/description/tags/
+status/reuse_when），模板见 `_template/SKILL.md`。沉淀时机：首次跑通记 draft，复用成功升
+stable，口径已变记 archived 不删。""")
+    tpl_dir = os.path.join(root, "_template")
+    os.makedirs(tpl_dir, exist_ok=True)
+    tpl = os.path.join(tpl_dir, "SKILL.md")
+    if not os.path.exists(tpl):
+        with open(tpl, "w", encoding="utf-8") as f:
+            f.write(f"""---
+name: <skill-id>
+description: 一句话说清这个技能解决什么问题
+tags: []
+created: {iso_now()[:10]}
+last_used: ""
+use_count: 0
+source: ""
+owner: {phone}
+status: draft
+reuse_when: ""
+---
+
+# <技能名>
+
+## 特殊约定
+## 处理流程（固化步骤）
+## 代码与参数
+## 对应作品
+## 复用条件
+""")
+
+
 def _user_create(phone, password):
     """注册新用户：users.db 记录 + 独立工作区（过程库/素材/工作目录/默认编制）。"""
     import sqlite3
@@ -274,6 +317,8 @@ def _user_create(phone, password):
     # 独立 vault 目录树：知识库/热点采集/交付物/会议纪要/邮件 全部用户私有
     for sub in ("热点采集", "知识库", "交付物", "会议纪要", "邮件", "_归档"):
         os.makedirs(os.path.join(data_dir, "vault", "OPC", sub), exist_ok=True)
+    # 技能沉淀区：专属约定/代码/作品/复用条件，按 skill 固化
+    _seed_skills(data_dir, phone)
     # 默认编制名册（18 名 AI 员工，不含老板 + 短剧风格随机姓名）+ 运行时日志
     roster = os.path.join(data_dir, "员工名册.md")
     if not os.path.exists(roster):
