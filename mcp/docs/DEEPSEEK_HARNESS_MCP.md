@@ -53,8 +53,10 @@ mcpServers:
 | 图片生成（支持参照图） | `mcp__opc__image` |
 | 生成文件重取链接 | `mcp__opc__file_link` |
 | 轻量健康检查（缓存式三盏灯） | `mcp__opc__kb_ping` |
+| 概览一次返回（分层缓存 + rev 条件请求） | `mcp__opc__kb_overview` |
+| @员工对话（仅老板 key） | `mcp__opc__staff_chat` |
 
-其余工具同理，共 **23 个**（以 `tools/list` 为准；详见随附 `OPC_MCP_CLIENT_USAGE.md`）。
+其余工具同理，共 **25 个**（以 `tools/list` 为准；详见随附 `OPC_MCP_CLIENT_USAGE.md`）。
 
 **白名单建议改按注解过滤（2026-11-19 起）**：每个工具的 `tools/list` 条目带
 `annotations.readOnlyHint / destructiveHint / idempotentHint`。DSH 侧 Host 桥不要再硬编码
@@ -64,6 +66,15 @@ mcpServers:
 `job_get` 未完成时带 `retry_after_sec`，按它轮询。错误返回统一带稳定 `code`
 （`invalid_argument`/`not_found`/`unauthorized`/`forbidden`/`rate_limited`/`upstream_unavailable`）。
 `kb_status` 默认已脱敏（不再回 `dataDir`/`vault`/内网地址），面板健康灯改轮询 `kb_ping`（有缓存）。
+
+**概览与对话（2026-11-19 新增）**：面板/概览页用 `kb_overview` 一次拿全（分组计数 + 三盏灯 +
+近期作业），分层缓存 groups/rev 30s、recent 10s、健康灯 60s/30s，后台线程按各 TTL 自动预热；
+回传上次的 `rev` 未变时只回 `changed:false`（不计限流），`refresh=true` 立即重算并强制重探健康灯。
+`kb_search` 命中带 `reasoning`（1-8，八步执行法主步骤：立题/证据/结构/决策/执行/反馈/归档/复盘）与
+`reasoning_name`，返回体带 `reasoning_steps` 分布 + `reasoning_legend` 图例，可用 `reasoning=N`
+只取第 N 步的材料。老板 key 可用 `staff_chat(agent=<员工id 或姓名>, message=<指令>)` 直接 @员工
+下发指令，员工走独立 hermes profile 真实回复（`list_agents=true` 先查 18 人名单；非老板 key 返回
+forbidden），指令与回复落消息中心线程 `mcp:<手机号>`。
 
 **实时刷新（替代轮询）**：服务端作业完成会推送 `notifications/opc/job`，**默认直接走标准
 `GET https://ai.boraydata.com/mcp`（即 `initialize` 的同一个 endpoint）的 SSE 流**——DSH 自带
@@ -77,7 +88,14 @@ MCP 连接只要注册 `method == "notifications/opc/job"` 的通知处理器即
 输出同样的字段，只是包成 `event: job` 帧；EventSource 不能带自定义头，须用 `fetch + ReadableStream`。
 `/mcp/events` 每 20 秒发 `: ping` 注释帧保活（不是重复投递）；重连传 `?since=<上次最大 at>` 补发，
 补发帧带 `replay: true`，客户端按 `event_id` 去重。标准 GET /mcp 通道无此心跳需求（SDK 自己维护）。
-断线补发上限最近 1000 条，超出用 `job_get` 兜底。POST /mcp 只收 JSON-RPC，需
+断线补发上限最近 1000 条，超出用 `job_get` 兜底。
+**概览数据（DSH 同心圆面板）**：概览页用 `kb_overview` 一次调用替代 `kb_status + kb_ping`
+（后者每次都真实探测上游模型）。首屏 `kb_overview {}` 拿 `groups/health/owner/recent + rev`；
+之后把 `rev` 原样传回（`kb_overview {"rev": <上次 rev>}`）做条件请求——数据没变只回约 91 字节的
+`changed:false` 且不计入限流，可放心轮询。写操作完成会推 `event: overview`（GET /mcp 流上是
+`notifications/opc/overview` 通知，`params` 只有 `kind/rev/event_id`），收到后条件请求一次即可，
+不必整页刷新。健康灯冷缓存回 `status:"probing"`（后台探测，下一轮见真值），探测失败只影响该灯、
+`groups` 照常返回。详见 `OPC_MCP_CLIENT_USAGE.md` §6.10。POST /mcp 只收 JSON-RPC，需
 `Accept: application/json, text/event-stream`（纯 `text/event-stream` 返回 406）；长任务走
 `ask(wait_sec=0)` + 事件通知的异步模式。服务端请求层是线程池并发
 （`OPC_MCP_REQUEST_WORKERS` 默认 8），长等待调用不会堵住其他请求。

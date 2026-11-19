@@ -224,7 +224,7 @@ def probe(timeout=8):
     return ok, detail, info
 
 
-_PROBE_CACHE = {"at": 0.0, "ok": None, "detail": None, "info": None}
+_PROBE_CACHE = {"at": 0.0, "ok": None, "detail": None, "info": None, "inflight": False}
 _PROBE_LOCK = threading.Lock()
 
 
@@ -244,3 +244,33 @@ def probe_cached(ttl=60, timeout=8, force=False):
         _PROBE_CACHE.update({"at": time.monotonic(), "ok": ok,
                              "detail": detail, "info": info})
     return ok, detail, info
+
+
+def probe_background(ttl=60):
+    """非阻塞探活（stale-while-revalidate）：kb_overview 首屏用。
+
+    缓存新鲜 → 返回 (ok, info)；冷缓存 → 立即回 (None, {'status': 'probing'})，
+    同时起后台线程探测（同一时刻最多一个在途探测，结果写回共享缓存），
+    下一次调用就能拿到真实状态。概览首屏绝不被上游模型探测拖住。
+    """
+    with _PROBE_LOCK:
+        if (_PROBE_CACHE["ok"] is not None
+                and time.monotonic() - _PROBE_CACHE["at"] < max(5, ttl)):
+            return _PROBE_CACHE["ok"], _PROBE_CACHE["info"]
+        if _PROBE_CACHE["inflight"]:
+            return None, {"status": "probing",
+                          "checked_at": (_PROBE_CACHE["info"] or {}).get("checked_at")}
+        _PROBE_CACHE["inflight"] = True
+
+    def _bg():
+        try:
+            probe_cached(ttl)
+        except Exception:
+            pass
+        finally:
+            with _PROBE_LOCK:
+                _PROBE_CACHE["inflight"] = False
+
+    threading.Thread(target=_bg, daemon=True, name="llm-probe-bg").start()
+    return None, {"status": "probing",
+                  "checked_at": (_PROBE_CACHE["info"] or {}).get("checked_at")}

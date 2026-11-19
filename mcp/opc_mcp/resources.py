@@ -191,6 +191,27 @@ def _rows(phone, sql, args=()):
         c.close()
 
 
+def owner_counts(phone):
+    """OPC 主库六表行数，不含 vault 枚举与全局共享扫描（比 counts() 轻得多）。
+
+    kb_overview 用：概览计数只关心 knowledge/contents/reports，做高频/低延迟读取。
+    """
+    out = {"ownerDbExists": False, "knowledge": 0, "reports": 0, "contents": 0,
+           "chatMessages": 0, "pipelineRuns": 0, "approvals": 0}
+    c = _conn(phone)
+    if c:
+        out["ownerDbExists"] = True
+        for key, table in (("knowledge", "knowledge"), ("reports", "reports"),
+                           ("contents", "contents"), ("chatMessages", "chat_messages"),
+                           ("pipelineRuns", "pipeline_runs"), ("approvals", "approvals")):
+            try:
+                out[key] = c.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+            except sqlite3.Error:
+                pass
+        c.close()
+    return out
+
+
 def counts(phone, store):
     """资源总览：OPC 库各表 + vault 顶层 + MCP 自有素材，全部限定在本手机号。"""
     c = _conn(phone)

@@ -225,12 +225,15 @@ TOOLS = [
         "name": "kb_overview",
         "description": "知识库概览一次返回：分组计数（knowledge/materials/content）+ 三盏健康灯 + "
                        "账号信息 + 近期作业，带版本号 rev 支持条件请求（rev 相同只回约 60 字节的 "
-                       "changed:false，不计入限流）。概览页/面板用本工具，替代 kb_status+kb_ping 两次调用。",
+                       "changed:false，不计入限流）。概览页/面板用本工具，替代 kb_status+kb_ping 两次调用。"
+                       "缓存分层 TTL：groups/rev 30s、recent 10s、健康灯 60s/30s，后台线程按各 TTL 自动预热。",
         "inputSchema": {"type": "object", "properties": {
             "rev": {"type": "string",
                     "description": "上次拿到的 rev；传相同 rev 且数据未变时返回 changed:false（几乎零成本）"},
             "fields": {"type": "string",
                        "description": "逗号分隔裁剪：groups,health,owner,recent；默认全给"},
+            "refresh": {"type": "boolean", "default": False,
+                        "description": "true=忽略缓存立即重算 groups/rev 与 recent，健康灯强制重探（计入限流）"},
             "detail": {"type": "boolean", "default": False,
                        "description": "true=附带服务端路径（仅管理员 key）"}},
             "required": []},
@@ -994,20 +997,32 @@ class OpcServer:
                               "kb_status 会真实探测上游模型。"})
 
     # ---------------------------------------------------------------- kb_overview
-    def _overview_health(self):
-        """三盏健康灯：与 kb_ping 共用同一份缓存，不重复探测上游。失败隔离（不拖垮整页）。"""
+    def _overview_health(self, force=False):
+        """三盏健康灯：与 kb_ping 共用同一份缓存，不重复探测上游。失败隔离（不拖垮整页）。
+
+        LLM 冷缓存时走后台探测（stale-while-revalidate，probe_background），
+        本次回 status=probing，首屏绝不被上游模型探测拖住；下一次调用即可见真值。
+        refresh=true（force）才同步重探，等一个确定答案。
+        """
         try:
-            ok, _detail, info = llm.probe_cached(config.PING_TTL_SEC)
-            llm_item = {"ok": bool(ok), "degraded": not ok,
-                        "checked_at": info.get("checked_at")}
-            if info.get("retry_after_sec"):
-                llm_item["retry_after_sec"] = info["retry_after_sec"]
-                llm_item["cooldown_until"] = info.get("cooldown_until")
+            if force:
+                ok, _detail, info = llm.probe_cached(config.PING_TTL_SEC, force=True)
+            else:
+                ok, info = llm.probe_background(config.PING_TTL_SEC)
+            if ok is None:                              # 冷缓存/探测中：不阻塞
+                llm_item = {"ok": None, "status": "probing",
+                            "checked_at": info.get("checked_at")}
+            else:
+                llm_item = {"ok": bool(ok), "degraded": not ok,
+                            "checked_at": info.get("checked_at")}
+                if info.get("retry_after_sec"):
+                    llm_item["retry_after_sec"] = info["retry_after_sec"]
+                    llm_item["cooldown_until"] = info.get("cooldown_until")
         except Exception as e:                          # 探测失败不拖垮概览
             log("overview LLM 探测失败：%r" % e)
             llm_item = {"ok": False, "degraded": True, "status": "unknown"}
         try:
-            mh = media.health_cached(config.MEDIA_PING_TTL_SEC)
+            mh = media.health_cached(config.MEDIA_PING_TTL_SEC, force=force)
             tts_item = {"ok": bool((mh.get("tts") or {}).get("ok")),
                         "checked_at": mh.get("checked_at")}
             img_item = {"ok": bool((mh.get("image") or {}).get("ok")),
@@ -1017,7 +1032,8 @@ class OpcServer:
             tts_item = {"ok": False, "status": "unknown"}
             img_item = {"ok": False, "status": "unknown"}
         health = {"llm": llm_item, "tts": tts_item, "image": img_item}
-        return health, not all(v.get("ok") for v in health.values())
+        # degraded 只看明确不可用（False）；probing(None) 是"未知"，不算降级
+        return health, any(v.get("ok") is False for v in health.values())
 
     def _overview_recent(self, phone):
         """近期作业：单独 10s 短 TTL 缓存。"""
@@ -1045,6 +1061,11 @@ class OpcServer:
         want = [f.strip() for f in str(args.get("fields") or "").split(",") if f.strip()]
         fields = set(want) if want else None
         client_rev = str(args.get("rev") or "").strip()
+        refresh = bool(args.get("refresh"))
+        if refresh:
+            # 指定刷新：丢弃本 tenant 的 groups/rev 与 recent 缓存，健康灯强制重探
+            self._ov_cache.pop(phone, None)
+            self._ov_recent.pop(phone, None)
         ttl = config.OVERVIEW_TTL_SEC
         now = time.time()
         cache = self._ov_cache.get(phone)
@@ -1075,7 +1096,7 @@ class OpcServer:
         if fields is None or "groups" in fields:
             out["groups"] = groups
         if fields is None or "health" in fields:
-            health, degraded = self._overview_health()
+            health, degraded = self._overview_health(force=refresh)
             out["health"] = health
             out["degraded"] = degraded
         if fields is None or "owner" in fields:
@@ -1553,6 +1574,42 @@ class OpcServer:
         if resp is not None:
             _write(resp)
 
+    def _start_overview_refresher(self):
+        """后台定时刷新：让 kb_overview 缓存永不冷启动。
+
+        每 3s 醒一次，只对「已有缓存条目的 tenant」做到期检查（自调压，无面板就不干活）：
+        - groups/rev：到期（30s）才重算一次；
+        - recent.jobs：到期（10s）才重查一次；
+        - 健康灯：probe/health_cached 内部按各自 TTL（60s/30s）自行节流。
+        """
+        def _loop():
+            log("overview refresher started (groups=%ds recent=%ds)"
+                % (config.OVERVIEW_TTL_SEC, config.OVERVIEW_RECENT_TTL_SEC))
+            while True:
+                time.sleep(3)
+                now = time.time()
+                try:
+                    for phone, cache in list(self._ov_cache.items()):
+                        if now - cache["at"] >= config.OVERVIEW_TTL_SEC:
+                            groups, rev = overview.groups_and_rev(phone, self.store)
+                            self._ov_cache[phone] = {"at": time.time(), "rev": rev,
+                                                     "groups": groups, "generated_at": time.time()}
+                except Exception as e:
+                    log("overview 后台刷新异常（忽略）：%r" % e)
+                try:
+                    for phone in list(self._ov_recent):
+                        self._overview_recent(phone)     # 内部按 10s TTL 节流
+                except Exception as e:
+                    log("overview recent 后台刷新异常（忽略）：%r" % e)
+                try:
+                    llm.probe_cached(config.PING_TTL_SEC)          # 到期才真探
+                    media.health_cached(config.MEDIA_PING_TTL_SEC)
+                except Exception:
+                    pass
+        t = threading.Thread(target=_loop, name="opc-ov-refresh", daemon=True)
+        t.start()
+        return t
+
     def serve(self):
         """stdin 单读线程 + 请求线程池：长等待调用不再阻塞其它请求。
 
@@ -1561,6 +1618,7 @@ class OpcServer:
         """
         n = config.REQUEST_WORKERS
         log("ready db=%s vault=%s request_workers=%d" % (config.DB_PATH, config.VAULT, n))
+        self._start_overview_refresher()
         with ThreadPoolExecutor(max_workers=n, thread_name_prefix="opc-req") as pool:
             for line in sys.stdin:
                 line = line.strip()

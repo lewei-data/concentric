@@ -52,6 +52,9 @@ description: 当用户提到「知识库、知识管理、OPC、同心圆、知�
 | 取回生成文件 | 结果里的 `download_url` 用 `curl -L -H "X-Mail-Agent: $KEY" "$download_url" -o 文件名`；链接丢了用 `file_link(file_key)` 重取。**不要用内联 base64，也不要用网页登录/conring token** |
 | 生成产物取回（完整说明） | 见随附 `OPC_MCP_CLIENT_USAGE.md` 第 3 节 |
 | 员工照片/半身照 | `staff_photos(kind=all\|portrait\|halfbody\|digital_human)`：全局共享、所有 key 可见，返回 `download_url`，用同一把 key 下载；不回服务端路径 |
+| 概览一次返回 | `kb_overview(rev?, fields?, refresh?)`：分组计数+健康灯+近期作业；分层缓存后台自动预热，`rev` 相同未变只回 `changed:false`，`refresh=true` 立即重算 |
+| 八步执行法检索 | `kb_search` 命中带 `reasoning`(1-8)+`reasoning_name`（立题/证据/结构/决策/执行/反馈/归档/复盘），返回体带 `reasoning_steps` 分布；`reasoning=N` 只取第 N 步材料 |
+| @员工下指令（仅老板 key） | `staff_chat(list_agents=true)` 查 18 人清单；`staff_chat(agent=<id 或姓名>, message=<指令>, wait_sec=120)` 下发并等真实回复（hermes 独立 profile）；非老板 key 返回 forbidden |
 | 对外净化 | 生成结果、`media_capabilities`、`staff_photos` 均按对外口径净化：音色只回 `id`+说明，照片只回 `name`+`download_url`，无服务端路径；照抄返回不带服务端路径，但仍不要转述任何服务端路径/IP |
 
 ## 资源互通与边界

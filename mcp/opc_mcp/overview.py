@@ -40,7 +40,7 @@ def groups_and_rev(phone, store):
     superseded = int(by_status.get("superseded", 0))
     pending = int(by_status.get("pending", 0)) + int(by_status.get("failed", 0))
     analyzed = total - superseded - pending
-    rc = resources.counts(phone, store)
+    rc = resources.owner_counts(phone)   # 轻量：不算共享 vault / 目录枚举
     groups = {
         "knowledge": {"entries": int(rc.get("knowledge", 0)),
                       "cards": int(rc.get("mcpCards", 0)),

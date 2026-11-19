@@ -151,7 +151,9 @@ process.stdin.on("data", async d => {
 【标准流程（知识类问题）】
 1. opc_whoami（可选）：确认身份与租户；不要向用户转述返回里的服务端路径字段。
 2. opc_resources（可选）：看这把 key 能访问哪些资源。
-3. kb_search(query=<关键词>, k=6)：跨源检索，命中带 source 字段（opc.*=本人手机号，mcp.material=本人上传，shared.*=全局共享）。
+3. kb_search(query=<关键词>, k=6, reasoning?)：跨源检索，命中带 source 字段（opc.*=本人手机号，mcp.material=本人上传，shared.*=全局共享）；
+   命中另带 reasoning(1-8)+reasoning_name——该材料服务八步执行法的主步骤（立题/证据/结构/决策/执行/反馈/归档/复盘），按步骤组织汇报时用 reasoning=N 过滤，reasoning_steps 是命中分布。
+3b. 概览数据用 kb_overview(rev?, fields?, refresh?)：分组计数+健康灯+近期作业一次返回，分层缓存后台自动预热，rev 未变只回 changed:false。
 4. ask(text=<问题>, wait_sec=60) 或 ask(question=<问题>, wait_sec=60)：综合问答（text 与 question 等价）。
    库内事实类问题加 with_brief=true：自带五行三才图谱简报（有硬字符预算），不用先 kb_search；结果含 knowledge_brief。
    该模式同时按对外口径净化内网地址/服务端路径；素材引用给 ref=material:<id>，不给服务端绝对路径。

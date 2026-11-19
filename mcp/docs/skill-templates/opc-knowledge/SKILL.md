@@ -39,6 +39,12 @@ whenToUse: 用户问公司内部资料/规范/盘点，或要求查素材、删�
 - 取到完整 vault 相对路径后，用 `mcp__opc__opc_resource_read(ref=vault:完整路径)` 读原文；不要使用本地读文件命令。
 - `citations` 命中 `opc.message` 时 `path` 为空，这类消息引用**不可追溯原文**，不要尝试构造路径。
 
+## 八步执行法标签与员工对话
+
+- `mcp__opc__kb_search` 的每条命中带 `reasoning`（1-8）与 `reasoning_name`：该材料服务八步执行法的主步骤（1立题 2证据 3结构 4决策 5执行 6反馈 7归档 8复盘）；按标签组织汇报时可用 `reasoning=N` 只取某一步的材料，返回体的 `reasoning_steps` 是命中分布。标签是推导值（一条材料可服务多步，这里只给主步骤），`null` 表示对不齐，不要硬编。
+- 概览/面板数据用 `mcp__opc__kb_overview` 一次拿全（分组计数+健康灯+近期作业），带 `rev` 条件请求省流；`refresh=true` 立即重算，缓存后台自动预热，不需要自建轮询节流。
+- 仅老板 key：`mcp__opc__staff_chat(list_agents=true)` 查 18 名员工清单，`staff_chat(agent=<id 或姓名>, message=<指令>)` 直接 @员工下指令并等真实回复；非老板 key 返回 forbidden，不要重试。
+
 ## 对外红线
 
 - 只用公网入口连接。

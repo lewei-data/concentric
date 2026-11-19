@@ -32,11 +32,13 @@
 | `opc_whoami` | `detail?` | 确认身份与租户；默认不回服务端路径，`detail=true` 仅管理员 key 可见完整信息 |
 | `opc_route` | `query` | 不确定用哪个工具时，传用户原话拿推荐工具链 |
 | `kb_ping` | `refresh?` | 轻量健康检查（LLM/语音/图像三盏灯），结果缓存约 60 秒；**面板轮询用这个，不要轮询 kb_status** |
+| `kb_overview` | `rev?`, `fields?`, `detail?`, `refresh?` | **概览页一次返回**（替代 kb_status+kb_ping 两次调用）：分组计数（knowledge/materials/content）+ 三盏健康灯 + 账号 + 近期作业。带版本号 `rev` 支持**条件请求**：传相同 rev 且数据未变 → 只回约 90 字节的 `changed:false` 且**不计入限流**；`fields=groups,health,owner,recent` 可裁剪；写操作（上传/删除/取代/分析完成）会推 `event: overview` 变更信号（见 §6.10） |
 
 ### 知识与问答
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |
 | `kb_status` | `detail?` | 素材数、片段数、LLM 探活；**默认已脱敏**（不含服务端路径/内网地址），`detail=true` 仅管理员 key 放开；面板轮询请用 `kb_ping` |
+| `kb_overview` | `rev?`, `fields?`, `refresh?`, `detail?` | 概览一次返回：分组计数（knowledge/materials/content）+ 三盏健康灯 + 账号 + 近期作业；分层缓存 TTL：groups/rev 30s、recent 10s、健康灯 60s/30s，**后台线程按各 TTL 自动预热**（面板读永远是热的）。`rev` 相同且未变 → 只回 `changed:false`（约 60 字节，不计限流）；`refresh=true` 忽略缓存立即重算 groups/rev 与 recent 并强制重探健康灯（计入限流） |
 | `kb_search` | `query`, `k=6`, `reasoning?` | 跨源检索（OPC + vault + Web + MCP 素材 + 全局共享），命中带 `source`；最高分低于阈值时返回 `low_confidence: true` + `hint`（换自然语言再问）。命中与返回体带**八步执行法标签**：每条 hit 有 `reasoning`（1-8 主步骤）+ `reasoning_name`（立题/证据/结构/决策/执行/反馈/归档/复盘），返回体带 `reasoning_steps` 分布与 `reasoning_legend` 图例；`reasoning=N` 只取第 N 步材料（标签由 source×category×stage×关键词推导，一条内容可服务多步、这里只给主步骤，`null` 表示对不齐不硬猜） |
 | `ask` | `text` 或 `question`（等价）, `idempotency_key?`, `wait_sec=0`, `with_brief=true` | 综合问答；**超时重试务必带同一 `idempotency_key`**（窗口 15 分钟，重放返回同一 `job_id` + `idempotent_replay: true`，不会双排任务）；`wait_sec` 上限 300，到点未完成返回 `status=queued/running` + `retry_after_sec`，用 `job_get` 续等 |
 
@@ -281,3 +283,56 @@ JSON-RPC 通知 `notifications/opc/job`，mcp-bridge 绑定后按账号指纹（
 `OPC_MCP_EVENTS_FILE` 可覆盖），bridge 每秒 tail 一次并推送：MCP stdio 提交的作业
 （`ask`、`material_upload` 的 analyze）走实时通知 + 日志双通道（按 `event_id` 去重），
 9105 分片上传通道提交的 analyze 作业走日志通道（延迟约 1 秒）。
+
+### 6.10 kb_overview：概览一次返回 + rev 条件请求（2026-11-19）
+
+概览页/面板**不要**再用 `kb_status + kb_ping` 两次调用拼概览（每次都触发一次上游模型探测）。
+用 `kb_overview` 一次拿全：
+
+```jsonc
+// 首屏：tools/call kb_overview {}
+{
+  "rev": "cd60d9f510a5",           // 数据指纹：任何写操作都会改变它
+  "generated_at": 1795074093.16,
+  "ttl_sec": 30,                    // 服务端 groups 缓存 TTL；客户端本地缓存参考值
+  "changed": true,
+  "groups": {
+    "knowledge": { "entries": 307, "cards": 24, "chunks": 207 },
+    "materials": { "total": 54, "analyzed": 49, "pending": 0, "superseded": 5,
+                   "latest_at": "2026-11-19T15:00:11+08:00" },
+    "content":   { "contents": 293, "reports": 9 }
+  },
+  "health": {
+    "llm":   { "ok": true, "degraded": false, "checked_at": 1795074093.1 },
+    "tts":   { "ok": true, "checked_at": 1795074093.1 },
+    "image": { "ok": true, "checked_at": 1795074093.1 }
+  },
+  "owner":  { "name": "…", "role": "…", "phone_fp": "7e68c2d5d7b3" },   // 无明文手机号
+  "recent": { "jobs": [ { "job_id": "…", "kind": "ask", "status": "succeeded" } ] },
+  "degraded": false
+}
+
+// 轮询：tools/call kb_overview { "rev": "cd60d9f510a5" }   ← 数据没变时
+{ "rev": "cd60d9f510a5", "generated_at": …, "ttl_sec": 30, "changed": false }   // ≈91 字节
+```
+
+**设计要点与实测口径**：
+
+- **分层缓存**：groups/rev 每 tenant 30s（另有后台 refresher 定时刷新）；health 与 `kb_ping`
+  共用同一份缓存（LLM 60s / 媒体 30s），不重复探测上游；recent.jobs 10s。
+- **首屏不被探测拖住**：LLM 冷缓存时健康灯回 `{"ok": null, "status": "probing"}` 并在后台探测，
+  下一次调用即见真值；`degraded` 只看明确不可用（`ok=false`），probing 不算降级。
+  实测：冷首屏 ≈350ms，缓存命中 ≈9–12ms，条件请求 91 字节。
+- **条件请求不计入限流**：`changed:false` 路径不消耗每 key 配额，可以放心轮询；
+  变化/首屏路径正常计数（每 key 默认 40 次/10s）。
+- **fields 裁剪**：`fields=groups` 首屏只拿计数，健康灯/近期作业按需异步补。
+- **`detail=true`** 才回 `paths`（dataDir/vault，仅管理员 key）；默认零服务端路径。
+- **`refresh=true`**：丢弃本账号 groups/recent 缓存并强制重探健康灯（想立即看新数字时用）。
+- **动态刷新（推送信号 + 拉取数据）**：上传/删除/取代/分析完成会推 `event: overview`
+  （`data: {"kind":"overview","rev":"…","event_id":"…"}`，标准 GET /mcp 流上是
+  `notifications/opc/overview` JSON-RPC 通知）。面板收到后发一次条件请求即可；
+  事件帧只有 rev，不带数据，旧客户端不认识会直接忽略。
+- **写操作 → 面板可见 ≤5s**：依赖 overview 事件；收不到事件时退化为 `ttl_sec` 到期后的
+  条件轮询（每 30s 一次 91 字节请求）。
+- **健康探测失败要隔离**：某盏灯探测异常时该灯回 `{"ok": false, "status": "unknown"}`，
+  `degraded: true`，其余 groups 数字照常返回，不整页失败。

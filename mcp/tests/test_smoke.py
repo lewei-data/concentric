@@ -742,10 +742,10 @@ def main():
     # 11. kb_overview：一次返回 + rev 条件请求 + 分层缓存 + fields 裁剪 + 变更信号
     import base64
     from opc_mcp import events as events_mod2
-    orig_probe_cached, orig_health_cached = llm.probe_cached, media.health_cached
-    llm.probe_cached = lambda ttl=60, timeout=8, force=False: (
-        True, None, {"checked_at": time.time()})
-    media.health_cached = lambda ttl=30: {"tts": {"ok": True, "status": 200},
+    orig_probe_cached = getattr(llm, "probe_background", None)
+    orig_health_cached = media.health_cached
+    llm.probe_background = lambda ttl=60: (True, {"checked_at": time.time()})
+    media.health_cached = lambda ttl=30, force=False: {"tts": {"ok": True, "status": 200},
                                           "image": {"ok": True, "status": 200},
                                           "checked_at": time.time()}
     try:
@@ -782,7 +782,9 @@ def main():
               any(e.get("kind") == "overview" and e.get("rev") == ov4["rev"] for e in evs2),
               len([e for e in evs2 if e.get("kind") == "overview"]))
     finally:
-        llm.probe_cached, media.health_cached = orig_probe_cached, orig_health_cached
+        if orig_probe_cached is not None:
+            llm.probe_background = orig_probe_cached
+        media.health_cached = orig_health_cached
 
     print("\n共 %d 项通过：\n  - %s" % (len(PASSED), "\n  - ".join(PASSED)))
     print("运行目录（可删除）：", TMP)
