@@ -1,11 +1,11 @@
 {
- "ts": "2026-11-20T20:34:39+0800",
+ "ts": "2026-11-20T21:36:39+0800",
  "total": 23,
  "ok": 22,
  "failed": 1,
  "critical_failed": 0,
- "summary": "2026-11-20 20:35 巡检异常：1/23 项不可用（sup206/ports-drift）",
- "report_path": "/opt/sefs/opc-workbench/ops/reports/20261120-2035.md",
+ "summary": "2026-11-20 21:37 巡检异常：1/23 项不可用（sup206/ports-drift）",
+ "report_path": "/opt/sefs/opc-workbench/ops/reports/20261120-2137.md",
  "results": [
   {
    "node": "comfy-21-157",
@@ -16,8 +16,8 @@
    "proto": "ssh",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 20214,
-   "detail": "localhost.localdomain /  20:34:59 up 138 days"
+   "latency_ms": 20209,
+   "detail": "localhost.localdomain /  21:36:59 up 139 days"
   },
   {
    "node": "comfy-21-157",
@@ -28,7 +28,7 @@
    "proto": "files",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 20219,
+   "latency_ms": 20217,
    "detail": "权重 7/7 正常"
   },
   {
@@ -40,7 +40,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 12,
+   "latency_ms": 13,
    "detail": "HTTP 200"
   },
   {
@@ -52,7 +52,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 4,
+   "latency_ms": 5,
    "detail": "HTTP 200"
   },
   {
@@ -64,7 +64,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 1219,
+   "latency_ms": 256,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -76,7 +76,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 240,
+   "latency_ms": 241,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -112,7 +112,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 65,
+   "latency_ms": 37,
    "detail": "HTTP 200"
   },
   {
@@ -124,7 +124,7 @@
    "proto": "mcp",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 6,
+   "latency_ms": 7,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -280,7 +280,7 @@
    "proto": "ports",
    "criticality": "mid",
    "status": "fail",
-   "latency_ms": 33,
+   "latency_ms": 32,
    "detail": "未登记 9104,9105；台账有但未监听 8384,22000,32971,33049（白名单 40 / 实际 41）"
   }
  ]
