@@ -37,7 +37,7 @@ ROOT = os.path.join(VAULT, "OPC", "交付物")
 
 REMOTION_DIR = os.environ.get("OPC_REMOTION_DIR", "/opt/sefs/OpenMontage/remotion-composer")
 TTS_RUN = os.environ.get("OPC_TTS_RUN", "/opt/sefs/opc-workbench/mcp-tts/run.sh")
-TTS_VOICE = os.environ.get("OPC_TTS_VOICE", "female-zh-short")
+TTS_VOICE = os.environ.get("OPC_TTS_VOICE", "f01")  # f01=女声22岁·明亮清脆（2026-11-20 起默认）
 TTS_SPEED = float(os.environ.get("OPC_TTS_SPEED", "0.7"))  # CosyVoice2 语速偏快，压到 0.7
 NODE_BIN = os.environ.get("OPC_NODE_BIN", "/opt/sefs/tools/node22/bin")
 
