@@ -37,8 +37,8 @@ ROOT = os.path.join(VAULT, "OPC", "交付物")
 
 REMOTION_DIR = os.environ.get("OPC_REMOTION_DIR", "/opt/sefs/OpenMontage/remotion-composer")
 TTS_RUN = os.environ.get("OPC_TTS_RUN", "/opt/sefs/opc-workbench/mcp-tts/run.sh")
-TTS_VOICE = os.environ.get("OPC_TTS_VOICE", "f01")  # f01=女声22岁·明亮清脆（2026-11-20 起默认）
-TTS_SPEED = float(os.environ.get("OPC_TTS_SPEED", "0.7"))  # CosyVoice2 语速偏快，压到 0.7
+TTS_VOICE = os.environ.get("OPC_TTS_VOICE", "f02")  # f02=女声24岁·轻快（2026-11-20 起默认）
+TTS_SPEED = float(os.environ.get("OPC_TTS_SPEED", "1.15"))  # 默认语速加快（0.7→1.15，实测同句 7.1s→3.5s）
 NODE_BIN = os.environ.get("OPC_NODE_BIN", "/opt/sefs/tools/node22/bin")
 
 # 旁白后端：默认 mcp（MCP-TTS/CosyVoice2）；设为 comfyui 则走 157 的 GPT-SoVITS(roxy_clean_a)
