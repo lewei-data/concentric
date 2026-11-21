@@ -1,8 +1,8 @@
 {
-  "at": "2026-11-21T03:30:01+08:00",
+  "at": "2026-11-22T03:30:01+08:00",
   "mode": "all",
   "dest": "/mnt/sefs/conring/backup",
-  "today": "20261121",
+  "today": "20261122",
   "db_ok": 31,
   "files_ok": true,
   "fail": 0,
