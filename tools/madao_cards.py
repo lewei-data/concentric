@@ -132,9 +132,9 @@ def make_card_h(path, tag, title, body, accent, color, index, total):
 E03 = [
     ("", "配置三行\n翻车三次", "魔道码农 · OpenCode Go 实战", "你一定会踩的坑", BLUE),
     ("翻车 01", "profile 没生效", "写好的 profile 放进 profiles/ 子目录，它根本不读", "provider: openai  ← 连错了", RED),
-    ("修复 01", "改到正确位置", "这个版本要求 profile 放在用户根目录下", "~/.codex/<名字>.config.toml  ✅", GREEN),
+    ("修复 01", "改到正确位置", "这个版本要求 profile 放在用户根目录下", "~/.codex/<名字>.config.toml  ✓", GREEN),
     ("翻车 02", "stdin 卡死", "codex exec \"说句话\"  →  终端卡住不动", "Reading additional input from stdin", RED),
-    ("修复 02", "正确姿势", "用管道把提示词喂给 stdin，末尾加一个减号", "printf '...' | codex exec ... -  ✅", GREEN),
+    ("修复 02", "正确姿势", "用管道把提示词喂给 stdin，末尾加一个减号", "printf '...' | codex exec ... -  ✓", GREEN),
     ("翻车 03", "偷偷连了 OpenAI", "WebSocket 重连、502，其实是 profile 没生效走了默认配置", "provider 不是 opencode-go 就是没生效", RED),
     ("判断标准", "只看这一行", "别看别的输出，启动时的这一行就是答案", "provider: opencode-go", GOLD),
     ("", "代理连通", "model: kimi-k3 · 九千多 token · 第一次真实请求成功", "一套模型，两个工具 · 配置见评论区", GREEN),
