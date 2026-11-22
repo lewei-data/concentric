@@ -191,6 +191,13 @@ def _pipeline(kn, trace, hotspot, start=None, state=None):
         begin = idx
         print(f"[pipeline] {trace} 从阶段 {start}（#{idx}）续跑", flush=True)
     for pos in range(begin, len(stages)):
+        # 协作式取消：阶段边界检查，不抢占正在执行的线程；cancel 端点已先落终态释放流水线
+        with kn.lock:
+            cancel_reason = (kn.cancel_requests.pop(trace, None)
+                             if getattr(kn, "cancel_requests", None) is not None else None)
+        if cancel_reason:
+            print(f"[pipeline] {trace} 收到取消请求，在阶段边界收口：{cancel_reason}", flush=True)
+            return
         st = stages[pos]
         fn = getattr(kn, "_stage_" + st.id, None)
         if fn is None:

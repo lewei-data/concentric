@@ -222,7 +222,12 @@ def _sync_row(kn, row):
         status = t_status
     stage = (run or {}).get("stage") or row.get("stage") or ""
     gate = "awaiting_human" if appr else ("blocked" if status in BLOCKING else None)
-    reason = str(t.get("abortReason") or "")
+    # 取消原因以作业表为准：进程重启后 trace 内存态可能丢字段
+    reason = str(row.get("error") or "") if status == "canceled" else ""
+    if not reason:
+        reason = str(t.get("cancelReason") or t.get("abortReason") or "")
+    if status == "canceled" and not reason:
+        reason = "远程作业已取消"
     if not reason and status in BLOCKING:
         with kn.lock:
             items = [dict(c) for c in (getattr(kn, "contents", []) or [])
@@ -301,6 +306,38 @@ def status(kn, job_id, actor=""):
         "approvalId": (appr or {}).get("id"),
     })
     return data
+
+
+def cancel(kn, job_id, actor, reason=""):
+    """取消作业：活跃流水线登记请求并在阶段边界收口；已终态的直接标记取消。"""
+    row = _store(kn).get(job_id)
+    if not row:
+        raise KeyError(job_id)
+    if actor and row["phone"] != actor and actor != OWNER_PHONE:
+        raise PermissionError("作业不属于当前用户")
+    trace = row.get("trace_id") or ""
+    why = str(reason or "远程作业取消")[:300]
+    was_running = False
+    with kn.lock:
+        t = kn.traces.get(trace) or {}
+        was_running = str(t.get("status") or "") in ("running", "queued", "in_progress")
+        if t:
+            t["status"] = "canceled"
+            t["closedAt"] = iso_now()
+            t["cancelReason"] = why
+        if was_running and getattr(kn, "cancel_requests", None) is not None:
+            kn.cancel_requests[trace] = why
+    if trace:
+        kn._persist_trace(trace)
+        if getattr(kn, "db", None):
+            try:
+                kn.db.pipeline_run_end(trace, "canceled")
+            except Exception:
+                pass
+    _store(kn).update(job_id, status="canceled", gate=None, error=why,
+                      updated_at=iso_now())
+    return {"jobId": job_id, "status": "canceled", "traceId": trace,
+            "wasRunning": was_running, "reason": why}
 
 
 def approve(kn, job_id, actor, decision="approve"):

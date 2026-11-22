@@ -180,6 +180,7 @@ class Kernel:
         self.token_alerts = {}
         self.aborts = {}
         self.active_trace = ""
+        self.cancel_requests = {}   # trace -> 取消原因；pipeline 阶段边界检查后收口
         self.last_hotspot = None
         # 手工多次启动：素材制作/剪辑合成/终版合成的手工触发排队（不阻塞 HTTP 线程）
         self.stage_launches = []
@@ -1400,6 +1401,9 @@ class Kernel:
 
     def video_approve(self, job_id, actor, decision='approve'):
         return video_jobs.approve(self, job_id, actor, decision)
+
+    def video_cancel(self, job_id, actor, reason=''):
+        return video_jobs.cancel(self, job_id, actor, reason)
 
     def video_result(self, job_id, actor=''):
         return video_jobs.result(self, job_id, actor)

@@ -3546,6 +3546,9 @@ class Handler(BaseHTTPRequestHandler):
                     res = kern.video_approve(parts[3], actor,
                                              body.get("decision") or "approve")
                     return self._json({"ok": True, **res})
+                if len(parts) == 5 and parts[4] == "cancel":
+                    res = kern.video_cancel(parts[3], actor, body.get("reason") or "")
+                    return self._json({"ok": True, **res})
             except video_jobs.Busy as e:
                 return self._json({"ok": False, "error": "流水线忙", "detail": str(e)[:200],
                                    "retry_after_sec": 30}, 409)
