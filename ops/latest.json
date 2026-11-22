@@ -1,11 +1,11 @@
 {
- "ts": "2026-11-22T15:54:39+0800",
+ "ts": "2026-11-22T16:56:39+0800",
  "total": 23,
  "ok": 22,
  "failed": 1,
  "critical_failed": 0,
- "summary": "2026-11-22 15:55 巡检异常：1/23 项不可用（sup206/ports-drift）",
- "report_path": "/opt/sefs/opc-workbench/ops/reports/20261122-1555.md",
+ "summary": "2026-11-22 16:57 巡检异常：1/23 项不可用（sup206/ports-drift）",
+ "report_path": "/opt/sefs/opc-workbench/ops/reports/20261122-1657.md",
  "results": [
   {
    "node": "comfy-21-157",
@@ -17,7 +17,7 @@
    "criticality": "high",
    "status": "ok",
    "latency_ms": 20209,
-   "detail": "localhost.localdomain /  15:54:59 up 140 days"
+   "detail": "localhost.localdomain /  16:56:59 up 140 days"
   },
   {
    "node": "comfy-21-157",
@@ -28,7 +28,7 @@
    "proto": "files",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 20215,
+   "latency_ms": 20217,
    "detail": "权重 7/7 正常"
   },
   {
@@ -64,7 +64,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 253,
+   "latency_ms": 215,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -76,7 +76,7 @@
    "proto": "nodes",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 219,
+   "latency_ms": 236,
    "detail": "节点 8/8 就绪"
   },
   {
@@ -112,7 +112,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 66,
+   "latency_ms": 35,
    "detail": "HTTP 200"
   },
   {
@@ -136,7 +136,7 @@
    "proto": "mcp",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 5,
+   "latency_ms": 6,
    "detail": "MCP initialize HTTP 200"
   },
   {
@@ -160,7 +160,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 10,
+   "latency_ms": 9,
    "detail": "HTTP 200"
   },
   {
@@ -196,7 +196,7 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 6,
+   "latency_ms": 7,
    "detail": "HTTP 200"
   },
   {
@@ -208,7 +208,7 @@
    "proto": "http",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 3,
+   "latency_ms": 2,
    "detail": "HTTP 200"
   },
   {
@@ -232,7 +232,7 @@
    "proto": "http",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 3,
+   "latency_ms": 4,
    "detail": "HTTP 200"
   },
   {
@@ -256,7 +256,7 @@
    "proto": "fresh",
    "criticality": "high",
    "status": "ok",
-   "latency_ms": 3,
+   "latency_ms": 2,
    "detail": "新鲜 1/1"
   },
   {
@@ -268,7 +268,7 @@
    "proto": "fresh",
    "criticality": "mid",
    "status": "ok",
-   "latency_ms": 1,
+   "latency_ms": 0,
    "detail": "新鲜 1/1"
   },
   {
@@ -280,7 +280,7 @@
    "proto": "ports",
    "criticality": "mid",
    "status": "fail",
-   "latency_ms": 33,
+   "latency_ms": 31,
    "detail": "未登记 9104,9105；台账有但未监听 8384,22000,32971,33049（白名单 40 / 实际 40）"
   }
  ]
