@@ -23,7 +23,7 @@ from utils import iso_now
 
 OWNER_PHONE = os.environ.get("OPC_OWNER_PHONE", "18911789286")
 URL_TTL = int(os.environ.get("OPC_VIDEO_URL_TTL", "600"))
-# 公网根路径 /api/* 属于 sefs-mcp，工作台必须走 /workbench/ 前缀
+# 统一用 /workbench 前缀（根路径亦可达，前缀便于将来收口）
 PUBLIC_BASE = os.environ.get("OPC_VIDEO_PUBLIC_BASE",
                              "https://ai.boraydata.com/workbench").rstrip("/")
 
@@ -186,6 +186,62 @@ def _pending_approval(kn, trace):
         return None
 
 
+def _public_view(row):
+    """对外字段：去掉手机号与内部幂等哈希，source_refs 还原为数组。"""
+    data = dict(row)
+    data.pop("phone", None)
+    data.pop("idem", None)
+    raw = data.get("source_refs")
+    if isinstance(raw, str) and raw:
+        try:
+            data["source_refs"] = json.loads(raw)
+        except ValueError:
+            pass
+    return data
+
+
+BLOCKING = ("blocked", "aborted", "error", "rejected", "timeout")
+
+
+def _sync_row(kn, row):
+    """把流水线真实状态同步回作业表，返回 (row, appr, status, stage, gate, reason)。
+
+    blocked 等终态只写在 kn.traces 内存里，pipeline_runs 未必跟着变；
+    列表与详情都走这里，避免"列表停在 queued、详情已 blocked"的快照偏差。
+    """
+    trace = row.get("trace_id") or ""
+    run = None
+    if getattr(kn, "db", None) and trace:
+        run = kn.db.pipeline_run(trace)
+    with kn.lock:
+        t = dict(kn.traces.get(trace) or {})
+    appr = _pending_approval(kn, trace)
+    status = (run or {}).get("status") or row.get("status") or "queued"
+    t_status = str(t.get("status") or "")
+    if t_status in BLOCKING:
+        status = t_status
+    stage = (run or {}).get("stage") or row.get("stage") or ""
+    gate = "awaiting_human" if appr else ("blocked" if status in BLOCKING else None)
+    reason = str(t.get("abortReason") or "")
+    if not reason and status in BLOCKING:
+        with kn.lock:
+            items = [dict(c) for c in (getattr(kn, "contents", []) or [])
+                     if c.get("traceId") == trace]
+        blockers = [str(i.get("blockedBy")) for i in items if i.get("blockedBy")]
+        reason = ("内容审核未全部通过（%s）" % ", ".join(sorted(set(blockers)))
+                  if blockers else "流水线在 %s 阶段阻断（%s）" % (stage or "未知", status))
+    changed = {}
+    for key, val in (("status", status), ("stage", stage),
+                     ("gate", gate or ""), ("error", reason)):
+        if val != row.get(key):
+            changed[key] = val
+    if changed:
+        changed["updated_at"] = iso_now()
+        _store(kn).update(row["job_id"], **changed)
+        row = _store(kn).get(row["job_id"]) or row
+    return row, appr, status, stage, gate, reason
+
+
 def submit(kn, actor, brief, requirements="", project="", source_refs=None, idempotency_key=""):
     actor = str(actor or "").strip()
     if not actor:
@@ -198,7 +254,7 @@ def submit(kn, actor, brief, requirements="", project="", source_refs=None, idem
     st = _store(kn)
     old = st.by_idem(idem)
     if old:
-        return {**old, "idempotent_replay": True}
+        return {**_public_view(old), "idempotent_replay": True}
     idea = {"title": brief[:60], "summary": brief[:200], "detail": brief[:1000],
             "source": "远程视频作业", "score": 0.8, "tags": ["远程作业"]}
     try:
@@ -221,11 +277,11 @@ def submit(kn, actor, brief, requirements="", project="", source_refs=None, idem
            "brief": brief[:1000], "requirements": str(requirements or "")[:2000],
            "project": str(project or "")[:60],
            "source_refs": json.dumps([str(x)[:300] for x in refs[:20]], ensure_ascii=False),
-           "item_id": item_id, "status": "queued", "stage": "assessment", "gate": "",
+           "item_id": item_id, "status": "queued", "stage": "assessment", "gate": None,
            "output_path": "", "error": "", "idem": idem,
            "created_at": now, "updated_at": now}
     st.put(row)
-    return {**row, "idempotent_replay": False}
+    return {**_public_view(row), "idempotent_replay": False}
 
 
 def status(kn, job_id, actor=""):
@@ -234,18 +290,15 @@ def status(kn, job_id, actor=""):
         raise KeyError(job_id)
     if actor and row["phone"] != actor and actor != OWNER_PHONE:
         raise PermissionError("作业不属于当前用户")
-    run = None
-    if getattr(kn, "db", None) and row.get("trace_id"):
-        run = kn.db.pipeline_run(row["trace_id"])
-    appr = _pending_approval(kn, row.get("trace_id"))
-    data = dict(row)
+    row, appr, status, stage, gate, reason = _sync_row(kn, row)
+    data = _public_view(row)
     data.update({
         "traceId": row.get("trace_id"),
-        "stage": (run or {}).get("stage") or row.get("stage") or "",
-        "runStatus": (run or {}).get("status") or row.get("status") or "",
-        "gate": "awaiting_human" if appr else None,
+        "runStatus": (kn.db.pipeline_run(row["trace_id"]) or {}).get("status")
+        if getattr(kn, "db", None) and row.get("trace_id") else status,
+        "stage": stage, "status": status, "gate": gate,
+        "gateReason": reason or None,
         "approvalId": (appr or {}).get("id"),
-        "status": (run or {}).get("status") or row.get("status") or "queued",
     })
     return data
 
@@ -261,7 +314,7 @@ def approve(kn, job_id, actor, decision="approve"):
         raise ValueError("该作业当前没有待审批项")
     result = kn.decide_approval(appr["id"], "approve" if decision != "reject" else "reject",
                                 OWNER_PHONE)
-    _store(kn).update(job_id, gate="", updated_at=iso_now())
+    _store(kn).update(job_id, gate=None, updated_at=iso_now())
     return {"jobId": job_id, "approvalId": appr["id"],
             "decision": "approve" if decision != "reject" else "reject",
             "status": (result or {}).get("status") or ""}
@@ -320,4 +373,12 @@ def media_file(kn, job_id):
 
 
 def recent(kn, actor, limit=30):
-    return _store(kn).recent(str(actor or ""), limit)
+    out = []
+    for row in _store(kn).recent(str(actor or ""), limit):
+        synced, appr, status, stage, gate, reason = _sync_row(kn, row)
+        item = _public_view(synced)
+        item.update({"traceId": synced.get("trace_id"), "status": status,
+                     "stage": stage, "gate": gate, "gateReason": reason or None,
+                     "approvalId": (appr or {}).get("id")})
+        out.append(item)
+    return out

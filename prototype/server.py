@@ -3528,6 +3528,8 @@ class Handler(BaseHTTPRequestHandler):
                                "outDir": res.get("outDir"), "jobs": jobs})
         # 远程视频作业：提交 / 审批（MCP 个人 key 或登录会话）
         if path.startswith("/api/video/jobs"):
+            if not body and int(self.headers.get("Content-Length") or 0) > 0:
+                return self._json({"ok": False, "error": "请求体不是合法 JSON"}, 400)
             actor = self._video_actor()
             if not actor:
                 return self._json({"ok": False, "error": "需要登录或 MCP 个人 key"}, 401)

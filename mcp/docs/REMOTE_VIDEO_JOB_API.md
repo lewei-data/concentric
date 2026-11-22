@@ -55,10 +55,10 @@ curl -sS -H "X-Mail-Agent: $KEY" \
 | 方法 | 路径 | 作用 | 鉴权 |
 | --- | --- | --- | --- |
 | POST | `/api/video/jobs` | 提交视频作业 | key 或会话 |
-| GET | `/api/video/jobs` | 列出自己最近 30 条作业 | key 或会话 |
-| GET | `/api/video/jobs/<job_id>` | 查状态 / 阶段 / 审批门 | key 或会话 |
+| GET | `/api/video/jobs` | 列出自己最近 30 条作业（**仅供参考/取 job_id，进度请看详情端点**） | key 或会话 |
+| GET | `/api/video/jobs/<job_id>` | 查状态 / 阶段 / 审批门 / 阻断原因 | key 或会话 |
 | POST | `/api/video/jobs/<job_id>/approve` | 老板审批放行/驳回 | **仅老板 key** |
-| GET | `/api/video/jobs/<job_id>/result` | 取成片签名 URL + 元信息 | key 或会话 |
+| GET | `/api/video/jobs/<job_id>/result` | 取成片签名 URL + 元信息（未出片时先返回 409；实测不带 key 返回 401，鉴权在前） | key 或会话 |
 | GET | `/api/video/jobs/<job_id>/media?exp=&sig=` | 下载成片（支持 Range） | **URL 签名自鉴权**，无需 key |
 
 ### 3.1 提交 `POST /api/video/jobs`
@@ -78,30 +78,38 @@ curl -sS -H "X-Mail-Agent: $KEY" \
 | `brief` | 是 | 创意需求原文；空字符串返回 `400` |
 | `requirements` | 否 | 老板特定要求，随单流转到 CCO/PM |
 | `project` | 否 | `gou` / `wenren` / `tongxinyuan`；不填走默认项目路由 |
-| `sourceRefs` | 否 | **仅作留痕备注**，不会自动读取文件；素材仍需在工作区/流水线里补齐 |
+| `sourceRefs` | 否 | **仅作留痕备注**，不会自动读取文件；素材仍需在工作区/流水线里补齐。响应里以数组回显 |
 | `idempotencyKey` | 否 | 强烈建议填写。同一调用方 + 同一 key 重复提交 → 返回同一 `job_id`，带 `idempotent_replay: true`，不会双排任务 |
 
-成功返回：
+成功返回（已剔除 `phone` / `idem` 等内部字段；**整包仍不要转发给第三方**）：
 
 ```json
 {"ok": true, "job_id": "vj_a1b2c3d4e5f6", "status": "queued", "trace_id": "tr_...",
- "stage": "assessment", "idempotent_replay": false, "created_at": "..."}
+ "stage": "assessment", "gate": null, "source_refs": ["OPC/素材/品牌KV.png"],
+ "item_id": "c_...", "brief": "...", "requirements": "...", "project": "gou",
+ "output_path": "", "error": "", "created_at": "...", "updated_at": "...",
+ "idempotent_replay": false}
 ```
 
 ### 3.2 状态 `GET /api/video/jobs/<job_id>`
 
 ```json
-{"ok": true, "job_id": "vj_...", "status": "running", "runStatus": "running",
- "stage": "production_approval", "gate": "awaiting_human",
- "approvalId": "ap_...", "traceId": "tr_...", "brief": "..."}
+{"ok": true, "job_id": "vj_...", "status": "running", "runStatus": "blocked",
+ "stage": "review", "gate": "blocked", "gateReason": "内容审核未全部通过（cost-gate）",
+ "approvalId": null, "traceId": "tr_...", "brief": "..."}
 ```
 
 | 字段 | 含义 |
 | --- | --- |
-| `status` / `runStatus` | `queued` / `running` / `interrupted` / `completed` / `failed` |
+| `status` | `queued` / `running` / **`blocked`** / `aborted` / `error` / `rejected` / `timeout` / `interrupted` / `completed` / `failed` |
+| `runStatus` | 过程库 `pipeline_runs` 的原始状态；可能与 `status` 不同（`blocked` 只写在 trace 上时会以 `status` 为准） |
 | `stage` | 当前流水线阶段（16 段，见 `config/pipeline.yaml`） |
-| `gate` | `awaiting_human` 表示卡在审批门；否则 `null` |
-| `approvalId` | 待审批单号，审批时要用 |
+| `gate` | `awaiting_human` = 等老板审批；`blocked` = 被材料/成本/审核门挡住；无门时为假值（`null` 或空串）——**用 `if (gate)` 判断，不要比较 `=== null`** |
+| `gateReason` | 阻断原因（如 `内容审核未全部通过（material-gate）`）；仅阻断态有值 |
+| `approvalId` | 待审批单号，审批时要用；`blocked` 时通常为 `null` |
+
+**列表与详情已对齐**：两者都经过同一状态同步，`updated_at` 随真实状态变化更新。
+但仍建议**只看详情端点**判断进度。
 
 ### 3.3 审批 `POST /api/video/jobs/<job_id>/approve`
 
@@ -131,18 +139,23 @@ curl -sS -H "X-Mail-Agent: $KEY" \
 
 ```
 提交 → queued → running → [awaiting_human] → running → completed
-                                  ↓
-                              rejected / failed
+                      ├→ blocked（材料/成本/审核门阻断，无 approvalId）
+                      └→ aborted / error / rejected / timeout / failed
 ```
+
+**四个停止条件**（命中任一个就停轮询、上报，不要空转）：
+
+1. `gate=awaiting_human` → 通知老板，等人工审批；
+2. `gate=blocked` 或 `status ∈ {blocked, aborted, error, rejected, timeout, failed}` → 记录 `gateReason` / `error` 上报；
+3. `status=completed` → 调 `/result` 取链接；
+4. 单阶段超过 **20 分钟**没有 `stage` 变化（实测 assessment 一段可达 14 分钟）→ 报告人工。
 
 **推荐轮询节奏**（避免把工作台打爆）：
 
 1. 提交后先睡 `5s`；
-2. 之后每 `10–15s` 查一次状态；
-3. 遇到 `gate=awaiting_human` → **立即停止轮询**，通知老板，等待人工处理；
-4. `status=completed` → 调 `/result` 取链接，结束；
-5. `status=failed` → 记录 `error` 字段并停止，不要盲目重提；
-6. 连续轮询超过 30 分钟仍无进展 → 报告人工，不要无限重试。
+2. 之后每 `10–15s` 查一次状态，**只看 `GET /api/video/jobs/<job_id>` 详情端点**；
+3. 拿 `gate` 请用真假值判断（`if (gate)`），因为提交响应里是 `null`、历史记录里可能是空串；
+4. 不要盲目重提：先读 `gateReason` / `error` 判断是材料问题还是成本问题。
 
 **并发限制**：工作台同一时刻只跑一条流水线（`om_render` 有全局 `.render.lock`）。
 若提交返回：
@@ -166,8 +179,8 @@ curl -sS -H "X-Mail-Agent: $KEY" \
 1. 读取环境变量 OPC_API_KEY（不要向用户索要）。
 2. 用 curl POST https://ai.boraydata.com/workbench/api/video/jobs，
    带 X-Mail-Agent: $OPC_API_KEY，body 含 brief 与 idempotencyKey。
-3. 记录返回的 job_id，每 15 秒 GET 状态。
-4. 若 gate=awaiting_human，停止并告诉用户"需要老板审批"，不得自行 approve。
+3. 记录返回的 job_id，每 15 秒 GET 详情端点状态。
+4. 若 gate=awaiting_human 或 gate=blocked，停止并上报原因，不得自行 approve。
 5. 完成后 GET /result，把 videoUrl 交给用户（10 分钟内有效）。
 ```
 
@@ -192,11 +205,15 @@ def call(path, body=None):
 
 r = call("/api/video/jobs", {"brief": "做一条30秒产品片", "idempotencyKey": "hermes-001"})
 job = r["job_id"]
+BLOCKING = {"blocked", "aborted", "error", "rejected", "timeout", "failed"}
 while True:
     st = call("/api/video/jobs/" + job)
-    if st.get("gate") == "awaiting_human":
+    gate = st.get("gate")
+    if gate == "awaiting_human":
         print("需要老板审批：", st.get("approvalId")); break
-    if st.get("status") in ("completed", "failed"):
+    if gate == "blocked" or st.get("status") in BLOCKING:
+        print("已阻断：", st.get("gateReason") or st.get("error")); break
+    if st.get("status") == "completed":
         break
     time.sleep(15)
 if st.get("status") == "completed":
@@ -217,14 +234,17 @@ if st.get("status") == "completed":
 
 | HTTP | 返回体 `error` | 含义 / 处理 |
 | --- | --- | --- |
-| 400 | `brief 不能为空` / `该作业当前没有待审批项` | 修正参数，不要重试同一请求 |
+| 400 | `brief 不能为空` / `请求体不是合法 JSON` / `该作业当前没有待审批项` | 修正参数，不要重试同一请求 |
 | 401 | `需要登录或 MCP 个人 key` | key 缺失/无效/已撤销；引导用户重新领取 |
+| 401 | `{"error":"unauthorized","login":"..."}`（无 `ok` 字段） | **未知路径**也会返回 401；别误判成 key 失效，先核对 URL 拼写 |
 | 403 | `仅老板可审批远程视频作业` / `作业不属于当前用户` | 权限边界，停止 |
 | 403 | `链接无效或已过期` | 签名 URL 过期，重调 `/result` |
 | 404 | `作业不存在` / `成片不存在或尚未生成` | 核对 `job_id` |
 | 409 | `流水线忙` + `retry_after_sec` | 退避重试，带同一幂等键 |
 | 409 | `成片尚未生成` | 继续轮询状态 |
+| 404 | `not found`（英文小写） | 方法/路径不匹配，核对 HTTP 方法 |
 | 500 | `TypeError: ...` 等 | 服务端异常，记录原文并报告，不要盲目重试 |
+| 501 | Python `http.server` 默认 HTML 页 | 方法不支持（如 `PUT`）；**不是 JSON**，客户端需对所有非 2xx 做兜底 |
 
 ---
 
@@ -241,8 +261,9 @@ if st.get("status") == "completed":
 
 - 公网 401 但本机 200：确认请求带的是 `X-Mail-Agent` 而不是 `Authorization: Bearer` 以外的错误头；
   两者都支持，`?key=` 也可以。
-- 公网 404：检查是否漏了 `/workbench` 前缀——根路径 `/api/*` 属于 sefs-mcp，不是工作台。
-- 状态一直 `queued`：先看是否已有别的流水线在跑（工作台唯一流水线），按 409 的退避规则处理。
+- 根路径 `/api/*` **亦可达**（实测与 `/workbench/api/*` 返回一致），但请统一用 `/workbench` 前缀，便于将来收口；不要把它当作 404 的排障依据。
+- `gate` 是假值时既可能是 `null` 也可能是空串，请用 `if (gate)` 判断。
+- 状态一直 `queued`：先看是否已有别的流水线在跑（工作台唯一流水线），按 409 的退避规则处理；详情端点会把真实状态同步回列表。
 - 想确认服务端健康：`curl -sS https://ai.boraydata.com/workbench/api/health`。
 
 ---
@@ -250,3 +271,4 @@ if st.get("status") == "completed":
 ## 8. 变更记录
 
 - 2026-11-23：初版。提交/状态/审批/结果/签名下载五个端点上线；`selfcheck` 10 PASS/0 WARN。
+- 2026-11-23（核对后修订）：补 `blocked` 等阻断态与 `gateReason`；列表与详情状态同步；`gate` 统一假值；`source_refs` 回数组；响应剔除 `phone`/`idem`；修正根路径排障口径；非法 JSON 单独报错；错误码补 401（未知路径）/404/501。
