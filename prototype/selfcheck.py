@@ -79,7 +79,7 @@ def main():
     # 3 服务存活与鉴权边界
     code_home = http_code("/")
     fail_if(code_home not in (200, 302), "首页可访问", f"实际 {code_home or '无响应'}")
-    for path in ("/api/ops", "/api/directives", "/api/stream"):
+    for path in ("/api/ops", "/api/directives", "/api/stream", "/api/video/jobs"):
         c = http_code(path)
         fail_if(c != 401, f"未登录 {path} 返回 401", f"实际 {c or '无响应'}")
 

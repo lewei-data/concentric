@@ -1,0 +1,252 @@
+# 远程 Agent 调用视频作业 API 使用说明
+
+> 适用对象：hermes 员工 agent、Claude Code / Cursor 等编码助手、手机端 mail agent、自建脚本。
+> 上线时间：2026-11-23。本文以 `/opt/sefs/opc-workbench/prototype/server.py` 与 `video_jobs.py` 为准。
+>
+> **定位**：这是工作台的**异步作业 HTTP API**，不是 MCP 工具。现有 MCP（`:9104`）明确不提供 video 工具，
+> 远程 agent 要出片就调本文的端点；MCP 只负责身份（同一把个人 key）与事件通知。
+
+---
+
+## 1. 前置条件：先领一把个人 key
+
+| 项 | 值 |
+| --- | --- |
+| 领取地址 | `https://ai.boraydata.com/workbench/mcp-key`（登录后自助生成，可多把并存） |
+| 工作台公网前缀 | `https://ai.boraydata.com/workbench` |
+| 本机直连 | `http://127.0.0.1:8848` |
+| 鉴权头 | `X-Mail-Agent: <个人 API key>` |
+
+**不要向用户索要手机号或 key 本身**——key 自带身份（手机号），服务端从 key 反查。
+同一把 key 也是 MCP 的 `client_key`，不需要第二套凭据。
+
+---
+
+## 2. 30 秒快速开始（curl）
+
+```bash
+BASE=https://ai.boraydata.com/workbench
+KEY=<你的个人 API key>
+
+# 1) 提交（幂等键务必由 agent 自己生成并保留）
+curl -sS -H "X-Mail-Agent: $KEY" -H 'Content-Type: application/json' \
+  -d '{"brief":"做一条30秒的产品宣传片，突出狗大人品牌",
+       "project":"gou", "idempotencyKey":"job-20261123-001"}' \
+  "$BASE/api/video/jobs"
+# → {"ok":true,"job_id":"vj_xxxxxxxxxxxx","status":"queued", ...}
+
+# 2) 轮询状态
+curl -sS -H "X-Mail-Agent: $KEY" \
+  "$BASE/api/video/jobs/vj_xxxxxxxxxxxx"
+
+# 3) 完成后取成片（返回公网签名 URL，10 分钟有效）
+curl -sS -H "X-Mail-Agent: $KEY" \
+  "$BASE/api/video/jobs/vj_xxxxxxxxxxxx/result"
+# → {"ok":true,"videoUrl":"https://ai.boraydata.com/workbench/api/video/jobs/.../media?exp=...&sig=...", ...}
+```
+
+提交返回 HTTP 200，但语义是异步入队（真正的成片要等流水线跑完），**不是**同步出片。
+整条流水线通常数分钟到十几分钟。
+
+---
+
+## 3. 端点一览
+
+| 方法 | 路径 | 作用 | 鉴权 |
+| --- | --- | --- | --- |
+| POST | `/api/video/jobs` | 提交视频作业 | key 或会话 |
+| GET | `/api/video/jobs` | 列出自己最近 30 条作业 | key 或会话 |
+| GET | `/api/video/jobs/<job_id>` | 查状态 / 阶段 / 审批门 | key 或会话 |
+| POST | `/api/video/jobs/<job_id>/approve` | 老板审批放行/驳回 | **仅老板 key** |
+| GET | `/api/video/jobs/<job_id>/result` | 取成片签名 URL + 元信息 | key 或会话 |
+| GET | `/api/video/jobs/<job_id>/media?exp=&sig=` | 下载成片（支持 Range） | **URL 签名自鉴权**，无需 key |
+
+### 3.1 提交 `POST /api/video/jobs`
+
+```json
+{
+  "brief": "做一条30秒产品片，轻松幽默，突出狗大人品牌",
+  "requirements": "用 f02 女声，字幕避开底部水印区",
+  "project": "gou",
+  "sourceRefs": ["OPC/素材/品牌KV.png"],
+  "idempotencyKey": "agent-run-20261123-001"
+}
+```
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `brief` | 是 | 创意需求原文；空字符串返回 `400` |
+| `requirements` | 否 | 老板特定要求，随单流转到 CCO/PM |
+| `project` | 否 | `gou` / `wenren` / `tongxinyuan`；不填走默认项目路由 |
+| `sourceRefs` | 否 | **仅作留痕备注**，不会自动读取文件；素材仍需在工作区/流水线里补齐 |
+| `idempotencyKey` | 否 | 强烈建议填写。同一调用方 + 同一 key 重复提交 → 返回同一 `job_id`，带 `idempotent_replay: true`，不会双排任务 |
+
+成功返回：
+
+```json
+{"ok": true, "job_id": "vj_a1b2c3d4e5f6", "status": "queued", "trace_id": "tr_...",
+ "stage": "assessment", "idempotent_replay": false, "created_at": "..."}
+```
+
+### 3.2 状态 `GET /api/video/jobs/<job_id>`
+
+```json
+{"ok": true, "job_id": "vj_...", "status": "running", "runStatus": "running",
+ "stage": "production_approval", "gate": "awaiting_human",
+ "approvalId": "ap_...", "traceId": "tr_...", "brief": "..."}
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `status` / `runStatus` | `queued` / `running` / `interrupted` / `completed` / `failed` |
+| `stage` | 当前流水线阶段（16 段，见 `config/pipeline.yaml`） |
+| `gate` | `awaiting_human` 表示卡在审批门；否则 `null` |
+| `approvalId` | 待审批单号，审批时要用 |
+
+### 3.3 审批 `POST /api/video/jobs/<job_id>/approve`
+
+```json
+{"decision": "approve"}
+```
+
+- **只有老板手机号对应的 key / 会话可调用**，其他身份返回 `403`。
+- 没有待审批项时返回 `400`（"该作业当前没有待审批项"）。
+- agent **不得自行伪造审批**：看到 `gate=awaiting_human` 应通知老板，由老板本人调用，或在工作台审批界面处理。
+- 审批放行后从断点续跑，不会从头重来。
+
+### 3.4 取回 `GET /api/video/jobs/<job_id>/result`
+
+```json
+{"ok": true, "jobId": "vj_...", "videoUrl": "https://.../media?exp=...&sig=...",
+ "expiresIn": 600, "bytes": 19820331, "mime": "video/mp4"}
+```
+
+- `videoUrl` **自鉴权、短时效（默认 600 秒）**，可直接给 `<video src>` 或下载，不带个人 key。
+- 链接过期后重新调 `/result` 换新链接，不要缓存长期地址。
+- 成片还没生成时返回 `409`（"成片尚未生成"）。
+
+---
+
+## 4. 状态机与 agents 应当遵循的轮询策略
+
+```
+提交 → queued → running → [awaiting_human] → running → completed
+                                  ↓
+                              rejected / failed
+```
+
+**推荐轮询节奏**（避免把工作台打爆）：
+
+1. 提交后先睡 `5s`；
+2. 之后每 `10–15s` 查一次状态；
+3. 遇到 `gate=awaiting_human` → **立即停止轮询**，通知老板，等待人工处理；
+4. `status=completed` → 调 `/result` 取链接，结束；
+5. `status=failed` → 记录 `error` 字段并停止，不要盲目重提；
+6. 连续轮询超过 30 分钟仍无进展 → 报告人工，不要无限重试。
+
+**并发限制**：工作台同一时刻只跑一条流水线（`om_render` 有全局 `.render.lock`）。
+若提交返回：
+
+```json
+{"ok": false, "error": "流水线忙", "retry_after_sec": 30}
+```
+
+按 `retry_after_sec` 退避后重试，**带上同一个 `idempotencyKey`**。
+
+---
+
+## 5. hermes 接入示例
+
+### 5.1 直接让 agent 用 shell / curl
+
+在 hermes 的 prompt 或技能里写清楚端点、key 来源和轮询规则，例如：
+
+```text
+用户要一条产品宣传片时：
+1. 读取环境变量 OPC_API_KEY（不要向用户索要）。
+2. 用 curl POST https://ai.boraydata.com/workbench/api/video/jobs，
+   带 X-Mail-Agent: $OPC_API_KEY，body 含 brief 与 idempotencyKey。
+3. 记录返回的 job_id，每 15 秒 GET 状态。
+4. 若 gate=awaiting_human，停止并告诉用户"需要老板审批"，不得自行 approve。
+5. 完成后 GET /result，把 videoUrl 交给用户（10 分钟内有效）。
+```
+
+注意：hermes profile 需具备 shell/curl 权限（按区授权口径）。若该员工 profile 禁用了 shell，
+改走 5.2 的 Python 脚本方式或由小秘书代为提交。
+
+### 5.2 Python 脚本（任何能执行 Python 的 agent 都可用）
+
+```python
+import json, os, time, urllib.request
+
+BASE = "https://ai.boraydata.com/workbench"
+KEY = os.environ["OPC_API_KEY"]
+
+def call(path, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        BASE + path, data=data, method="POST" if body is not None else "GET",
+        headers={"X-Mail-Agent": KEY, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode())
+
+r = call("/api/video/jobs", {"brief": "做一条30秒产品片", "idempotencyKey": "hermes-001"})
+job = r["job_id"]
+while True:
+    st = call("/api/video/jobs/" + job)
+    if st.get("gate") == "awaiting_human":
+        print("需要老板审批：", st.get("approvalId")); break
+    if st.get("status") in ("completed", "failed"):
+        break
+    time.sleep(15)
+if st.get("status") == "completed":
+    print(call("/api/video/jobs/" + job + "/result")["videoUrl"])
+```
+
+### 5.3 与 MCP 的关系
+
+- **身份同源**：本文的 `X-Mail-Agent` 就是 MCP 的 `client_key`，一把 key 走天下。
+- **能力互补**：MCP 负责问答、检索、TTS/图片生成、员工对话；**视频成片走本文 HTTP API**。
+- **事件通知**：MCP 桥的 `GET /mcp/events`（SSE）会推送 `notifications/opc/job` 终态事件；
+  但你自己的作业状态以本文 `GET /api/video/jobs/<id>` 为准。
+- 若客户端只认 MCP 工具，目前需要一层薄转发（尚未实现），不要误以为 `tts`/`image` 能出视频。
+
+---
+
+## 6. 错误码
+
+| HTTP | 返回体 `error` | 含义 / 处理 |
+| --- | --- | --- |
+| 400 | `brief 不能为空` / `该作业当前没有待审批项` | 修正参数，不要重试同一请求 |
+| 401 | `需要登录或 MCP 个人 key` | key 缺失/无效/已撤销；引导用户重新领取 |
+| 403 | `仅老板可审批远程视频作业` / `作业不属于当前用户` | 权限边界，停止 |
+| 403 | `链接无效或已过期` | 签名 URL 过期，重调 `/result` |
+| 404 | `作业不存在` / `成片不存在或尚未生成` | 核对 `job_id` |
+| 409 | `流水线忙` + `retry_after_sec` | 退避重试，带同一幂等键 |
+| 409 | `成片尚未生成` | 继续轮询状态 |
+| 500 | `TypeError: ...` 等 | 服务端异常，记录原文并报告，不要盲目重试 |
+
+---
+
+## 7. 红线与排障
+
+**红线**
+
+1. 不要把 `videoUrl` 当作长期地址转发给无关方——它是 10 分钟有效的 bearer 链接。
+2. 不要把个人 key 写进日志、prompt 回显或前端代码；用环境变量传入。
+3. 不要绕过审批门：远程 agent 没有权力替老板 `approve`。
+4. 不要指望 `sourceRefs` 自动上传素材——它只是备注；素材缺失会导致流水线停在材料门。
+
+**排障**
+
+- 公网 401 但本机 200：确认请求带的是 `X-Mail-Agent` 而不是 `Authorization: Bearer` 以外的错误头；
+  两者都支持，`?key=` 也可以。
+- 公网 404：检查是否漏了 `/workbench` 前缀——根路径 `/api/*` 属于 sefs-mcp，不是工作台。
+- 状态一直 `queued`：先看是否已有别的流水线在跑（工作台唯一流水线），按 409 的退避规则处理。
+- 想确认服务端健康：`curl -sS https://ai.boraydata.com/workbench/api/health`。
+
+---
+
+## 8. 变更记录
+
+- 2026-11-23：初版。提交/状态/审批/结果/签名下载五个端点上线；`selfcheck` 10 PASS/0 WARN。

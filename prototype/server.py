@@ -40,6 +40,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import urlopen as _urlopen, Request as _UrlRequest
 
+import video_jobs
+
 # hermes 本体（config set 等本地子命令用；不经 run-hermes.sh 的 DNS 隔离包装）
 # 大模型注册表（llm_models 表）的内置初始条目：仅在表为空时写入，之后以库里/CTO 修改为准
 # priority 小者优先；alias 是 hermes 调用时附加的 --model 别名（空=内置默认模型）
@@ -502,7 +504,10 @@ class Handler(BaseHTTPRequestHandler):
         if not AUTH_USER or self.client_address[0] in LOOPBACK:
             return True
         try:
-            if unquote(urlparse(self.path).path).rstrip("/").startswith("/api/mcp/file/"):
+            remote_path = unquote(urlparse(self.path).path).rstrip("/")
+            # 这两类端点自己校验 MCP 个人 key / 签名参数，不走 Basic
+            if (remote_path.startswith("/api/mcp/file/")
+                    or remote_path.startswith("/api/video/jobs")):
                 return True
         except Exception:
             pass
@@ -562,6 +567,13 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
         except Exception:
             return ""
+
+    def _video_actor(self):
+        """远程视频作业的调用方：网页会话用户，或同一把 MCP 个人 key 的手机号。"""
+        user = self._session_user()
+        if user and user.get("phone"):
+            return str(user["phone"])
+        return self._mcp_credential_phone()
 
     def _mcp_generated_file(self, file_key):
         """按 file_key + 同一把 MCP key 下发生成产物（支持 Range，禁止路径穿越）。"""
@@ -1050,6 +1062,39 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "items": kern.toolbox_jobs(lim)})
             except Exception as e:  # noqa: BLE001 - 直接把原因给前端
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        # 远程视频作业：会话或 MCP 个人 key 可读；/media 分支靠 URL 签名自鉴权
+        if path.startswith("/api/video/jobs"):
+            parts = path.strip("/").split("/")
+            if len(parts) == 5 and parts[4] == "media":
+                qs = parse_qs(urlparse(self.path).query)
+                if not video_jobs.verify_url(parts[3], (qs.get("exp") or [""])[0],
+                                             (qs.get("sig") or [""])[0]):
+                    return self._json({"ok": False, "error": "链接无效或已过期"}, 403)
+                found = self._kernel().video_media_file(parts[3])
+                if not found:
+                    return self._json({"ok": False, "error": "成片不存在或尚未生成"}, 404)
+                full, ctype = found
+                return self._serve_media(full, ctype)
+            actor = self._video_actor()
+            if not actor:
+                return self._json({"ok": False, "error": "需要登录或 MCP 个人 key"}, 401)
+            try:
+                kern = self._kernel()
+                if len(parts) == 3:
+                    return self._json({"ok": True, "items": kern.video_recent(actor, 30)})
+                if len(parts) == 4:
+                    return self._json({"ok": True, **kern.video_status(parts[3], actor)})
+                if len(parts) == 5 and parts[4] == "result":
+                    return self._json({"ok": True, **kern.video_result(parts[3], actor)})
+            except KeyError:
+                return self._json({"ok": False, "error": "作业不存在"}, 404)
+            except PermissionError as e:
+                return self._json({"ok": False, "error": str(e)}, 403)
+            except FileNotFoundError as e:
+                return self._json({"ok": False, "error": str(e)}, 409)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": False, "error": "not found"}, 404)
         # 资产盘点日报：读最近一次自动/手动盘点的落盘报告（老板可见）
         if path == "/api/asset/inventory/latest":
             if not self._owner_only():
@@ -3481,6 +3526,36 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": bool(jobs), "note": note, "warnings": warn,
                                "traceId": res.get("traceId"),
                                "outDir": res.get("outDir"), "jobs": jobs})
+        # 远程视频作业：提交 / 审批（MCP 个人 key 或登录会话）
+        if path.startswith("/api/video/jobs"):
+            actor = self._video_actor()
+            if not actor:
+                return self._json({"ok": False, "error": "需要登录或 MCP 个人 key"}, 401)
+            parts = path.strip("/").split("/")
+            try:
+                kern = self._kernel()
+                if len(parts) == 3:
+                    res = kern.video_submit(
+                        actor, body.get("brief") or "", body.get("requirements") or "",
+                        body.get("project") or "", body.get("sourceRefs"),
+                        body.get("idempotencyKey") or "")
+                    return self._json({"ok": True, **res})
+                if len(parts) == 5 and parts[4] == "approve":
+                    res = kern.video_approve(parts[3], actor,
+                                             body.get("decision") or "approve")
+                    return self._json({"ok": True, **res})
+            except video_jobs.Busy as e:
+                return self._json({"ok": False, "error": "流水线忙", "detail": str(e)[:200],
+                                   "retry_after_sec": 30}, 409)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            except PermissionError as e:
+                return self._json({"ok": False, "error": str(e)}, 403)
+            except KeyError:
+                return self._json({"ok": False, "error": "作业不存在"}, 404)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+            return self._json({"ok": False, "error": "not found"}, 404)
         if path == "/api/register":
             return self._register(body)
         # ---------- 用户中心：参数设置 / 数据导入 ----------

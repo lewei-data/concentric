@@ -50,6 +50,7 @@ from obs import log_event       # C3：失败可见，替代静默 pass
 from events import EventBus     # C1：事件总线独立成模块
 import kb_views                # C1：知识库视图/图谱边独立成模块
 import factory                  # C1：工厂/渲染独立成模块
+import video_jobs               # 远程视频作业（提交/状态/审批/签名产物）
 import approvals                # C1：审批门/断点续跑独立成模块
 import capacity                 # CEO 产能均衡口径（各产品组成品数/缺口）
 import ops                      # C1：会议/vault 同步/知识归档/交付导出独立成模块
@@ -1384,6 +1385,27 @@ class Kernel:
 
     def toolbox_jobs(self, limit=40):
         return factory.toolbox_jobs(self, limit)
+
+    # ---- 远程视频作业：MCP key / 会话均可调用，底层仍是同一条流水线
+    def video_submit(self, actor, brief, requirements='', project='',
+                     source_refs=None, idempotency_key=''):
+        return video_jobs.submit(self, actor, brief, requirements, project,
+                                 source_refs, idempotency_key)
+
+    def video_recent(self, actor, limit=30):
+        return video_jobs.recent(self, actor, limit)
+
+    def video_status(self, job_id, actor=''):
+        return video_jobs.status(self, job_id, actor)
+
+    def video_approve(self, job_id, actor, decision='approve'):
+        return video_jobs.approve(self, job_id, actor, decision)
+
+    def video_result(self, job_id, actor=''):
+        return video_jobs.result(self, job_id, actor)
+
+    def video_media_file(self, job_id):
+        return video_jobs.media_file(self, job_id)
 
     def forget_output(self, dest):
         return factory.forget_output(self, dest)
