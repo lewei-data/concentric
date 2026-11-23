@@ -1,9 +1,9 @@
 {
- "updated": "2026-11-20T00:29:57.163163+08:00",
+ "updated": "2026-11-23T08:30:01.184290+08:00",
  "grades": {
-  "优质": 168,
-  "可用": 1292,
-  "待观察": 507
+  "优质": 176,
+  "可用": 1313,
+  "待观察": 512
  },
  "items": {
   "card:rust-subset-report": {},
@@ -1985,6 +1985,40 @@
   "kb_vault_mat_40c51c8b52": {},
   "kb_vault_mat_2ede569fc6": {},
   "kb_vault_mat_4f8c553f9f": {},
-  "kb_vault_mat_f4d55e38a2": {}
+  "kb_vault_mat_f4d55e38a2": {},
+  "kb_vault_0656ed6fc7": {},
+  "kb_vault_d03f2960af": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/narration.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/renders/final.mp4": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/renders/pipeline-final.mp4": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/images/1trae限免.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/images/2主机配置.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/images/3制作.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/images/4部署.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/images/5效果展示.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/images/封面.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/audio/vo1.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/audio/vo2.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/audio/vo3.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/audio/vo4.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/audio/vo5.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/audio/vo6.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/assets/audio/narration_full.wav": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/01.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/02.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/03.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/04.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/05-0.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/05-1.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/05-2.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/05-3.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/05-4.png": {},
+  "/opt/sefs/OpenMontage/projects/madao-ai/hyperframes/assets/06.png": {},
+  "/opt/sefs/OpenMontage/projects/_inbox/tr_ef6d0421_c_0ff39a1e1da3/gap1.png": {},
+  "/opt/sefs/OpenMontage/projects/_inbox/tr_ef6d0421_c_0ff39a1e1da3/gap2.png": {},
+  "/opt/sefs/OpenMontage/projects/_inbox/tr_ef6d0421_c_0ff39a1e1da3/gap3.png": {},
+  "/opt/sefs/OpenMontage/projects/_inbox/tr_f352f605_c_d4fb6870b090/gap1.png": {},
+  "/opt/sefs/OpenMontage/projects/_inbox/tr_f352f605_c_d4fb6870b090/gap2.png": {},
+  "/opt/sefs/OpenMontage/projects/_inbox/tr_f352f605_c_d4fb6870b090/gap3.png": {}
  }
 }
