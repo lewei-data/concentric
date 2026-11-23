@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "source": "opc-image-reel",
+    "traceId": "mcp-rj04a01d3bbe768647",
+    "itemId": "rj04a01d3bbe768647",
+    "omStage": "compose"
+  },
+  "cuts": [
+    {
+      "id": "cut-01",
+      "source": "om/768647-rj04a01d3bbe768647/im01.png",
+      "type": "scroll_image_scene",
+      "naturalSize": {
+        "width": 256,
+        "height": 256
+      },
+      "imageMode": "fit",
+      "in_seconds": 0.0,
+      "out_seconds": 6.0,
+      "line": "一只橘猫坐在窗台上晒太阳",
+      "fitPadding": 0.04
+    },
+    {
+      "id": "cut-02",
+      "source": "om/768647-rj04a01d3bbe768647/im02.png",
+      "type": "scroll_image_scene",
+      "naturalSize": {
+        "width": 768,
+        "height": 768
+      },
+      "imageMode": "fit",
+      "in_seconds": 6.0,
+      "out_seconds": 12.0,
+      "line": "午后的阳光洒在它的毛发上",
+      "fitPadding": 0.04
+    },
+    {
+      "id": "cut-03",
+      "source": "om/768647-rj04a01d3bbe768647/im03.png",
+      "type": "scroll_image_scene",
+      "naturalSize": {
+        "width": 768,
+        "height": 768
+      },
+      "imageMode": "fit",
+      "in_seconds": 12.0,
+      "out_seconds": 18.0,
+      "line": "这一刻安静又美好",
+      "fitPadding": 0.04
+    }
+  ],
+  "overlays": [],
+  "captions": [
+    {
+      "word": "一只橘猫坐在窗台上晒太阳",
+      "startMs": 0,
+      "endMs": 6000,
+      "pageBreakAfter": true
+    },
+    {
+      "word": "午后的阳光洒在它的毛发上",
+      "startMs": 6000,
+      "endMs": 12000,
+      "pageBreakAfter": true
+    },
+    {
+      "word": "这一刻安静又美好",
+      "startMs": 12000,
+      "endMs": 18000,
+      "pageBreakAfter": true
+    }
+  ],
+  "audio": {
+    "narration": {
+      "src": "om/768647-rj04a01d3bbe768647/narration.wav",
+      "volume": 1.0
+    }
+  },
+  "themeConfig": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#0EA5E9",
+    "backgroundColor": "#0B1020",
+    "surfaceColor": "#111827",
+    "textColor": "#F8FAFC",
+    "mutedTextColor": "#A5B4C8",
+    "headingFont": "Inter",
+    "bodyFont": "Inter",
+    "monoFont": "JetBrains Mono",
+    "chartColors": [
+      "#7C3AED",
+      "#0EA5E9",
+      "#10B981",
+      "#F59E0B"
+    ],
+    "springConfig": {
+      "damping": 20,
+      "stiffness": 120,
+      "mass": 1
+    },
+    "transitionDuration": 0.4,
+    "captionHighlightColor": "#FBBF24",
+    "captionBackgroundColor": "rgba(15,23,42,0.82)"
+  }
+}

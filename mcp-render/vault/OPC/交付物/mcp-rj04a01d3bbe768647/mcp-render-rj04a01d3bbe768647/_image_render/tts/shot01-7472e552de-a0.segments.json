@@ -1,0 +1,14 @@
+{
+  "voice": "f02",
+  "speed": 1.15,
+  "sample_rate": 24000,
+  "duration": 2.79,
+  "segments": [
+    {
+      "index": 0,
+      "text": "一只橘猫坐在窗台上晒太阳",
+      "start": 0.0,
+      "end": 2.79
+    }
+  ]
+}

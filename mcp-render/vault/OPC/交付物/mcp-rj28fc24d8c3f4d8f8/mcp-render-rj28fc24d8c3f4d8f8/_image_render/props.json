@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "source": "opc-image-reel",
+    "traceId": "mcp-rj28fc24d8c3f4d8f8",
+    "itemId": "rj28fc24d8c3f4d8f8",
+    "omStage": "compose"
+  },
+  "cuts": [
+    {
+      "id": "cut-01",
+      "source": "om/f4d8f8-rj28fc24d8c3f4d8f8/im01.png",
+      "type": "scroll_image_scene",
+      "naturalSize": {
+        "width": 256,
+        "height": 256
+      },
+      "imageMode": "fit",
+      "in_seconds": 0.0,
+      "out_seconds": 6.0,
+      "line": "一只橘猫坐在窗台上晒太阳",
+      "fitPadding": 0.04
+    }
+  ],
+  "overlays": [],
+  "captions": [
+    {
+      "word": "一只橘猫坐在窗台上晒太阳",
+      "startMs": 0,
+      "endMs": 6000,
+      "pageBreakAfter": true
+    }
+  ],
+  "audio": {
+    "narration": {
+      "src": "om/f4d8f8-rj28fc24d8c3f4d8f8/narration.wav",
+      "volume": 1.0
+    }
+  },
+  "themeConfig": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#0EA5E9",
+    "backgroundColor": "#0B1020",
+    "surfaceColor": "#111827",
+    "textColor": "#F8FAFC",
+    "mutedTextColor": "#A5B4C8",
+    "headingFont": "Inter",
+    "bodyFont": "Inter",
+    "monoFont": "JetBrains Mono",
+    "chartColors": [
+      "#7C3AED",
+      "#0EA5E9",
+      "#10B981",
+      "#F59E0B"
+    ],
+    "springConfig": {
+      "damping": 20,
+      "stiffness": 120,
+      "mass": 1
+    },
+    "transitionDuration": 0.4,
+    "captionHighlightColor": "#FBBF24",
+    "captionBackgroundColor": "rgba(15,23,42,0.82)"
+  }
+}

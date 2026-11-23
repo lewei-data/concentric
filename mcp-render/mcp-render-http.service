@@ -1,0 +1,21 @@
+[Unit]
+Description=MCP Render over Streamable HTTP (0.0.0.0:9107)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=boray
+Group=boray
+WorkingDirectory=/opt/sefs/opc-workbench/mcp-bridge
+Environment=HOME=/home/boray
+Environment=PYTHONUNBUFFERED=1
+Environment=OPC_RENDER_ROOT=/opt/sefs/opc-workbench/mcp-render
+Environment=OPC_RENDER_PUBLIC_BASE=https://ai.boraydata.com/conring/render
+# 身份沿用 OPC 个人 API key：X-Mail-Agent → client_key（强制覆盖）。
+ExecStart=/opt/sefs/opc-workbench/mcp-bridge/venv/bin/python /opt/sefs/opc-workbench/mcp-bridge/bridge.py --name render --host 0.0.0.0 --port 9107 --cwd /opt/sefs/opc-workbench/mcp-render --identity-param client_key --identity-override --static-dir /opt/sefs/opc-workbench/mcp-render/output --static-path /assets -- /opt/sefs/opc-workbench/mcp-render/run.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,128 @@
+{
+  "props": {
+    "meta": {
+      "source": "opc-image-reel",
+      "traceId": "mcp-rjc5e290dd10f874ad",
+      "itemId": "rjc5e290dd10f874ad",
+      "omStage": "compose"
+    },
+    "cuts": [
+      {
+        "id": "cut-01",
+        "source": "om/f874ad-rjc5e290dd10f874ad/im01.png",
+        "type": "scroll_image_scene",
+        "naturalSize": {
+          "width": 256,
+          "height": 256
+        },
+        "imageMode": "fit",
+        "in_seconds": 0.0,
+        "out_seconds": 6.0,
+        "line": "一只橘猫坐在窗台上晒太阳",
+        "fitPadding": 0.04
+      },
+      {
+        "id": "cut-02",
+        "source": "om/f874ad-rjc5e290dd10f874ad/im02.png",
+        "type": "scroll_image_scene",
+        "naturalSize": {
+          "width": 768,
+          "height": 768
+        },
+        "imageMode": "fit",
+        "in_seconds": 6.0,
+        "out_seconds": 12.0,
+        "line": "午后的阳光洒在它的毛发上",
+        "fitPadding": 0.04
+      },
+      {
+        "id": "cut-03",
+        "source": "om/f874ad-rjc5e290dd10f874ad/im03.png",
+        "type": "scroll_image_scene",
+        "naturalSize": {
+          "width": 768,
+          "height": 768
+        },
+        "imageMode": "fit",
+        "in_seconds": 12.0,
+        "out_seconds": 18.0,
+        "line": "这一刻安静又美好",
+        "fitPadding": 0.04
+      }
+    ],
+    "overlays": [],
+    "captions": [
+      {
+        "word": "一只橘猫坐在窗台上晒太阳",
+        "startMs": 0,
+        "endMs": 6000,
+        "pageBreakAfter": true
+      },
+      {
+        "word": "午后的阳光洒在它的毛发上",
+        "startMs": 6000,
+        "endMs": 12000,
+        "pageBreakAfter": true
+      },
+      {
+        "word": "这一刻安静又美好",
+        "startMs": 12000,
+        "endMs": 18000,
+        "pageBreakAfter": true
+      }
+    ],
+    "audio": {
+      "narration": {
+        "src": "om/f874ad-rjc5e290dd10f874ad/narration.wav",
+        "volume": 1.0
+      }
+    },
+    "themeConfig": {
+      "primaryColor": "#7C3AED",
+      "accentColor": "#0EA5E9",
+      "backgroundColor": "#0B1020",
+      "surfaceColor": "#111827",
+      "textColor": "#F8FAFC",
+      "mutedTextColor": "#A5B4C8",
+      "headingFont": "Inter",
+      "bodyFont": "Inter",
+      "monoFont": "JetBrains Mono",
+      "chartColors": [
+        "#7C3AED",
+        "#0EA5E9",
+        "#10B981",
+        "#F59E0B"
+      ],
+      "springConfig": {
+        "damping": 20,
+        "stiffness": 120,
+        "mass": 1
+      },
+      "transitionDuration": 0.4,
+      "captionHighlightColor": "#FBBF24",
+      "captionBackgroundColor": "rgba(15,23,42,0.82)"
+    }
+  },
+  "check": {
+    "文件体积": 2451278,
+    "duration": 19.05,
+    "width": 720,
+    "height": 1280,
+    "has_video": true,
+    "has_audio": true,
+    "meanVolumeDb": -23.5,
+    "frames": 6,
+    "motionMax": 34.21,
+    "motionMean": 16.31,
+    "motionMovingRatio": 1.0,
+    "colorCount": 30,
+    "pass": true,
+    "reasons": []
+  },
+  "duration": 18.0,
+  "images": [
+    "/opt/sefs/opc-workbench/mcp-render/inputs/rjc5e290dd10f874ad/src01.png",
+    "/opt/sefs/opc-workbench/mcp-render/inputs/rjc5e290dd10f874ad/src02.png",
+    "/opt/sefs/opc-workbench/mcp-render/inputs/rjc5e290dd10f874ad/src03.png"
+  ]
+}

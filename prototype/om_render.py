@@ -622,7 +622,10 @@ def validate(path, expected_sec, sample_dir, spec=None):
         if i:
             d = ImageChops.difference(imgs[i - 1], im).convert("L")
             diffs.append(ImageStat.Stat(d).mean[0])
-        small = im.resize((135, 240))
+        # 先量化到 32 色再统计主色：真实照片每像素颜色几乎都不同，未量化时
+        # getcolors 的每项计数恒为 1，会被误判成「纯文字卡」（实测照片 raw=0）。
+        # 量化后照片 31~32、SVG 场景 17~25、纯文字卡仍只有 2~3，阈值 8 依旧有效。
+        small = im.resize((135, 240)).quantize(colors=32).convert("RGB")
         entries = small.getcolors(maxcolors=1 << 20) or []
         total = 135 * 240
         colors.append(sum(1 for cnt, _ in entries if cnt >= total * 0.003))

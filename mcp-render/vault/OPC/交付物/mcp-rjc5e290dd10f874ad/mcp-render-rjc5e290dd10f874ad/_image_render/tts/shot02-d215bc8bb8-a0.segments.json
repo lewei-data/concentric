@@ -1,0 +1,14 @@
+{
+  "voice": "f02",
+  "speed": 1.15,
+  "sample_rate": 24000,
+  "duration": 2.245,
+  "segments": [
+    {
+      "index": 0,
+      "text": "午后的阳光洒在它的毛发上",
+      "start": 0.0,
+      "end": 2.245
+    }
+  ]
+}

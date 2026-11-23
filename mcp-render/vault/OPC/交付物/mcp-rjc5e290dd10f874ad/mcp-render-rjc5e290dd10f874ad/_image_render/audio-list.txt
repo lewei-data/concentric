@@ -1,0 +1,3 @@
+file '/opt/sefs/opc-workbench/mcp-render/vault/OPC/交付物/mcp-rjc5e290dd10f874ad/mcp-render-rjc5e290dd10f874ad/_image_render/narr01.wav'
+file '/opt/sefs/opc-workbench/mcp-render/vault/OPC/交付物/mcp-rjc5e290dd10f874ad/mcp-render-rjc5e290dd10f874ad/_image_render/narr02.wav'
+file '/opt/sefs/opc-workbench/mcp-render/vault/OPC/交付物/mcp-rjc5e290dd10f874ad/mcp-render-rjc5e290dd10f874ad/_image_render/narr03.wav'

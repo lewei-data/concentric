@@ -1,0 +1,14 @@
+{
+  "voice": "f02",
+  "speed": 1.15,
+  "sample_rate": 24000,
+  "duration": 1.95,
+  "segments": [
+    {
+      "index": 0,
+      "text": "这一刻安静又美好",
+      "start": 0.0,
+      "end": 1.95
+    }
+  ]
+}

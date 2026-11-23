@@ -1,0 +1,114 @@
+{
+ "rj28fc24d8c3f4d8f8": {
+  "job_id": "rj28fc24d8c3f4d8f8",
+  "owner": "7e68c2d5d7b3",
+  "status": "failed",
+  "shots": [
+   {
+    "image": "/opt/sefs/opc-workbench/mcp-image/output/N4NT1u8Bz3DEgbhQuUC49No/image.png",
+    "line": "一只橘猫坐在窗台上晒太阳",
+    "duration": 6.0
+   }
+  ],
+  "spec": {
+   "width": 720,
+   "height": 1280,
+   "fps": "24/1"
+  },
+  "theme": {},
+  "brief": "渲染验证：橘猫窗台",
+  "created_at": 1795469364,
+  "updated_at": 1795469417,
+  "started_at": 1795469364,
+  "error": "RuntimeError: 验收未通过：时长 8.8s 与分镜 6.0s 偏差过大、抽帧失败，无法判断画面",
+  "finished_at": 1795469417
+ },
+ "rj04a01d3bbe768647": {
+  "job_id": "rj04a01d3bbe768647",
+  "owner": "7e68c2d5d7b3",
+  "status": "failed",
+  "shots": [
+   {
+    "image": "/opt/sefs/opc-workbench/mcp-image/output/N4NT1u8Bz3DEgbhQuUC49No/image.png",
+    "line": "一只橘猫坐在窗台上晒太阳",
+    "duration": 6.0
+   },
+   {
+    "image": "/opt/sefs/opc-workbench/mcp-image/output/hJDy6AKcSsljD4L7eNDeKpAJ/image.png",
+    "line": "午后的阳光洒在它的毛发上",
+    "duration": 6.0
+   },
+   {
+    "image": "/opt/sefs/opc-workbench/mcp-image/output/7OQenjeqVZquiXTWCpbDGK9f/image.png",
+    "line": "这一刻安静又美好",
+    "duration": 6.0
+   }
+  ],
+  "spec": {
+   "width": 720,
+   "height": 1280,
+   "fps": "30/1"
+  },
+  "theme": {},
+  "brief": "渲染验证：三镜橘猫",
+  "created_at": 1795469552,
+  "updated_at": 1795469697,
+  "started_at": 1795469552,
+  "error": "RuntimeError: 验收未通过：色彩层次不足（平均 1 种主色，疑似纯文字卡）",
+  "finished_at": 1795469697
+ },
+ "rjc5e290dd10f874ad": {
+  "job_id": "rjc5e290dd10f874ad",
+  "owner": "7e68c2d5d7b3",
+  "status": "succeeded",
+  "shots": [
+   {
+    "image": "/opt/sefs/opc-workbench/mcp-image/output/N4NT1u8Bz3DEgbhQuUC49No/image.png",
+    "line": "一只橘猫坐在窗台上晒太阳",
+    "duration": 6.0
+   },
+   {
+    "image": "/opt/sefs/opc-workbench/mcp-image/output/hJDy6AKcSsljD4L7eNDeKpAJ/image.png",
+    "line": "午后的阳光洒在它的毛发上",
+    "duration": 6.0
+   },
+   {
+    "image": "/opt/sefs/opc-workbench/mcp-image/output/7OQenjeqVZquiXTWCpbDGK9f/image.png",
+    "line": "这一刻安静又美好",
+    "duration": 6.0
+   }
+  ],
+  "spec": {
+   "width": 720,
+   "height": 1280,
+   "fps": "30/1"
+  },
+  "theme": {},
+  "brief": "渲染验证：三镜橘猫",
+  "created_at": 1795469823,
+  "updated_at": 1795469970,
+  "started_at": 1795469823,
+  "file_key": "rjc5e290dd10f874ad",
+  "filename": "video.mp4",
+  "size": 2451278,
+  "duration": 18.0,
+  "check": {
+   "文件体积": 2451278,
+   "duration": 19.05,
+   "width": 720,
+   "height": 1280,
+   "has_video": true,
+   "has_audio": true,
+   "meanVolumeDb": -23.5,
+   "frames": 6,
+   "motionMax": 34.21,
+   "motionMean": 16.31,
+   "motionMovingRatio": 1.0,
+   "colorCount": 30,
+   "pass": true,
+   "reasons": []
+  },
+  "elapsed_sec": 147.6,
+  "download_url": "https://ai.boraydata.com/conring/render/assets/rjc5e290dd10f874ad/video.mp4"
+ }
+}
