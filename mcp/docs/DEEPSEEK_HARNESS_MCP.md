@@ -58,6 +58,12 @@ mcpServers:
 
 其余工具同理，共 **25 个**（以 `tools/list` 为准；详见随附 `OPC_MCP_CLIENT_USAGE.md`）。
 
+**只要做图能力时（2026-11-24 起）**：可接独立端点 `https://ai.boraydata.com/conring/image/mcp`（同一把
+`X-Mail-Agent` key），工具名变成 `mcp__image__image_capabilities` / `mcp__image__image_generate` /
+`mcp__image__image_file_link`，前缀取决于 DSH 连接名。它不含知识库/审批那 22 个工具，支持
+`return_base64=true` 直接把图片内联回给模型（≤8MB），适合纯绘图 skill。产物 file_key 与
+OPC 的 `file_link` **不互通**，两个端点的链接各自用自己的工具重取。详见 `IMAGE_MCP_CLIENT_USAGE.md`。
+
 **白名单建议改按注解过滤（2026-11-19 起）**：每个工具的 `tools/list` 条目带
 `annotations.readOnlyHint / destructiveHint / idempotentHint`。DSH 侧 Host 桥不要再硬编码
 8 个只读工具名——按 `readOnlyHint === true` 过滤即可，工具增删改名都不会静默失效；

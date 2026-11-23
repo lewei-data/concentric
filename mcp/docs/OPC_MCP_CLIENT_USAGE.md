@@ -71,6 +71,11 @@
 | `image` | `prompt`, `brief`, `reference_image`（本地绝对路径或 data URI）, `channel=sd15\|qwen-image\|bailian_image`, `width/height/steps`, `wait_sec`；**bailian_image 专用**：`size`(「宽*高」星号，如 1024*1024), `n`(1~4), `prompt_extend`, `watermark` | 文生图；`sd15`=9103，`qwen-image`=8188/157 Qwen-Image 图生图；`bailian_image`=阿里云百炼 qwen-image-3.0-pro 云服务（按张计费，支持文生图/图生图，参考图内联 base64） |
 | `file_link` | `file_key` | 换设备/链接丢失时凭生成结果里的 `file_key` 重取下载链接 |
 
+> **独立图片 MCP（2026-11-24 上线）**：如果外部 agent 只需要做图、不想要 OPC 知识库那 25 个工具，可改用专用端点
+> `https://ai.boraydata.com/conring/image/mcp`（同一把 key，工具 `image_capabilities` / `image_generate` / `image_file_link`，
+> 额外支持 `return_base64` 内联出图）。本文件的 `image` 工具仍照常可用；两者的产物与 `file_link` **不互通**。
+> 完整说明见 `IMAGE_MCP_CLIENT_USAGE.md`。
+
 ### 员工照片（全局共享）
 | 工具 | 关键参数 | 用途 |
 | --- | --- | --- |

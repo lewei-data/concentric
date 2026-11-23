@@ -21,6 +21,13 @@
       "headers": {
         "X-Mail-Agent": "<管理员按手机号发放的个人 API key>"
       }
+    },
+    "image": {
+      "type": "streamable-http",
+      "url": "https://ai.boraydata.com/conring/image/mcp",
+      "headers": {
+        "X-Mail-Agent": "<同一个 OPC 个人 API key，无需单独申请>"
+      }
     }
   }
 }

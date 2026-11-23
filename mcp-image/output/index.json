@@ -1,0 +1,52 @@
+{
+ "N4NT1u8Bz3DEgbhQuUC49No": {
+  "channel": "sd15",
+  "mode": "t2i",
+  "reference": false,
+  "brief": "",
+  "width": 256,
+  "height": 256,
+  "seed": 1066732058,
+  "job_id": "img_8c0aa1ee68",
+  "elapsed_sec": 32.04,
+  "output_url": "/files/img_8c0aa1ee68.png",
+  "file_key": "N4NT1u8Bz3DEgbhQuUC49No",
+  "filename": "image.png",
+  "mime": "image/png",
+  "size": 134793,
+  "download_url": "https://ai.boraydata.com/conring/image/assets/N4NT1u8Bz3DEgbhQuUC49No/image.png",
+  "owner": "7e68c2d5d7b3",
+  "created_at": 1795463133,
+  "prompt": "一只橘猫坐在窗台上，阳光明媚"
+ },
+ "hJDy6AKcSsljD4L7eNDeKpAJ": {
+  "channel": "qwen-image",
+  "job_id": "af60415b-26c8-403f-8f9a-633f69a149b6",
+  "mode": "t2i",
+  "reference": false,
+  "elapsed_sec": 230.17,
+  "file_key": "hJDy6AKcSsljD4L7eNDeKpAJ",
+  "filename": "image.png",
+  "mime": "image/png",
+  "size": 987103,
+  "download_url": "https://ai.boraydata.com/conring/image/assets/hJDy6AKcSsljD4L7eNDeKpAJ/image.png",
+  "owner": "7e68c2d5d7b3",
+  "created_at": 1795463632,
+  "prompt": "一只橘猫坐在窗台上，阳光明媚，电影感，高清写实"
+ },
+ "7OQenjeqVZquiXTWCpbDGK9f": {
+  "channel": "qwen-image",
+  "job_id": "a68e062f-84c9-44f3-a8f9-07bc7cacf65b",
+  "mode": "i2i",
+  "reference": true,
+  "elapsed_sec": 230.36,
+  "file_key": "7OQenjeqVZquiXTWCpbDGK9f",
+  "filename": "image.png",
+  "mime": "image/png",
+  "size": 1566984,
+  "download_url": "https://ai.boraydata.com/conring/image/assets/7OQenjeqVZquiXTWCpbDGK9f/image.png",
+  "owner": "7e68c2d5d7b3",
+  "created_at": 1795463863,
+  "prompt": "把这张图改成梵高油画风格，保留主体构图"
+ }
+}
