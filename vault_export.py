@@ -20,6 +20,17 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "prototype"))
 import server as S  # noqa: E402  仅为读取配置常量（导入不会启动服务）
 
+# --- C1 拆分兼容补丁（2026-11-23 CTO）：配置常量已迁出 server.py（company_config.py / users.py），
+# 本脚本此前一跑即在 page_home 崩溃（AttributeError: AGENT_SPEC），动态/快照自 11-16 起停更。
+# 补挂缺失符号，保持下方 S.* 引用不变；已存在的属性一律不动。
+import company_config as _cc  # noqa: E402
+for _name in ("AGENT_SPEC", "HIGH_RISK_TOOLS", "PROJECTS", "STAGES", "TONE"):
+    if not hasattr(S, _name):
+        setattr(S, _name, getattr(_cc, _name))
+if not hasattr(S, "load_credentials"):
+    import users as _users  # noqa: E402
+    S.load_credentials = _users.load_credentials
+
 VAULT = os.environ.get("OPC_VAULT", "/mnt/sefs/conring/users/18911789286/obsidian")
 BASE = os.environ.get("OPC_BASE", "http://127.0.0.1:8848")
 TZ = timezone(timedelta(hours=8))

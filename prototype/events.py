@@ -56,5 +56,9 @@ class EventBus:
             elif kind == "pipeline" and isinstance(data, dict) and data.get("id"):
                 db.upsert_content(data)
         elif kind in KEY_KINDS and on_key:
-            on_key()          # 旧路径：低频关键事件落盘，重启后可恢复
+            on_key()          # 无库旧路径：低频关键事件落盘，重启后可恢复
+        # 2026-11-23 修复（CTO）：C1 拆分后 db 恒可用，上面 elif 永不执行，
+        # 动态/runtime.json 自 11-16 16:02 起停更。关键事件改为双写：入库 + 刷 runtime.json。
+        if db and kind in KEY_KINDS and on_key:
+            on_key()
         return env
