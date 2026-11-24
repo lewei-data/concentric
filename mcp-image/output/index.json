@@ -308,5 +308,20 @@
   "owner": "7e68c2d5d7b3",
   "created_at": 1795496243,
   "prompt": "深色科技纪录片风格，深蓝与金色主色调，体积光，电影感，高细节，无文字，无水印，一扇半开的发光大门，门后是清晨的城市天际线，门前站着一个人类剪影，克制的希望感，无文字"
+ },
+ "Ph92kdcywORhJOUTUFtYhzy": {
+  "channel": "qwen-image",
+  "job_id": "bed6c14b-3031-4906-b3a1-98673f9d8e1f",
+  "mode": "t2i",
+  "reference": false,
+  "elapsed_sec": 220.59,
+  "file_key": "Ph92kdcywORhJOUTUFtYhzy",
+  "filename": "image.png",
+  "mime": "image/png",
+  "size": 632211,
+  "download_url": "https://ai.boraydata.com/conring/image/assets/Ph92kdcywORhJOUTUFtYhzy/image.png",
+  "owner": "7e68c2d5d7b3",
+  "created_at": 1795496625,
+  "prompt": "深色科技纪录片风格，深蓝与金色主色调，体积光，电影感，高细节，无文字，无水印，一扇半开的发光大门，门后是清晨的城市天际线，门前站着一个人类剪影，克制的希望感，无文字"
  }
 }
