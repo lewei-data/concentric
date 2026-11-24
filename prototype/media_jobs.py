@@ -734,7 +734,16 @@ def _coerce_params(ch, raw):
                 opts = spec.get("options") or []
                 val = str(val)
                 if opts and val not in opts:
-                    val = spec.get("default") or opts[0]
+                    # 音色是运行期可扩展的：clone-* 等自建音色不在静态 options 里，
+                    # 但只要音色表实际登记了就放行，否则会被错误回退到默认音色。
+                    allowed = False
+                    if key == "voice":
+                        try:
+                            allowed = val in {v["id"] for v in (voices_list() or {}).get("voices") or []}
+                        except Exception:  # noqa: BLE001 - 音色表读不到就按原逻辑回退
+                            allowed = False
+                    if not allowed:
+                        val = spec.get("default") or opts[0]
             else:
                 val = str(val if val is not None else "")
         except (TypeError, ValueError):

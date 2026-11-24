@@ -94,6 +94,25 @@ function defaultsOf(ch?: Channel | null): Record<string, unknown> {
   return out;
 }
 
+/** 重置参数时保留用户选过的音色：优先记住的值，其次当前值；仅当新渠道确有该选项时采用。 */
+function keepVoice(
+  ch: Channel | null | undefined,
+  prev: Record<string, unknown>,
+  remembered?: string,
+): Record<string, unknown> {
+  const out = defaultsOf(ch);
+  const voiceSpec = (ch?.params || []).find((p) => p.key === "voice");
+  if (!voiceSpec) return out;
+  const opts = voiceSpec.options || [];
+  for (const cand of [remembered, prev?.voice]) {
+    if (cand != null && String(cand) && opts.includes(String(cand))) {
+      out.voice = cand;
+      break;
+    }
+  }
+  return out;
+}
+
 function ParamField({
   spec,
   value,
@@ -245,6 +264,8 @@ export function ToolboxPage() {
   const [frame, setFrame] = useState<{ name: string; url: string } | null>(null);
   const [frameBusy, setFrameBusy] = useState(false);
   const [vals, setVals] = useState<Record<string, unknown>>({});
+  // 记住用户最后选的音色：跨渠道/刷新渠道都保留，避免克隆音色被默认值冲掉
+  const voiceRef = useRef<string>("");
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -353,11 +374,11 @@ export function ToolboxPage() {
     const usable = kindChans.filter((c) => c.available);
     const pick = usable[0] || kindChans[0];
     setChName(pick ? pick.name : "");
-    setVals(defaultsOf(pick));
+    setVals((prev) => keepVoice(pick, prev, voiceRef.current));
   }, [kindChans, loading]);
 
   useEffect(() => {
-    if (active) setVals(defaultsOf(active));
+    if (active) setVals((prev) => keepVoice(active, prev, voiceRef.current));
     // 换到不支持参考图的渠道时别把 i2i/i2v 留在选中态，否则用户以为能上传图
     if (active) {
       const ms = active.modes || [];
@@ -470,6 +491,7 @@ export function ToolboxPage() {
       await loadVoices();
       await loadChannels();               // 音色下拉随之刷新
       if ((active?.params || []).some((p) => p.key === "voice")) {
+        voiceRef.current = d.id as string;
         setVals((prev) => ({ ...prev, voice: d.id as string }));
       }
     } catch {
@@ -623,6 +645,7 @@ export function ToolboxPage() {
       const cur = tuneFor;
       // 刷新渠道参数会把音色选回默认值，这里把它拨回刚微调的这个音色
       if ((active?.params || []).some((p) => p.key === "voice")) {
+        voiceRef.current = cur;
         setVals((prev) => ({ ...prev, voice: cur }));
       }
       await loadTune(cur);
@@ -647,6 +670,7 @@ export function ToolboxPage() {
       setToast(d.undone ? `已撤销「${d.undone}」，回到上一版音色` : "已撤销上一轮微调");
       await loadVoices();
       if ((active?.params || []).some((p) => p.key === "voice")) {
+        voiceRef.current = id;
         setVals((prev) => ({ ...prev, voice: id }));
       }
       await loadTune(id);
@@ -1060,7 +1084,10 @@ export function ToolboxPage() {
                   key={p.key}
                   spec={p}
                   value={vals[p.key]}
-                  onChange={(v) => setVals((prev) => ({ ...prev, [p.key]: v }))}
+                  onChange={(v) => {
+                    if (p.key === "voice") voiceRef.current = String(v ?? "");
+                    setVals((prev) => ({ ...prev, [p.key]: v }));
+                  }}
                 />
               ))}
             </div>

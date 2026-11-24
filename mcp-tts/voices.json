@@ -125,6 +125,11 @@
       "description": "备用·中文女声（CosyVoice 官方 cross-lingual 参考音，13.7s 长参考）",
       "prompt_wav": "/opt/sefs/opc-workbench/qwen-audio/samples/opensource/cosyvoice/cross_lingual_prompt-s16.wav",
       "prompt_text": "在那之后，完全收购那家公司，因此保持管理层的一致性，利益与即将加入家族的资产保持一致。这就是我们有时不买下全部的原因。"
+    },
+    "clone-我的音色": {
+      "description": "克隆音色 · 我的音色｜参考 7.1s｜蒿色莫",
+      "prompt_wav": "/opt/sefs/opc-workbench/mcp-tts/voices/ref/clone-38681ef62d.wav",
+      "prompt_text": "大家好，我是魔道。今天用这段录音来克隆我的声音，希望听起来自然清晰."
     }
   }
 }
