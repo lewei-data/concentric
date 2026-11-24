@@ -195,33 +195,23 @@ def _probe_one(url, model, key, timeout):
 
 
 def probe(timeout=8):
-    """真实探活：主通道 + 兜底通道各打一次 max_tokens=1。
+    """真实探活：只打本地模型一次 max_tokens=1（2026-11-24 起）。
 
-    返回 (ok, detail, info)；ok=任一通道可用。info 保留主通道字段以兼容旧调用，
-    并额外给出 primary / fallback 明细，便于 kb_status 判断当前实际走哪条。
+    原实现探 auto-free（上游 opencode 凭据已失效）失败后还会走 glm-5.3-flash
+    兜底，导致每 60s 的面板探活持续向 opencode 刷 401。现探活改用本地模型
+    config.LLM_PROBE_MODEL（默认 local-qwen3.8-flash，经 LiteLLM 转 208:8080），
+    且不再走 opencode 兜底，彻底断开探活与 opencode 的链路。业务 chat() 不受影响。
+
+    返回 (ok, detail, info)；info 保留 primary/fallback 字段兼容旧调用，
+    fallback 恒为未配置（健康灯只看本地模型）。
     """
-    p_ok, p_detail, p_info = _probe_one(config.LLM_BASE_URL, config.LLM_MODEL,
+    p_ok, p_detail, p_info = _probe_one(config.LLM_BASE_URL, config.LLM_PROBE_MODEL,
                                         config.LLM_API_KEY, timeout)
-    cfg = fallback_config()
-    f_info = {"configured": bool(cfg), "channel": (cfg or {}).get("id")}
-    f_ok, f_detail = None, None
-    if not p_ok and cfg:
-        f_ok, f_detail, f_info = _probe_one(cfg["url"], cfg["model"], cfg["key"], timeout)
-        f_info["channel"] = cfg["id"]
-    ok = bool(p_ok or f_ok)
     info = dict(p_info)
     info["primary"] = p_info
-    info["fallback"] = f_info
-    if f_ok and not p_ok:
-        info.update({"status": 200, "retry_after_sec": None, "cooldown_until": None,
-                     "channel": cfg["id"], "model": cfg["model"]})
-    else:
-        info["channel"] = "primary" if p_ok else ""
-    if ok:
-        detail = None
-    else:
-        detail = p_detail + ("；兜底：" + (f_detail or "不可用") if cfg else "")
-    return ok, detail, info
+    info["fallback"] = {"configured": False, "channel": None}
+    info["channel"] = "probe-local" if p_ok else ""
+    return bool(p_ok), (None if p_ok else p_detail), info
 
 
 _PROBE_CACHE = {"at": 0.0, "ok": None, "detail": None, "info": None, "inflight": False}

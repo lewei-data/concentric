@@ -61,7 +61,11 @@ LLM_BASE_URL = os.environ.get("OPC_MCP_LLM_BASE_URL", "http://192.168.21.208:800
 LLM_MODEL = os.environ.get("OPC_MCP_LLM_MODEL", "auto-free")
 LLM_API_KEY = os.environ.get("OPC_MCP_LLM_API_KEY") or os.environ.get("OPC_LLM_AUTOFREE_KEY") \
     or "sk-litellm-15bbcf2ea58c156130a00afd1b43ae4a"
-LLM_TIMEOUT = float(os.environ.get("OPC_MCP_LLM_TIMEOUT", "120"))
+# 业务调用超时：208 本地模型是纯 CPU 单槽、长上下文很慢，匹配 LiteLLM 网关 router_settings.timeout=3600，
+# 给满 1 小时上限，避免慢请求在客户端侧被 120s 早早掐断。探活 probe() 仍用独立的短超时，不受此影响。
+LLM_TIMEOUT = float(os.environ.get("OPC_MCP_LLM_TIMEOUT", "3600"))
+# 探活专用模型（2026-11-24）：健康探测只用本地模型，不再打 auto-free（上游 opencode 凭据失效）
+LLM_PROBE_MODEL = os.environ.get("OPC_MCP_LLM_PROBE_MODEL", "local-qwen3.8-flash")
 
 # 兜底通道：主通道 429/5xx/网络错误时自动切到 OpenCode 通道。
 # key 默认从模型管理页的 opencode-glm53 读取，避免在环境变量里再存一份明文。
@@ -72,7 +76,7 @@ LLM_FALLBACK_API_KEY = os.environ.get("OPC_MCP_LLM_FALLBACK_API_KEY", "")
 LLM_FALLBACK_CHANNEL_ID = os.environ.get("OPC_MCP_LLM_FALLBACK_CHANNEL_ID", "opencode-glm53")
 LLM_FALLBACK_DB = Path(os.environ.get("OPC_MCP_LLM_FALLBACK_DB")
                        or (USER_ROOT / "18911789286" / "opc.db"))
-LLM_FALLBACK_TIMEOUT = float(os.environ.get("OPC_MCP_LLM_FALLBACK_TIMEOUT", "90"))
+LLM_FALLBACK_TIMEOUT = float(os.environ.get("OPC_MCP_LLM_FALLBACK_TIMEOUT", "3600"))
 
 # 媒体能力：TTS 走 media-engine（本机 192.168.21.206:9200），图像走 media-gen（:9103）
 # 注：9311/9312 只是 media-engine 背后的 qwen 引擎，不对 MCP 直接暴露

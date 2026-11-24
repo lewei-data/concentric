@@ -1588,7 +1588,9 @@ class OpcServer:
         每 3s 醒一次，只对「已有缓存条目的 tenant」做到期检查（自调压，无面板就不干活）：
         - groups/rev：到期（30s）才重算一次；
         - recent.jobs：到期（10s）才重查一次；
-        - 健康灯：probe/health_cached 内部按各自 TTL（60s/30s）自行节流。
+        - 健康灯：媒体探测 health_cached 按 TTL（30s）节流；LLM 探活（2026-11-24 起）
+          不在后台定时发起，只在客户端真正调用 kb_ping / kb_overview 时按 TTL 触发，
+          且探本地模型、不碰 opencode，避免无人使用时仍每分钟空转。
         """
         def _loop():
             log("overview refresher started (groups=%ds recent=%ds)"
@@ -1610,10 +1612,10 @@ class OpcServer:
                 except Exception as e:
                     log("overview recent 后台刷新异常（忽略）：%r" % e)
                 try:
-                    llm.probe_cached(config.PING_TTL_SEC)          # 到期才真探
-                    media.health_cached(config.MEDIA_PING_TTL_SEC)
+                    media.health_cached(config.MEDIA_PING_TTL_SEC)  # 媒体探测仍后台按 TTL 刷新
                 except Exception:
                     pass
+                # LLM 探活不在后台定时发起：只在 kb_ping / kb_overview 被调用时按 TTL 触发
         t = threading.Thread(target=_loop, name="opc-ov-refresh", daemon=True)
         t.start()
         return t
