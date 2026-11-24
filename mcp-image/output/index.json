@@ -48,5 +48,50 @@
   "owner": "7e68c2d5d7b3",
   "created_at": 1795463863,
   "prompt": "把这张图改成梵高油画风格，保留主体构图"
+ },
+ "51kGniS8s6GG2T1d1IIEQv7": {
+  "channel": "qwen-image",
+  "job_id": "59b50ba1-455d-4255-ac44-86c756323300",
+  "mode": "i2i",
+  "reference": true,
+  "elapsed_sec": 230.19,
+  "file_key": "51kGniS8s6GG2T1d1IIEQv7",
+  "filename": "image.png",
+  "mime": "image/png",
+  "size": 687886,
+  "download_url": "https://ai.boraydata.com/conring/image/assets/51kGniS8s6GG2T1d1IIEQv7/image.png",
+  "owner": "7e68c2d5d7b3",
+  "created_at": 1795477156,
+  "prompt": "保留原图四道绿色验证门与中央金色印章的主体构图与深蓝暗色电影感，画面左上区域整理为干净的深色负空间用于放置大标题，金色印章位于右下，高对比，庄重肃杀的学术悬案氛围，不要任何文字，不要字母，不要水印，不要标牌"
+ },
+ "IwbHfvBHNryWSfXU0HIQ8pQJ": {
+  "channel": "qwen-image",
+  "job_id": "d63ffe3f-4a14-4e58-ab48-63101cebe7f6",
+  "mode": "i2i",
+  "reference": true,
+  "elapsed_sec": 230.15,
+  "file_key": "IwbHfvBHNryWSfXU0HIQ8pQJ",
+  "filename": "image.png",
+  "mime": "image/png",
+  "size": 636162,
+  "download_url": "https://ai.boraydata.com/conring/image/assets/IwbHfvBHNryWSfXU0HIQ8pQJ/image.png",
+  "owner": "7e68c2d5d7b3",
+  "created_at": 1795477387,
+  "prompt": "保留原图蓝红双赛道汇聚与巨大钟表主体的构图与深蓝暗色电影感，画面上方整理为干净的深色负空间用于放置大标题，蓝红双色对冲强烈，时间紧迫感，不要任何文字，不要字母，不要水印"
+ },
+ "NYzI9DhTRAUtyHcNhel1AbDf": {
+  "channel": "qwen-image",
+  "job_id": "a320c7e9-837c-4304-b6ee-959b89854625",
+  "mode": "i2i",
+  "reference": true,
+  "elapsed_sec": 230.16,
+  "file_key": "NYzI9DhTRAUtyHcNhel1AbDf",
+  "filename": "image.png",
+  "mime": "image/png",
+  "size": 648508,
+  "download_url": "https://ai.boraydata.com/conring/image/assets/NYzI9DhTRAUtyHcNhel1AbDf/image.png",
+  "owner": "7e68c2d5d7b3",
+  "created_at": 1795477618,
+  "prompt": "保留原图代码立方体与金色终点线的主体构图与深蓝暗色电影感，画面上方整理为干净的深色负空间用于放置大标题，代码流如瀑布倾泻，终点线金光，不要任何文字，不要字母，不要水印"
  }
 }
