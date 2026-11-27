@@ -1,3 +1,4 @@
 {"rule": "huge_log_file", "level": "warning", "detail": "/var/log/syslog.2.gz(195.4MB), /var/log/syslog.4.gz(37.5MB), /var/log/syslog.3.gz(37.4MB)", "dry_run": false, "ok": true, "result": "已截断 /var/log/syslog.2.gz(195.4MB), /var/log/syslog.4.gz(37.5MB), /var/log/syslog.3.gz(37.4MB), /var/log/syslog(0.4MB)", "ms": 34, "at": "2026-11-16T19:25:54+08:00"}
 {"rule": "service_down", "level": "critical", "detail": "hermes-gateway-8987483c.service", "dry_run": false, "ok": true, "result": "已重启 hermes-gateway-8987483c.service", "ms": 44, "at": "2026-11-23T00:55:02+08:00"}
 {"rule": "huge_log_file", "level": "warning", "detail": "/var/log/syslog(2051.6MB)", "dry_run": false, "ok": true, "result": "已处理 trunc:syslog(2051.6MB)", "ms": 427, "at": "2026-11-26T22:35:02+08:00"}
+{"rule": "huge_log_file", "level": "warning", "detail": "/var/log/syslog(2055.4MB)", "dry_run": false, "ok": true, "result": "已处理 trunc:syslog(2055.4MB)", "ms": 498, "at": "2026-11-27T18:45:02+08:00"}
